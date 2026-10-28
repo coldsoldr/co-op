@@ -1,7 +1,9 @@
 import type { Chunk } from './iff';
 import type { CommInfo } from './comm';
 
-export class SsndError extends Error {}
+export class SsndError extends Error {
+  override name = 'SsndError';
+}
 
 /** Builds an SSND chunk from interleaved 16-bit samples with a zero offset and block size. */
 export function buildSsnd(samples: Int16Array, littleEndian: boolean): Chunk {
@@ -25,6 +27,7 @@ export function decodeSsnd(chunk: Chunk, comm: CommInfo): Float32Array {
   const littleEndian = compression === 'sowt';
   const view = new DataView(chunk.data.buffer, chunk.data.byteOffset, chunk.data.byteLength);
   const start = 8 + view.getUint32(0);
+  if (start > chunk.data.length) throw new SsndError('SSND offset runs past chunk');
   const channels = Math.max(1, comm.channels);
   const frames = Math.floor((chunk.data.length - start) / (2 * channels));
   const out = new Float32Array(frames);

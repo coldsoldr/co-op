@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSsnd, decodeSsnd } from './ssnd';
+import { buildSsnd, decodeSsnd, SsndError } from './ssnd';
 import type { CommInfo } from './comm';
 
 const comm = (compression: string, channels = 1): CommInfo => ({
@@ -46,5 +46,27 @@ describe('SSND', () => {
     const chunk = buildSsnd(samples, false);
     expect(() => decodeSsnd(chunk, { ...comm('NONE'), bitsPerSample: 24 })).toThrow(/bit depth/);
     expect(() => decodeSsnd(chunk, comm('ulaw'))).toThrow(/compression/);
+    expect(() => decodeSsnd(chunk, comm('ulaw'))).toThrow(SsndError);
+    expect(new SsndError('x').name).toBe('SsndError');
+  });
+
+  // Builds an SSND chunk by hand with the given offset field, `junk` bytes, then the samples.
+  const withOffset = (offset: number, junk: number[]): { id: string; data: Uint8Array } => {
+    const data = new Uint8Array(8 + junk.length + samples.length * 2);
+    const view = new DataView(data.buffer);
+    view.setUint32(0, offset);
+    data.set(junk, 8);
+    for (let i = 0; i < samples.length; i++) view.setInt16(8 + junk.length + i * 2, samples[i]!);
+    return { id: 'SSND', data };
+  };
+
+  it('honours a non-zero offset field', () => {
+    const out = decodeSsnd(withOffset(2, [0xde, 0xad]), comm('NONE'));
+    expect(Array.from(out)).toEqual([0, 0.5, -1, 32767 / 32768]);
+  });
+
+  it('rejects an offset that runs past the chunk', () => {
+    expect(() => decodeSsnd(withOffset(100, []), comm('NONE'))).toThrow(/offset runs past chunk/);
+    expect(() => decodeSsnd(withOffset(100, []), comm('NONE'))).toThrow(SsndError);
   });
 });
