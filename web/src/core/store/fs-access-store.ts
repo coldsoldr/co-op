@@ -30,7 +30,8 @@ export class FsAccessStore implements DeviceStore {
   readonly capabilities: StoreCapabilities = { write: true };
   readonly label: string;
 
-  constructor(private readonly root: FileSystemDirectoryHandle) {
+  /** `root` is public so the UI can remember the handle for reconnecting. */
+  constructor(readonly root: FileSystemDirectoryHandle) {
     this.label = root.name;
   }
 

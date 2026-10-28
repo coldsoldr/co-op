@@ -1,6 +1,7 @@
 import { useState, type DragEvent, type ChangeEvent } from 'react';
 import { readPatch, decodePcm, type Patch } from '../core/codec/patch';
 import { op1Stock } from '../core/profiles/op1-stock';
+import { playPcm } from './audio';
 
 interface Loaded {
   fileName: string;
@@ -36,14 +37,11 @@ export function Inspector() {
 
   function play() {
     if (!loaded) return;
-    const pcm = decodePcm(loaded.patch);
-    const context = new AudioContext({ sampleRate: loaded.patch.comm.sampleRate });
-    const buffer = context.createBuffer(1, pcm.length, loaded.patch.comm.sampleRate);
-    buffer.getChannelData(0).set(pcm);
-    const source = context.createBufferSource();
-    source.buffer = buffer;
-    source.connect(context.destination);
-    source.start();
+    try {
+      playPcm(decodePcm(loaded.patch), loaded.patch.comm.sampleRate);
+    } catch (e) {
+      setError(`cannot play: ${(e as Error).message}`);
+    }
   }
 
   const compat = loaded ? op1Stock.compatibility(loaded.patch) : null;
@@ -54,12 +52,14 @@ export function Inspector() {
       <div
         onDrop={onDrop}
         onDragOver={(e) => e.preventDefault()}
-        style={{ border: '2px dashed #999', padding: 24, borderRadius: 8, textAlign: 'center' }}
+        className="dropzone"
       >
         <p>Drop an OP-1 .aif patch here, or</p>
-        <input type="file" accept=".aif,.aiff" onChange={onPick} />
+        <label>
+          Choose a patch file <input type="file" accept=".aif,.aiff" onChange={onPick} />
+        </label>
       </div>
-      {error && <p role="alert" style={{ color: '#b00020' }}>Could not read file: {error}</p>}
+      {error && <p role="alert" className="error">Could not read file: {error}</p>}
       {loaded && compat && (
         <div>
           <h3>{loaded.fileName}</h3>
