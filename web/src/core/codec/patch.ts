@@ -11,10 +11,24 @@ export interface Patch {
   meta: Op1Meta | null;
   comm: CommInfo;
   form: IffForm;
-  /** The bytes this patch was read from. Unchanged operations copy these verbatim. */
+  /**
+   * The current bytes of this patch: the bytes it was read from (aliasing the caller's buffer,
+   * not copied) or, after withMeta, the re-serialised file. Always equal to writePatch(patch).
+   */
   raw: Uint8Array;
   /** Filler bytes that followed the JSON in the original APPL chunk. */
   op1Trailing: Uint8Array | null;
+  /**
+   * True when re-serialising the metadata reproduces the original APPL chunk byte for byte.
+   * False means an edit will canonicalise the chunk. True when there is no APPL chunk.
+   */
+  op1Canonical: boolean;
+}
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 export class PatchError extends Error {
@@ -42,6 +56,7 @@ export function readPatch(bytes: Uint8Array): Patch {
 
   let meta: Op1Meta | null = null;
   let op1Trailing: Uint8Array | null = null;
+  let op1Canonical = true;
   const op1Chunks = form.chunks.filter(isOp1Chunk);
   if (op1Chunks.length > 1) throw new PatchError('more than one op-1 APPL chunk');
   const applChunk = op1Chunks[0];
@@ -50,18 +65,23 @@ export function readPatch(bytes: Uint8Array): Patch {
       const content = parseOp1Chunk(applChunk);
       meta = content.meta as Op1Meta;
       op1Trailing = content.trailing;
+      op1Canonical = bytesEqual(buildOp1Chunk(content.meta, content.trailing).data, applChunk.data);
     } catch (error) {
       throw new PatchError(`bad op-1 metadata: ${(error as Error).message}`);
     }
   }
   const kind = metaKind(meta);
   const name = typeof meta?.name === 'string' ? meta.name : '';
-  return { kind, name, meta, comm, form, raw: bytes, op1Trailing };
+  return { kind, name, meta, comm, form, raw: bytes, op1Trailing, op1Canonical };
 }
 
-/** Returns a copy of the patch carrying new metadata. The audio chunks are untouched. */
+/**
+ * Returns a copy of the patch carrying new metadata. The audio chunks are untouched; `raw` is
+ * re-serialised so it stays equal to writePatch(result).
+ */
 export function withMeta(patch: Patch, meta: Op1Meta): Patch {
-  return { ...patch, meta, kind: metaKind(meta), name: meta.name };
+  const next: Patch = { ...patch, meta, kind: metaKind(meta), name: meta.name, op1Canonical: true };
+  return { ...next, raw: writePatch(next) };
 }
 
 /**

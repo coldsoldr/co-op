@@ -142,3 +142,59 @@ describe('writePatch APPL placement', () => {
     expect(ids(writePatch(patch))).toEqual(['COMM', 'APPL', 'SSND']);
   });
 });
+
+describe('op1Canonical', () => {
+  const samples = Int16Array.from([0, 1000, -1000, 0]);
+  const comm = () =>
+    buildComm(
+      { channels: 1, frames: samples.length, bitsPerSample: 16, sampleRate: 44100, compression: 'NONE', compressionName: '' },
+      'AIFF',
+    );
+
+  it.each(['synth-cluster.aif', 'synth-sampler-sowt.aif', 'drum-boombap.aif', 'no-metadata.aif'])(
+    'generated fixture %s is canonical',
+    (name) => {
+      expect(readPatch(fixture(name)).op1Canonical).toBe(true);
+    },
+  );
+
+  it.each(['synth.aif', 'drum.aif'])('real device file %s is canonical', (name) => {
+    expect(readPatch(fixture(`real/${name}`)).op1Canonical).toBe(true);
+  });
+
+  it('reads pretty-printed metadata as non-canonical but still usable', () => {
+    const encoder = new TextEncoder();
+    const json = encoder.encode(JSON.stringify(SYNTH_META, null, 2));
+    const data = new Uint8Array(4 + json.length + 1);
+    data.set(encoder.encode('op-1'), 0);
+    data.set(json, 4);
+    data[4 + json.length] = 0x0a;
+    const pretty: Chunk = { id: 'APPL', data };
+    const bytes = writeForm({ formType: 'AIFF', chunks: [comm(), pretty, buildSsnd(samples, false)] });
+    const patch = readPatch(bytes);
+    expect(patch.op1Canonical).toBe(false);
+    expect(patch.kind).toBe('synth');
+    expect(patch.name).toBe('default');
+    expect(patch.meta).toEqual(SYNTH_META);
+    const edited = readPatch(writePatch(withMeta(patch, { ...SYNTH_META, name: 'tidy' })));
+    expect(edited.op1Canonical).toBe(true);
+    expect(edited.name).toBe('tidy');
+  });
+});
+
+describe('raw', () => {
+  it('aliases the input bytes on read', () => {
+    const bytes = fixture('synth-cluster.aif');
+    expect(readPatch(bytes).raw).toBe(bytes);
+  });
+
+  it('is the re-serialised file after withMeta and leaves the original alone', () => {
+    const bytes = fixture('synth-cluster.aif');
+    const original = readPatch(bytes);
+    const renamed = withMeta(original, { ...SYNTH_META, name: 'renamed' });
+    expect(Array.from(renamed.raw)).toEqual(Array.from(writePatch(renamed)));
+    expect(Array.from(renamed.raw)).not.toEqual(Array.from(bytes));
+    expect(original.raw).toBe(bytes);
+    expect(Array.from(original.raw)).toEqual(Array.from(fixture('synth-cluster.aif')));
+  });
+});
