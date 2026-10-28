@@ -27,16 +27,18 @@ import {
   type SortDirection,
   type SortKey,
 } from './rows';
-import { useDevice, type Device, type Operation } from './useDevice';
+import type { Device, Operation } from './useDevice';
 
 /** React does not type webkitdirectory; it passes the attribute through to the DOM. */
 const folderInputProps = { webkitdirectory: '', directory: '' } as InputHTMLAttributes<HTMLInputElement>;
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-/** `active` is false while the Library tab is hidden; playback stops then. */
-export function Library({ active = true }: { active?: boolean }) {
-  const device = useDevice();
+/**
+ * `device` is the connection shared with the other tabs. `active` is false while the Library tab
+ * is hidden; playback stops then.
+ */
+export function Library({ device, active = true }: { device: Device; active?: boolean }) {
   return (
     <section aria-labelledby="library-heading">
       <h2 id="library-heading">Device library</h2>
@@ -153,6 +155,9 @@ function Connected({ device, active }: { device: Device; active: boolean }) {
   const [playing, setPlaying] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const playingRef = useRef<string | null>(null);
+  /** Bumped by every play click and by hiding the tab, so a read that finishes late never starts. */
+  const playToken = useRef(0);
+  const activeRef = useRef(active);
   const [view, setView] = useState<View>('folders');
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'ascending' });
@@ -161,17 +166,24 @@ function Connected({ device, active }: { device: Device; active: boolean }) {
   const store = source?.store ?? null;
 
   useEffect(() => {
-    if (!active) stopRef.current?.();
+    activeRef.current = active;
+    if (!active) {
+      playToken.current++;
+      stopRef.current?.();
+    }
   }, [active]);
   useEffect(() => () => stopRef.current?.(), []);
 
   const togglePlay = useCallback(
     async (path: string): Promise<void> => {
+      const token = ++playToken.current;
       const wasPlaying = stopRef.current !== null && playingRef.current === path;
       stopRef.current?.();
       if (wasPlaying || !store) return;
       // Patches are not kept in memory; read the file again to play it.
       const patch = readPatch(await store.read(path));
+      // A later click (or hiding the tab) while the file was being read wins.
+      if (token !== playToken.current || !activeRef.current) return;
       const stop = playPcm(decodePcm(patch), patch.comm.sampleRate, () => {
         if (stopRef.current === stop) {
           stopRef.current = null;
@@ -201,10 +213,11 @@ function Connected({ device, active }: { device: Device; active: boolean }) {
   function downloadChanges(): void {
     if (!staged) return;
     saveBlob(zipBlob(exportChangeSet(staged.changes())), `op1-changes-${dateStamp(new Date())}.zip`);
+    device.markDownloaded();
   }
 
   function requestDisconnect(): void {
-    if (device.changeCount > 0) setConfirmDisconnect(true);
+    if (device.unsavedChanges) setConfirmDisconnect(true);
     else device.disconnect();
   }
 
@@ -253,6 +266,9 @@ function Connected({ device, active }: { device: Device; active: boolean }) {
         <p>
           Source: <strong>{source.store.label || 'dropped folder'}</strong>
           {staged ? ' (read-only copy)' : ''}{' '}
+          <button type="button" onClick={() => void device.refresh()} disabled={device.busy}>
+            Refresh
+          </button>{' '}
           <button type="button" onClick={requestDisconnect} disabled={device.busy}>
             Disconnect
           </button>
@@ -288,16 +304,21 @@ function Connected({ device, active }: { device: Device; active: boolean }) {
         </div>
       )}
 
-      {device.recovered.length > 0 && (
+      {(device.recovered.length > 0 || device.recoveryError) && (
         <div className="notice" role="status">
-          <p>An earlier write was interrupted; these files were put back:</p>
-          <ul className="file-list">
-            {device.recovered.map((path) => (
-              <li key={path}>
-                <code>{path}</code>
-              </li>
-            ))}
-          </ul>
+          {device.recovered.length > 0 && (
+            <>
+              <p>An earlier write was interrupted; these files were put back:</p>
+              <ul className="file-list">
+                {device.recovered.map((path) => (
+                  <li key={path}>
+                    <code>{path}</code>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {device.recoveryError && <p className="error">{device.recoveryError}</p>}
         </div>
       )}
 
@@ -341,6 +362,7 @@ function Connected({ device, active }: { device: Device; active: boolean }) {
             <thead>
               <tr>
                 <th scope="col" className="select">
+                  <span className="visually-hidden">Select</span>
                   <input
                     type="checkbox"
                     aria-label="Select all shown patches"

@@ -1,6 +1,7 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { Inspector } from './ui/Inspector';
 import { Library } from './ui/Library';
+import { useDevice } from './ui/useDevice';
 
 const TABS = [
   { id: 'library', label: 'Library' },
@@ -11,6 +12,8 @@ type TabId = (typeof TABS)[number]['id'];
 
 export function App() {
   const [tab, setTab] = useState<TabId>('library');
+  // One connection for every tab, so the Packs tab installs onto the drive the Library shows.
+  const device = useDevice();
   const buttons = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
 
   /** Arrow keys, Home and End move between tabs, as in the WAI-ARIA tabs pattern. */
@@ -55,7 +58,7 @@ export function App() {
         </div>
         {/* Both panels stay mounted so the connected drive and inspected file survive a tab switch. */}
         <div role="tabpanel" id="panel-library" aria-labelledby="tab-library" hidden={tab !== 'library'}>
-          <Library active={tab === 'library'} />
+          <Library device={device} active={tab === 'library'} />
         </div>
         <div role="tabpanel" id="panel-inspector" aria-labelledby="tab-inspector" hidden={tab !== 'inspector'}>
           <Inspector active={tab === 'inspector'} />

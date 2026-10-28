@@ -58,17 +58,28 @@ test('opens a dropped drive read-only, stages a delete and downloads the changes
   await dialog.getByRole('button', { name: 'Delete' }).click();
 
   await expect(rows).toHaveCount(1);
-  const download = page.getByRole('button', { name: 'Download changes (1)' });
-  await expect(download).toBeEnabled();
-  const [file] = await Promise.all([page.waitForEvent('download'), download.click()]);
-  expect(file.suggestedFilename()).toMatch(/^op1-changes-\d{4}-\d{2}-\d{2}\.zip$/);
 
-  // Staged changes are never dropped without asking.
+  // Staged changes are never dropped without asking while they have not been downloaded.
   await page.getByRole('button', { name: 'Disconnect' }).click();
   const discard = page.getByRole('dialog', { name: 'Discard staged changes?' });
   await expect(discard).toContainText('drum/user/boombap.aif');
   await discard.getByRole('button', { name: 'Cancel' }).click();
   await expect(rows).toHaveCount(1);
+
+  // Refresh re-reads the drive and keeps the staged change.
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(page.getByRole('columnheader', { name: 'Select' })).toBeVisible();
+
+  const download = page.getByRole('button', { name: 'Download changes (1)' });
+  await expect(download).toBeEnabled();
+  const [file] = await Promise.all([page.waitForEvent('download'), download.click()]);
+  expect(file.suggestedFilename()).toMatch(/^op1-changes-\d{4}-\d{2}-\d{2}\.zip$/);
+
+  // Once downloaded, disconnecting needs no confirmation.
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+  await expect(page.getByRole('dialog', { name: 'Discard staged changes?' })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Connect OP-1' })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Inspector' }).click();
   await expect(page.getByRole('heading', { name: 'Patch inspector' })).toBeVisible();

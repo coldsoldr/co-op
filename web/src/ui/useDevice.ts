@@ -52,10 +52,19 @@ export interface Device {
   error: string | null;
   /** Files put back by recovery of interrupted writes when the drive was opened. */
   recovered: string[];
+  /** Why recovering interrupted writes failed when the drive was opened, if it did. */
+  recoveryError: string | null;
   /** Entries a drop could not read. */
   skipped: string[];
   /** Staged changes waiting for download, counted by distinct file (read-only sources only). */
   changeCount: number;
+  /**
+   * True when staged changes grew since the last download (or exist and were never downloaded),
+   * or a write is in flight; leaving or disconnecting then asks first.
+   */
+  unsavedChanges: boolean;
+  /** Records that the current staged changes were downloaded. */
+  markDownloaded(): void;
   /** A folder remembered from an earlier visit, offered for reconnecting. */
   remembered: FileSystemDirectoryHandle | null;
   fsAccess: boolean;
@@ -124,8 +133,11 @@ export function useDevice(): Device {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recovered, setRecovered] = useState<string[]>([]);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<string[]>([]);
   const [changeCount, setChangeCount] = useState(0);
+  /** changeCount when the changes were last downloaded. */
+  const [downloadedCount, setDownloadedCount] = useState(0);
   const [remembered, setRemembered] = useState<FileSystemDirectoryHandle | null>(null);
   const [fsAccess] = useState(isFsAccessSupported);
   const [pending, setPending] = useState(0);
@@ -168,7 +180,8 @@ export function useDevice(): Device {
   }, [fsAccess]);
 
   // Warn before leaving with staged changes not downloaded, or with a write in flight.
-  const dirty = changeCount > 0 || mutating > 0;
+  const unsavedChanges = changeCount > downloadedCount;
+  const dirty = unsavedChanges || mutating > 0;
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent): void => {
@@ -240,6 +253,8 @@ export function useDevice(): Device {
       const live = (): boolean => id === session.current;
       setError(null);
       setRecovered([]);
+      setRecoveryError(null);
+      setDownloadedCount(0);
       setSkipped(droppedSkips);
       setLoading(true);
       try {
@@ -249,7 +264,8 @@ export function useDevice(): Device {
         try {
           restored = await recover(base, found.profile);
         } catch (e) {
-          setError(`could not finish recovering interrupted writes: ${messageOf(e)}`);
+          // Kept apart from error, which the load below clears.
+          setRecoveryError(`could not finish recovering interrupted writes: ${messageOf(e)}`);
         }
         if (!live()) return;
         const staged = base.capabilities.write ? null : new StagedStore(base);
@@ -384,9 +400,13 @@ export function useDevice(): Device {
     setLoading(false);
     setError(null);
     setRecovered([]);
+    setRecoveryError(null);
     setSkipped([]);
     setChangeCount(0);
+    setDownloadedCount(0);
   }, [setRows, setSource]);
+
+  const markDownloaded = useCallback(() => setDownloadedCount(changeCount), [changeCount]);
 
   return {
     source,
@@ -399,8 +419,11 @@ export function useDevice(): Device {
     busy: pending > 0,
     error,
     recovered,
+    recoveryError,
     skipped,
     changeCount,
+    unsavedChanges,
+    markDownloaded,
     remembered,
     fsAccess,
     connect,
