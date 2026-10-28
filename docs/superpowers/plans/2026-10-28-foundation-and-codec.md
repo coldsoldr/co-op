@@ -21,7 +21,7 @@
 size              4 bytes big-endian, counts everything after this field
 "op-1"            4 bytes application signature
 JSON text         compact, keys in alphabetical order
-filler            0x0A then 0x1E bytes until the chunk size is even
+filler            0x0A, then one 0x20 byte if needed to make the chunk size even
 ```
 
 The FORM size at bytes 4..8 is the file length minus 8. IFF chunks with an odd size carry one pad byte that is not counted in the size.
@@ -30,6 +30,8 @@ The FORM size at bytes 4..8 is the file length minus 8. IFF chunks with an odd s
 `adsr[8]`, `fx_active`, `fx_params[8]`, `fx_type`, `knobs[8]`, `lfo_active`, `lfo_params[8]`, `lfo_type`, `name`, `octave`, `synth_version`, `type` (engine: `cluster`, `digital`, `dna`, `drwave`, `dsynth`, `fm`, `phase`, `pulse`, `string`, `voltage`, `sampler`, `iter`), optional `base_freq` for samplers.
 
 **Drum JSON** fields: `drum_version`, `dyna_env[8]`, `end[24]`, `fx_active`, `fx_params[8]`, `fx_type`, `lfo_active`, `lfo_params[8]`, `lfo_type`, `name`, `octave`, `pitch[24]`, `playmode[24]`, `reverse[24]`, `start[24]`, `type` (`"drum"`), `volume[24]`.
+
+**Sample rates:** drum files are 44.1 kHz; real synth sampler files have been seen at 22.05 kHz, so never assume 44100.
 
 **Endianness:** plain `AIFF` sound data is big-endian. `AIFC` files declare a compression type in `COMM`; `NONE` or `twos` is big-endian, `sowt` is little-endian. The codec handles both.
 
