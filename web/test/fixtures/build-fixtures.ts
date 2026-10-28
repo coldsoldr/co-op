@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { writeForm, type Chunk } from '../../src/core/codec/iff';
 import { buildComm } from '../../src/core/codec/comm';
 import { buildOp1Chunk } from '../../src/core/codec/op1-chunk';
@@ -38,7 +38,7 @@ const specs: Spec[] = [
   { file: 'no-metadata.aif', formType: 'AIFF', meta: null, seconds: 0.1, hz: 440 },
 ];
 
-for (const spec of specs) {
+function buildFixture(spec: Spec): Uint8Array {
   const samples = sine(spec.seconds, spec.hz);
   const little = spec.formType === 'AIFC';
   const chunks: Chunk[] = [];
@@ -51,6 +51,7 @@ for (const spec of specs) {
         bitsPerSample: 16,
         sampleRate: SAMPLE_RATE,
         compression: little ? 'sowt' : 'NONE',
+        // Deliberately not the device's own string: its odd length exercises the Pascal-string pad byte.
         compressionName: little ? 'not compressed' : '',
       },
       spec.formType,
@@ -58,8 +59,19 @@ for (const spec of specs) {
   );
   if (spec.meta) chunks.push(buildOp1Chunk(spec.meta));
   chunks.push(buildSsnd(samples, little));
-  const bytes = writeForm({ formType: spec.formType, chunks });
-  const target = fileURLToPath(new URL(spec.file, import.meta.url));
-  writeFileSync(target, bytes);
-  console.log(`${spec.file}: ${bytes.length} bytes`);
+  return writeForm({ formType: spec.formType, chunks });
+}
+
+/** Pure: returns every generated fixture keyed by file name, without touching the disk. */
+export function buildFixtures(): Map<string, Uint8Array> {
+  return new Map(specs.map((spec) => [spec.file, buildFixture(spec)]));
+}
+
+// CLI: `pnpm --filter @co-op/web fixtures` writes the files next to this script. Importing the
+// module (as fixtures.test.ts does) must not write anything, hence the entry-point guard.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  for (const [file, bytes] of buildFixtures()) {
+    writeFileSync(fileURLToPath(new URL(file, import.meta.url)), bytes);
+    console.log(`${file}: ${bytes.length} bytes`);
+  }
 }
