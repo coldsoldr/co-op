@@ -7,6 +7,7 @@ import {
   diffBackup,
   applyRestore,
   BackupError,
+  RestoreError,
   MANIFEST_FILE,
   type BackupManifest,
 } from './backup';
@@ -46,6 +47,10 @@ const backedUp = [
 
 const drive = (): MemoryStore => new MemoryStore(driveFiles(), { label: 'OP-1' });
 
+const bytesOf = async (blob: Blob): Promise<Uint8Array> => new Uint8Array(await blob.arrayBuffer());
+const backupZip = async (store: MemoryStore = drive(), paths?: string[]): Promise<Uint8Array> =>
+  bytesOf(await createBackup(store, op1Stock, paths ? { now, paths } : { now }));
+
 const manifestOf = (entries: Unzipped): BackupManifest =>
   JSON.parse(strFromU8(entries[MANIFEST_FILE] as Uint8Array)) as BackupManifest;
 
@@ -56,15 +61,33 @@ const tamper = (zip: Uint8Array, edit: (entries: Unzipped) => void): Uint8Array 
   return zipSync(entries);
 };
 
+/** A hand-made backup zip listing `files` (path to bytes) under the given profile. */
+const handMade = (files: Record<string, Uint8Array>, profile = 'op1/stock', extra: Record<string, Uint8Array> = {}) => {
+  const manifest: BackupManifest = {
+    format: 1,
+    createdAt: NOW.toISOString(),
+    profile,
+    label: 'x',
+    files: Object.entries(files).map(([path, bytes]) => ({ path, size: bytes.length, sha256: sha(bytes) })),
+  };
+  return zipSync({ ...files, ...extra, [MANIFEST_FILE]: strToU8(JSON.stringify(manifest)) });
+};
+
 describe('createBackup', () => {
+  it('returns a zip Blob', async () => {
+    const blob = await createBackup(drive(), op1Stock, { now });
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe('application/zip');
+  });
+
   it('zips every non-dot file under the patch roots, at any depth, with raw bytes', async () => {
-    const entries = unzipSync(await createBackup(drive(), op1Stock, undefined, now));
+    const entries = unzipSync(await backupZip());
     expect(Object.keys(entries).sort()).toEqual([...backedUp, MANIFEST_FILE].sort());
     for (const path of backedUp) expectSameBytes(entries[path], driveFiles()[path] as Uint8Array, path);
   });
 
   it('writes a manifest with format, time, profile, label and per-file size and sha256', async () => {
-    const manifest = manifestOf(unzipSync(await createBackup(drive(), op1Stock, undefined, now)));
+    const manifest = manifestOf(unzipSync(await backupZip()));
     expect(manifest).toEqual({
       format: 1,
       createdAt: '2026-10-28T12:34:56.000Z',
@@ -78,29 +101,48 @@ describe('createBackup', () => {
   });
 
   it('is deterministic for a given time', async () => {
-    const one = await createBackup(drive(), op1Stock, undefined, now);
-    const two = await createBackup(drive(), op1Stock, undefined, now);
-    expectSameBytes(one, two, 'backup zip');
+    expectSameBytes(await backupZip(), await backupZip(), 'backup zip');
   });
 
   it('reports progress per file', async () => {
     const progress: Array<[number, number]> = [];
-    await createBackup(drive(), op1Stock, (done, total) => progress.push([done, total]), now);
+    await createBackup(drive(), op1Stock, { now, onProgress: (done, total) => progress.push([done, total]) });
     expect(progress).toEqual([[1, 5], [2, 5], [3, 5], [4, 5], [5, 5]]);
   });
 
   it('works on a read-only store', async () => {
     const store = new MemoryStore(driveFiles(), { write: false });
-    expect(manifestOf(unzipSync(await createBackup(store, op1Stock, undefined, now))).files).toHaveLength(5);
+    expect(manifestOf(unzipSync(await backupZip(store))).files).toHaveLength(5);
   });
+
+  it('backs up only the selected paths', async () => {
+    const entries = unzipSync(await backupZip(drive(), ['synth/user/notes.txt', 'drum/user/808.aif']));
+    expect(Object.keys(entries).sort()).toEqual([MANIFEST_FILE, 'drum/user/808.aif', 'synth/user/notes.txt']);
+    expect(manifestOf(entries).files.map((f) => f.path)).toEqual(['drum/user/808.aif', 'synth/user/notes.txt']);
+  });
+
+  it.each(['tape/track1.aif', 'synth/user/none.aif', 'synth/user/.co-op-tmp-x.aif'])(
+    'refuses the selected path %j, which is not a backed-up file under the patch roots',
+    async (path) => {
+      await expect(createBackup(drive(), op1Stock, { now, paths: [path] })).rejects.toThrow(BackupError);
+    },
+  );
 });
 
 describe('readBackup', () => {
-  it('returns the manifest and every listed file', async () => {
-    const backup = await readBackup(await createBackup(drive(), op1Stock, undefined, now));
-    expect(backup.manifest.createdAt).toBe('2026-10-28T12:34:56.000Z');
-    expect([...backup.files.keys()]).toEqual(backedUp);
-    expectSameBytes(backup.files.get('drum/user/808.aif'), prettyDrum, '808');
+  it('returns the manifest and every listed file, from bytes or a Blob', async () => {
+    const zip = await backupZip();
+    for (const input of [zip, new Blob([zip as Uint8Array<ArrayBuffer>])]) {
+      const backup = await readBackup(input);
+      expect(backup.manifest.createdAt).toBe('2026-10-28T12:34:56.000Z');
+      expect([...backup.files.keys()]).toEqual(backedUp);
+      expectSameBytes(backup.files.get('drum/user/808.aif'), prettyDrum, '808');
+    }
+  });
+
+  it('never returns entries the manifest does not list', async () => {
+    const zip = handMade({ 'synth/user/a.aif': b(1) }, 'op1/stock', { 'synth/user/extra.aif': b(2) });
+    expect([...(await readBackup(zip)).files.keys()]).toEqual(['synth/user/a.aif']);
   });
 
   it('rejects something that is not a zip', async () => {
@@ -116,21 +158,21 @@ describe('readBackup', () => {
   });
 
   it('rejects an unknown format', async () => {
-    const zip = tamper(await createBackup(drive(), op1Stock, undefined, now), (e) => {
+    const zip = tamper(await backupZip(), (e) => {
       e[MANIFEST_FILE] = strToU8(JSON.stringify({ ...manifestOf(e), format: 2 }));
     });
     await expect(readBackup(zip)).rejects.toThrow(/format/);
   });
 
   it('rejects a backup with a listed file missing', async () => {
-    const zip = tamper(await createBackup(drive(), op1Stock, undefined, now), (e) => {
+    const zip = tamper(await backupZip(), (e) => {
       delete e['synth/user/notes.txt'];
     });
     await expect(readBackup(zip)).rejects.toThrow(/synth\/user\/notes\.txt/);
   });
 
   it('rejects a tampered file whose sha256 no longer matches', async () => {
-    const zip = tamper(await createBackup(drive(), op1Stock, undefined, now), (e) => {
+    const zip = tamper(await backupZip(), (e) => {
       const bytes = (e['drum/user/808.aif'] as Uint8Array).slice();
       bytes[bytes.length - 1] = (bytes[bytes.length - 1] as number) ^ 0xff;
       e['drum/user/808.aif'] = bytes;
@@ -142,25 +184,34 @@ describe('readBackup', () => {
   it.each(['../evil.aif', '/abs.aif', 'synth/../x.aif', 'synth/.hidden.aif', ''])(
     'rejects the unsafe path %j',
     async (path) => {
-      const bytes = b(1);
-      const manifest: BackupManifest = {
-        format: 1,
-        createdAt: NOW.toISOString(),
-        profile: 'op1/stock',
-        label: 'x',
-        files: [{ path, size: 1, sha256: sha(bytes) }],
-      };
-      const zip = zipSync({ [MANIFEST_FILE]: strToU8(JSON.stringify(manifest)), [path]: bytes });
-      await expect(readBackup(zip)).rejects.toThrow(BackupError);
+      await expect(readBackup(handMade({ [path]: b(1) }))).rejects.toThrow(BackupError);
     },
   );
+
+  it.each(['tape/track1.aif', 'album/side_a.aif', 'stray.aif'])(
+    'rejects %j, which is outside the profile patch roots',
+    async (path) => {
+      await expect(readBackup(handMade({ [path]: b(1) }))).rejects.toThrow(/outside/);
+    },
+  );
+
+  it('rejects paths that differ only in case', async () => {
+    const zip = handMade({ 'synth/user/a.aif': b(1), 'synth/User/A.aif': b(2) });
+    await expect(readBackup(zip)).rejects.toThrow(/case/);
+  });
+
+  it('accepts any folder path for a profile it does not know, but not a top-level file', async () => {
+    const ok = handMade({ 'presets/a.aif': b(1) }, 'future/device');
+    expect([...(await readBackup(ok)).files.keys()]).toEqual(['presets/a.aif']);
+    await expect(readBackup(handMade({ 'a.aif': b(1) }, 'future/device'))).rejects.toThrow(/outside/);
+  });
 });
 
 describe('diffBackup and applyRestore', () => {
   /** Backs up the drive, then changes one file, adds one and deletes one. */
   const scenario = async () => {
     const store = drive();
-    const backup = await readBackup(await createBackup(store, op1Stock, undefined, now));
+    const backup = await readBackup(await backupZip(store));
     await store.write('synth/user/cluster.aif', b(0));
     await store.write('drum/user/added.aif', b(7));
     await store.remove('drum/user/808.aif');
@@ -181,9 +232,26 @@ describe('diffBackup and applyRestore', () => {
     });
   });
 
-  it('restores only the selected paths, byte for byte, deleting nothing', async () => {
+  it('reports a backed-up path that is now a folder on the device as changed', async () => {
+    const backup = await readBackup(handMade({ 'synth/user/a.aif': b(1) }));
+    const store = new MemoryStore({ 'synth/user/a.aif/inner.aif': b(2) });
+    expect((await diffBackup(store, backup)).entries).toEqual([{ path: 'synth/user/a.aif', status: 'changed' }]);
+  });
+
+  it('uses the top-level folders of the backup for a profile it does not know', async () => {
+    const backup = await readBackup(handMade({ 'presets/a.aif': b(1) }, 'future/device'));
+    const store = new MemoryStore({ 'presets/a.aif': b(1), 'presets/b.aif': b(2), 'synth/user/c.aif': b(3) });
+    expect(await diffBackup(store, backup)).toEqual({
+      entries: [{ path: 'presets/a.aif', status: 'same' }],
+      onDeviceOnly: ['presets/b.aif'],
+    });
+  });
+
+  it('restores only the selected paths, byte for byte, deleting nothing, reporting each path', async () => {
     const { store, backup } = await scenario();
-    await applyRestore(store, backup, ['drum/user/808.aif', 'synth/user/cluster.aif']);
+    const restored: string[] = [];
+    await applyRestore(store, backup, ['drum/user/808.aif', 'synth/user/cluster.aif'], (path) => restored.push(path));
+    expect(restored).toEqual(['drum/user/808.aif', 'synth/user/cluster.aif']);
     const expected = driveFiles();
     expected['drum/user/added.aif'] = b(7);
     expectSameFiles(store.snapshot(), expected);
@@ -205,15 +273,33 @@ describe('diffBackup and applyRestore', () => {
     expectSameFiles(store.snapshot(), before);
   });
 
+  it('reports the paths already restored when a write fails part-way', async () => {
+    class FailOn extends MemoryStore {
+      override async write(path: string, bytes: Uint8Array): Promise<void> {
+        if (path.endsWith('cluster.aif')) throw new StoreError('disk full');
+        return super.write(path, bytes);
+      }
+    }
+    const backup = await readBackup(await backupZip());
+    const store = new FailOn({});
+    const error = await applyRestore(store, backup, ['drum/user/808.aif', 'synth/user/cluster.aif', 'synth/user/notes.txt'])
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RestoreError);
+    expect(error).toBeInstanceOf(BackupError);
+    expect((error as RestoreError).restored).toEqual(['drum/user/808.aif']);
+    expect((error as Error).message).toMatch(/synth\/user\/cluster\.aif/);
+    expect((error as Error).cause).toBeInstanceOf(StoreError);
+  });
+
   it('refuses a read-only store', async () => {
-    const backup = await readBackup(await createBackup(drive(), op1Stock, undefined, now));
+    const backup = await readBackup(await backupZip());
     const store = new MemoryStore({}, { write: false });
     await expect(applyRestore(store, backup, ['drum/user/808.aif'])).rejects.toThrow(StoreError);
   });
 
   it('carries a non-canonical real device file through backup and restore byte for byte', async () => {
     const source = new MemoryStore({ 'drum/user/808.aif': prettyDrum, 'drum/user/real.aif': realDrum });
-    const backup = await readBackup(await createBackup(source, op1Stock, undefined, now));
+    const backup = await readBackup(await backupZip(source));
     const target = new MemoryStore({ 'drum/user/808.aif': b(1) });
     await applyRestore(target, backup, ['drum/user/808.aif', 'drum/user/real.aif']);
     const files = target.snapshot();
