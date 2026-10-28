@@ -27,6 +27,7 @@ export class MemoryStore implements DeviceStore {
     this.label = options.label ?? 'memory';
     for (const [path, bytes] of Object.entries(files)) {
       const key = joinPath(path);
+      if (this.isDir(key)) throw new StoreError(`${key} is both a file and a folder`);
       this.addParents(key);
       this.files.set(key, bytes.slice());
     }

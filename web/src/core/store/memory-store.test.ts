@@ -53,6 +53,12 @@ describe('MemoryStore', () => {
     expect(await store.read('synth/user/a.aif')).toEqual(Uint8Array.of(1, 2));
   });
 
+  it('rejects a file path that is also a folder, in either input order', () => {
+    const file = Uint8Array.of(1);
+    expect(() => new MemoryStore({ 'a/b': file, 'a/b/c.aif': file })).toThrow(StoreError);
+    expect(() => new MemoryStore({ 'a/b/c.aif': file, 'a/b': file })).toThrow(StoreError);
+  });
+
   it('returns copies from read', async () => {
     const store = new MemoryStore(files());
     (await store.read('synth/user/a.aif')).fill(42);
