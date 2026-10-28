@@ -99,6 +99,21 @@ describe('DropStore', () => {
     expect(await store.read('synth/user/a.aif')).toEqual(Uint8Array.of(1));
   });
 
+  it('keeps a single dropped OP-1 drive folder (synth, drum, tape, album, mods) as the drive root content', async () => {
+    for (const name of ['synth', 'Drum', 'TAPE', 'album', 'mods']) {
+      const store = new DropStore([{ path: `${name}/user/a.aif`, file: file('a.aif', 1) }]);
+      expect(store.label).toBe('OP-1');
+      expect(await store.list('')).toEqual([{ name, kind: 'dir' }]);
+      expect(await store.read(`${name}/user/a.aif`)).toEqual(Uint8Array.of(1));
+    }
+  });
+
+  it('still strips a single dropped folder with any other name', async () => {
+    const store = new DropStore([{ path: 'synths/synth/user/a.aif', file: file('a.aif', 1) }]);
+    expect(store.label).toBe('synths');
+    expect(await store.read('synth/user/a.aif')).toEqual(Uint8Array.of(1));
+  });
+
   it('takes the label for a multi-folder drop from the options', () => {
     const store = new DropStore(
       [

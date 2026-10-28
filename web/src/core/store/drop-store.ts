@@ -12,7 +12,7 @@ export interface DroppedFile {
 export interface DropStoreOptions {
   /**
    * The source label. Defaults to the folder name for a single dropped folder, and to 'OP-1' when
-   * several folders were dropped together.
+   * several folders, or one of the drive's own folders, were dropped.
    */
   label?: string;
 }
@@ -20,14 +20,17 @@ export interface DropStoreOptions {
 /** Label for a drop of several top-level folders, taken to be the drive's own contents. */
 const DRIVE_ROOT_LABEL = 'OP-1';
 
+/** Top-level folders of an OP-1 drive, lower-cased; one of these dropped alone is not the drive. */
+const DRIVE_FOLDERS: ReadonlySet<string> = new Set(['synth', 'drum', 'tape', 'album', 'mods']);
+
 /**
  * A read-only DeviceStore over a folder dropped onto the page or picked with a `webkitdirectory`
  * input, for browsers without the File System Access API.
  *
  * Every path must start with a top-level folder. With one top-level folder (the drive itself),
- * that segment is stripped and becomes the label. With several (the drive's folders, such as
- * synth and drum, selected and dropped together), they are the drive root's contents and paths
- * are kept as they are. A loose top-level file is refused with a StoreError. Changes are refused;
+ * that segment is stripped and becomes the label, unless it is named like one of the drive's own
+ * folders (synth, drum, tape, album, mods, in any case): then it, like several top-level folders
+ * dropped together, is taken as the drive root's contents and paths are kept as they are. A loose top-level file is refused with a StoreError. Changes are refused;
  * wrap it in a staging store to collect them.
  */
 export class DropStore implements DeviceStore {
@@ -46,14 +49,16 @@ export class DropStore implements DeviceStore {
       }
       tops.add(parts[0] as string);
     }
-    const single = tops.size === 1 ? [...tops][0] : undefined;
+    const only = tops.size === 1 ? [...tops][0] : undefined;
+    // A lone 'synth' (say) is one of the drive's own folders, not the drive: keep it as a folder.
+    const single = only !== undefined && !DRIVE_FOLDERS.has(only.toLowerCase()) ? only : undefined;
     for (const { path, file } of entries) {
       const parts = splitPath(path);
       const rest = single === undefined ? parts : parts.slice(1);
       this.files.set(rest.join('/'), file);
       for (let i = 1; i < rest.length; i++) this.dirs.add(rest.slice(0, i).join('/'));
     }
-    this.label = options.label ?? single ?? (tops.size > 1 ? DRIVE_ROOT_LABEL : '');
+    this.label = options.label ?? single ?? (tops.size > 0 ? DRIVE_ROOT_LABEL : '');
   }
 
   async list(path: string): Promise<DirEntry[]> {
