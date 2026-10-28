@@ -1,0 +1,443 @@
+import { describe, it, expect } from 'vitest';
+import { Op1FunClient, toBase64 } from './client';
+import { Op1FunAuthError, Op1FunError, type Op1FunCredentials } from './types';
+import { fixtureBytes } from '../../../test/fixture-bytes';
+
+const creds: Op1FunCredentials = { email: 'me@example.com', token: 'secret-token' };
+const API = 'https://api.op1.fun/v1';
+const WORKER = 'https://worker.example.dev';
+const S3_FILE = 'https://op1fun.s3.amazonaws.com/patches/kick.aif';
+
+interface Call {
+  url: string;
+  init: RequestInit | undefined;
+}
+
+type Handler = (url: string, init: RequestInit | undefined) => Response | Promise<Response>;
+
+function fakeFetch(handler: Handler): { fetch: typeof fetch; calls: Call[] } {
+  const calls: Call[] = [];
+  const impl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    calls.push({ url, init });
+    return handler(url, init);
+  };
+  return { fetch: impl as typeof fetch, calls };
+}
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+function headersOf(call: Call | undefined): Headers {
+  return new Headers(call?.init?.headers);
+}
+
+function hasCredentialHeaders(call: Call | undefined): boolean {
+  const headers = headersOf(call);
+  return headers.has('X-User-Email') || headers.has('X-User-Token');
+}
+
+const patchResource = {
+  id: '42',
+  type: 'patches',
+  attributes: {
+    name: 'Kick Pack Kick',
+    description: 'a kick',
+    license: 'CC BY',
+    public: true,
+    'patch-type': 'drum',
+  },
+  links: { self: 'https://op1.fun/users/alice/patches/42', file: S3_FILE, preview: 'https://op1fun.s3.amazonaws.com/patches/kick.mp3' },
+  relationships: { user: { data: { id: '7', type: 'users' } } },
+};
+
+describe('Op1FunClient API reads', () => {
+  it('getUser sends both auth headers to api.op1.fun and maps the user', async () => {
+    const f = fakeFetch(() =>
+      json({
+        data: {
+          id: 7,
+          type: 'users',
+          attributes: { username: 'alice' },
+          relationships: {
+            patches: { data: [{ id: '42', type: 'patches' }, { id: 43, type: 'patches' }] },
+            packs: { data: [{ id: '9', type: 'packs' }] },
+          },
+        },
+      }),
+    );
+    const client = new Op1FunClient(creds, { fetch: f.fetch });
+    const user = await client.getUser('alice');
+    expect(user).toEqual({ id: '7', username: 'alice', patchIds: ['42', '43'], packIds: ['9'] });
+    expect(f.calls[0]?.url).toBe(`${API}/users/alice`);
+    const headers = headersOf(f.calls[0]);
+    expect(headers.get('X-User-Email')).toBe('me@example.com');
+    expect(headers.get('X-User-Token')).toBe('secret-token');
+  });
+
+  it('encodes the username and id in the path', async () => {
+    const f = fakeFetch(() => json({ data: patchResource }));
+    await new Op1FunClient(creds, { fetch: f.fetch }).getPatch('a b/c', '4 2');
+    expect(f.calls[0]?.url).toBe(`${API}/users/a%20b%2Fc/patches/4%202`);
+  });
+
+  it('getUser tolerates missing attributes and relationships', async () => {
+    const f = fakeFetch(() => json({ data: { id: '7', type: 'users' } }));
+    const user = await new Op1FunClient(creds, { fetch: f.fetch }).getUser('alice');
+    expect(user).toEqual({ id: '7', username: '', patchIds: [], packIds: [] });
+  });
+
+  it('listPatches maps every patch', async () => {
+    const f = fakeFetch(() => json({ data: [patchResource, { id: '43', type: 'patches', attributes: { name: 'Bare' } }] }));
+    const patches = await new Op1FunClient(creds, { fetch: f.fetch }).listPatches('alice');
+    expect(f.calls[0]?.url).toBe(`${API}/users/alice/patches`);
+    expect(patches).toEqual([
+      {
+        id: '42',
+        name: 'Kick Pack Kick',
+        description: 'a kick',
+        license: 'CC BY',
+        public: true,
+        patchType: 'drum',
+        fileUrl: S3_FILE,
+        previewUrl: 'https://op1fun.s3.amazonaws.com/patches/kick.mp3',
+        selfUrl: 'https://op1.fun/users/alice/patches/42',
+        userId: '7',
+      },
+      {
+        id: '43',
+        name: 'Bare',
+        description: '',
+        license: '',
+        public: false,
+        patchType: '',
+        fileUrl: '',
+        previewUrl: '',
+        selfUrl: '',
+        userId: '',
+      },
+    ]);
+  });
+
+  it('getPatch maps a single patch', async () => {
+    const f = fakeFetch(() => json({ data: patchResource }));
+    const patch = await new Op1FunClient(creds, { fetch: f.fetch }).getPatch('alice', '42');
+    expect(f.calls[0]?.url).toBe(`${API}/users/alice/patches/42`);
+    expect(patch.name).toBe('Kick Pack Kick');
+    expect(patch.fileUrl).toBe(S3_FILE);
+  });
+
+  it('listPacks maps every pack', async () => {
+    const f = fakeFetch(() =>
+      json({
+        data: [
+          {
+            id: '9',
+            type: 'packs',
+            attributes: { name: 'Drums', description: 'some drums', public: true },
+            links: { download: `${API}/users/alice/packs/9/download` },
+            relationships: { patches: { data: [{ id: '42', type: 'patches' }] } },
+          },
+          { id: '10', type: 'packs' },
+        ],
+      }),
+    );
+    const packs = await new Op1FunClient(creds, { fetch: f.fetch }).listPacks('alice');
+    expect(f.calls[0]?.url).toBe(`${API}/users/alice/packs`);
+    expect(packs).toEqual([
+      {
+        id: '9',
+        name: 'Drums',
+        description: 'some drums',
+        public: true,
+        patchIds: ['42'],
+        downloadUrl: `${API}/users/alice/packs/9/download`,
+      },
+      { id: '10', name: '', description: '', public: false, patchIds: [], downloadUrl: '' },
+    ]);
+  });
+
+  it('getPack returns the pack and its included patches', async () => {
+    const f = fakeFetch(() =>
+      json({
+        data: {
+          id: '9',
+          type: 'packs',
+          attributes: { name: 'Drums' },
+          relationships: { patches: { data: [{ id: '43', type: 'patches' }, { id: '42', type: 'patches' }] } },
+        },
+        included: [
+          patchResource,
+          { id: '7', type: 'users', attributes: { username: 'alice' } },
+          { id: '43', type: 'patches', attributes: { name: 'Snare' } },
+        ],
+      }),
+    );
+    const { pack, patches } = await new Op1FunClient(creds, { fetch: f.fetch }).getPack('alice', '9');
+    expect(f.calls[0]?.url).toBe(`${API}/users/alice/packs/9`);
+    expect(pack.name).toBe('Drums');
+    expect(patches.map((p) => p.id)).toEqual(['43', '42']);
+  });
+
+  it('getPack tolerates a missing included array', async () => {
+    const f = fakeFetch(() => json({ data: { id: '9', type: 'packs' } }));
+    const { patches } = await new Op1FunClient(creds, { fetch: f.fetch }).getPack('alice', '9');
+    expect(patches).toEqual([]);
+  });
+
+  it('maps 401 to Op1FunAuthError', async () => {
+    const f = fakeFetch(() => json({ errors: [{ title: 'Unauthorized' }] }, 401));
+    const promise = new Op1FunClient(creds, { fetch: f.fetch }).getUser('alice');
+    await expect(promise).rejects.toBeInstanceOf(Op1FunAuthError);
+    await expect(promise).rejects.toBeInstanceOf(Op1FunError);
+  });
+
+  it('maps other HTTP errors to Op1FunError', async () => {
+    const f = fakeFetch(() => new Response('nope', { status: 404 }));
+    const promise = new Op1FunClient(creds, { fetch: f.fetch }).getUser('ghost');
+    await expect(promise).rejects.toBeInstanceOf(Op1FunError);
+    await expect(promise).rejects.not.toBeInstanceOf(Op1FunAuthError);
+  });
+
+  it('maps a network failure to Op1FunError', async () => {
+    const f = fakeFetch(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    await expect(new Op1FunClient(creds, { fetch: f.fetch }).getUser('alice')).rejects.toBeInstanceOf(Op1FunError);
+  });
+
+  it.each([
+    ['data is a string', { data: 'hello' }],
+    ['data is null', { data: null }],
+    ['data is missing', {}],
+    ['data is an array for a single resource', { data: [patchResource] }],
+    ['the resource has no id', { data: { type: 'patches', attributes: {} } }],
+  ])('rejects a single-resource response where %s', async (_label, body) => {
+    const f = fakeFetch(() => json(body));
+    const client = new Op1FunClient(creds, { fetch: f.fetch });
+    await expect(client.getPatch('alice', '42')).rejects.toThrow(new Op1FunError('unexpected response'));
+    await expect(client.getUser('alice')).rejects.toThrow(new Op1FunError('unexpected response'));
+    await expect(client.getPack('alice', '9')).rejects.toThrow(new Op1FunError('unexpected response'));
+  });
+
+  it.each([
+    ['data is an object', { data: patchResource }],
+    ['data is missing', {}],
+    ['an item is not an object', { data: [patchResource, 3] }],
+  ])('rejects a list response where %s', async (_label, body) => {
+    const f = fakeFetch(() => json(body));
+    const client = new Op1FunClient(creds, { fetch: f.fetch });
+    await expect(client.listPatches('alice')).rejects.toThrow(new Op1FunError('unexpected response'));
+    await expect(client.listPacks('alice')).rejects.toThrow(new Op1FunError('unexpected response'));
+  });
+
+  it('rejects a body that is not JSON', async () => {
+    const f = fakeFetch(() => new Response('<html>', { status: 200 }));
+    await expect(new Op1FunClient(creds, { fetch: f.fetch }).getUser('alice')).rejects.toThrow(
+      new Op1FunError('unexpected response'),
+    );
+  });
+
+  it('never attaches credentials when the base is not api.op1.fun', async () => {
+    const f = fakeFetch(() => json({ data: { id: '7', type: 'users' } }));
+    await new Op1FunClient(creds, { fetch: f.fetch, base: 'https://evil.example.com/v1' }).getUser('alice');
+    expect(f.calls[0]?.url).toBe('https://evil.example.com/v1/users/alice');
+    expect(hasCredentialHeaders(f.calls[0])).toBe(false);
+  });
+});
+
+describe('Op1FunClient.requestPackZip', () => {
+  it('returns the url and passes the 65 s timeout signal', async () => {
+    const requested: number[] = [];
+    const signal = new AbortController().signal;
+    const f = fakeFetch(() => json({ url: 'https://op1fun.s3.amazonaws.com/packs/9.zip' }));
+    const client = new Op1FunClient(creds, {
+      fetch: f.fetch,
+      timeoutSignal: (ms) => {
+        requested.push(ms);
+        return signal;
+      },
+    });
+    const url = await client.requestPackZip('alice', '9');
+    expect(url).toBe('https://op1fun.s3.amazonaws.com/packs/9.zip');
+    expect(f.calls[0]?.url).toBe(`${API}/users/alice/packs/9/download`);
+    expect(requested).toEqual([65000]);
+    expect(f.calls[0]?.init?.signal).toBe(signal);
+    expect(headersOf(f.calls[0]).get('X-User-Token')).toBe('secret-token');
+  });
+
+  it('maps a timeout to Op1FunError', async () => {
+    const f = fakeFetch(() => {
+      throw new DOMException('The operation timed out.', 'TimeoutError');
+    });
+    const client = new Op1FunClient(creds, { fetch: f.fetch, timeoutSignal: () => new AbortController().signal });
+    await expect(client.requestPackZip('alice', '9')).rejects.toBeInstanceOf(Op1FunError);
+  });
+
+  it('rejects a response without a url', async () => {
+    const f = fakeFetch(() => json({ nope: true }));
+    await expect(new Op1FunClient(creds, { fetch: f.fetch }).requestPackZip('alice', '9')).rejects.toThrow(
+      new Op1FunError('unexpected response'),
+    );
+  });
+});
+
+describe('Op1FunClient.fetchFile', () => {
+  const bytes = new Uint8Array([0x46, 0x4f, 0x52, 0x4d, 1, 2, 3]);
+
+  it('fetches S3 links directly without credentials', async () => {
+    const f = fakeFetch(() => new Response(bytes));
+    const result = await new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).fetchFile(S3_FILE);
+    expect(result).toEqual(bytes);
+    expect(f.calls).toHaveLength(1);
+    expect(f.calls[0]?.url).toBe(S3_FILE);
+    expect(hasCredentialHeaders(f.calls[0])).toBe(false);
+  });
+
+  it('falls back to the Worker proxy on a network/CORS TypeError, without credentials', async () => {
+    const f = fakeFetch((url) => {
+      if (url === S3_FILE) throw new TypeError('Failed to fetch');
+      return new Response(bytes);
+    });
+    const result = await new Op1FunClient(creds, { fetch: f.fetch, workerUrl: `${WORKER}/` }).fetchFile(S3_FILE);
+    expect(result).toEqual(bytes);
+    expect(f.calls.map((c) => c.url)).toEqual([S3_FILE, `${WORKER}/op1fun/file?url=${encodeURIComponent(S3_FILE)}`]);
+    expect(f.calls.some(hasCredentialHeaders)).toBe(false);
+  });
+
+  it('does not fall back on an HTTP error', async () => {
+    const f = fakeFetch(() => new Response('gone', { status: 403 }));
+    await expect(
+      new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).fetchFile(S3_FILE),
+    ).rejects.toBeInstanceOf(Op1FunError);
+    expect(f.calls).toHaveLength(1);
+  });
+
+  it('does not fall back on errors other than TypeError', async () => {
+    const f = fakeFetch(() => {
+      throw new DOMException('aborted', 'AbortError');
+    });
+    await expect(new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).fetchFile(S3_FILE)).rejects.toThrow();
+    expect(f.calls).toHaveLength(1);
+  });
+
+  it('says the Worker is needed when the direct fetch fails and no Worker is configured', async () => {
+    const f = fakeFetch(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    const promise = new Op1FunClient(creds, { fetch: f.fetch }).fetchFile(S3_FILE);
+    await expect(promise).rejects.toBeInstanceOf(Op1FunError);
+    await expect(promise).rejects.toThrow(/Worker/);
+    expect(f.calls).toHaveLength(1);
+  });
+
+  it('says the Worker is needed when the proxy also fails', async () => {
+    const f = fakeFetch(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    const promise = new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).fetchFile(S3_FILE);
+    await expect(promise).rejects.toBeInstanceOf(Op1FunError);
+    await expect(promise).rejects.toThrow(/Worker/);
+    expect(f.calls).toHaveLength(2);
+  });
+
+  it('reports a proxy HTTP error as Op1FunError', async () => {
+    const f = fakeFetch((url) => {
+      if (url === S3_FILE) throw new TypeError('Failed to fetch');
+      return new Response('bad host', { status: 400 });
+    });
+    await expect(
+      new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).fetchFile(S3_FILE),
+    ).rejects.toBeInstanceOf(Op1FunError);
+  });
+});
+
+describe('Op1FunClient.uploadPatch', () => {
+  const drum = fixtureBytes('real/drum.aif');
+  const input = { name: 'My Drum', description: 'thumpy', license: 'CC BY-SA', public: true, bytes: drum };
+
+  it('needs a Worker URL', async () => {
+    const f = fakeFetch(() => json({}));
+    await expect(new Op1FunClient(creds, { fetch: f.fetch }).uploadPatch(input)).rejects.toThrow(
+      new Op1FunError('uploads need the co-op Worker'),
+    );
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it('POSTs the data URI to the Worker with the auth headers', async () => {
+    const f = fakeFetch(() => json({ data: [{ ...patchResource, id: '99' }] }, 201));
+    const patch = await new Op1FunClient(creds, { fetch: f.fetch, workerUrl: `${WORKER}/` }).uploadPatch(input);
+    expect(patch.id).toBe('99');
+    const call = f.calls[0];
+    expect(f.calls).toHaveLength(1);
+    expect(call?.url).toBe(`${WORKER}/op1fun/patches`);
+    expect(call?.init?.method).toBe('POST');
+    const headers = headersOf(call);
+    expect(headers.get('X-User-Email')).toBe('me@example.com');
+    expect(headers.get('X-User-Token')).toBe('secret-token');
+    expect(headers.get('Content-Type')).toBe('application/json');
+    const body = JSON.parse(String(call?.init?.body)) as {
+      data: { type: string; attributes: Record<string, unknown> };
+    };
+    expect(body.data.type).toBe('patches');
+    expect(body.data.attributes).toMatchObject({
+      name: 'My Drum',
+      description: 'thumpy',
+      license: 'CC BY-SA',
+      public: true,
+    });
+    const file = String(body.data.attributes.file);
+    const prefix = 'data:audio/x-aiff;base64,';
+    expect(file.startsWith(prefix)).toBe(true);
+    expect(new Uint8Array(Buffer.from(file.slice(prefix.length), 'base64'))).toEqual(drum);
+  });
+
+  it('accepts a create response with a single object', async () => {
+    const f = fakeFetch(() => json({ data: { ...patchResource, id: '100' } }, 201));
+    const patch = await new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).uploadPatch(input);
+    expect(patch.id).toBe('100');
+    expect(patch.selfUrl).toBe('https://op1.fun/users/alice/patches/42');
+  });
+
+  it('rejects an empty create array', async () => {
+    const f = fakeFetch(() => json({ data: [] }, 201));
+    await expect(
+      new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).uploadPatch(input),
+    ).rejects.toThrow(new Op1FunError('unexpected response'));
+  });
+
+  it('maps 401 to Op1FunAuthError', async () => {
+    const f = fakeFetch(() => json({ errors: [{ title: 'Unauthorized' }] }, 401));
+    await expect(
+      new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).uploadPatch(input),
+    ).rejects.toBeInstanceOf(Op1FunAuthError);
+  });
+
+  it('surfaces the upstream error detail', async () => {
+    const f = fakeFetch(() => json({ errors: [{ detail: 'name has already been taken' }] }, 422));
+    await expect(
+      new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).uploadPatch(input),
+    ).rejects.toThrow(/name has already been taken/);
+  });
+});
+
+describe('toBase64', () => {
+  it('matches Node for the empty array and short inputs', () => {
+    for (const length of [0, 1, 2, 3, 4, 5]) {
+      const data = new Uint8Array(length).map((_, i) => (i * 97 + 13) & 0xff);
+      expect(toBase64(data)).toBe(Buffer.from(data).toString('base64'));
+    }
+  });
+
+  it('matches Node across chunk boundaries', () => {
+    const data = new Uint8Array(32768 * 3 + 7).map((_, i) => (i * 31 + 7) & 0xff);
+    expect(toBase64(data)).toBe(Buffer.from(data).toString('base64'));
+  });
+
+  it('round-trips the real drum fixture', () => {
+    const drum = fixtureBytes('real/drum.aif');
+    expect(drum.length).toBeGreaterThan(32768);
+    expect(new Uint8Array(Buffer.from(toBase64(drum), 'base64'))).toEqual(drum);
+  });
+});
