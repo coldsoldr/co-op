@@ -35,12 +35,19 @@ export class PatchError extends Error {
   override name = 'PatchError';
 }
 
+const FORM_MAGIC = [0x46, 0x4f, 0x52, 0x4d]; // 'FORM'
+
+function hasFormMagic(bytes: Uint8Array): boolean {
+  return FORM_MAGIC.every((byte, i) => bytes[i] === byte);
+}
+
 export function readPatch(bytes: Uint8Array): Patch {
   let form: IffForm;
   try {
     form = readForm(bytes);
   } catch (error) {
-    throw new PatchError(`not an AIFF file: ${(error as Error).message}`);
+    if (!hasFormMagic(bytes)) throw new PatchError('not an AIFF file', { cause: error });
+    throw new PatchError(`malformed AIFF container: ${(error as Error).message}`, { cause: error });
   }
   if (form.formType !== 'AIFF' && form.formType !== 'AIFC') {
     throw new PatchError(`unsupported FORM type ${form.formType}`);
@@ -51,7 +58,7 @@ export function readPatch(bytes: Uint8Array): Patch {
   try {
     comm = parseComm(commChunk, form.formType);
   } catch (error) {
-    throw new PatchError(`bad COMM chunk: ${(error as Error).message}`);
+    throw new PatchError(`bad COMM chunk: ${(error as Error).message}`, { cause: error });
   }
 
   let meta: Op1Meta | null = null;
@@ -67,7 +74,7 @@ export function readPatch(bytes: Uint8Array): Patch {
       op1Trailing = content.trailing;
       op1Canonical = bytesEqual(buildOp1Chunk(content.meta, content.trailing).data, applChunk.data);
     } catch (error) {
-      throw new PatchError(`bad op-1 metadata: ${(error as Error).message}`);
+      throw new PatchError(`bad op-1 metadata: ${(error as Error).message}`, { cause: error });
     }
   }
   const kind = metaKind(meta);

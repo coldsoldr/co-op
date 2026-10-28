@@ -47,6 +47,47 @@ describe('readPatch', () => {
   });
 });
 
+describe('readPatch errors', () => {
+  const caught = (bytes: Uint8Array): PatchError => {
+    try {
+      readPatch(bytes);
+    } catch (error) {
+      return error as PatchError;
+    }
+    throw new Error('expected readPatch to throw');
+  };
+
+  it('says "not an AIFF file" when the FORM magic is missing', () => {
+    const error = caught(new TextEncoder().encode('hello world, long enough'));
+    expect(error).toBeInstanceOf(PatchError);
+    expect(error.message).toBe('not an AIFF file');
+    expect(error.cause).toBeInstanceOf(Error);
+  });
+
+  it('says "malformed AIFF container" when FORM is present but broken', () => {
+    const good = fixture('no-metadata.aif');
+    const truncated = good.subarray(0, good.length - 7);
+    const error = caught(truncated);
+    expect(error).toBeInstanceOf(PatchError);
+    expect(error.message).toMatch(/^malformed AIFF container: /);
+    expect(error.cause).toBeInstanceOf(Error);
+    expect((error.cause as Error).message).toMatch(/runs past end of file/);
+  });
+
+  it('wraps COMM and op-1 metadata errors with their cause', () => {
+    const shortComm: Chunk = { id: 'COMM', data: new Uint8Array(4) };
+    const commError = caught(writeForm({ formType: 'AIFF', chunks: [shortComm] }));
+    expect(commError.message).toMatch(/^bad COMM chunk: /);
+    expect((commError.cause as Error).name).toBe('CommError');
+
+    const goodComm = readPatch(fixture('no-metadata.aif')).form.chunks[0]!;
+    const badJson: Chunk = { id: 'APPL', data: new TextEncoder().encode('op-1{not json}') };
+    const metaError = caught(writeForm({ formType: 'AIFF', chunks: [goodComm, badJson] }));
+    expect(metaError.message).toMatch(/^bad op-1 metadata: /);
+    expect((metaError.cause as Error).name).toBe('Op1ChunkError');
+  });
+});
+
 describe('writePatch', () => {
   it('round-trips every fixture byte for byte when nothing changed', () => {
     for (const name of ['synth-cluster.aif', 'synth-sampler-sowt.aif', 'drum-boombap.aif', 'no-metadata.aif']) {
