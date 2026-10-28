@@ -13,7 +13,10 @@ export interface Patch {
   form: IffForm;
   /**
    * The current bytes of this patch: the bytes it was read from (aliasing the caller's buffer,
-   * not copied) or, after withMeta, the re-serialised file. Always equal to writePatch(patch).
+   * not copied) or, after withMeta, the re-serialised file. Equal to writePatch(patch) whenever
+   * op1Canonical is true. For a non-canonical file, raw holds the original bytes and writePatch
+   * would re-serialise the APPL chunk, so copy, move, backup and restore must always use raw and
+   * call writePatch only after an edit via withMeta.
    */
   raw: Uint8Array;
   /** Filler bytes that followed the JSON in the original APPL chunk. */

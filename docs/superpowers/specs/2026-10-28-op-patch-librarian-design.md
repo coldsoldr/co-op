@@ -89,20 +89,35 @@ fixture files.
 
 A `Patch` is the in-memory representation of one patch file:
 
-- `kind`: `synth`, `drum`, or a firmware-specific kind declared by a profile
-- `name`, `path` on the device, `sizeBytes`
+- `kind`: `synth`, `drum` or `unknown`. Firmware-specific kinds (for example
+  hundekraft `gin` drum kits) arrive with the profile that needs them, in
+  phase 7.
+- `name` from the metadata, `comm` (sample rate, channels, bit depth,
+  compression), `form` (the parsed chunk list)
 - `meta`: parsed JSON from the OP-1 `APPL` chunk, kept as a typed object
   with an escape hatch for unknown fields
-- `audio`: lazily decoded PCM for preview only
-- `raw`: the original bytes, kept so that operations that do not change
-  content never re-encode the file
+- `raw`: the current bytes. For an unedited file these are the original
+  bytes, so copy, move, back up and restore never re-encode. After an edit
+  they are the re-serialised file.
+- `op1Canonical`: whether re-serialising the metadata reproduces the
+  original `APPL` chunk byte for byte. Custom firmware may format the JSON
+  differently; such files stay readable and are flagged, and only an edit
+  canonicalises them.
+
+A `Patch` is file content only. The device-level record (path on the
+device, folder, size, scan kind) is a separate type owned by the device
+library (phase 3). Audio is decoded on demand with `decodePcm` for preview;
+frame count comes from the `SSND` chunk length, never from `COMM`.
 
 The codec reads and writes AIFF with these requirements:
 
 - Preserve every chunk, including unknown ones, byte for byte on round trip.
 - Parse and serialise the OP-1 `APPL` chunk JSON, maintaining chunk sizes,
   padding and the FORM length.
-- Handle the OP-1's little-endian PCM in files that declare big-endian AIFF.
+- Handle both container forms the device writes: plain `AIFF` (big-endian
+  PCM) and `AIFC` with `sowt` (little-endian PCM) or `NONE`/`twos`
+  (big-endian). Real OP-1 files are `AIFC`/`sowt`; synth sampler files can be
+  22.05 kHz, so the sample rate is always read from `COMM`.
 - A round-trip test over every fixture must produce identical bytes when no
   edit was made.
 
@@ -119,8 +134,8 @@ interface DeviceProfile {
   firmware: string;
   label: string;
   layout: DriveLayout;            // folders to scan and what each holds
-  patchKinds: PatchKindSpec[];    // kind, extensions, parser, validator
-  detect(root: DirectoryListing): DetectResult; // confidence 0..1 plus reason
+  patchKinds: PatchKindSpec[];    // kind, extensions; parser/validator hooks deferred to phase 7
+  detect(root: DirectoryListing): Promise<DetectResult>; // folder-level; confidence 0..1 plus reason
   compatibility(patch: Patch): Compat;          // ok | warn | unsupported
 }
 ```
@@ -134,7 +149,10 @@ interface DeviceProfile {
   clones in `vendor/` during their own implementation phases. They are not
   specified further here.
 - Detection runs on every mount. The UI shows the detected profile and lets
-  the user override it. Every patch shown anywhere carries a compatibility
+  the user override it. Folder-level detection cannot tell stock from
+  hundekraft (plugins live on the internal volume, so disk mode looks
+  identical) or from OP-1 Field, so stock caps its confidence below 1 and
+  the hundekraft profile adds a content-sniff phase over file bytes. Every patch shown anywhere carries a compatibility
   badge for the active profile.
 
 ### 5.3 Device store
@@ -266,8 +284,11 @@ unavailable rather than failing.
 
 - Device operations are atomic per file: write to a temp name, then move.
   A failed batch reports which files succeeded and stops.
-- The codec rejects files it cannot round-trip and the UI marks them as
-  unreadable rather than hiding them.
+- The codec rejects containers it cannot parse (truncated chunks, missing
+  pad bytes, trailing bytes, more than one op-1 chunk) and the UI marks them
+  as unreadable rather than hiding them. Metadata it would re-serialise
+  differently is flagged via `op1Canonical`, not rejected; unchanged
+  operations always copy `raw`.
 - Network features degrade independently: a Worker outage disables feedback
   and op1.fun upload while the catalogue and device library keep working.
 - op1.fun 401 responses prompt the user to re-check credentials; other
