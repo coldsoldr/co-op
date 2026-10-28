@@ -154,6 +154,7 @@ async function loadPack(
     firmware: manifest.firmware,
     tags: manifest.tags,
     sizeBytes: patches.reduce((sum, p) => sum + p.sizeBytes, 0),
+    hasReadme: files.some((f) => f.path === README_FILE),
     patches,
   };
   return { issues: [], entry };

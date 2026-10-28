@@ -73,6 +73,7 @@ describe('loadPacks', () => {
           firmware: ['op1/stock'],
           tags: ['test'],
           sizeBytes: cluster.length + boombap.length,
+          hasReadme: true,
           patches: [
             { file: 'synth/cluster.aif', kind: 'synth', name: 'default', engine: 'cluster', sizeBytes: cluster.length, sha256: sha(cluster) },
             { file: 'drum/boombap.aif', kind: 'drum', name: 'boombap1', engine: 'drum', sizeBytes: boombap.length, sha256: sha(boombap) },
@@ -141,6 +142,12 @@ describe('loadPacks extras', () => {
     const { index } = await loadPacks(packsDir, { now: NOW, firmware: FIRMWARE });
     expect(index.packs[0]?.patches.map((p) => p.notes)).toEqual(['soft pad', undefined]);
     expect(Object.keys(index.packs[0]?.patches[1] ?? {})).not.toContain('notes');
+  });
+
+  it('records whether a pack has a README', async () => {
+    await goodPack();
+    await rm(join(packsDir, 'good', 'README.md'));
+    expect((await loadPacks(packsDir, { now: NOW, firmware: FIRMWARE })).index.packs[0]?.hasReadme).toBe(false);
   });
 
   it('ignores .DS_Store, Thumbs.db and desktop.ini and never publishes them', async () => {

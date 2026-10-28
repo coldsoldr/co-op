@@ -63,7 +63,10 @@ export function App() {
           <Library device={device} active={tab === 'library'} />
         </div>
         <div role="tabpanel" id="panel-packs" aria-labelledby="tab-packs" hidden={tab !== 'packs'}>
-          <Packs device={device} active={tab === 'packs'} onOpenLibrary={() => setTab('library')} />
+          <Packs device={device} active={tab === 'packs'} onOpenLibrary={() => {
+              setTab('library');
+              buttons.current.library?.focus();
+            }} />
         </div>
         <div role="tabpanel" id="panel-inspector" aria-labelledby="tab-inspector" hidden={tab !== 'inspector'}>
           <Inspector active={tab === 'inspector'} />

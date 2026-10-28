@@ -30,6 +30,7 @@ const pack = (overrides: Partial<PackIndexEntry> = {}): PackIndexEntry => ({
   firmware: ['op1/stock'],
   tags: ['utility'],
   sizeBytes: cluster.length + boombap.length,
+  hasReadme: true,
   patches: [
     { file: 'synth/cluster.aif', kind: 'synth', name: 'default', engine: 'cluster', sizeBytes: cluster.length, sha256: sha(cluster) },
     { file: 'drum/boombap.aif', kind: 'drum', name: 'boombap1', engine: 'drum', sizeBytes: boombap.length, sha256: sha(boombap) },
@@ -88,6 +89,7 @@ describe('fetchIndex', () => {
       { ...pack(), patches: [{ file: 'synth/a.aif', kind: 'tape', name: '', engine: '', sizeBytes: 1, sha256: 'x' }] },
       { ...pack(), patches: [{ file: 'synth/a.aif', kind: 'synth', name: '', engine: '', sizeBytes: 1 }] },
       'pack',
+      { ...pack(), hasReadme: 'yes' },
       { ...pack(), patches: [{ ...pack().patches[0], sha256: 'abc' }] },
       { ...pack(), patches: [{ ...pack().patches[0], notes: 3 }] },
     ];

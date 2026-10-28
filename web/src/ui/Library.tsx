@@ -172,7 +172,13 @@ function Connected({ device, active }: { device: Device; active: boolean }) {
       stopRef.current?.();
     }
   }, [active]);
-  useEffect(() => () => stopRef.current?.(), []);
+  useEffect(
+    () => () => {
+      playToken.current++;
+      stopRef.current?.();
+    },
+    [],
+  );
 
   const togglePlay = useCallback(
     async (path: string): Promise<void> => {
@@ -301,6 +307,7 @@ function Connected({ device, active }: { device: Device; active: boolean }) {
           <button type="button" className="primary" onClick={downloadChanges} disabled={device.changeCount === 0}>
             Download changes ({device.changeCount})
           </button>
+          {device.changeCount > 0 && !device.unsavedChanges && <p className="muted">All changes are downloaded.</p>}
         </div>
       )}
 

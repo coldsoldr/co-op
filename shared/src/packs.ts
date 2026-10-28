@@ -80,6 +80,8 @@ export interface PackIndexEntry {
   tags: string[];
   /** Total size of the pack's patch files. */
   sizeBytes: number;
+  /** True when the pack has a README.md, published at packs/<slug>/README.md. */
+  hasReadme: boolean;
   patches: PackIndexPatch[];
 }
 

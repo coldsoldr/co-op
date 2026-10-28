@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { PACK_KINDS, PACK_LICENSES, type PackIndex, type PackIndexEntry, type PackKind } from '@co-op/shared/packs';
 import {
+  CatalogueError,
   InstallError,
   compatibilityWarning,
   fetchIndex,
@@ -22,13 +23,14 @@ export const SHARE_URL = 'https://github.com/coldsoldr/co-op/blob/main/docs/cont
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 const firmwareLabel = (id: string): string => getProfile(id)?.label ?? id;
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+const base = (): string => import.meta.env.BASE_URL;
 
 interface PacksProps {
   /** The connection shared with the Library tab. */
   device: Device;
   /** False while the tab is hidden: the index is not fetched yet and playback stops. */
   active: boolean;
-  /** Switches to the Library tab, to connect a device. */
+  /** Switches to the Library tab (and focuses it), to connect a device. */
   onOpenLibrary: () => void;
 }
 
@@ -39,9 +41,11 @@ export function Packs({ device, active, onOpenLibrary }: PacksProps) {
   const requested = useRef(false);
   const [filter, setFilter] = useState<PackFilter>({});
   const [openSlug, setOpenSlug] = useState<string | null>(null);
+  /** The pack whose View button takes focus when returning to the list. */
+  const [returnTo, setReturnTo] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    fetchIndex(import.meta.env.BASE_URL)
+    fetchIndex(base())
       .then((next) => {
         setIndex(next);
         setLoadError(null);
@@ -81,11 +85,16 @@ export function Packs({ device, active, onOpenLibrary }: PacksProps) {
           pack={open}
           device={device}
           active={active}
-          onBack={() => setOpenSlug(null)}
+          onBack={() => {
+            setReturnTo(open.slug);
+            setOpenSlug(null);
+          }}
           onOpenLibrary={onOpenLibrary}
         />
       )}
-      {index && !open && <PackList index={index} filter={filter} onFilter={setFilter} onOpen={setOpenSlug} />}
+      {index && !open && (
+        <PackList index={index} filter={filter} onFilter={setFilter} onOpen={setOpenSlug} returnTo={returnTo} />
+      )}
     </section>
   );
 }
@@ -95,9 +104,10 @@ interface PackListProps {
   filter: PackFilter;
   onFilter: (filter: PackFilter) => void;
   onOpen: (slug: string) => void;
+  returnTo: string | null;
 }
 
-function PackList({ index, filter, onFilter, onOpen }: PackListProps) {
+function PackList({ index, filter, onFilter, onOpen, returnTo }: PackListProps) {
   const shown = filterPacks(index, filter);
   const tags = useMemo(() => [...new Set(index.packs.flatMap((p) => p.tags))].sort(), [index]);
   const firmware = useMemo(
@@ -128,8 +138,11 @@ function PackList({ index, filter, onFilter, onOpen }: PackListProps) {
           Kind{' '}
           <select value={filter.kind ?? ''} onChange={(e) => set('kind', e.target.value)}>
             <option value="">any</option>
-            <option value="synth">synth</option>
-            <option value="drum">drum</option>
+            {PACK_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {kind}
+              </option>
+            ))}
           </select>
         </label>
         <label>
@@ -168,7 +181,7 @@ function PackList({ index, filter, onFilter, onOpen }: PackListProps) {
           </label>
         )}
       </div>
-      <p className="muted">
+      <p className="muted" role="status">
         {shown.length === index.packs.length
           ? plural(index.packs.length, 'pack', 'packs')
           : `${shown.length} of ${plural(index.packs.length, 'pack', 'packs')}`}
@@ -176,15 +189,20 @@ function PackList({ index, filter, onFilter, onOpen }: PackListProps) {
       {shown.length === 0 && <p>No packs match these filters.</p>}
       <div className="pack-grid">
         {shown.map((pack) => (
-          <PackCard key={pack.slug} pack={pack} onOpen={onOpen} />
+          <PackCard key={pack.slug} pack={pack} onOpen={onOpen} focus={pack.slug === returnTo} />
         ))}
       </div>
     </>
   );
 }
 
-function PackCard({ pack, onOpen }: { pack: PackIndexEntry; onOpen: (slug: string) => void }) {
+function PackCard({ pack, onOpen, focus }: { pack: PackIndexEntry; onOpen: (slug: string) => void; focus: boolean }) {
   const headingId = useId();
+  const viewRef = useRef<HTMLButtonElement>(null);
+  // Back from the detail view returns focus to the button that opened it.
+  useEffect(() => {
+    if (focus) viewRef.current?.focus();
+  }, [focus]);
   return (
     <article className="pack-card" aria-labelledby={headingId}>
       <h3 id={headingId}>{pack.name}</h3>
@@ -201,7 +219,7 @@ function PackCard({ pack, onOpen }: { pack: PackIndexEntry; onOpen: (slug: strin
         {plural(pack.patches.length, 'patch', 'patches')}, {formatSize(pack.sizeBytes)}
       </p>
       <p>{pack.description}</p>
-      <button type="button" aria-label={`View ${pack.name}`} onClick={() => onOpen(pack.slug)}>
+      <button ref={viewRef} type="button" aria-label={`View ${pack.name}`} onClick={() => onOpen(pack.slug)}>
         View
       </button>
     </article>
@@ -216,7 +234,31 @@ interface PackDetailProps {
   onOpenLibrary: () => void;
 }
 
-type Outcome = { ok: true; message: string; paths: string[] } | { ok: false; message: string; paths: string[] };
+interface Outcome {
+  ok: boolean;
+  message: string;
+  paths: string[];
+}
+
+/** The kinds a pack has patches of, in synth, drum order. */
+function kindsIn(pack: PackIndexEntry): PackKind[] {
+  return PACK_KINDS.filter((kind) => pack.patches.some((p) => p.kind === kind));
+}
+
+/**
+ * The folders offered for a kind: `<root>/<slug>` first, then the folders already on the drive.
+ * Folders are compared ignoring case, as on the OP-1's drive, and the drive's spelling wins.
+ */
+function folderOptions(device: Device, kind: PackKind, slug: string): string[] {
+  const root = device.profile.layout.patchRoots.find((r) => r.kind === kind)?.path ?? kind;
+  const existing = (device.folders[root] ?? []).map((name) => joinPath(root, name));
+  const proposed = joinPath(root, slug);
+  const out = new Map<string, string>();
+  const onDrive = existing.find((f) => f.toLowerCase() === proposed.toLowerCase());
+  out.set(proposed.toLowerCase(), onDrive ?? proposed);
+  for (const folder of existing) if (!out.has(folder.toLowerCase())) out.set(folder.toLowerCase(), folder);
+  return [...out.values()];
+}
 
 function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailProps) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
@@ -226,9 +268,13 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
   const [playing, setPlaying] = useState<string | null>(null);
   const [playError, setPlayError] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  const playingRef = useRef<string | null>(null);
   const playToken = useRef(0);
   const activeRef = useRef(active);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const noticeId = useId();
 
+  useEffect(() => headingRef.current?.focus(), []);
   useEffect(() => {
     activeRef.current = active;
     if (!active) {
@@ -248,32 +294,32 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
   const staged = device.source?.staged != null;
   const warning = connected ? compatibilityWarning(pack, device.profile.id) : null;
   const kinds = kindsIn(pack);
-
-  /** The folders offered for a kind: `<root>/<slug>` first, then the folders already on the drive. */
-  function folderOptions(kind: PackKind): string[] {
-    const root = device.profile.layout.patchRoots.find((r) => r.kind === kind)?.path ?? kind;
-    const existing = (device.folders[root] ?? []).map((name) => joinPath(root, name));
-    return [...new Set([joinPath(root, pack.slug), ...existing])];
-  }
-  const targetFor = (kind: PackKind): string => targets[kind] ?? (folderOptions(kind)[0] as string);
+  const targetFor = (kind: PackKind): string => {
+    const options = folderOptions(device, kind, pack.slug);
+    const chosen = targets[kind];
+    return chosen !== undefined && options.includes(chosen) ? chosen : (options[0] as string);
+  };
 
   async function play(file: string, sha256: string): Promise<void> {
     const token = ++playToken.current;
-    const wasPlaying = stopRef.current !== null && playing === file;
+    const wasPlaying = stopRef.current !== null && playingRef.current === file;
     stopRef.current?.();
     setPlayError(null);
     if (wasPlaying) return;
     try {
-      const bytes = await fetchPatchBytes(import.meta.env.BASE_URL, pack.slug, file, sha256);
+      const bytes = await fetchPatchBytes(base(), pack.slug, file, sha256);
+      // A later click, hiding the tab or leaving the pack while downloading wins.
       if (token !== playToken.current || !activeRef.current) return;
       const patch = readPatch(bytes);
       const stop = playPcm(decodePcm(patch), patch.comm.sampleRate, () => {
         if (stopRef.current === stop) {
           stopRef.current = null;
+          playingRef.current = null;
           setPlaying(null);
         }
       });
       stopRef.current = stop;
+      playingRef.current = file;
       setPlaying(file);
     } catch (e) {
       if (token === playToken.current) setPlayError(`cannot play ${file}: ${messageOf(e)}`);
@@ -281,25 +327,25 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
   }
 
   async function install(files: readonly string[]): Promise<void> {
+    const key = device.source?.key;
     const profileId = device.profile.id;
     const chosen = Object.fromEntries(kinds.map((kind) => [kind, targetFor(kind)])) as Record<PackKind, string>;
+    const entries = pack.patches.filter((p) => files.includes(p.file));
     setWorking(true);
     setOutcome(null);
     let installed: string[] = [];
     try {
-      const entries = pack.patches.filter((p) => files.includes(p.file));
-      const downloads = await Promise.all(
-        entries.map(async (p) => ({
-          file: p.file,
-          bytes: await fetchPatchBytes(import.meta.env.BASE_URL, pack.slug, p.file, p.sha256),
-        })),
-      );
-      // Queued with the Library's own actions, so an install never overlaps another change.
-      await device.run(async (store) => {
+      // Downloads and writes run as one queued action, so device.busy covers both and no other
+      // change (or a second install) can start in between.
+      await device.run(async (store, source) => {
+        if (source.key !== key) throw new CatalogueError('the drive changed; install again');
+        const downloads = await Promise.all(
+          entries.map(async (p) => ({ file: p.file, bytes: await fetchPatchBytes(base(), pack.slug, p.file, p.sha256) })),
+        );
         installed = (await installPatches(store, profileId, pack.slug, downloads, (kind) => chosen[kind])).installed;
       });
       const where = staged ? ' Download them from the Library tab to copy them onto the OP-1.' : '';
-      setOutcome({ ok: true, message: `Installed ${installed.length} patch(es).${where}`, paths: installed });
+      setOutcome({ ok: true, message: `Installed ${plural(installed.length, 'patch', 'patches')}.${where}`, paths: installed });
       setSelected(new Set());
     } catch (e) {
       const paths = e instanceof InstallError ? e.installed : installed;
@@ -310,7 +356,9 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
   }
 
   const blocked = !connected || device.busy || working;
+  const describedBy = connected ? undefined : noticeId;
   const selectedFiles = pack.patches.filter((p) => selected.has(p.file)).map((p) => p.file);
+  const readmeUrl = `${base()}packs/${encodeURIComponent(pack.slug)}/README.md`;
 
   return (
     <div className="pack-detail">
@@ -319,12 +367,21 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
           Back to packs
         </button>
       </p>
-      <h3>{pack.name}</h3>
+      <h3 ref={headingRef} tabIndex={-1}>
+        {pack.name}
+      </h3>
       <p className="muted">
         by {pack.author} · <span className="badge licence">{pack.license}</span> ·{' '}
         {plural(pack.patches.length, 'patch', 'patches')}, {formatSize(pack.sizeBytes)}
       </p>
       <p>{pack.description}</p>
+      {pack.hasReadme && (
+        <p>
+          <a href={readmeUrl} target="_blank" rel="noreferrer">
+            Read the pack README
+          </a>
+        </p>
+      )}
       {warning && (
         <p className="warning" role="note">
           {warning}
@@ -364,6 +421,11 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
               </td>
               <th scope="row" className="name">
                 {p.name || p.file}
+                {p.notes && (
+                  <ul className="details">
+                    <li className="muted">{p.notes}</li>
+                  </ul>
+                )}
               </th>
               <td className="file">
                 <code>{p.file}</code>
@@ -372,7 +434,11 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
               <td>{p.engine}</td>
               <td className="size">{formatSize(p.sizeBytes)}</td>
               <td>
-                <button type="button" aria-label={`${playing === p.file ? 'Stop' : 'Play'} ${p.file}`} onClick={() => void play(p.file, p.sha256)}>
+                <button
+                  type="button"
+                  aria-label={`${playing === p.file ? 'Stop' : 'Play'} ${p.file}`}
+                  onClick={() => void play(p.file, p.sha256)}
+                >
                   {playing === p.file ? 'Stop' : 'Play'}
                 </button>
               </td>
@@ -392,8 +458,12 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
           <p key={kind}>
             <label>
               Install {kind} patches into{' '}
-              <select value={targetFor(kind)} onChange={(e) => setTargets({ ...targets, [kind]: e.target.value })} disabled={!connected}>
-                {folderOptions(kind).map((folder) => (
+              <select
+                value={targetFor(kind)}
+                onChange={(e) => setTargets({ ...targets, [kind]: e.target.value })}
+                disabled={!connected}
+              >
+                {folderOptions(device, kind, pack.slug).map((folder) => (
                   <option key={folder} value={folder}>
                     {folder}
                   </option>
@@ -403,16 +473,27 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
           </p>
         ))}
         <p>
-          <button type="button" onClick={() => void install(selectedFiles)} disabled={blocked || selectedFiles.length === 0}>
+          <button
+            type="button"
+            onClick={() => void install(selectedFiles)}
+            disabled={blocked || selectedFiles.length === 0}
+            aria-describedby={describedBy}
+          >
             Install selected ({selectedFiles.length})
           </button>{' '}
-          <button type="button" className="primary" onClick={() => void install(pack.patches.map((p) => p.file))} disabled={blocked}>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => void install(pack.patches.map((p) => p.file))}
+            disabled={blocked}
+            aria-describedby={describedBy}
+          >
             Install all ({pack.patches.length})
           </button>
         </p>
         {!connected && (
           <p className="notice">
-            Connect an OP-1 or open its drive folder on the Library tab to install these patches.{' '}
+            <span id={noticeId}>Connect an OP-1 or open its drive folder on the Library tab to install these patches.</span>{' '}
             <button type="button" onClick={onOpenLibrary}>
               Go to Library
             </button>
@@ -442,9 +523,4 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
       </div>
     </div>
   );
-}
-
-/** The kinds a pack has patches of, in synth, drum order. */
-function kindsIn(pack: PackIndexEntry): PackKind[] {
-  return PACK_KINDS.filter((kind) => pack.patches.some((p) => p.kind === kind));
 }

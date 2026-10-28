@@ -32,8 +32,11 @@ export interface Progress {
   total: number;
 }
 
-/** An operation against the open source. */
-export type Operation = (store: DeviceStore) => Promise<unknown>;
+/**
+ * An operation against the open source. `source` is the source it runs on, so an operation queued
+ * earlier can check that the source is still the one it was meant for (compare `source.key`).
+ */
+export type Operation = (store: DeviceStore, source: DeviceSource) => Promise<unknown>;
 
 export interface Device {
   source: DeviceSource | null;
@@ -59,8 +62,8 @@ export interface Device {
   /** Staged changes waiting for download, counted by distinct file (read-only sources only). */
   changeCount: number;
   /**
-   * True when staged changes grew since the last download (or exist and were never downloaded),
-   * or a write is in flight; leaving or disconnecting then asks first.
+   * True when there are staged changes and an operation has changed them since the last download
+   * (or they were never downloaded); leaving or disconnecting then asks first.
    */
   unsavedChanges: boolean;
   /** Records that the current staged changes were downloaded. */
@@ -136,8 +139,10 @@ export function useDevice(): Device {
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<string[]>([]);
   const [changeCount, setChangeCount] = useState(0);
-  /** changeCount when the changes were last downloaded. */
-  const [downloadedCount, setDownloadedCount] = useState(0);
+  /** Bumped after every operation on a staged source, successful or not. */
+  const [revision, setRevision] = useState(0);
+  /** revision when the changes were last downloaded; null when never downloaded. */
+  const [downloadedRevision, setDownloadedRevision] = useState<number | null>(null);
   const [remembered, setRemembered] = useState<FileSystemDirectoryHandle | null>(null);
   const [fsAccess] = useState(isFsAccessSupported);
   const [pending, setPending] = useState(0);
@@ -180,7 +185,7 @@ export function useDevice(): Device {
   }, [fsAccess]);
 
   // Warn before leaving with staged changes not downloaded, or with a write in flight.
-  const unsavedChanges = changeCount > downloadedCount;
+  const unsavedChanges = changeCount > 0 && revision !== downloadedRevision;
   const dirty = unsavedChanges || mutating > 0;
   useEffect(() => {
     if (!dirty) return;
@@ -254,7 +259,8 @@ export function useDevice(): Device {
       setError(null);
       setRecovered([]);
       setRecoveryError(null);
-      setDownloadedCount(0);
+      setRevision(0);
+      setDownloadedRevision(null);
       setSkipped(droppedSkips);
       setLoading(true);
       try {
@@ -368,8 +374,10 @@ export function useDevice(): Device {
         if (!current) throw new Error('nothing is connected');
         setMutating((n) => n + 1);
         try {
-          await op(current.store);
+          await op(current.store, current);
         } finally {
+          // Also after a failure: an operation can stage part of its changes before it fails.
+          if (current.staged && sourceRef.current === current) setRevision((n) => n + 1);
           try {
             if (sourceRef.current === current) await load(current, profileRef.current, touched);
           } finally {
@@ -403,10 +411,11 @@ export function useDevice(): Device {
     setRecoveryError(null);
     setSkipped([]);
     setChangeCount(0);
-    setDownloadedCount(0);
+    setRevision(0);
+    setDownloadedRevision(null);
   }, [setRows, setSource]);
 
-  const markDownloaded = useCallback(() => setDownloadedCount(changeCount), [changeCount]);
+  const markDownloaded = useCallback(() => setDownloadedRevision(revision), [revision]);
 
   return {
     source,

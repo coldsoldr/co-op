@@ -274,8 +274,8 @@ never published. **`index.json` is not committed.** The Pages
 build (`pnpm --filter @co-op/web build`) validates the packs again, copies
 each pack's `pack.json`, `README.md` and listed patches into
 `web/dist/packs/<slug>/`, and writes `web/dist/packs/index.json` (format 1:
-each pack's fields, total size, and per patch its kind, name, engine, size
-and SHA-256), so the index can never drift from the files. The dev server
+each pack's fields, total size, whether it has a README, and per patch its kind,
+name, engine, size, SHA-256 and notes), so the index can never drift from the files. The dev server
 builds the same index on the fly. The app fetches `packs/index.json` from
 its own origin, revalidating each time, and checks every downloaded patch
 against its SHA-256 before playing or installing it.

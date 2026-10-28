@@ -44,7 +44,7 @@ const isStringList = (value: unknown): boolean => Array.isArray(value) && value.
 function isIndexEntry(value: unknown): value is PackIndexEntry {
   if (!isRecord(value)) return false;
   const strings = ['slug', 'name', 'author', 'description', 'license'].every((k) => typeof value[k] === 'string');
-  if (!strings || typeof value.sizeBytes !== 'number' || !isStringList(value.firmware) || !isStringList(value.tags)) {
+  if (!strings || typeof value.sizeBytes !== 'number' || typeof value.hasReadme !== 'boolean' || !isStringList(value.firmware) || !isStringList(value.tags)) {
     return false;
   }
   return (
