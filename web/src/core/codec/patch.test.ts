@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { readPatch, writePatch, withMeta, decodePcm, PatchError } from './patch';
+import { readPatch, writePatch, withMeta, decodePcm, PatchError, type Patch } from './patch';
 import { writeForm, type Chunk } from './iff';
 import { buildComm } from './comm';
 import { buildOp1Chunk } from './op1-chunk';
@@ -258,5 +258,13 @@ describe('raw', () => {
     expect(Array.from(renamed.raw)).not.toEqual(Array.from(bytes));
     expect(original.raw).toBe(bytes);
     expect(Array.from(original.raw)).toEqual(Array.from(fixture('synth-cluster.aif')));
+  });
+
+  it('refreshes form after withMeta so chunk sizes match the rebuilt APPL', () => {
+    const original = readPatch(fixture('synth-cluster.aif'));
+    const renamed = withMeta(original, { ...SYNTH_META, name: `${SYNTH_META.name}-much-longer-name` });
+    const applOf = (p: Patch) => p.form.chunks.find((c) => c.id === 'APPL')!;
+    expect(applOf(renamed).data.length).not.toBe(applOf(original).data.length);
+    expect(Array.from(writePatch(renamed))).toEqual(Array.from(renamed.raw));
   });
 });

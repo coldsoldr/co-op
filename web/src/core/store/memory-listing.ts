@@ -13,9 +13,7 @@ export class MemoryListing implements DirectoryListing {
     let node: MemoryTree | 'file' = this.tree;
     for (const part of path.split('/').filter(Boolean)) {
       if (node === 'file' || !Object.hasOwn(node, part)) return [];
-      const next: MemoryTree | 'file' | undefined = node[part];
-      if (next === undefined) return [];
-      node = next;
+      node = node[part] as MemoryTree | 'file';
     }
     if (node === 'file') return [];
     return Object.entries(node)

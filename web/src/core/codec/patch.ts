@@ -84,11 +84,13 @@ export function readPatch(bytes: Uint8Array): Patch {
 
 /**
  * Returns a copy of the patch carrying new metadata. The audio chunks are untouched; `raw` is
- * re-serialised so it stays equal to writePatch(result).
+ * re-serialised so it stays equal to writePatch(result), and `form` is re-read from it so the
+ * chunk list reflects the rebuilt APPL chunk.
  */
 export function withMeta(patch: Patch, meta: Op1Meta): Patch {
   const next: Patch = { ...patch, meta, kind: metaKind(meta), name: meta.name, op1Canonical: true };
-  return { ...next, raw: writePatch(next) };
+  const raw = writePatch(next);
+  return { ...next, raw, form: readForm(raw) };
 }
 
 /**

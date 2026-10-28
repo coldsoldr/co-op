@@ -73,4 +73,16 @@ describe('profile registry', () => {
       { confidence: 0.5, reason: 'fixed 0.5' },
     ]);
   });
+
+  it('isolates a detector that throws synchronously', async () => {
+    const broken = fakeProfile('broken', () => {
+      throw new Error('sync boom');
+    });
+    const results = await runDetectors(new MemoryListing({}), [broken, fixed('fine', 0.5)]);
+    expect(results[0]?.result.confidence).toBe(0);
+    expect(results[0]?.result.reason).toMatch(/detector failed/);
+    expect(results[1]?.result).toEqual({ confidence: 0.5, reason: 'fixed 0.5' });
+    const ranked = await detectProfiles(new MemoryListing({}), [broken, fixed('fine', 0.5)]);
+    expect(ranked.map((r) => r.profile.id)).toEqual(['fine']);
+  });
 });
