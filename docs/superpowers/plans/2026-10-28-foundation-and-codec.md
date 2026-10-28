@@ -1,5 +1,7 @@
 # Foundation and Codec Implementation Plan
 
+**Status (2026-10-28):** all 16 tasks complete, reviewed and deployed at HEAD 2a23e29. Review fixes beyond the plan text are recorded in the commit history (search `fix(codec)`, `fix(profiles)`, `fix(store)`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stand up the pnpm workspace, CI and GitHub Pages deploy, then build the OP-1 AIFF patch codec and the stock OP-1 device profile with a small inspector page for checking real device files.
@@ -78,7 +80,7 @@ Every `*.ts` module in `src/core` has a sibling `*.test.ts`.
 **Files:**
 - Create: `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `.gitattributes`, `.editorconfig`, `.npmrc`
 
-- [ ] **Step 1: Create the root files**
+- [x] **Step 1: Create the root files**
 
 `package.json`:
 ```json
@@ -149,12 +151,12 @@ trim_trailing_whitespace = true
 engine-strict=true
 ```
 
-- [ ] **Step 2: Verify pnpm accepts the workspace**
+- [x] **Step 2: Verify pnpm accepts the workspace**
 
 Run: `pnpm install`
 Expected: completes with no packages installed and writes `pnpm-lock.yaml`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json .gitattributes .editorconfig .npmrc
@@ -168,7 +170,7 @@ git commit -m "chore: add pnpm workspace root"
 **Files:**
 - Create: `web/package.json`, `web/vite.config.ts`, `web/tsconfig.json`, `web/index.html`, `web/src/main.tsx`, `web/src/App.tsx`, `web/src/index.css`, `web/src/smoke.test.ts`
 
-- [ ] **Step 1: Create package.json and install dependencies**
+- [x] **Step 1: Create package.json and install dependencies**
 
 `web/package.json`:
 ```json
@@ -195,7 +197,7 @@ pnpm --filter @co-op/web add -D vite @vitejs/plugin-react typescript vitest tsx 
 ```
 Expected: both commands finish and `web/node_modules` exists.
 
-- [ ] **Step 2: Create the Vite and TypeScript config**
+- [x] **Step 2: Create the Vite and TypeScript config**
 
 `web/vite.config.ts`:
 ```ts
@@ -225,7 +227,7 @@ export default defineConfig({
 }
 ```
 
-- [ ] **Step 3: Create the placeholder app**
+- [x] **Step 3: Create the placeholder app**
 
 `web/index.html`:
 ```html
@@ -292,7 +294,7 @@ pre {
 }
 ```
 
-- [ ] **Step 4: Add a smoke test so the test runner is proven**
+- [x] **Step 4: Add a smoke test so the test runner is proven**
 
 `web/src/smoke.test.ts`:
 ```ts
@@ -303,12 +305,12 @@ it('runs tests', () => {
 });
 ```
 
-- [ ] **Step 5: Run typecheck, test and build**
+- [x] **Step 5: Run typecheck, test and build**
 
 Run: `pnpm typecheck && pnpm test && pnpm build`
 Expected: typecheck prints nothing, vitest reports `1 passed`, vite writes `web/dist/index.html`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web pnpm-lock.yaml
@@ -322,7 +324,7 @@ git commit -m "chore: scaffold web package with vite, react and vitest"
 **Files:**
 - Create: `.github/workflows/ci.yml`, `.github/workflows/pages.yml`
 
-- [ ] **Step 1: Create the CI workflow**
+- [x] **Step 1: Create the CI workflow**
 
 `.github/workflows/ci.yml`:
 ```yaml
@@ -349,7 +351,7 @@ jobs:
       - run: pnpm build
 ```
 
-- [ ] **Step 2: Create the Pages workflow**
+- [x] **Step 2: Create the Pages workflow**
 
 `.github/workflows/pages.yml`:
 ```yaml
@@ -396,12 +398,12 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-- [ ] **Step 3: Enable Pages with the Actions build type**
+- [x] **Step 3: Enable Pages with the Actions build type**
 
 Run: `gh api -X POST repos/coldsoldr/co-op/pages -f build_type=workflow`
 Expected: JSON response containing `"build_type":"workflow"`. If it returns 409 the site already exists, which is fine.
 
-- [ ] **Step 4: Commit and push, then watch the deploy**
+- [x] **Step 4: Commit and push, then watch the deploy**
 
 ```bash
 git add .github
@@ -419,7 +421,7 @@ Expected: both workflows succeed and `https://coldsoldr.github.io/co-op/` shows 
 - Create: `web/src/core/codec/iff.ts`
 - Test: `web/src/core/codec/iff.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `web/src/core/codec/iff.test.ts`:
 ```ts
@@ -485,12 +487,12 @@ describe('writeForm', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm --filter @co-op/web test -- iff`
 Expected: FAIL, cannot resolve `./iff`.
 
-- [ ] **Step 3: Implement iff.ts**
+- [x] **Step 3: Implement iff.ts**
 
 `web/src/core/codec/iff.ts`:
 ```ts
@@ -566,12 +568,12 @@ export function writeForm(form: IffForm): Uint8Array {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pnpm --filter @co-op/web test -- iff`
 Expected: 5 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/core/codec/iff.ts web/src/core/codec/iff.test.ts
@@ -586,7 +588,7 @@ git commit -m "feat(codec): IFF FORM reader and writer"
 - Create: `web/src/core/codec/comm.ts`
 - Test: `web/src/core/codec/comm.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `web/src/core/codec/comm.test.ts`:
 ```ts
@@ -648,12 +650,12 @@ describe('COMM', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm --filter @co-op/web test -- comm`
 Expected: FAIL, cannot resolve `./comm`.
 
-- [ ] **Step 3: Implement comm.ts**
+- [x] **Step 3: Implement comm.ts**
 
 `web/src/core/codec/comm.ts`:
 ```ts
@@ -740,12 +742,12 @@ export function buildComm(info: CommInfo, formType: string): Chunk {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pnpm --filter @co-op/web test -- comm`
 Expected: 6 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/core/codec/comm.ts web/src/core/codec/comm.test.ts
@@ -760,7 +762,7 @@ git commit -m "feat(codec): COMM chunk parser and extended float codec"
 - Create: `web/src/core/codec/op1-meta.ts`, `web/test/fixtures/meta.ts`
 - Test: `web/src/core/codec/op1-meta.test.ts`
 
-- [ ] **Step 1: Create the sample metadata used by fixtures and tests**
+- [x] **Step 1: Create the sample metadata used by fixtures and tests**
 
 These values are taken from real OP-1 files (via the teoperator project's defaults).
 
@@ -830,7 +832,7 @@ export const DRUM_META: DrumMeta = {
 };
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `web/src/core/codec/op1-meta.test.ts`:
 ```ts
@@ -863,12 +865,12 @@ describe('op1 metadata guards', () => {
 });
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `pnpm --filter @co-op/web test -- op1-meta`
 Expected: FAIL, cannot resolve `./op1-meta`.
 
-- [ ] **Step 4: Implement op1-meta.ts**
+- [x] **Step 4: Implement op1-meta.ts**
 
 `web/src/core/codec/op1-meta.ts`:
 ```ts
@@ -942,12 +944,12 @@ export function metaKind(value: unknown): PatchKind {
 }
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `pnpm --filter @co-op/web test -- op1-meta`
 Expected: 4 passed.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/core/codec/op1-meta.ts web/src/core/codec/op1-meta.test.ts web/test/fixtures/meta.ts
@@ -962,7 +964,7 @@ git commit -m "feat(codec): synth and drum metadata types with guards"
 - Create: `web/src/core/codec/op1-chunk.ts`
 - Test: `web/src/core/codec/op1-chunk.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `web/src/core/codec/op1-chunk.test.ts`:
 ```ts
@@ -1008,12 +1010,12 @@ describe('op-1 APPL chunk', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm --filter @co-op/web test -- op1-chunk`
 Expected: FAIL, cannot resolve `./op1-chunk`.
 
-- [ ] **Step 3: Implement op1-chunk.ts**
+- [x] **Step 3: Implement op1-chunk.ts**
 
 `web/src/core/codec/op1-chunk.ts`:
 ```ts
@@ -1071,12 +1073,12 @@ export function buildOp1Chunk(meta: Record<string, unknown>, trailing?: Uint8Arr
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pnpm --filter @co-op/web test -- op1-chunk`
 Expected: 5 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/core/codec/op1-chunk.ts web/src/core/codec/op1-chunk.test.ts
@@ -1091,7 +1093,7 @@ git commit -m "feat(codec): op-1 APPL chunk parser and builder"
 - Create: `web/src/core/codec/ssnd.ts`
 - Test: `web/src/core/codec/ssnd.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `web/src/core/codec/ssnd.test.ts`:
 ```ts
@@ -1147,12 +1149,12 @@ describe('SSND', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm --filter @co-op/web test -- ssnd`
 Expected: FAIL, cannot resolve `./ssnd`.
 
-- [ ] **Step 3: Implement ssnd.ts**
+- [x] **Step 3: Implement ssnd.ts**
 
 `web/src/core/codec/ssnd.ts`:
 ```ts
@@ -1197,12 +1199,12 @@ export function decodeSsnd(chunk: Chunk, comm: CommInfo): Float32Array {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pnpm --filter @co-op/web test -- ssnd`
 Expected: 6 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/core/codec/ssnd.ts web/src/core/codec/ssnd.test.ts
@@ -1217,7 +1219,7 @@ git commit -m "feat(codec): SSND encode and decode with sowt support"
 - Create: `web/test/fixtures/build-fixtures.ts`
 - Generated: `web/test/fixtures/synth-cluster.aif`, `web/test/fixtures/synth-sampler-sowt.aif`, `web/test/fixtures/drum-boombap.aif`, `web/test/fixtures/no-metadata.aif`
 
-- [ ] **Step 1: Write the generator**
+- [x] **Step 1: Write the generator**
 
 `web/test/fixtures/build-fixtures.ts`:
 ```ts
@@ -1288,17 +1290,17 @@ for (const spec of specs) {
 }
 ```
 
-- [ ] **Step 2: Generate the fixtures**
+- [x] **Step 2: Generate the fixtures**
 
 Run: `pnpm --filter @co-op/web fixtures`
 Expected: four lines like `synth-cluster.aif: 22xxx bytes` and four `.aif` files in `web/test/fixtures`.
 
-- [ ] **Step 3: Sanity-check one file's layout by hand**
+- [x] **Step 3: Sanity-check one file's layout by hand**
 
 Run: `xxd web/test/fixtures/synth-cluster.aif | head -8`
 Expected: first line starts with `FORM`, then `AIFF`, then `COMM`; an `APPL` chunk with `op-1{"adsr":[64,...` appears before `SSND`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add web/test/fixtures
@@ -1313,7 +1315,7 @@ git commit -m "test: add OP-1 patch fixture generator and generated fixtures"
 - Create: `web/src/core/codec/patch.ts`
 - Test: `web/src/core/codec/patch.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `web/src/core/codec/patch.test.ts`:
 ```ts
@@ -1398,12 +1400,12 @@ describe('decodePcm', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm --filter @co-op/web test -- patch`
 Expected: FAIL, cannot resolve `./patch`.
 
-- [ ] **Step 3: Implement patch.ts**
+- [x] **Step 3: Implement patch.ts**
 
 `web/src/core/codec/patch.ts`:
 ```ts
@@ -1494,17 +1496,17 @@ export function decodePcm(patch: Patch): Float32Array {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pnpm --filter @co-op/web test -- patch`
 Expected: 9 passed.
 
-- [ ] **Step 5: Run the whole suite and typecheck**
+- [x] **Step 5: Run the whole suite and typecheck**
 
 Run: `pnpm typecheck && pnpm test`
 Expected: no type errors, all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/core/codec/patch.ts web/src/core/codec/patch.test.ts
@@ -1519,7 +1521,7 @@ git commit -m "feat(codec): patch model with read, write, withMeta and decodePcm
 - Create: `web/src/core/store/listing.ts`, `web/src/core/store/memory-listing.ts`
 - Test: `web/src/core/store/memory-listing.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `web/src/core/store/memory-listing.test.ts`:
 ```ts
@@ -1555,12 +1557,12 @@ describe('MemoryListing', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `pnpm --filter @co-op/web test -- memory-listing`
 Expected: FAIL, cannot resolve `./memory-listing`.
 
-- [ ] **Step 3: Implement the interface and the in-memory listing**
+- [x] **Step 3: Implement the interface and the in-memory listing**
 
 `web/src/core/store/listing.ts`:
 ```ts
@@ -1604,12 +1606,12 @@ export class MemoryListing implements DirectoryListing {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `pnpm --filter @co-op/web test -- memory-listing`
 Expected: 3 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/core/store
@@ -1624,7 +1626,7 @@ git commit -m "feat(store): DirectoryListing interface with in-memory implementa
 - Create: `web/src/core/profiles/types.ts`, `web/src/core/profiles/op1-stock.ts`
 - Test: `web/src/core/profiles/op1-stock.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `web/src/core/profiles/op1-stock.test.ts`:
 ```ts
@@ -1697,12 +1699,12 @@ describe('op1/stock layout', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm --filter @co-op/web test -- op1-stock`
 Expected: FAIL, cannot resolve `./op1-stock`.
 
-- [ ] **Step 3: Implement the types**
+- [x] **Step 3: Implement the types**
 
 `web/src/core/profiles/types.ts`:
 ```ts
@@ -1754,7 +1756,7 @@ export interface DeviceProfile {
 }
 ```
 
-- [ ] **Step 4: Implement the stock profile**
+- [x] **Step 4: Implement the stock profile**
 
 `web/src/core/profiles/op1-stock.ts`:
 ```ts
@@ -1815,12 +1817,12 @@ export const op1Stock: DeviceProfile = {
 };
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `pnpm --filter @co-op/web test -- op1-stock`
 Expected: 9 passed.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/core/profiles/types.ts web/src/core/profiles/op1-stock.ts web/src/core/profiles/op1-stock.test.ts
@@ -1835,7 +1837,7 @@ git commit -m "feat(profiles): DeviceProfile types and stock OP-1 profile"
 - Create: `web/src/core/profiles/scan.ts`
 - Test: `web/src/core/profiles/scan.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `web/src/core/profiles/scan.test.ts`:
 ```ts
@@ -1871,12 +1873,12 @@ describe('scanDrive', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm --filter @co-op/web test -- scan`
 Expected: FAIL, cannot resolve `./scan`.
 
-- [ ] **Step 3: Implement scan.ts**
+- [x] **Step 3: Implement scan.ts**
 
 `web/src/core/profiles/scan.ts`:
 ```ts
@@ -1921,12 +1923,12 @@ export async function scanDrive(root: DirectoryListing, profile: DeviceProfile):
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pnpm --filter @co-op/web test -- scan`
 Expected: 2 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/core/profiles/scan.ts web/src/core/profiles/scan.test.ts
@@ -1941,7 +1943,7 @@ git commit -m "feat(profiles): drive scanner driven by profile layout"
 - Create: `web/src/core/profiles/registry.ts`
 - Test: `web/src/core/profiles/registry.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `web/src/core/profiles/registry.test.ts`:
 ```ts
@@ -1972,12 +1974,12 @@ describe('profile registry', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm --filter @co-op/web test -- registry`
 Expected: FAIL, cannot resolve `./registry`.
 
-- [ ] **Step 3: Implement registry.ts**
+- [x] **Step 3: Implement registry.ts**
 
 `web/src/core/profiles/registry.ts`:
 ```ts
@@ -2008,12 +2010,12 @@ export async function detectProfiles(root: DirectoryListing): Promise<RankedProf
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pnpm --filter @co-op/web test -- registry`
 Expected: 4 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/core/profiles/registry.ts web/src/core/profiles/registry.test.ts
@@ -2031,7 +2033,7 @@ A small screen so real OP-1 files can be dropped in and checked against the code
 - Modify: `web/src/App.tsx`
 - Delete: `web/src/smoke.test.ts`
 
-- [ ] **Step 1: Implement the inspector**
+- [x] **Step 1: Implement the inspector**
 
 `web/src/ui/Inspector.tsx`:
 ```tsx
@@ -2125,7 +2127,7 @@ export function Inspector() {
 }
 ```
 
-- [ ] **Step 2: Mount it in App.tsx**
+- [x] **Step 2: Mount it in App.tsx**
 
 `web/src/App.tsx`:
 ```tsx
@@ -2142,22 +2144,22 @@ export function App() {
 }
 ```
 
-- [ ] **Step 3: Remove the smoke test**
+- [x] **Step 3: Remove the smoke test**
 
 Run: `git rm web/src/smoke.test.ts`
 
-- [ ] **Step 4: Verify in the browser**
+- [x] **Step 4: Verify in the browser**
 
 Run: `pnpm --filter @co-op/web dev`
 Open the printed URL (it ends in `/co-op/`). Drop `web/test/fixtures/drum-boombap.aif` on the page.
 Expected: kind `drum`, name `boombap1`, compression `NONE`, chunks `COMM, APPL, SSND`, Stock OP-1 `ok`. Clicking Play produces a half-second low tone. Dropping `web/test/fixtures/no-metadata.aif` shows `unsupported: file has no op-1 metadata`.
 
-- [ ] **Step 5: Run the full checks**
+- [x] **Step 5: Run the full checks**
 
 Run: `pnpm typecheck && pnpm test && pnpm build`
 Expected: all pass, `web/dist` rebuilt.
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 ```bash
 git add web/src/ui/Inspector.tsx web/src/App.tsx
@@ -2177,15 +2179,15 @@ The fixtures are synthetic. This task confirms the codec against files written b
 - Possibly add: `web/test/fixtures/real/*.aif`
 - Modify: `web/src/core/codec/patch.test.ts`
 
-- [ ] **Step 1: Collect files**
+- [x] **Step 1: Collect files**
 
 Ask the owner for one synth patch and one drum patch copied straight from an OP-1 in disk mode, ideally from `synth/user` and `drum/user`, that they are happy to publish in the repo.
 
-- [ ] **Step 2: Inspect them**
+- [x] **Step 2: Inspect them**
 
 Open the deployed inspector and drop each file. Record kind, compression, chunk list and whether Play sounds right. If the chunk list contains ids other than `FVER`, `COMM`, `APPL`, `SSND`, note them: the codec keeps them verbatim, but the spec open item about layout should mention them.
 
-- [ ] **Step 3: Add them as fixtures and extend the round-trip test**
+- [x] **Step 3: Add them as fixtures and extend the round-trip test**
 
 Copy the files to `web/test/fixtures/real/` and add this test to `web/src/core/codec/patch.test.ts` inside the `writePatch` describe block:
 
@@ -2203,12 +2205,12 @@ Copy the files to `web/test/fixtures/real/` and add this test to `web/src/core/c
 
 Add `readdirSync` to the `node:fs` import at the top of the file.
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `pnpm --filter @co-op/web test -- patch`
 Expected: PASS. If a real file fails the byte-for-byte check, the most likely causes are a FORM size that does not match the file length or a non-zero pad byte; fix `readForm`/`writeForm` to preserve what the device wrote and add a unit test for that case in `iff.test.ts`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/test/fixtures/real web/src/core/codec/patch.test.ts
