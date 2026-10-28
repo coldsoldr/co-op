@@ -2,3 +2,5 @@ packages:
   - web
   - worker
   - shared
+allowBuilds:
+  esbuild: true
