@@ -52,7 +52,7 @@ function assertEntryName(name: string, what: string): void {
   }
 }
 
-function assertPatchFileName(name: string): void {
+export function assertPatchFileName(name: string): void {
   assertEntryName(name, 'file');
   const lower = name.toLowerCase();
   if (!PATCH_EXTENSIONS.some((ext) => lower.endsWith(ext) && lower.length > ext.length)) {
