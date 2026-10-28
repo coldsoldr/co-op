@@ -11,6 +11,24 @@ import { SYNTH_META, SAMPLER_META, DRUM_META } from '../../../test/fixtures/meta
 const fixture = (name: string): Uint8Array =>
   new Uint8Array(readFileSync(fileURLToPath(new URL(`../../../test/fixtures/${name}`, import.meta.url))));
 
+/** First offset where the two buffers differ, or -1. A length mismatch counts as a difference at the shorter length. */
+function firstDifference(a: Uint8Array, b: Uint8Array): number {
+  const shorter = Math.min(a.length, b.length);
+  for (let i = 0; i < shorter; i++) if (a[i] !== b[i]) return i;
+  return a.length === b.length ? -1 : shorter;
+}
+
+const GENERATED_FIXTURES = ['synth-cluster.aif', 'synth-sampler-sowt.aif', 'drum-boombap.aif', 'no-metadata.aif'];
+
+const REAL_DIR = fileURLToPath(new URL('../../../test/fixtures/real/', import.meta.url));
+const realFiles = (): string[] => readdirSync(REAL_DIR).filter((f) => f.toLowerCase().endsWith('.aif'));
+
+/** What we know about each file copied from the owner's OP-1. Files not listed here must still round-trip. */
+const REAL_EXPECTATIONS: Record<string, { kind: string; name: string; sampleRate: number; compression: string }> = {
+  'synth.aif': { kind: 'synth', name: 'realistic-cello-4545', sampleRate: 22050, compression: 'sowt' },
+  'drum.aif': { kind: 'drum', name: 'rlnd_tr808-7', sampleRate: 44100, compression: 'sowt' },
+};
+
 describe('readPatch', () => {
   it('reads a synth patch', () => {
     const patch = readPatch(fixture('synth-cluster.aif'));
@@ -89,11 +107,9 @@ describe('readPatch errors', () => {
 });
 
 describe('writePatch', () => {
-  it('round-trips every fixture byte for byte when nothing changed', () => {
-    for (const name of ['synth-cluster.aif', 'synth-sampler-sowt.aif', 'drum-boombap.aif', 'no-metadata.aif']) {
-      const bytes = fixture(name);
-      expect(Array.from(writePatch(readPatch(bytes)))).toEqual(Array.from(bytes));
-    }
+  it.each(GENERATED_FIXTURES)('round-trips %s byte for byte when nothing changed', (name) => {
+    const bytes = fixture(name);
+    expect(firstDifference(writePatch(readPatch(bytes)), bytes), name).toBe(-1);
   });
 
   it('writes an edited name that reads back', () => {
@@ -115,20 +131,34 @@ describe('writePatch', () => {
     expect(ids).toEqual(['COMM', 'APPL', 'SSND']);
   });
 
-  it('round-trips real device files byte for byte', () => {
-    const dir = fileURLToPath(new URL('../../../test/fixtures/real/', import.meta.url));
-    const files = readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.aif'));
-    expect(files.length).toBeGreaterThan(0);
-    for (const name of files) {
-      const bytes = new Uint8Array(readFileSync(dir + name));
-      const patch = readPatch(bytes);
-      expect(patch.kind).not.toBe('unknown');
-      expect(patch.name.length).toBeGreaterThan(0);
-      expect(Array.from(writePatch(patch))).toEqual(Array.from(bytes));
-      const renamed = readPatch(writePatch(withMeta(patch, { ...patch.meta!, name: 'x' })));
-      expect(renamed.name).toBe('x');
-      expect(renamed.comm).toEqual(patch.comm);
-    }
+});
+
+describe('real device files', () => {
+  it('has at least one .aif in test/fixtures/real', () => {
+    expect(realFiles().length).toBeGreaterThan(0);
+  });
+
+  it.each(Object.entries(REAL_EXPECTATIONS))('reads %s as expected', (name, expected) => {
+    const patch = readPatch(fixture(`real/${name}`));
+    expect(patch.kind).toBe(expected.kind);
+    expect(patch.name).toBe(expected.name);
+    expect(patch.comm.sampleRate).toBe(expected.sampleRate);
+    expect(patch.comm.compression).toBe(expected.compression);
+  });
+
+  it('expects every file named in the table to exist', () => {
+    for (const name of Object.keys(REAL_EXPECTATIONS)) expect(realFiles(), name).toContain(name);
+  });
+
+  it.each(realFiles())('round-trips %s byte for byte and survives a rename', (name) => {
+    const bytes = fixture(`real/${name}`);
+    const patch = readPatch(bytes);
+    expect(patch.kind).not.toBe('unknown');
+    expect(patch.name.length).toBeGreaterThan(0);
+    expect(firstDifference(writePatch(patch), bytes), name).toBe(-1);
+    const renamed = readPatch(writePatch(withMeta(patch, { ...patch.meta!, name: 'x' })));
+    expect(renamed.name).toBe('x');
+    expect(renamed.comm).toEqual(patch.comm);
   });
 });
 
@@ -192,14 +222,11 @@ describe('op1Canonical', () => {
       'AIFF',
     );
 
-  it.each(['synth-cluster.aif', 'synth-sampler-sowt.aif', 'drum-boombap.aif', 'no-metadata.aif'])(
-    'generated fixture %s is canonical',
-    (name) => {
-      expect(readPatch(fixture(name)).op1Canonical).toBe(true);
-    },
-  );
+  it.each(GENERATED_FIXTURES)('generated fixture %s is canonical', (name) => {
+    expect(readPatch(fixture(name)).op1Canonical).toBe(true);
+  });
 
-  it.each(['synth.aif', 'drum.aif'])('real device file %s is canonical', (name) => {
+  it.each(realFiles())('real device file %s is canonical', (name) => {
     expect(readPatch(fixture(`real/${name}`)).op1Canonical).toBe(true);
   });
 
