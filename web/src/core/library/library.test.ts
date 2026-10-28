@@ -174,3 +174,38 @@ describe('loadAllPatches', () => {
     expect(await loadAllPatches(drive(), op1Stock, [])).toEqual([]);
   });
 });
+
+describe('bounded pools', () => {
+  it.each([0, -1, Number.NaN, 2.5, Number.POSITIVE_INFINITY])(
+    'loadAllPatches with concurrency %s still loads every entry in order',
+    async (concurrency) => {
+      const store = drive();
+      const entries = await loadLibrary(store, op1Stock);
+      const loaded = await loadAllPatches(store, op1Stock, entries, undefined, concurrency);
+      expect(loaded.map((e) => e.path)).toEqual(entries.map((e) => e.path));
+      expect(loaded.every((e) => e.patch !== null || e.error !== null)).toBe(true);
+    },
+  );
+
+  it('loadLibrary sizes files with at most `concurrency` calls in flight', async () => {
+    class SlowSize extends MemoryStore {
+      inFlight = 0;
+      maxInFlight = 0;
+      override async size(path: string): Promise<number> {
+        this.inFlight++;
+        this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        this.inFlight--;
+        return super.size(path);
+      }
+    }
+    const files: Record<string, Uint8Array> = {};
+    for (let i = 0; i < 10; i++) files[`synth/user/p${i}.aif`] = cluster;
+    const store = new SlowSize(files);
+    const entries = await loadLibrary(store, op1Stock, 3);
+    expect(entries.map((e) => e.fileName)).toEqual(Object.keys(files).map((p) => p.split('/')[2]));
+    expect(store.maxInFlight).toBe(3);
+    await loadLibrary(store, op1Stock);
+    expect(store.maxInFlight).toBe(4);
+  });
+});

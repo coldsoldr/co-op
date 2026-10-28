@@ -15,25 +15,58 @@ export interface LibraryEntry extends ScannedPatch {
   kindMismatch: boolean;
 }
 
+/** How many store calls run at once by default. */
+export const DEFAULT_CONCURRENCY = 4;
+
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /**
- * Scans the drive with the profile and sizes every patch file without reading it. Patches are
- * loaded separately (loadEntryPatch, loadAllPatches) so a large drive lists quickly. An entry whose
- * size cannot be read gets sizeBytes 0 and the error, rather than failing the whole listing.
+ * Maps `items` through `fn` with at most `concurrency` calls in flight, keeping input order.
+ * A concurrency that is not a positive number (0, negative, NaN) runs one at a time; fractions
+ * round down. `onDone` is called after each item with the running count.
  */
-export async function loadLibrary(store: DeviceStore, profile: DeviceProfile): Promise<LibraryEntry[]> {
+async function mapPool<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>,
+  onDone?: (done: number, total: number) => void,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  let done = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index] as T);
+      done++;
+      onDone?.(done, items.length);
+    }
+  };
+  const workers = Math.max(1, Math.min(Math.floor(concurrency) || 1, items.length));
+  await Promise.all(Array.from({ length: workers }, worker));
+  return results;
+}
+
+/**
+ * Scans the drive with the profile and sizes every patch file without reading it, with at most
+ * `concurrency` size calls in flight. Patches are loaded separately (loadEntryPatch,
+ * loadAllPatches) so a large drive lists quickly. An entry whose size cannot be read gets
+ * sizeBytes 0 and the error, rather than failing the whole listing.
+ */
+export async function loadLibrary(
+  store: DeviceStore,
+  profile: DeviceProfile,
+  concurrency = DEFAULT_CONCURRENCY,
+): Promise<LibraryEntry[]> {
   const scanned = await scanDrive(store, profile);
-  return Promise.all(
-    scanned.map(async (found): Promise<LibraryEntry> => {
-      const base = { ...found, patch: null, compat: null, kindMismatch: false };
-      try {
-        return { ...base, sizeBytes: await store.size(found.path), error: null };
-      } catch (error) {
-        return { ...base, sizeBytes: 0, error: messageOf(error) };
-      }
-    }),
-  );
+  return mapPool(scanned, concurrency, async (found): Promise<LibraryEntry> => {
+    const base = { ...found, patch: null, compat: null, kindMismatch: false };
+    try {
+      return { ...base, sizeBytes: await store.size(found.path), error: null };
+    } catch (error) {
+      return { ...base, sizeBytes: 0, error: messageOf(error) };
+    }
+  });
 }
 
 /**
@@ -70,20 +103,7 @@ export async function loadAllPatches(
   profile: DeviceProfile,
   entries: readonly LibraryEntry[],
   onProgress?: (done: number, total: number) => void,
-  concurrency = 4,
+  concurrency = DEFAULT_CONCURRENCY,
 ): Promise<LibraryEntry[]> {
-  const results: LibraryEntry[] = new Array(entries.length);
-  let next = 0;
-  let done = 0;
-  const worker = async (): Promise<void> => {
-    while (next < entries.length) {
-      const index = next++;
-      results[index] = await loadEntryPatch(store, profile, entries[index] as LibraryEntry);
-      done++;
-      onProgress?.(done, entries.length);
-    }
-  };
-  const workers = Math.max(1, Math.min(concurrency, entries.length));
-  await Promise.all(Array.from({ length: workers }, worker));
-  return results;
+  return mapPool(entries, concurrency, (entry) => loadEntryPatch(store, profile, entry), onProgress);
 }
