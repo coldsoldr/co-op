@@ -1,0 +1,38 @@
+name: Bug report
+description: Something in co-op does not work as it should.
+title: "Bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Connect the OP-1
+        2. Open the Packs tab
+        3. ...
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and operating system
+      placeholder: Chrome 140 on Windows 11
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and firmware
+      placeholder: OP-1, stock firmware
+  - type: textarea
+    id: errors
+    attributes:
+      label: Error messages
+      description: Any message shown in the app, or in the browser console (F12).
+      render: text

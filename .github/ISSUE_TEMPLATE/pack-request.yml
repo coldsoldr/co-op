@@ -1,0 +1,32 @@
+name: Pack idea or request
+description: Suggest a patch pack you would like to see, or offer one you would like to share.
+title: "Pack: "
+labels: ["pack"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Want to add a pack yourself? The guide is in [docs/contributing-packs.md](https://github.com/coldsoldr/co-op/blob/main/docs/contributing-packs.md).
+  - type: textarea
+    id: idea
+    attributes:
+      label: What kind of sounds?
+      description: Instruments, style, synth or drum, which OP-1 engines.
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Are you offering to make or share it?
+      options:
+        - "No, this is a request"
+        - "Yes, I have sounds I made and want to share"
+        - "Maybe, I need help preparing the pack"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware
+      description: For example stock OP-1 firmware.
+      placeholder: op1/stock

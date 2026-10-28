@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+contact_links:
+  # Phase 5 adds feedback from inside the app; link it here once it exists.
+  - name: Contributing a patch pack
+    url: https://github.com/coldsoldr/co-op/blob/main/docs/contributing-packs.md
+    about: How to add your own pack to the catalogue with a pull request.
+  - name: Open co-op
+    url: https://coldsoldr.github.io/co-op/
+    about: The live app.
