@@ -120,7 +120,10 @@ export function writePatch(patch: Patch): Uint8Array {
   return writeForm({ formType: patch.form.formType, chunks });
 }
 
-/** Decodes the sound data to mono floats for preview. */
+/**
+ * Decodes the sound data to mono floats for preview. The frame count comes from the SSND chunk
+ * length, not from COMM, so a preview never reads past the bytes that are actually there.
+ */
 export function decodePcm(patch: Patch): Float32Array {
   const ssnd = patch.form.chunks.find((c) => c.id === 'SSND');
   if (!ssnd) throw new PatchError('missing SSND chunk');

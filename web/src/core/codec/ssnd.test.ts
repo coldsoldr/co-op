@@ -31,6 +31,11 @@ describe('SSND', () => {
     expect(Array.from(out)).toEqual([0, 0.5, -1, 32767 / 32768]);
   });
 
+  it('decodes twos big-endian AIFC', () => {
+    const out = decodeSsnd(buildSsnd(samples, false), comm('twos'));
+    expect(Array.from(out)).toEqual([0, 0.5, -1, 32767 / 32768]);
+  });
+
   it('decodes sowt little-endian AIFC', () => {
     const out = decodeSsnd(buildSsnd(samples, true), comm('sowt'));
     expect(Array.from(out)).toEqual([0, 0.5, -1, 32767 / 32768]);
