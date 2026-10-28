@@ -1,6 +1,6 @@
 import { readPatch, withMeta } from '../codec/patch';
 import { writeAtomic } from '../store/atomic';
-import { StoreError, basename, dirname, joinPath, type DeviceStore } from '../store/store';
+import { StoreError, basename, dirname, joinPath, splitPath, type DeviceStore } from '../store/store';
 
 /** A library operation was refused because of its arguments (a bad name, an occupied target). */
 export class OperationError extends Error {
@@ -10,6 +10,17 @@ export class OperationError extends Error {
 /** The longest patch name the OP-1 shows; a UI guard, not a device limit. */
 export const MAX_PATCH_NAME = 24;
 
+/** Extensions a renamed patch file must keep, compared case-insensitively. */
+export const PATCH_EXTENSIONS: readonly string[] = ['.aif', '.aiff'];
+
+/** Matches `.co-op-old-` in store/atomic.ts, so recoverStranded restores a file parked there. */
+const OLD_PREFIX = '.co-op-old-';
+/** Matches `.co-op-tmp-` in store/atomic.ts, so recoverStranded removes a leftover copy. */
+const TEMP_PREFIX = '.co-op-tmp-';
+
+/** How often copyPatch retries when another writer takes its chosen name. */
+const COPY_ATTEMPTS = 5;
+
 /**
  * Refuses up front on a read-only store, so an operation never gets part-way. Wrap a read-only
  * source in a StagedStore to collect changes instead.
@@ -18,11 +29,32 @@ function assertWritable(store: DeviceStore, path: string): void {
   if (!store.capabilities.write) throw new StoreError(`read-only source: cannot change ${joinPath(path)}`);
 }
 
-/** Rejects names that are empty, contain a path separator, or start with '.' (hidden from the scanner). */
+// eslint-disable-next-line no-control-regex
+const FAT_ILLEGAL = /[\u0000-\u001f\u007f:*?"<>|/\\]/;
+
+/**
+ * Rejects names the OP-1's FAT drive cannot hold or the scanner would hide: empty, a path
+ * separator, one of `:*?"<>|`, a control character, a trailing dot or space, or a leading '.'.
+ */
 function assertEntryName(name: string, what: string): void {
   if (name === '') throw new OperationError(`${what} name is empty`);
-  if (name.includes('/') || name.includes('\\')) throw new OperationError(`${what} name "${name}" contains a slash`);
+  if (FAT_ILLEGAL.test(name)) {
+    throw new OperationError(
+      `${what} name ${JSON.stringify(name)} contains a character the OP-1 drive cannot hold (/ \\ : * ? " < > | or a control character)`,
+    );
+  }
   if (name.startsWith('.')) throw new OperationError(`${what} name "${name}" starts with "."`);
+  if (name.endsWith('.') || name.endsWith(' ')) {
+    throw new OperationError(`${what} name "${name}" ends with a dot or a space`);
+  }
+}
+
+function assertPatchFileName(name: string): void {
+  assertEntryName(name, 'file');
+  const lower = name.toLowerCase();
+  if (!PATCH_EXTENSIONS.some((ext) => lower.endsWith(ext) && lower.length > ext.length)) {
+    throw new OperationError(`file name "${name}" must end in ${PATCH_EXTENSIONS.join(' or ')}`);
+  }
 }
 
 /**
@@ -32,8 +64,23 @@ function assertEntryName(name: string, what: string): void {
 const sameName = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 /** The entry in `folderPath` whose name matches `name` ignoring case, if any. */
-async function findName(store: DeviceStore, folderPath: string, name: string): Promise<string | undefined> {
-  return (await store.list(folderPath)).find((e) => sameName(e.name, name))?.name;
+async function findEntry(store: DeviceStore, folderPath: string, name: string) {
+  return (await store.list(folderPath)).find((e) => sameName(e.name, name));
+}
+
+/**
+ * The folder path as the drive spells it: each segment is replaced by an existing folder whose
+ * name matches it ignoring case, until a segment has no match; the rest is kept as given.
+ */
+async function resolveFolder(store: DeviceStore, folderPath: string): Promise<string> {
+  let resolved = '';
+  const parts = splitPath(folderPath);
+  for (const [i, part] of parts.entries()) {
+    const entry = await findEntry(store, resolved, part);
+    if (!entry || entry.kind !== 'dir') return joinPath(resolved, ...parts.slice(i));
+    resolved = joinPath(resolved, entry.name);
+  }
+  return resolved;
 }
 
 /**
@@ -53,29 +100,46 @@ export async function freeName(store: DeviceStore, folderPath: string, fileName:
 }
 
 /**
- * Renames a file within its folder and returns the new path. Refuses a name already used by
- * another entry in any case. A case-only rename of the same file (kick.aif to Kick.aif) goes
- * through a dot-prefixed temporary name, since a FAT drive treats the two names as one.
+ * A case-only rename (kick.aif to Kick.aif): a FAT drive treats the two names as one, so the file
+ * is parked at `.co-op-old-<original>` first. If the second move fails the file is moved back; if
+ * that fails too, the error names where the file is, and recoverStranded will restore it.
+ */
+async function renameCaseOnly(store: DeviceStore, source: string, target: string): Promise<void> {
+  const parked = joinPath(dirname(source), `${OLD_PREFIX}${basename(source)}`);
+  // A leftover from an earlier crash is stale here: the original is still in place.
+  if (await store.exists(parked)) await store.remove(parked);
+  await store.move(source, parked);
+  try {
+    await store.move(parked, target);
+  } catch (error) {
+    try {
+      await store.move(parked, source);
+    } catch (restoreError) {
+      throw new StoreError(
+        `renaming ${source} failed and the file could not be moved back; it was kept as ${parked}`,
+        { cause: restoreError },
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Renames a file within its folder and returns the new path. The new name must be FAT-safe and end
+ * in .aif or .aiff; a name already used by another entry in any case is refused.
  */
 export async function renameFile(store: DeviceStore, path: string, newFileName: string): Promise<string> {
   assertWritable(store, path);
-  assertEntryName(newFileName, 'file');
+  assertPatchFileName(newFileName);
   const source = joinPath(path);
   const folder = dirname(source);
   const target = joinPath(folder, newFileName);
   if (target === source) return source;
   if (sameName(basename(source), newFileName)) {
-    const temp = joinPath(folder, `.co-op-rename-${newFileName}`);
-    await store.move(source, temp);
-    try {
-      await store.move(temp, target);
-    } catch (error) {
-      await store.move(temp, source).catch(() => undefined);
-      throw error;
-    }
+    await renameCaseOnly(store, source, target);
     return target;
   }
-  if ((await findName(store, folder, newFileName)) !== undefined) {
+  if ((await findEntry(store, folder, newFileName)) !== undefined) {
     throw new OperationError(`${target} already exists`);
   }
   await store.move(source, target);
@@ -83,47 +147,71 @@ export async function renameFile(store: DeviceStore, path: string, newFileName: 
 }
 
 /**
- * Changes the name stored in the patch's op-1 metadata. This is the one operation that
- * re-serialises a file (through withMeta); the audio chunks are untouched.
+ * Changes the name stored in the patch's op-1 metadata to `newName` trimmed. This is the one
+ * operation that re-serialises a file (through withMeta); the audio chunks are untouched.
  */
 export async function setPatchName(store: DeviceStore, path: string, newName: string): Promise<void> {
   assertWritable(store, path);
-  if (newName.trim() === '') throw new OperationError('patch name is empty');
-  if (newName.length > MAX_PATCH_NAME) {
+  const name = newName.trim();
+  if (name === '') throw new OperationError('patch name is empty');
+  if (name.length > MAX_PATCH_NAME) {
     throw new OperationError(`patch name is longer than ${MAX_PATCH_NAME} characters`);
   }
   const patch = readPatch(await store.read(path));
   if (!patch.meta) throw new OperationError(`${joinPath(path)} has no op-1 metadata to rename`);
-  const edited = withMeta(patch, { ...patch.meta, name: newName });
+  const edited = withMeta(patch, { ...patch.meta, name });
   await writeAtomic(store, path, edited.raw);
 }
 
 /**
- * Moves a file into `targetFolder` (for example 'synth/user'), taking a free name there if its own
- * is used. The bytes are moved untouched. Returns the new path.
+ * Moves a file into `targetFolder` (for example 'synth/user', matched to existing folders ignoring
+ * case), taking a free name there if its own is used. The bytes are moved untouched. Returns the
+ * new path; moving into the folder the file is already in changes nothing.
  */
 export async function movePatch(store: DeviceStore, path: string, targetFolder: string): Promise<string> {
   assertWritable(store, path);
   const source = joinPath(path);
-  const folder = joinPath(targetFolder);
-  if (dirname(source) === folder) return source;
+  const folder = await resolveFolder(store, targetFolder);
+  if (sameName(dirname(source), folder)) return source;
   const target = joinPath(folder, await freeName(store, folder, basename(source)));
   await store.move(source, target);
   return target;
 }
 
+async function removeQuietly(store: DeviceStore, path: string): Promise<void> {
+  try {
+    if (await store.exists(path)) await store.remove(path);
+  } catch {
+    // A leftover .co-op-tmp- file is invisible to the scanner and cleared by recoverStranded.
+  }
+}
+
 /**
- * Copies a file's bytes, unchanged, into `targetFolder` under a free name (so copying into the
- * same folder yields `name-2.aif`). Returns the new path.
+ * Copies a file's bytes, unchanged, into `targetFolder` (matched ignoring case) under a free name,
+ * so copying into the same folder yields `name-2.aif`. The bytes go to a dot temp file first and
+ * are moved into place; the move refuses an existing target, so a name taken meanwhile by another
+ * writer is never overwritten and the next free name is tried instead. Returns the new path.
  */
 export async function copyPatch(store: DeviceStore, path: string, targetFolder: string): Promise<string> {
   assertWritable(store, path);
   const source = joinPath(path);
-  const folder = joinPath(targetFolder);
+  const folder = await resolveFolder(store, targetFolder);
   const bytes = await store.read(source);
-  const target = joinPath(folder, await freeName(store, folder, basename(source)));
-  await writeAtomic(store, target, bytes);
-  return target;
+  const temp = joinPath(folder, `${TEMP_PREFIX}copy-${basename(source)}`);
+  await store.write(temp, bytes);
+  for (let attempt = 1; ; attempt++) {
+    const target = joinPath(folder, await freeName(store, folder, basename(source)));
+    try {
+      await store.move(temp, target);
+      return target;
+    } catch (error) {
+      const clash = await store.exists(target).catch(() => false);
+      if (!clash || attempt >= COPY_ATTEMPTS) {
+        await removeQuietly(store, temp);
+        throw error;
+      }
+    }
+  }
 }
 
 export async function deletePatch(store: DeviceStore, path: string): Promise<void> {
@@ -133,14 +221,17 @@ export async function deletePatch(store: DeviceStore, path: string): Promise<voi
 
 /**
  * Creates `<rootPath>/<name>` (for example 'synth/pads') if missing and returns its path. A folder
- * whose name differs only in case is the same folder on the drive, so its path is returned as is.
+ * whose name differs only in case is the same folder on the drive, so its path is returned as is;
+ * a file with that name in any case is refused.
  */
 export async function ensureFolder(store: DeviceStore, rootPath: string, name: string): Promise<string> {
   assertWritable(store, rootPath);
   assertEntryName(name, 'folder');
-  const existing = (await store.list(rootPath)).find((e) => e.kind === 'dir' && sameName(e.name, name));
-  if (existing) return joinPath(rootPath, existing.name);
-  const folder = joinPath(rootPath, name);
+  const root = await resolveFolder(store, rootPath);
+  const existing = await findEntry(store, root, name);
+  if (existing?.kind === 'dir') return joinPath(root, existing.name);
+  if (existing) throw new OperationError(`${joinPath(root, existing.name)} is a file, not a folder`);
+  const folder = joinPath(root, name);
   await store.mkdir(folder);
   return folder;
 }

@@ -11,6 +11,7 @@ import {
 } from './operations';
 import { MemoryStore } from '../store/memory-store';
 import { StoreError } from '../store/store';
+import { recoverStranded } from '../store/atomic';
 import { readPatch } from '../codec/patch';
 import { fixtureBytes } from '../../../test/fixture-bytes';
 import { expectSameBytes, expectSameFiles } from '../../../test/same-bytes';
@@ -276,5 +277,137 @@ describe('case-only rename on a case-insensitive drive', () => {
     const store = new FatMoveStore({ 'drum/user/kick.aif': Uint8Array.from([1]) });
     expect(await renameFile(store, 'drum/user/kick.aif', 'KICK.aif')).toBe('drum/user/KICK.aif');
     expect(Object.keys(store.snapshot())).toEqual(['drum/user/KICK.aif']);
+  });
+});
+
+/** Records every move; `failMoves` lists 1-based move calls that throw instead. */
+class ScriptedMoveStore extends MemoryStore {
+  moves: Array<[string, string]> = [];
+  failMoves = new Set<number>();
+  override async move(from: string, to: string): Promise<void> {
+    this.moves.push([from, to]);
+    if (this.failMoves.has(this.moves.length)) throw new StoreError(`move ${this.moves.length} failed`);
+    return super.move(from, to);
+  }
+}
+
+describe('case-only rename recovery', () => {
+  it('parks the file at .co-op-old-<original name>, where recoverStranded finds it', async () => {
+    const store = new ScriptedMoveStore({ 'drum/user/kick.aif': Uint8Array.from([1]) });
+    await renameFile(store, 'drum/user/kick.aif', 'Kick.aif');
+    expect(store.moves).toEqual([
+      ['drum/user/kick.aif', 'drum/user/.co-op-old-kick.aif'],
+      ['drum/user/.co-op-old-kick.aif', 'drum/user/Kick.aif'],
+    ]);
+  });
+
+  it('moves the file back and rethrows when the second move fails', async () => {
+    const store = new ScriptedMoveStore({ 'drum/user/kick.aif': Uint8Array.from([1]) });
+    store.failMoves.add(2);
+    await expect(renameFile(store, 'drum/user/kick.aif', 'Kick.aif')).rejects.toThrow('move 2 failed');
+    expect(Object.keys(store.snapshot())).toEqual(['drum/user/kick.aif']);
+  });
+
+  it('names where the file was kept when it cannot be moved back, and recoverStranded restores it', async () => {
+    const store = new ScriptedMoveStore({ 'drum/user/kick.aif': Uint8Array.from([1]) });
+    store.failMoves.add(2);
+    store.failMoves.add(3);
+    const error = await renameFile(store, 'drum/user/kick.aif', 'Kick.aif').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(StoreError);
+    expect((error as Error).message).toContain('drum/user/.co-op-old-kick.aif');
+    expect((error as Error).cause).toBeInstanceOf(StoreError);
+    expect(Object.keys(store.snapshot())).toEqual(['drum/user/.co-op-old-kick.aif']);
+    expect(await recoverStranded(store, 'drum/user')).toEqual(['drum/user/kick.aif']);
+    expect(store.snapshot()['drum/user/kick.aif']).toEqual(Uint8Array.from([1]));
+  });
+
+  it('clears a stale .co-op-old- leftover before parking the file', async () => {
+    const store = new MemoryStore({
+      'drum/user/kick.aif': Uint8Array.from([1]),
+      'drum/user/.co-op-old-kick.aif': Uint8Array.from([0]),
+    });
+    expect(await renameFile(store, 'drum/user/kick.aif', 'KICK.aif')).toBe('drum/user/KICK.aif');
+    expect(store.snapshot()).toEqual({ 'drum/user/KICK.aif': Uint8Array.from([1]) });
+  });
+});
+
+describe('FAT-safe names', () => {
+  it.each([
+    'kick', 'kick.wav', 'kick.aif.txt', 'a:b.aif', 'a*b.aif', 'a?b.aif', 'a"b.aif', 'a<b.aif', 'a>b.aif',
+    'a|b.aif', 'a\u0001b.aif', 'a\u007fb.aif', 'kick.aif ', 'kick.aif.',
+  ])('renameFile rejects %j', async (name) => {
+    const store = drive();
+    await expect(renameFile(store, 'drum/user/kit.aif', name)).rejects.toThrow(OperationError);
+    expect(Object.keys(store.snapshot())).toEqual(Object.keys(drive().snapshot()));
+  });
+
+  it.each(['Kick.AIF', 'kick.aiff', 'Kick Drum 2.AiFf'])('renameFile accepts %j', async (name) => {
+    expect(await renameFile(drive(), 'drum/user/kit.aif', name)).toBe(`drum/user/${name}`);
+  });
+
+  it.each(['a:b', 'a*b', 'a?b', 'a"b', 'a<b', 'a>b', 'a|b', 'a\u0001b', 'pads ', 'pads.', 'a\\b'])(
+    'ensureFolder rejects %j',
+    async (name) => {
+      await expect(ensureFolder(drive(), 'synth', name)).rejects.toThrow(OperationError);
+    },
+  );
+
+  it('ensureFolder accepts names without an extension', async () => {
+    expect(await ensureFolder(drive(), 'synth', 'soft pads')).toBe('synth/soft pads');
+  });
+
+  it('ensureFolder refuses a name used by a file in any case', async () => {
+    const store = new MemoryStore({ 'synth/pads.aif': Uint8Array.from([1]) });
+    await expect(ensureFolder(store, 'synth', 'PADS.aif')).rejects.toThrow(OperationError);
+  });
+});
+
+describe('folder resolution and races', () => {
+  it('movePatch treats a target folder differing only in case as the same folder', async () => {
+    const store = drive();
+    expect(await movePatch(store, 'drum/user/kit.aif', 'DRUM/User')).toBe('drum/user/kit.aif');
+    expect(Object.keys(store.snapshot())).toEqual(Object.keys(drive().snapshot()));
+  });
+
+  it('movePatch and copyPatch resolve the target folder case-insensitively', async () => {
+    const store = drive();
+    expect(await movePatch(store, 'drum/user/kit.aif', 'SYNTH/User')).toBe('synth/user/kit.aif');
+    expect(await copyPatch(store, 'synth/user/kit.aif', 'Drum/USER/New')).toBe('drum/user/New/kit.aif');
+  });
+
+  it('copyPatch takes the next free name when the target appears while copying', async () => {
+    class RacingStore extends MemoryStore {
+      raced = false;
+      override async move(from: string, to: string): Promise<void> {
+        if (!this.raced && to === 'drum/other/kit.aif') {
+          this.raced = true;
+          await this.write(to, Uint8Array.from([7]));
+        }
+        return super.move(from, to);
+      }
+    }
+    const store = new RacingStore({ 'drum/user/kit.aif': Uint8Array.from([9]), 'drum/other/x.aif': Uint8Array.from([1]) });
+    expect(await copyPatch(store, 'drum/user/kit.aif', 'drum/other')).toBe('drum/other/kit-2.aif');
+    expect(store.snapshot()).toEqual({
+      'drum/other/kit-2.aif': Uint8Array.from([9]),
+      'drum/other/kit.aif': Uint8Array.from([7]),
+      'drum/other/x.aif': Uint8Array.from([1]),
+      'drum/user/kit.aif': Uint8Array.from([9]),
+    });
+  });
+
+  it('copyPatch removes its temporary file when the move fails for another reason', async () => {
+    const store = new ScriptedMoveStore({ 'drum/user/kit.aif': Uint8Array.from([9]) });
+    store.failMoves.add(1);
+    await expect(copyPatch(store, 'drum/user/kit.aif', 'drum/other')).rejects.toThrow('move 1 failed');
+    expect(Object.keys(store.snapshot())).toEqual(['drum/user/kit.aif']);
+  });
+});
+
+describe('setPatchName trimming', () => {
+  it('stores the trimmed name, and measures length after trimming', async () => {
+    const store = drive();
+    await setPatchName(store, 'synth/user/cluster.aif', `  ${'a'.repeat(24)}  `);
+    expect(readPatch(store.snapshot()['synth/user/cluster.aif'] as Uint8Array).name).toBe('a'.repeat(24));
   });
 });
