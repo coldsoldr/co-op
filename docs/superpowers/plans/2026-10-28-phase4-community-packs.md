@@ -1,0 +1,97 @@
+# Phase 4: Community Packs Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
+
+**Goal:** Anyone can browse community patch packs that live in this repository, preview them, and install them onto their OP-1 (or stage them for download on read-only sources). Contributors add packs by pull request; CI validates every pack.
+
+**Architecture:** A new `shared` workspace package holds the pack manifest schema and pure validation, with the patch parser injected so `shared` stays free of web code. A `tsx` script in `web/scripts/packs.ts` wires in the codec, validates every pack, and writes `index.json`. The index is generated at build time and copied with the pack files into `web/dist/packs/`, so nothing is committed by CI and the index can never drift from the files. The catalogue UI fetches `packs/index.json` from the same origin.
+
+**Spec change:** section 6 said CI commits `index.json` on merge. Generating it during the Pages build is simpler and cannot drift; amend the spec in Task 7.
+
+**Facts from earlier phases:** `copyPatch`-style installs must write raw bytes with `writeAtomic` and `freeName` (case-insensitive). Staged sources use `StagedStore` and `exportChangeSet`. Profiles: `getProfile(id)`, `profiles`. Lint from the repo root.
+
+---
+
+## Pack format
+
+```
+packs/<slug>/pack.json
+packs/<slug>/synth/<file>.aif   (any depth below synth/ or drum/ is NOT allowed: exactly synth/<file> or drum/<file>)
+packs/<slug>/drum/<file>.aif
+```
+
+`pack.json`:
+```json
+{
+  "format": 1,
+  "name": "Test Tones",
+  "slug": "test-tones",
+  "author": "co-op",
+  "description": "Plain sine patches for checking an install works.",
+  "license": "CC0-1.0",
+  "firmware": ["op1/stock"],
+  "tags": ["utility"],
+  "patches": [
+    { "file": "synth/cluster-a.aif", "notes": "optional" }
+  ]
+}
+```
+
+Rules (all enforced by the validator, with messages naming the pack and file):
+- `slug` equals the folder name, matches `^[a-z0-9]+(-[a-z0-9]+)*$`, max 40 chars.
+- `name` 1..60 chars, `author` 1..60, `description` 1..500, `tags` 0..8 items of `^[a-z0-9-]{1,20}$`.
+- `license` one of `CC0-1.0`, `CC-BY-4.0`, `CC-BY-SA-4.0`, `CC-BY-NC-4.0`, `CC-BY-NC-SA-4.0`.
+- `firmware` non-empty, every entry a known profile id (validator receives the list).
+- `patches` non-empty, max 100; `file` paths unique case-insensitively, each `synth/<name>.aif` or `drum/<name>.aif` (aif/aiff, any case), name passes the FAT-safe rules from operations.ts.
+- Every listed file exists; no unlisted files in the pack folder except `pack.json` and an optional `README.md`.
+- Every file parses with `readPatch`; its metadata kind matches its folder (`synth/` -> synth, `drum/` -> drum).
+- Per-file max 2 MB, per-pack max 20 MB.
+
+`index.json` (generated): `{ "format": 1, "generatedAt": ISO, "packs": [ { slug, name, author, description, license, firmware, tags, sizeBytes, patches: [ { file, kind, name, engine, sizeBytes, sha256 } ] } ] }` sorted by slug; `engine` is the synth `type` or `"drum"`.
+
+---
+
+### Task 1: shared package and manifest schema
+
+- Create `shared/package.json` (`@co-op/shared`, private, type module, scripts `test`, `typecheck`), `shared/tsconfig.json` extending the base, `shared/src/packs.ts`, `shared/src/packs.test.ts`, vitest as dev dependency.
+- `packs.ts` exports: `PACK_LICENSES`, `PackManifest`, `PackPatchEntry`, `PackIndex`, `PackIndexEntry`, `PackIssue { pack: string; file?: string; message: string }`, `parseManifest(json: unknown, folderName: string, knownFirmware: readonly string[]): { manifest: PackManifest | null; issues: PackIssue[] }`, and `validatePackFiles(manifest, files: { path: string; size: number }[], parse: (path) => Promise<{ kind: 'synth' | 'drum' | 'unknown'; name: string; engine: string }>): Promise<PackIssue[]>`. FAT-safe name rule duplicated as a small pure function here (shared must not import web); add a test in web asserting both rule functions agree on a table of names.
+- web depends on `@co-op/shared` via `workspace:*`; TypeScript path resolution through the package `exports` pointing at `src/*.ts` (no build step).
+- TDD with tests for every rule above. Commit `feat(shared): pack manifest schema and validation`.
+
+### Task 2: packs CLI and build integration
+
+- `web/scripts/packs.ts` (run with tsx): `validate` reads `../packs/*`, runs `parseManifest` and `validatePackFiles` with `readPatch`, prints issues grouped by pack, exits 1 on any issue. `build <outDir>` validates, then copies `packs/<slug>/**` into `<outDir>/packs/<slug>/` and writes `<outDir>/packs/index.json`. Inject `now` via env `PACKS_NOW` for deterministic tests.
+- Scripts in web/package.json: `"packs:validate": "tsx scripts/packs.ts validate"`, `"build": "vite build && tsx scripts/packs.ts build dist"`. Dev server: a tiny Vite plugin in vite.config.ts that serves `/co-op/packs/index.json` (built on the fly) and pack files from `../packs` during `vite dev`, reusing the script's functions (export them from a module `web/scripts/packs-lib.ts`, with the CLI a thin wrapper).
+- Tests in `web/scripts/packs-lib.test.ts` (include `scripts/**/*.test.ts` in vitest) using a temp dir with a valid and several invalid packs.
+- CI: `pnpm --filter @co-op/web packs:validate` step in ci.yml (runs on every PR). Pages build already runs `build`.
+- Commit `feat(packs): validator CLI and build-time index`.
+
+### Task 3: starter pack
+
+- `packs/test-tones/` with `pack.json` (author "co-op", license CC0-1.0, firmware ["op1/stock"]) and the three synthetic fixtures that carry metadata: `synth/cluster.aif` (from synth-cluster.aif), `synth/sampler.aif` (synth-sampler-sowt.aif), `drum/boombap.aif` (drum-boombap.aif). They are generated sine tones authored in this repo, so CC0 is honest. Add `README.md` in the pack explaining they are test tones.
+- `pnpm --filter @co-op/web packs:validate` passes. Commit `feat(packs): add test-tones starter pack`.
+
+### Task 4: catalogue core
+
+- `web/src/core/catalogue/catalogue.ts`: `fetchIndex(baseUrl, fetchImpl = fetch): Promise<PackIndex>` (validates `format`), `filterPacks(index, { text?, kind?, firmware?, license?, tag? })`, `fetchPatchBytes(baseUrl, slug, file, sha256, fetchImpl)` (verifies sha256, throws CatalogueError on mismatch), `installPatches(store, profileId, slug, files: {file, bytes}[], targetFolderFor: (kind) => string): Promise<{ installed: string[] }>` writing raw bytes with writeAtomic + freeName into e.g. `synth/<slug>` by default (ensureFolder), and `compatibilityWarning(pack, profileId)` returning a message when the active profile is not in `pack.firmware`.
+- Tests with a fake fetch and MemoryStore/StagedStore. Commit `feat(catalogue): index client and installs`.
+
+### Task 5: catalogue UI
+
+- New tab "Packs" in App.tsx. List of packs with search box and filters (kind, firmware, license, tag), each card: name, author, licence badge, firmware badges, size, patch count, description. Detail view: patch table with Play (fetch, decode, playPcm), Install selected / Install all, target folder select (default `synth/<slug>` and `drum/<slug>`), compatibility warning when the connected device profile is not listed. If no device is connected, the install buttons explain how to connect (use the existing useDevice hook so the same connection is shared with the Library tab; lift it to App if needed). On staged sources installs go into the StagedStore and the Library tab's "Download changes" count increases.
+- "Share a pack" button linking to the contributor guide on GitHub.
+- Extend the Playwright test: open Packs, see "Test Tones", install all into a dropped fixture folder, see Download changes count rise.
+- Commit `feat(web): community pack catalogue`.
+
+### Task 6: contributor docs and templates
+
+- `docs/contributing-packs.md`: what a pack is, folder layout, pack.json fields with the rules above, licence guidance (you must own the sounds; samples from commercial packs are not allowed), running `pnpm --filter @co-op/web packs:validate`, step-by-step fork + PR (including GitHub web-UI upload for non-developers).
+- `.github/PULL_REQUEST_TEMPLATE.md` with a pack checklist (I made these sounds or have the right to share them; licence chosen; validator passes) and a code checklist.
+- `.github/ISSUE_TEMPLATE/pack-request.yml` and `bug.yml` (simple forms) plus `config.yml` linking to the in-app feedback once it exists.
+- Commit `docs: pack contribution guide and GitHub templates`.
+
+### Task 7: spec, README, deploy
+
+- Spec section 6: index generated at build time, pack format as above, limits. README: phase 4 summary and link to the contributor guide. Mark this plan done.
+- Push, watch ci and pages, confirm `https://coldsoldr.github.io/co-op/packs/index.json` lists `test-tones`.
+- Commit `docs: phase 4 community packs`.
