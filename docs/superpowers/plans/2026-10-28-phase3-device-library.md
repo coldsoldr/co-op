@@ -1,5 +1,7 @@
 # Phase 3: Device Library Implementation Plan
 
+**Status: complete (2026-10-28).** All twelve tasks are implemented on `main`. The code moved past this text during review (for example `createBackup` returns a `Blob` and takes an options object, `applyRestore` reports partial restores with `RestoreError`, `Change` gained `mkdir` and `rename`, and drops report skipped entries); the code and the spec's section 5.3 are the reference.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Let a user connect their OP-1 (disk mode) in the browser, see every patch with its firmware compatibility, preview audio, and rename, move, copy, delete, back up and restore patches. Chromium gets direct read/write; other browsers get a read-only folder drop with changes staged into a downloadable zip.
@@ -49,11 +51,11 @@ Every `core` module has a sibling `*.test.ts`. Use `MemoryStore` in tests; never
 
 ### Task 1: Lint gate
 
-- [ ] Add dev deps at the root: `pnpm add -Dw eslint @eslint/js typescript-eslint eslint-plugin-react-hooks globals`.
-- [ ] Create `eslint.config.js` (flat config): `@eslint/js` recommended, `typescript-eslint` recommended (not type-checked, to stay fast and independent of TypeScript 7's API), `react-hooks` recommended for `web/src/**/*.tsx`, browser globals for `web/src`, node globals for `web/test` and config files; ignore `**/dist`, `**/node_modules`, `vendor/**`.
-- [ ] Root script `"lint": "eslint ."`. Fix any existing findings (expect few). If `typescript-eslint` refuses to load with TypeScript 7, pin `typescript-eslint`'s parser to use `typescript@5` via a root devDependency alias only for linting, or drop to `@eslint/js` + `eslint-plugin-react-hooks` with a TS parser that works, and record the choice in the commit message.
-- [ ] Add `- run: pnpm lint` to `.github/workflows/ci.yml` and to the build job of `pages.yml`, before typecheck.
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` green. Commit `ci: add eslint gate`.
+- [x] Add dev deps at the root: `pnpm add -Dw eslint @eslint/js typescript-eslint eslint-plugin-react-hooks globals`.
+- [x] Create `eslint.config.js` (flat config): `@eslint/js` recommended, `typescript-eslint` recommended (not type-checked, to stay fast and independent of TypeScript 7's API), `react-hooks` recommended for `web/src/**/*.tsx`, browser globals for `web/src`, node globals for `web/test` and config files; ignore `**/dist`, `**/node_modules`, `vendor/**`.
+- [x] Root script `"lint": "eslint ."`. Fix any existing findings (expect few). If `typescript-eslint` refuses to load with TypeScript 7, pin `typescript-eslint`'s parser to use `typescript@5` via a root devDependency alias only for linting, or drop to `@eslint/js` + `eslint-plugin-react-hooks` with a TS parser that works, and record the choice in the commit message.
+- [x] Add `- run: pnpm lint` to `.github/workflows/ci.yml` and to the build job of `pages.yml`, before typecheck.
+- [x] `pnpm lint && pnpm typecheck && pnpm test` green. Commit `ci: add eslint gate`.
 
 ### Task 2: DeviceStore interface and MemoryStore
 

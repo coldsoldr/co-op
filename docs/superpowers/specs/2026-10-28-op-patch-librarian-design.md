@@ -159,21 +159,40 @@ interface DeviceProfile {
 
 ```ts
 interface DeviceStore {
-  capabilities: { write: boolean; watch: boolean };
-  list(path: string): Promise<Entry[]>;
+  readonly capabilities: { write: boolean };
+  /** Human label for the source, e.g. the picked folder name. */
+  readonly label: string;
+  /** Sorted by code point; [] for a missing path or a file. */
+  list(path: string): Promise<DirEntry[]>;
   read(path: string): Promise<Uint8Array>;
+  /** Size in bytes without reading the file. */
+  size(path: string): Promise<number>;
+  exists(path: string): Promise<boolean>;
+  /** Creates parent folders; overwrites. */
   write(path: string, bytes: Uint8Array): Promise<void>;
+  /** Creates the target's parent folders; refuses an existing target. */
   move(from: string, to: string): Promise<void>;
+  /** Files only, never folders. */
   remove(path: string): Promise<void>;
+  /** Creates a folder and its parents; no-op if present. */
+  mkdir(path: string): Promise<void>;
 }
 ```
+
+Paths are `/`-separated and relative to the drive root; failures throw
+`StoreError`. There is no `watch`: the library reloads after each operation
+and on demand. File contents are written through `writeAtomic` (temp file,
+old file set aside, then a move), and `recoverStranded` puts back anything
+an interrupted write left behind when a drive is opened.
 
 - `FsAccessStore` wraps a directory handle from the File System Access API.
   Full read and write. The handle is persisted in IndexedDB so reconnecting
   is one click.
-- `DropStore` wraps a folder dropped onto the page. Read only. Any write is
-  collected into a staged change set that the user downloads as a zip with
-  instructions for copying it to the device by hand.
+- `DropStore` wraps a folder dropped onto the page or picked with a
+  `webkitdirectory` input. Read only. A `StagedStore` layered over it
+  collects every change, which the user downloads as a zip with
+  instructions (`CHANGES.txt`) for applying it to the device by hand.
+- `MemoryStore` holds a drive in memory for tests.
 
 Feature code only sees `DeviceStore` and `capabilities`, and disables
 write actions when `write` is false.

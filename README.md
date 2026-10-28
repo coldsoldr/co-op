@@ -7,22 +7,38 @@ Live app: https://coldsoldr.github.io/co-op/
 
 ## What exists today
 
-Phase 2 of 8 is complete. The app can read OP-1 patch files (synth and
-drum, stock firmware) and shows what it found in a single inspector page.
-Under the hood that is:
+Phase 3 of 8 is complete. The app is a working librarian for an OP-1 in
+disk mode (shift + COM, then DISK):
 
-- a pure TypeScript AIFF/AIFC codec that round-trips OP-1 files byte for
-  byte and understands the `op-1` metadata chunk
-- a device-profile layer that knows the stock OP-1 drive layout, detects
-  it, scans it for patches and judges firmware compatibility
-- 123 unit tests, including round trips of real files written by an OP-1
+- **Library tab.** In Chrome or Edge, "Connect OP-1" opens the drive for
+  reading and writing (the folder is remembered, so reconnecting is one
+  click). Every browser can also drop or pick the drive folder to open a
+  read-only copy. Patches are listed by folder with their name, kind, size
+  and a compatibility badge for the detected firmware profile (which can be
+  overridden); unreadable files stay visible with the error.
+- **Operations.** Play, rename the file, set the patch name, move or copy
+  to another folder (or a new one), and delete with confirmation. Copies,
+  moves and backups use the original bytes; only setting the name rewrites
+  the metadata. Writes are atomic per file and interrupted writes are put
+  back the next time the drive is opened. On a read-only copy, changes are
+  collected and downloaded as `op1-changes-YYYY-MM-DD.zip` with a
+  `CHANGES.txt` saying what to delete, copy and rename by hand.
+- **Backup and restore.** Download the whole patch tree as a zip with a
+  checksummed manifest; restore picks a backup, shows which files are new
+  or changed, and writes the ones you select (never deleting anything).
+- **Inspector tab.** Drop a single `.aif` to see how co-op reads it.
 
-Still to come, in order: device access and the librarian UI, the community
-pack catalogue, feedback to GitHub Issues via a Cloudflare Worker, op1.fun
-integration, then hundekraft and opus firmware profiles. The full design is
-in `docs/superpowers/specs/2026-10-28-op-patch-librarian-design.md` and the
-first implementation plan in
-`docs/superpowers/plans/2026-10-28-foundation-and-codec.md`.
+Under the hood: a pure TypeScript AIFF/AIFC codec that round-trips OP-1
+files byte for byte, a device-profile layer for the stock OP-1, a
+`DeviceStore` abstraction with File System Access, dropped-folder,
+staged and in-memory implementations, unit tests with vitest and a
+Playwright smoke test of the library in Chromium.
+
+Still to come, in order: the community pack catalogue, feedback to GitHub
+Issues via a Cloudflare Worker, op1.fun integration, then hundekraft and
+opus firmware profiles. The full design is in
+`docs/superpowers/specs/2026-10-28-op-patch-librarian-design.md`; the
+implementation plans are in `docs/superpowers/plans/`.
 
 ## Running it
 
@@ -32,10 +48,13 @@ Requires Node 22 or newer and pnpm 11 (pinned through `packageManager`, so
 ```bash
 pnpm install
 pnpm --filter @co-op/web dev      # local dev server, open the printed /co-op/ URL
-pnpm typecheck && pnpm test && pnpm build
+pnpm lint && pnpm typecheck && pnpm test && pnpm build
+pnpm --filter @co-op/web exec playwright install chromium   # once
+pnpm --filter @co-op/web e2e      # Playwright smoke test against the production build
 ```
 
-CI runs the same three commands on every push and pull request. Pushes to
+CI runs the same commands, and the Playwright test in its own job, on every
+push and pull request. Pushes to
 `main` that pass are deployed to GitHub Pages automatically.
 
 ## Repository layout
@@ -60,7 +79,7 @@ see the README there for provenance.
 ## Contributing
 
 Conventional commit subjects (`feat(codec): ...`, `fix(profiles): ...`,
-`docs: ...`) keep the history readable. Keep `pnpm typecheck && pnpm test`
+`docs: ...`) keep the history readable. Keep `pnpm lint && pnpm typecheck && pnpm test`
 green. Patch and pack contributions get their own guide once the catalogue
 lands.
 
