@@ -23,19 +23,24 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 /**
  * Maps `items` through `fn` with at most `concurrency` calls in flight, keeping input order.
  * A concurrency that is not a positive number (0, negative, NaN) runs one at a time; fractions
- * round down. `onDone` is called after each item with the running count.
+ * round down. `onDone` is called after each item with the running count. Once `signal` aborts, no
+ * further item is started and the pool rejects with the signal's reason; calls already in flight
+ * finish on their own.
  */
 async function mapPool<T, R>(
   items: readonly T[],
   concurrency: number,
   fn: (item: T) => Promise<R>,
   onDone?: (done: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<R[]> {
+  signal?.throwIfAborted();
   const results: R[] = new Array(items.length);
   let next = 0;
   let done = 0;
   const worker = async (): Promise<void> => {
     while (next < items.length) {
+      signal?.throwIfAborted();
       const index = next++;
       results[index] = await fn(items[index] as T);
       done++;
@@ -44,6 +49,7 @@ async function mapPool<T, R>(
   };
   const workers = Math.max(1, Math.min(Math.floor(concurrency) || 1, items.length));
   await Promise.all(Array.from({ length: workers }, worker));
+  signal?.throwIfAborted();
   return results;
 }
 
@@ -96,7 +102,9 @@ export async function loadEntryPatch(
 
 /**
  * Loads every entry with at most `concurrency` reads in flight. The result is in the same order as
- * `entries`; onProgress is called once per finished entry with the running count.
+ * `entries`; onProgress is called once per finished entry with the running count. Aborting
+ * `signal` stops further reads and rejects with its reason (an AbortError by default), so a
+ * superseded load can be cancelled.
  */
 export async function loadAllPatches(
   store: DeviceStore,
@@ -104,6 +112,7 @@ export async function loadAllPatches(
   entries: readonly LibraryEntry[],
   onProgress?: (done: number, total: number) => void,
   concurrency = DEFAULT_CONCURRENCY,
+  signal?: AbortSignal,
 ): Promise<LibraryEntry[]> {
-  return mapPool(entries, concurrency, (entry) => loadEntryPatch(store, profile, entry), onProgress);
+  return mapPool(entries, concurrency, (entry) => loadEntryPatch(store, profile, entry), onProgress, signal);
 }

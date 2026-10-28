@@ -173,6 +173,40 @@ describe('loadAllPatches', () => {
   it('returns [] for no entries', async () => {
     expect(await loadAllPatches(drive(), op1Stock, [])).toEqual([]);
   });
+
+  it('stops starting reads once its signal aborts, rejecting with the abort reason', async () => {
+    const files: Record<string, Uint8Array> = {};
+    for (let i = 0; i < 6; i++) files[`synth/user/p${i}.aif`] = cluster;
+    const store = new MemoryStore(files);
+    const reads: string[] = [];
+    const read = store.read.bind(store);
+    store.read = async (path) => {
+      reads.push(path);
+      return read(path);
+    };
+    const entries = await loadLibrary(store, op1Stock);
+    const controller = new AbortController();
+    const loading = loadAllPatches(
+      store,
+      op1Stock,
+      entries,
+      (done) => {
+        if (done === 2) controller.abort();
+      },
+      1,
+      controller.signal,
+    );
+    await expect(loading).rejects.toMatchObject({ name: 'AbortError' });
+    expect(reads).toHaveLength(2);
+  });
+
+  it('rejects at once for an already aborted signal without reading', async () => {
+    const store = drive();
+    const entries = await loadLibrary(store, op1Stock);
+    await expect(
+      loadAllPatches(store, op1Stock, entries, undefined, 2, AbortSignal.abort()),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
 });
 
 describe('bounded pools', () => {

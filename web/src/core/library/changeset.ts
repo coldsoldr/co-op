@@ -184,6 +184,14 @@ export class StagedStore implements DeviceStore {
 }
 
 /**
+ * How many files a change set touches, as a user counts them: distinct paths ignoring case, so a
+ * case-only rename (a write of the new spelling plus a rename of the old) counts once.
+ */
+export function countChanges(changes: readonly Change[]): number {
+  return new Set(changes.map((c) => c.path.toLowerCase())).size;
+}
+
+/**
  * Packs a change set as a zip for the user to apply by hand: every written file at its drive path
  * (stored uncompressed; audio barely compresses), a directory entry for each new empty folder, and
  * CHANGES.txt with the steps. Deletions come first so that copying never precedes a delete of the

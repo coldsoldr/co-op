@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
-import { StagedStore, exportChangeSet, CHANGES_FILE, type Change } from './changeset';
+import { StagedStore, countChanges, exportChangeSet, CHANGES_FILE, type Change } from './changeset';
 import { copyPatch, deletePatch, ensureFolder, movePatch, renameFile, setPatchName } from './operations';
 import { MemoryStore } from '../store/memory-store';
 import { StoreError } from '../store/store';
@@ -249,6 +249,16 @@ describe('case-only renames on a staged source', () => {
     );
     expect(heading).toBeGreaterThan(lines.findIndex((l) => l.includes('Copy the files from this zip')));
     expect(lines[heading + 1]?.trim()).toBe('drum/user/kick.aif -> Kick.aif');
+  });
+
+  it('count as one change with their write', async () => {
+    const base = new MemoryStore({ 'drum/user/kick.aif': prettyDrum, 'drum/user/snare.aif': b(1) }, { write: false });
+    const store = new StagedStore(base);
+    await renameFile(store, 'drum/user/kick.aif', 'Kick.aif');
+    expect(countChanges(store.changes())).toBe(1);
+    await deletePatch(store, 'drum/user/snare.aif');
+    expect(countChanges(store.changes())).toBe(2);
+    expect(countChanges([])).toBe(0);
   });
 
   it('are not reported when nothing was renamed by case', () => {
