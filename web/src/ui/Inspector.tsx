@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type ChangeEvent } from 'react';
 import { readPatch, decodePcm, type Patch } from '../core/codec/patch';
 import { op1Stock } from '../core/profiles/op1-stock';
 import { playPcm } from './audio';
@@ -9,11 +9,33 @@ interface Loaded {
   patch: Patch;
 }
 
-export function Inspector() {
+/** `active` is false while the tab is hidden; playback stops then. */
+export function Inspector({ active = true }: { active?: boolean }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const stopRef = useRef<(() => void) | null>(null);
+
+  const stop = (): void => {
+    stopRef.current?.();
+    stopRef.current = null;
+  };
+
+  useEffect(() => {
+    if (!active) {
+      stopRef.current?.();
+      stopRef.current = null;
+    }
+  }, [active]);
+
+  useEffect(
+    () => () => {
+      stopRef.current?.();
+    },
+    [],
+  );
 
   async function load(file: File) {
+    stop();
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       setLoaded({ fileName: file.name, sizeBytes: bytes.length, patch: readPatch(bytes) });
@@ -37,8 +59,9 @@ export function Inspector() {
 
   function play() {
     if (!loaded) return;
+    stop();
     try {
-      playPcm(decodePcm(loaded.patch), loaded.patch.comm.sampleRate);
+      stopRef.current = playPcm(decodePcm(loaded.patch), loaded.patch.comm.sampleRate);
     } catch (e) {
       setError(`cannot play: ${(e as Error).message}`);
     }

@@ -42,8 +42,8 @@ test('opens a dropped drive read-only, stages a delete and downloads the changes
   await expect(rows).toHaveCount(2);
   const synth = table.locator('tr[data-path="synth/user/cluster.aif"]');
   const drum = table.locator('tr[data-path="drum/user/boombap.aif"]');
-  await expect(synth.getByRole('cell').nth(1)).toHaveText('synth');
-  await expect(drum.getByRole('cell').nth(1)).toHaveText('drum');
+  await expect(synth.locator('td.kind')).toHaveText('synth');
+  await expect(drum.locator('td.kind')).toHaveText('drum');
   await expect(synth.locator('.badge')).toHaveText('ok');
   await expect(drum.locator('.badge')).toHaveText('ok');
   await expect(page.getByText('Read-only source')).toBeVisible();
@@ -62,6 +62,13 @@ test('opens a dropped drive read-only, stages a delete and downloads the changes
   await expect(download).toBeEnabled();
   const [file] = await Promise.all([page.waitForEvent('download'), download.click()]);
   expect(file.suggestedFilename()).toMatch(/^op1-changes-\d{4}-\d{2}-\d{2}\.zip$/);
+
+  // Staged changes are never dropped without asking.
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+  const discard = page.getByRole('dialog', { name: 'Discard staged changes?' });
+  await expect(discard).toContainText('drum/user/boombap.aif');
+  await discard.getByRole('button', { name: 'Cancel' }).click();
+  await expect(rows).toHaveCount(1);
 
   await page.getByRole('tab', { name: 'Inspector' }).click();
   await expect(page.getByRole('heading', { name: 'Patch inspector' })).toBeVisible();
@@ -139,6 +146,37 @@ test('writes to a connected drive and recovers an interrupted write', async ({ p
   await page.getByRole('button', { name: 'Restore 1 file(s)' }).click();
   await expect(page.getByText('Restored 1 file(s).')).toBeVisible();
   await expect(page.locator('tr[data-path="synth/user/pad.aif"]')).toBeVisible();
+});
+
+test('searches, lists all patches flat and sorts by column', async ({ page }) => {
+  await page.goto('./');
+  await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
+  const rows = page.locator('tbody tr[data-path]');
+  await expect(rows).toHaveCount(2);
+
+  await page.getByRole('searchbox', { name: 'Search' }).fill('BOOM');
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toHaveAttribute('data-path', 'drum/user/boombap.aif');
+  await expect(page.getByRole('caption')).toHaveText('1 of 2 patch file(s) on OP-1');
+  await page.getByRole('searchbox', { name: 'Search' }).fill('');
+  await expect(rows).toHaveCount(2);
+
+  await page.getByRole('radio', { name: 'All patches' }).check();
+  const size = page.getByRole('columnheader', { name: 'Size' });
+  await size.getByRole('button').click();
+  await expect(size).toHaveAttribute('aria-sort', 'ascending');
+  await expect(rows.nth(0)).toHaveAttribute('data-path', 'synth/user/cluster.aif');
+  await size.getByRole('button').press('Enter');
+  await expect(size).toHaveAttribute('aria-sort', 'descending');
+  await expect(rows.nth(0)).toHaveAttribute('data-path', 'drum/user/boombap.aif');
+  await expect(page.getByRole('columnheader', { name: 'Name' })).toHaveAttribute('aria-sort', 'none');
+
+  await page.getByRole('checkbox', { name: 'Select drum/user/boombap.aif' }).check();
+  const [backup] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Back up selected (1)' }).click(),
+  ]);
+  expect(backup.suggestedFilename()).toMatch(/^op1-backup-\d{4}-\d{2}-\d{2}\.zip$/);
 });
 
 test('shows an operation error inline in the row', async ({ page }) => {

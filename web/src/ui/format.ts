@@ -1,5 +1,5 @@
-import type { LibraryEntry } from '../core/library/library';
 import { dirname } from '../core/store/store';
+import type { LibraryRow } from './rows';
 
 /** The local calendar date as YYYY-MM-DD, for download file names. */
 export function dateStamp(date: Date): string {
@@ -14,35 +14,30 @@ export function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** The patch root an entry lives under, for example 'synth' for 'synth/user/a.aif'. */
-export function rootOf(entry: Pick<LibraryEntry, 'path'>): string {
-  return dirname(dirname(entry.path));
+/** The patch root a row lives under, for example 'synth' for 'synth/user/a.aif'. */
+export function rootOf(row: Pick<LibraryRow, 'path'>): string {
+  return dirname(dirname(row.path));
 }
 
-/** The folder an entry lives in, for example 'synth/user'. */
-export function folderOf(entry: Pick<LibraryEntry, 'path'>): string {
-  return dirname(entry.path);
+/** The folder a row lives in, for example 'synth/user'. */
+export function folderOf(row: Pick<LibraryRow, 'path'>): string {
+  return dirname(row.path);
 }
 
-export interface EntryGroup {
+export interface RowGroup {
   /** Folder path, for example 'synth/user'. */
   folder: string;
-  entries: LibraryEntry[];
+  rows: LibraryRow[];
 }
 
-/** Entries grouped by folder, keeping the order in which folders first appear. */
-export function groupByFolder(entries: readonly LibraryEntry[]): EntryGroup[] {
-  const groups = new Map<string, LibraryEntry[]>();
-  for (const entry of entries) {
-    const folder = folderOf(entry);
-    groups.set(folder, [...(groups.get(folder) ?? []), entry]);
+/** Rows grouped by folder, keeping the order in which folders first appear. */
+export function groupByFolder(rows: readonly LibraryRow[]): RowGroup[] {
+  const groups = new Map<string, LibraryRow[]>();
+  for (const row of rows) {
+    const folder = folderOf(row);
+    groups.set(folder, [...(groups.get(folder) ?? []), row]);
   }
-  return [...groups].map(([folder, list]) => ({ folder, entries: list }));
-}
-
-/** The name to show: the metadata name, falling back to the file name. */
-export function displayName(entry: LibraryEntry): string {
-  return entry.patch?.name || entry.fileName;
+  return [...groups].map(([folder, list]) => ({ folder, rows: list }));
 }
 
 export interface CompatView {
@@ -53,16 +48,16 @@ export interface CompatView {
   detail: string | null;
 }
 
-/** How an entry's compatibility is shown. */
-export function compatView(entry: LibraryEntry): CompatView {
-  if (entry.error !== null) return { level: 'unreadable', label: 'unreadable', detail: entry.error };
-  if (!entry.compat) return { level: 'loading', label: 'reading', detail: null };
-  const detail = entry.compat.reason ?? null;
-  return { level: entry.compat.level, label: entry.compat.level, detail };
+/** How a row's compatibility is shown. */
+export function compatView(row: LibraryRow): CompatView {
+  if (row.error !== null) return { level: 'unreadable', label: 'unreadable', detail: row.error };
+  if (!row.compat) return { level: 'loading', label: 'reading', detail: null };
+  const detail = row.compat.reason ?? null;
+  return { level: row.compat.level, label: row.compat.level, detail };
 }
 
 /** The warning for a patch whose metadata kind disagrees with its folder, or null. */
-export function kindMismatchText(entry: LibraryEntry): string | null {
-  if (!entry.kindMismatch || !entry.patch) return null;
-  return `in ${entry.kind} folder, but metadata says ${entry.patch.kind}`;
+export function kindMismatchText(row: LibraryRow): string | null {
+  if (!row.kindMismatch || !row.info) return null;
+  return `in ${row.kind} folder, but metadata says ${row.info.kind}`;
 }

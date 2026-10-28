@@ -55,10 +55,10 @@ export function App() {
         </div>
         {/* Both panels stay mounted so the connected drive and inspected file survive a tab switch. */}
         <div role="tabpanel" id="panel-library" aria-labelledby="tab-library" hidden={tab !== 'library'}>
-          <Library />
+          <Library active={tab === 'library'} />
         </div>
         <div role="tabpanel" id="panel-inspector" aria-labelledby="tab-inspector" hidden={tab !== 'inspector'}>
-          <Inspector />
+          <Inspector active={tab === 'inspector'} />
         </div>
       </main>
       <footer>

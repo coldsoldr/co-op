@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DeviceProfile } from '../core/profiles/types';
 import { detectProfiles, getProfile, profiles, runDetectors } from '../core/profiles/registry';
-import { loadAllPatches, loadLibrary, type LibraryEntry } from '../core/library/library';
-import { StagedStore } from '../core/library/changeset';
+import { DEFAULT_CONCURRENCY, loadAllPatches, loadLibrary } from '../core/library/library';
+import { StagedStore, countChanges } from '../core/library/changeset';
 import { recoverStranded } from '../core/store/atomic';
 import { DropStore, fromInputFiles, type DroppedFile } from '../core/store/drop-store';
 import {
@@ -14,6 +14,8 @@ import {
   restoreHandle,
 } from '../core/store/fs-access-store';
 import { joinPath, type DeviceStore } from '../core/store/store';
+import { createQueue } from './queue';
+import { mergeRows, toRow, type LibraryRow } from './rows';
 
 /** What the library is showing. */
 export interface DeviceSource {
@@ -21,6 +23,8 @@ export interface DeviceSource {
   store: DeviceStore;
   /** Set for a read-only source; collects changes for download. */
   staged: StagedStore | null;
+  /** Distinct per opened source, for resetting per-source UI state. */
+  key: number;
 }
 
 export interface Progress {
@@ -28,23 +32,29 @@ export interface Progress {
   total: number;
 }
 
+/** An operation against the open source. */
+export type Operation = (store: DeviceStore) => Promise<unknown>;
+
 export interface Device {
   source: DeviceSource | null;
   profile: DeviceProfile;
   /** Why this profile was chosen. */
   detection: string;
-  entries: LibraryEntry[];
+  rows: LibraryRow[];
   /** Folder names under each patch root, keyed by root path ('synth'). */
   folders: Record<string, string[]>;
   /** Patch reading progress while patches load. */
   progress: Progress | null;
+  /** True while the drive is being opened or listed. */
   loading: boolean;
+  /** True while any queued action (open, operation, backup, restore) is waiting or running. */
+  busy: boolean;
   error: string | null;
   /** Files put back by recovery of interrupted writes when the drive was opened. */
   recovered: string[];
   /** Entries a drop could not read. */
   skipped: string[];
-  /** Staged changes waiting for download (read-only sources only). */
+  /** Staged changes waiting for download, counted by distinct file (read-only sources only). */
   changeCount: number;
   /** A folder remembered from an earlier visit, offered for reconnecting. */
   remembered: FileSystemDirectoryHandle | null;
@@ -53,16 +63,28 @@ export interface Device {
   reconnect(): Promise<void>;
   openDrop(files: DroppedFile[], skipped: string[]): Promise<void>;
   openInput(files: Iterable<File>): Promise<void>;
+  /** Shows an error outside the queue, e.g. when reading a dropped folder fails. */
+  fail(message: string): void;
   setProfile(id: string): Promise<void>;
-  /** Runs an operation against the source, then reloads. Errors are rethrown for the caller to show. */
-  run(op: (store: DeviceStore) => Promise<unknown>): Promise<void>;
+  /**
+   * Queues an operation, runs it against the source, then reloads, re-reading `touched` paths and
+   * any whose size changed. Errors are rethrown for the caller to show.
+   */
+  run(op: Operation, touched?: readonly string[]): Promise<void>;
+  /** Queues a task that must not overlap an operation (a backup, a restore diff). */
+  exclusive<T>(task: () => Promise<T>): Promise<T>;
   refresh(): Promise<void>;
   disconnect(): void;
 }
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+const isAbort = (error: unknown): boolean => error instanceof DOMException && error.name === 'AbortError';
+
 const defaultProfile = profiles[0] as DeviceProfile;
+
+/** How often progress is pushed to React while patches load. */
+const PROGRESS_INTERVAL_MS = 100;
 
 /** Folder names (no dot folders) under each patch root of the profile. */
 async function listFolders(store: DeviceStore, profile: DeviceProfile): Promise<Record<string, string[]>> {
@@ -93,10 +115,10 @@ async function detect(store: DeviceStore): Promise<{ profile: DeviceProfile; det
 }
 
 export function useDevice(): Device {
-  const [source, setSource] = useState<DeviceSource | null>(null);
+  const [source, setSourceState] = useState<DeviceSource | null>(null);
   const [profile, setProfileState] = useState<DeviceProfile>(defaultProfile);
   const [detection, setDetection] = useState('');
-  const [entries, setEntries] = useState<LibraryEntry[]>([]);
+  const [rows, setRowsState] = useState<LibraryRow[]>([]);
   const [folders, setFolders] = useState<Record<string, string[]>>({});
   const [progress, setProgress] = useState<Progress | null>(null);
   const [loading, setLoading] = useState(false);
@@ -106,8 +128,33 @@ export function useDevice(): Device {
   const [changeCount, setChangeCount] = useState(0);
   const [remembered, setRemembered] = useState<FileSystemDirectoryHandle | null>(null);
   const [fsAccess] = useState(isFsAccessSupported);
-  /** Bumped by every load, so a slower earlier load never overwrites a later one. */
+  const [pending, setPending] = useState(0);
+  const [mutating, setMutating] = useState(0);
+  const [queue] = useState(() => createQueue(setPending));
+
+  // The latest values, read by async work that outlives the render that started it.
+  const sourceRef = useRef<DeviceSource | null>(null);
+  const profileRef = useRef<DeviceProfile>(defaultProfile);
+  const rowsRef = useRef<LibraryRow[]>([]);
+  /** Bumped by every load, so a superseded load never writes state. */
   const generation = useRef(0);
+  /** Bumped by every open and disconnect, so a superseded open stops. */
+  const session = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const nextKey = useRef(0);
+
+  const setSource = useCallback((next: DeviceSource | null) => {
+    sourceRef.current = next;
+    setSourceState(next);
+  }, []);
+  const setProfileBoth = useCallback((next: DeviceProfile) => {
+    profileRef.current = next;
+    setProfileState(next);
+  }, []);
+  const setRows = useCallback((next: LibraryRow[]) => {
+    rowsRef.current = next;
+    setRowsState(next);
+  }, []);
 
   useEffect(() => {
     if (!fsAccess) return;
@@ -120,129 +167,218 @@ export function useDevice(): Device {
     };
   }, [fsAccess]);
 
-  async function load(next: DeviceSource, nextProfile: DeviceProfile): Promise<void> {
-    const id = ++generation.current;
-    const current = (): boolean => id === generation.current;
-    setLoading(true);
-    try {
-      const listed = await loadLibrary(next.store, nextProfile);
-      const nextFolders = await listFolders(next.store, nextProfile);
-      if (!current()) return;
-      setEntries(listed);
-      setFolders(nextFolders);
-      setChangeCount(next.staged?.changes().length ?? 0);
-      setProgress({ done: 0, total: listed.length });
-      const loaded = await loadAllPatches(next.store, nextProfile, listed, (done, total) => {
-        if (current()) setProgress({ done, total });
-      });
-      if (current()) setEntries(loaded);
-    } catch (e) {
-      if (current()) setError(messageOf(e));
-    } finally {
-      if (current()) {
-        setLoading(false);
-        setProgress(null);
-      }
-    }
-  }
+  // Warn before leaving with staged changes not downloaded, or with a write in flight.
+  const dirty = changeCount > 0 || mutating > 0;
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
 
-  async function open(base: DeviceStore, droppedSkips: string[]): Promise<void> {
-    setError(null);
-    setRecovered([]);
-    setSkipped(droppedSkips);
-    setEntries([]);
-    setLoading(true);
-    try {
-      const found = await detect(base);
-      let restored: string[] = [];
+  /**
+   * Lists the drive and reads patches. With `touched` (after an operation), rows whose path and
+   * size are unchanged keep their details and only the rest are read; with null everything is read.
+   * Rows stay populated throughout. A newer load aborts this one.
+   */
+  const load = useCallback(
+    async (next: DeviceSource, nextProfile: DeviceProfile, touched: readonly string[] | null): Promise<void> => {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const id = ++generation.current;
+      const current = (): boolean => id === generation.current;
+      setError(null);
+      setLoading(true);
       try {
-        restored = await recover(base, found.profile);
+        const listed = await loadLibrary(next.store, nextProfile);
+        const nextFolders = await listFolders(next.store, nextProfile);
+        if (!current()) return;
+        const previous = touched === null ? new Map<string, LibraryRow>() : new Map(rowsRef.current.map((r) => [r.path, r]));
+        const merged = mergeRows(listed, previous, new Set(touched ?? []));
+        setRows(merged.rows);
+        setFolders(nextFolders);
+        setChangeCount(next.staged ? countChanges(next.staged.changes()) : 0);
+        if (merged.toLoad.length === 0) return;
+        let last = 0;
+        setProgress({ done: 0, total: merged.toLoad.length });
+        const loaded = await loadAllPatches(
+          next.store,
+          nextProfile,
+          merged.toLoad,
+          (done, total) => {
+            const now = performance.now();
+            if (!current() || (done < total && now - last < PROGRESS_INTERVAL_MS)) return;
+            last = now;
+            setProgress({ done, total });
+          },
+          DEFAULT_CONCURRENCY,
+          controller.signal,
+        );
+        if (!current()) return;
+        const read = new Map(loaded.map((entry) => [entry.path, toRow(entry)]));
+        setRows(merged.rows.map((row) => read.get(row.path) ?? row));
       } catch (e) {
-        setError(`could not finish recovering interrupted writes: ${messageOf(e)}`);
+        if (current() && !isAbort(e)) setError(messageOf(e));
+      } finally {
+        if (current()) {
+          setLoading(false);
+          setProgress(null);
+        }
       }
-      const next: DeviceSource = base.capabilities.write
-        ? { store: base, staged: null }
-        : (() => {
-            const staged = new StagedStore(base);
-            return { store: staged, staged };
-          })();
-      setProfileState(found.profile);
-      setDetection(found.detection);
-      setRecovered(restored);
-      setSource(next);
-      await load(next, found.profile);
-    } catch (e) {
-      setError(messageOf(e));
-      setLoading(false);
-    }
-  }
+    },
+    [setRows],
+  );
 
-  async function connect(): Promise<void> {
-    try {
-      const store = await connectDevice();
-      if (!store) return;
-      await rememberHandle(store.root);
-      setRemembered(store.root);
-      await open(store, []);
-    } catch (e) {
-      setError(messageOf(e));
-    }
-  }
+  /** Opens a store: detects the profile, recovers interrupted writes, wraps read-only sources, loads. */
+  const open = useCallback(
+    async (base: DeviceStore, droppedSkips: string[]): Promise<void> => {
+      const id = ++session.current;
+      const live = (): boolean => id === session.current;
+      setError(null);
+      setRecovered([]);
+      setSkipped(droppedSkips);
+      setLoading(true);
+      try {
+        const found = await detect(base);
+        if (!live()) return;
+        let restored: string[] = [];
+        try {
+          restored = await recover(base, found.profile);
+        } catch (e) {
+          setError(`could not finish recovering interrupted writes: ${messageOf(e)}`);
+        }
+        if (!live()) return;
+        const staged = base.capabilities.write ? null : new StagedStore(base);
+        const next: DeviceSource = { store: staged ?? base, staged, key: ++nextKey.current };
+        setRows([]);
+        setProfileBoth(found.profile);
+        setDetection(found.detection);
+        setRecovered(restored);
+        setSource(next);
+        await load(next, found.profile, null);
+      } catch (e) {
+        if (live()) {
+          setError(messageOf(e));
+          setLoading(false);
+        }
+      }
+    },
+    [load, setProfileBoth, setRows, setSource],
+  );
 
-  async function reconnect(): Promise<void> {
-    if (!remembered) return;
-    if (!(await ensurePermission(remembered))) {
-      setError(`permission to open ${remembered.name} was not granted`);
-      return;
-    }
-    await open(new FsAccessStore(remembered), []);
-  }
+  const exclusive = useCallback(<T,>(task: () => Promise<T>): Promise<T> => queue.run(task), [queue]);
 
-  async function openDrop(files: DroppedFile[], dropSkipped: string[]): Promise<void> {
-    try {
-      if (files.length === 0) throw new Error('nothing readable was dropped; drop the OP-1 drive folder');
-      await open(new DropStore(files), dropSkipped);
-    } catch (e) {
-      setSkipped(dropSkipped);
-      setError(messageOf(e));
-    }
-  }
+  const connect = useCallback(
+    () =>
+      exclusive(async () => {
+        try {
+          const store = await connectDevice();
+          if (!store) return;
+          await rememberHandle(store.root);
+          setRemembered(store.root);
+          await open(store, []);
+        } catch (e) {
+          setError(messageOf(e));
+        }
+      }),
+    [exclusive, open],
+  );
 
-  async function openInput(files: Iterable<File>): Promise<void> {
-    try {
+  const reconnect = useCallback(
+    () =>
+      exclusive(async () => {
+        if (!remembered) return;
+        if (!(await ensurePermission(remembered))) {
+          setError(`permission to open ${remembered.name} was not granted`);
+          return;
+        }
+        await open(new FsAccessStore(remembered), []);
+      }),
+    [exclusive, open, remembered],
+  );
+
+  const openDrop = useCallback(
+    (files: DroppedFile[], dropSkipped: string[]) =>
+      exclusive(async () => {
+        try {
+          if (files.length === 0) throw new Error('nothing readable was dropped; drop the OP-1 drive folder');
+          await open(new DropStore(files), dropSkipped);
+        } catch (e) {
+          setSkipped(dropSkipped);
+          setError(messageOf(e));
+        }
+      }),
+    [exclusive, open],
+  );
+
+  const openInput = useCallback(
+    (files: Iterable<File>) => {
       const list = [...files];
-      if (list.length === 0) throw new Error('the chosen folder is empty');
-      await open(fromInputFiles(list), []);
-    } catch (e) {
-      setError(messageOf(e));
-    }
-  }
+      return exclusive(async () => {
+        try {
+          if (list.length === 0) throw new Error('the chosen folder is empty');
+          await open(fromInputFiles(list), []);
+        } catch (e) {
+          setError(messageOf(e));
+        }
+      });
+    },
+    [exclusive, open],
+  );
 
-  async function setProfile(id: string): Promise<void> {
-    const next = getProfile(id);
-    if (!next) return;
-    setProfileState(next);
-    setDetection(`chosen by hand`);
-    if (source) await load(source, next);
-  }
+  const fail = useCallback((message: string) => setError(message), []);
 
-  async function refresh(): Promise<void> {
-    if (source) await load(source, profile);
-  }
+  const setProfile = useCallback(
+    (id: string) =>
+      exclusive(async () => {
+        const next = getProfile(id);
+        if (!next) return;
+        setProfileBoth(next);
+        setDetection('chosen by hand');
+        const current = sourceRef.current;
+        if (current) await load(current, next, null);
+      }),
+    [exclusive, load, setProfileBoth],
+  );
 
-  async function run(op: (store: DeviceStore) => Promise<unknown>): Promise<void> {
-    if (!source) throw new Error('nothing is connected');
-    try {
-      await op(source.store);
-    } finally {
-      await load(source, profile);
-    }
-  }
+  const run = useCallback(
+    (op: Operation, touched: readonly string[] = []) =>
+      exclusive(async () => {
+        const current = sourceRef.current;
+        if (!current) throw new Error('nothing is connected');
+        setMutating((n) => n + 1);
+        try {
+          await op(current.store);
+        } finally {
+          try {
+            if (sourceRef.current === current) await load(current, profileRef.current, touched);
+          } finally {
+            setMutating((n) => n - 1);
+          }
+        }
+      }),
+    [exclusive, load],
+  );
 
-  function disconnect(): void {
+  const refresh = useCallback(
+    () =>
+      exclusive(async () => {
+        const current = sourceRef.current;
+        if (current) await load(current, profileRef.current, null);
+      }),
+    [exclusive, load],
+  );
+
+  const disconnect = useCallback(() => {
+    session.current++;
     generation.current++;
+    abortRef.current?.abort();
     setSource(null);
-    setEntries([]);
+    setRows([]);
     setFolders({});
     setProgress(null);
     setLoading(false);
@@ -250,16 +386,17 @@ export function useDevice(): Device {
     setRecovered([]);
     setSkipped([]);
     setChangeCount(0);
-  }
+  }, [setRows, setSource]);
 
   return {
     source,
     profile,
     detection,
-    entries,
+    rows,
     folders,
     progress,
     loading,
+    busy: pending > 0,
     error,
     recovered,
     skipped,
@@ -270,8 +407,10 @@ export function useDevice(): Device {
     reconnect,
     openDrop,
     openInput,
+    fail,
     setProfile,
     run,
+    exclusive,
     refresh,
     disconnect,
   };

@@ -1,5 +1,4 @@
-import { useState, type FormEvent } from 'react';
-import type { LibraryEntry } from '../core/library/library';
+import { memo, useState, type FormEvent } from 'react';
 import {
   MAX_PATCH_NAME,
   copyPatch,
@@ -12,20 +11,24 @@ import {
 import { joinPath, type DeviceStore } from '../core/store/store';
 import { ConfirmDialog, Dialog } from './Dialog';
 import { folderOf, rootOf } from './format';
+import type { LibraryRow } from './rows';
+import type { Operation } from './useDevice';
 
 type Mode = 'rename' | 'name' | 'move' | 'copy' | 'delete';
 
 const NEW_FOLDER = '\u0000new';
 
 interface PatchActionsProps {
-  entry: LibraryEntry;
+  entry: LibraryRow;
   /** Folder names under the entry's patch root. */
   folders: readonly string[];
   /** True while this entry is playing. */
   playing: boolean;
-  /** Starts or stops playback; may throw (for example, audio the browser cannot decode). */
-  onTogglePlay: () => void;
-  run: (op: (store: DeviceStore) => Promise<unknown>) => Promise<void>;
+  /** Starts or stops playback of a path; may reject (for example, audio the browser cannot decode). */
+  onTogglePlay: (path: string) => Promise<void>;
+  run: (op: Operation, touched?: readonly string[]) => Promise<void>;
+  /** True while any action is queued or running; actions wait for it. */
+  busy: boolean;
   /** True when changes are staged for download rather than written to the drive. */
   staged: boolean;
 }
@@ -33,33 +36,33 @@ interface PatchActionsProps {
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** Play, rename, set name, move, copy and delete for one library row. Errors show in the row. */
-export function PatchActions({ entry, folders, playing, onTogglePlay, run, staged }: PatchActionsProps) {
+export const PatchActions = memo(function PatchActions({
+  entry,
+  folders,
+  playing,
+  onTogglePlay,
+  run,
+  staged,
+  busy,
+}: PatchActionsProps) {
   const [mode, setMode] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const file = entry.fileName;
-  const canName = entry.patch?.meta != null;
+  const canName = entry.info?.hasMeta === true;
 
   async function perform(op: (store: DeviceStore) => Promise<unknown>): Promise<void> {
     setMode(null);
-    setBusy(true);
     setError(null);
     try {
-      await run(op);
+      await run(op, [entry.path]);
     } catch (e) {
       setError(messageOf(e));
-    } finally {
-      setBusy(false);
     }
   }
 
   function play(): void {
     setError(null);
-    try {
-      onTogglePlay();
-    } catch (e) {
-      setError(`cannot play: ${messageOf(e)}`);
-    }
+    onTogglePlay(entry.path).catch((e: unknown) => setError(`cannot play: ${messageOf(e)}`));
   }
 
   const close = (): void => setMode(null);
@@ -69,7 +72,7 @@ export function PatchActions({ entry, folders, playing, onTogglePlay, run, stage
       <button
         type="button"
         onClick={play}
-        disabled={!entry.patch}
+        disabled={!entry.info}
         aria-label={`${playing ? 'Stop' : 'Play'} ${file}`}
         aria-pressed={playing}
       >
@@ -122,7 +125,7 @@ export function PatchActions({ entry, folders, playing, onTogglePlay, run, stage
         <TextDialog
           title={`Set the patch name of ${file}`}
           label="Patch name (shown on the OP-1)"
-          initial={entry.patch?.name ?? ''}
+          initial={entry.info?.name ?? ''}
           maxLength={MAX_PATCH_NAME}
           submitLabel="Set name"
           onCancel={close}
@@ -162,7 +165,7 @@ export function PatchActions({ entry, folders, playing, onTogglePlay, run, stage
       )}
     </div>
   );
-}
+});
 
 interface TextDialogProps {
   title: string;
