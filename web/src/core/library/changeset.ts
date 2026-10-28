@@ -2,8 +2,11 @@ import { strToU8, zipSync, type Zippable } from 'fflate';
 import type { DirEntry } from '../store/listing';
 import { StoreError, basename, dirname, joinPath, splitPath, type DeviceStore, type StoreCapabilities } from '../store/store';
 
-/** One file-level change against the base store, in its final state. */
-export type Change = { op: 'write'; path: string; bytes: Uint8Array } | { op: 'remove'; path: string };
+/** One change against the base store, in its final state. 'mkdir' is a new folder left empty. */
+export type Change =
+  | { op: 'write'; path: string; bytes: Uint8Array }
+  | { op: 'remove'; path: string }
+  | { op: 'mkdir'; path: string };
 
 /** The instructions file inside an exported change set. */
 export const CHANGES_FILE = 'CHANGES.txt';
@@ -38,6 +41,8 @@ export class StagedStore implements DeviceStore {
   private readonly removed = new Set<string>();
   /** Folders created here; base folders are not listed. */
   private readonly dirs = new Set<string>();
+  /** Folders made explicitly with mkdir that the base does not have. */
+  private readonly made = new Set<string>();
 
   constructor(private readonly base: DeviceStore) {
     this.label = base.label;
@@ -111,13 +116,30 @@ export class StagedStore implements DeviceStore {
     const key = joinPath(path);
     if (key === '') return;
     await this.addParents(joinPath(key, 'x'));
+    if (!(await this.base.exists(key))) this.made.add(key);
   }
 
-  /** The net changes against the base, sorted by path. Written bytes are the staged buffers, not copies. */
+  /**
+   * The net changes against the base, sorted by path. Written bytes are the staged buffers, not
+   * copies. A removal whose path matches a written path ignoring case is dropped: on the OP-1's
+   * FAT drive the two names are one file, so deleting it would lose the patch (a case-only
+   * rename). A folder made with mkdir is listed only while nothing staged lies beneath it.
+   */
   changes(): Change[] {
     const out: Change[] = [];
-    for (const [path, bytes] of this.staged) out.push({ op: 'write', path, bytes });
-    for (const path of this.removed) if (!this.staged.has(path)) out.push({ op: 'remove', path });
+    const written = new Set<string>();
+    for (const [path, bytes] of this.staged) {
+      out.push({ op: 'write', path, bytes });
+      written.add(path.toLowerCase());
+    }
+    for (const path of this.removed) {
+      if (!written.has(path.toLowerCase())) out.push({ op: 'remove', path });
+    }
+    const below = (dir: string, path: string): boolean => path.startsWith(`${dir}/`);
+    for (const dir of this.made) {
+      const occupied = [...this.staged.keys(), ...this.made].some((path) => below(dir, path));
+      if (!occupied) out.push({ op: 'mkdir', path: dir });
+    }
     return out.sort((a, b) => byCodePoint(a.path, b.path));
   }
 
@@ -153,29 +175,54 @@ export class StagedStore implements DeviceStore {
 
 /**
  * Packs a change set as a zip for the user to apply by hand: every written file at its drive path
- * (stored uncompressed; audio barely compresses) plus CHANGES.txt with the instructions and the
- * files to delete. Empty folders created with mkdir are not carried; the OP-1 ignores them anyway.
+ * (stored uncompressed; audio barely compresses), a directory entry for each new empty folder, and
+ * CHANGES.txt with the steps. Deletions come first so that copying never precedes a delete of the
+ * same name, and copying is described per destination folder, because copying a whole top-level
+ * folder onto the drive can replace the folder there (macOS Finder's "Replace"). Every entry is
+ * stamped with `now()`, so the zip is deterministic for a given time.
  */
-export function exportChangeSet(changes: readonly Change[]): Uint8Array {
+export function exportChangeSet(changes: readonly Change[], now: () => Date = () => new Date()): Uint8Array {
+  const mtime = now();
   const zip: Zippable = {};
   const removals: string[] = [];
+  const folders: string[] = [];
+  const copies = new Map<string, string[]>();
   for (const change of changes) {
-    if (change.op === 'write') zip[change.path] = [change.bytes, { level: 0 }];
-    else removals.push(change.path);
+    if (change.op === 'write') {
+      zip[change.path] = [change.bytes, { level: 0, mtime }];
+      const dir = dirname(change.path);
+      copies.set(dir, [...(copies.get(dir) ?? []), basename(change.path)]);
+    } else if (change.op === 'remove') {
+      removals.push(change.path);
+    } else {
+      zip[`${change.path}/`] = [new Uint8Array(0), { mtime }];
+      folders.push(change.path);
+    }
   }
+  const none = (text: string): string[] => [`   (${text})`];
   const lines = [
     'Changes made in co-op to a read-only copy of an OP-1 drive.',
     '',
-    'To apply them:',
-    '1. Put the OP-1 in disk mode (shift + COM, then DISK) and open its drive.',
-    '2. Copy these folders onto the OP-1 in disk mode, merging them with the folders already there',
-    '   and replacing files when asked.',
-    '3. Then delete the files listed below from the OP-1 drive.',
+    'Put the OP-1 in disk mode (shift + COM, then DISK), open its drive, and apply these steps in order.',
     '',
-    'Files to delete:',
-    ...(removals.length > 0 ? removals.map((path) => `  ${path}`) : ['  (nothing to delete)']),
+    '1. Delete these files from the OP-1 drive:',
+    ...(removals.length > 0 ? removals.map((path) => `   ${path}`) : none('nothing to delete')),
+    '',
+    '2. Create these folders on the OP-1 drive:',
+    ...(folders.length > 0 ? folders.map((path) => `   ${path}/`) : none('no new folders')),
+    '',
+    '3. Copy the files from this zip into these folders on the OP-1 drive, creating a folder if it is missing:',
+    ...(copies.size > 0
+      ? [...copies.keys()].sort(byCodePoint).flatMap((dir) => [
+          `   ${dir}/`,
+          ...(copies.get(dir) as string[]).sort(byCodePoint).map((name) => `     ${name}`),
+        ])
+      : none('nothing to copy')),
+    '',
+    'Copy the files themselves into each folder; never copy a folder from this zip over a folder on the drive.',
+    'On a Mac, never choose Replace for a folder; copy the files themselves, or hold Option and choose Merge.',
     '',
   ];
-  zip[CHANGES_FILE] = strToU8(lines.join('\r\n'));
+  zip[CHANGES_FILE] = [strToU8(lines.join('\r\n')), { mtime }];
   return zipSync(zip);
 }

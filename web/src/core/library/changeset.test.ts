@@ -127,6 +127,7 @@ describe('changes()', () => {
     const changes = store.changes();
     expect(summary(changes)).toEqual([
       'write drum/backup/808.aif',
+      'mkdir synth/pads',
       'write synth/user/cluster.aif',
       'remove synth/user/old.aif',
       'remove tape/track1.aif',
@@ -145,24 +146,103 @@ describe('changes()', () => {
     expect(store.changes().map((c) => c.path)).toEqual(['synth/user/cluster.aif']);
   });
 });
-
 describe('exportChangeSet', () => {
-  it('zips every written file at its path plus CHANGES.txt listing removals', async () => {
+  const textOf = (zip: Uint8Array): string => strFromU8(unzipSync(zip)[CHANGES_FILE] as Uint8Array);
+
+  it('zips every written file at its path plus CHANGES.txt', async () => {
     const { store } = staged();
     await copyPatch(store, 'drum/user/808.aif', 'drum/backup');
     await deletePatch(store, 'synth/user/old.aif');
     const entries = unzipSync(exportChangeSet(store.changes()));
     expect(Object.keys(entries).sort()).toEqual([CHANGES_FILE, 'drum/backup/808.aif']);
     expectSameBytes(entries['drum/backup/808.aif'], prettyDrum, 'zipped drum');
-    const text = strFromU8(entries[CHANGES_FILE] as Uint8Array);
-    expect(text).toMatch(/copy these folders onto the OP-1 in disk mode, merging/i);
-    expect(text).toMatch(/then delete the files listed below/i);
-    expect(text).toContain('synth/user/old.aif');
+  });
+
+  it('lists deletions first, then each destination folder with the files to copy into it', () => {
+    const text = textOf(
+      exportChangeSet([
+        { op: 'write', path: 'drum/backup/808.aif', bytes: b(1) },
+        { op: 'write', path: 'synth/user/a.aif', bytes: b(2) },
+        { op: 'write', path: 'synth/user/b.aif', bytes: b(3) },
+        { op: 'remove', path: 'synth/user/old.aif' },
+      ]),
+    );
+    const lines = text.split(/\r?\n/);
+    const at = (needle: string): number => lines.findIndex((line) => line.trim() === needle);
+    expect(at('synth/user/old.aif')).toBeGreaterThan(-1);
+    expect(at('drum/backup/')).toBeGreaterThan(at('synth/user/old.aif'));
+    expect(lines[at('drum/backup/') + 1]?.trim()).toBe('808.aif');
+    expect(lines.slice(at('synth/user/') + 1, at('synth/user/') + 3).map((l) => l.trim())).toEqual(['a.aif', 'b.aif']);
+    expect(text).not.toMatch(/copy these folders/i);
+  });
+
+  it('warns Mac users never to replace a folder', () => {
+    const text = textOf(exportChangeSet([{ op: 'write', path: 'synth/user/a.aif', bytes: b(1) }]));
+    expect(text).toContain(
+      'On a Mac, never choose Replace for a folder; copy the files themselves, or hold Option and choose Merge.',
+    );
   });
 
   it('says there is nothing to delete when there are no removals', () => {
     const entries = unzipSync(exportChangeSet([{ op: 'write', path: 'synth/user/a.aif', bytes: b(1) }]));
     expect(Object.keys(entries).sort()).toEqual([CHANGES_FILE, 'synth/user/a.aif']);
     expect(strFromU8(entries[CHANGES_FILE] as Uint8Array)).toMatch(/nothing to delete/i);
+  });
+
+  it('carries new empty folders as directory entries and lists them', async () => {
+    const { store } = staged();
+    await ensureFolder(store, 'synth', 'pads');
+    await store.mkdir('drum/new/deeper');
+    await store.mkdir('synth/user');
+    expect(summary(store.changes())).toEqual(['mkdir drum/new/deeper', 'mkdir synth/pads']);
+    const zip = exportChangeSet(store.changes());
+    expect(Object.keys(unzipSync(zip)).sort()).toEqual([CHANGES_FILE, 'drum/new/deeper/', 'synth/pads/']);
+    const lines = textOf(zip).split(/\r?\n/).map((l) => l.trim());
+    expect(lines).toContain('drum/new/deeper/');
+    expect(lines).toContain('synth/pads/');
+  });
+
+  it('does not list a made folder that ends up holding staged files', async () => {
+    const { store } = staged();
+    await ensureFolder(store, 'synth', 'pads');
+    await copyPatch(store, 'synth/user/cluster.aif', 'synth/pads');
+    expect(summary(store.changes())).toEqual(['write synth/pads/cluster.aif']);
+  });
+
+  it('is deterministic for a given time', () => {
+    const changes: Change[] = [
+      { op: 'write', path: 'synth/user/a.aif', bytes: b(1) },
+      { op: 'mkdir', path: 'synth/pads' },
+    ];
+    const now = (): Date => new Date('2026-10-28T12:00:00Z');
+    expectSameBytes(exportChangeSet(changes, now), exportChangeSet(changes, now), 'zip');
+    const later = (): Date => new Date('2027-01-01T00:00:00Z');
+    expect(exportChangeSet(changes, later)).not.toEqual(exportChangeSet(changes, now));
+  });
+});
+
+describe('case-only renames on a staged source', () => {
+  it('keep the file: the removal of the old spelling is dropped', async () => {
+    const base = new MemoryStore({ 'drum/user/kick.aif': prettyDrum }, { write: false });
+    const store = new StagedStore(base);
+    await renameFile(store, 'drum/user/kick.aif', 'Kick.aif');
+    const changes = store.changes();
+    expect(summary(changes)).toEqual(['write drum/user/Kick.aif']);
+    const text = strFromU8(unzipSync(exportChangeSet(changes))[CHANGES_FILE] as Uint8Array);
+    expect(text).not.toContain('kick.aif');
+    expect(text).toMatch(/nothing to delete/i);
+  });
+});
+
+describe('raw bytes through a staged source', () => {
+  it('move and rename keep a non-canonical real file byte for byte', async () => {
+    const { store } = staged();
+    const moved = await movePatch(store, 'drum/user/808.aif', 'drum/moved');
+    const renamed = await renameFile(store, moved, 'tr808.aif');
+    const changes = store.changes();
+    expect(summary(changes)).toEqual(['write drum/moved/tr808.aif', 'remove drum/user/808.aif']);
+    const write = changes[0];
+    expectSameBytes(write?.op === 'write' ? write.bytes : undefined, prettyDrum, renamed);
+    expectSameBytes(unzipSync(exportChangeSet(changes))[renamed], prettyDrum, 'zipped');
   });
 });
