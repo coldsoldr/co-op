@@ -16,6 +16,13 @@ export interface DriveLayout {
   otherRoots: string[];
 }
 
+/**
+ * Which file extensions a patch kind uses on this profile's drive.
+ *
+ * Parser/validator hooks are deliberately absent: the codec classifies every
+ * kind we currently support. They will be added when a profile needs a kind
+ * the codec does not classify; hundekraft 'gin' drum kits are the known case.
+ */
 export interface PatchKindSpec {
   kind: PatchKind;
   /** Lower-case extensions including the dot. */
@@ -41,6 +48,14 @@ export interface DeviceProfile {
   label: string;
   layout: DriveLayout;
   patchKinds: PatchKindSpec[];
+  /**
+   * Folder-level detection only: it sees names, not file contents. That is
+   * enough to tell an OP-1 drive from an unrelated folder but not to rank
+   * firmwares against each other. hundekraft, for example, keeps its plugins
+   * on the internal volume, so its disk mode looks identical to stock; ranking
+   * at that level needs a content-sniff phase with access to file bytes,
+   * planned alongside the hundekraft profile.
+   */
   detect(root: DirectoryListing): Promise<DetectResult>;
   compatibility(patch: Patch): Compat;
 }
