@@ -1,7 +1,7 @@
 name: Pack idea or request
 description: Suggest a patch pack you would like to see, or offer one you would like to share.
 title: "Pack: "
-labels: ["pack"]
+labels: ["pack-request"]
 body:
   - type: markdown
     attributes:

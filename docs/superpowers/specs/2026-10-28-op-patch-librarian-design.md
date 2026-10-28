@@ -261,13 +261,16 @@ exists so people can install and use what they find.
 
 Validation (the pure functions in `shared/src/packs.ts`, run by
 `web/scripts/packs.ts`): every rule above; patch file names FAT-safe and at
-most 64 characters, unique ignoring case; every listed file present with that
+most 64 characters, not a Windows reserved name, unique ignoring case; every listed file present with that
 exact spelling and nothing unlisted; every file parses with the codec as the
 kind its folder names. Limits: 2 MB per patch, 20 MB of patches per pack,
 64 KB each for `pack.json` and `README.md`.
 
 CI runs `pnpm --filter @co-op/web packs:validate` on every pull request;
-merge is blocked on failure. **`index.json` is not committed.** The Pages
+maintainers merge only when the check passes (there is no branch protection,
+and a first-time contributor's run needs a maintainer's approval to start).
+`.DS_Store`, `Thumbs.db` and `desktop.ini` in a pack folder are ignored and
+never published. **`index.json` is not committed.** The Pages
 build (`pnpm --filter @co-op/web build`) validates the packs again, copies
 each pack's `pack.json`, `README.md` and listed patches into
 `web/dist/packs/<slug>/`, and writes `web/dist/packs/index.json` (format 1:

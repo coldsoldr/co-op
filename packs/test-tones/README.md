@@ -17,4 +17,10 @@ third-party sample is involved. The synth, effect and LFO parameter values in th
 metadata are the defaults used by the [teoperator](https://github.com/schollz/teoperator)
 project (MIT licence), credited here with thanks.
 
+The drum slice points use a scale of 4058 position units per sample frame.
+That scale is inferred, not verified on hardware: in a real OP-1 drum file the
+last slice end divided by the frame count is 4057.97, and each slice starts
+exactly 4058 units (one frame) after the previous one ends. If the slices of
+`tone-drum` sit in the wrong place on your OP-1, please open an issue.
+
 The pack is released under CC0-1.0 (public domain dedication).

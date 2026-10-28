@@ -3,7 +3,8 @@
 co-op's **Packs** tab lists community patch packs that live in this
 repository, in the [`packs/`](../packs) folder. Anyone can preview them in the
 browser and install them onto an OP-1. You add a pack by opening a pull
-request; a check runs on every pull request to make sure the pack is valid.
+request; a check runs on the pull request to make sure the pack is valid, and
+maintainers merge only when the check passes.
 
 ## What a pack is
 
@@ -24,10 +25,32 @@ packs/<slug>/drum/<file>.aif    drum patches
   `pack.json`, and every file listed must be there with exactly that
   spelling, including upper and lower case.
 - Symbolic links are not allowed; add the real files.
+- `.DS_Store` (macOS Finder), `Thumbs.db` and `desktop.ini` (Windows
+  Explorer) are ignored if they end up in the folder, and never published,
+  so you do not need to hunt them down.
+
+## Getting patches off your OP-1
+
+1. On the OP-1, press **shift + COM**, then choose **DISK**. Connect it to
+   your computer with USB; it shows up as a drive (like a USB stick).
+2. Synth patches are in the drive's `synth/` folder and drum kits in
+   `drum/`, each inside a subfolder such as `user/`. Copy the `.aif`
+   files you want onto your computer. Copying does not change them.
+3. Eject the drive on your computer before unplugging the cable.
+
+Rename the copies if you like (the name shown on the OP-1 comes from inside
+the file, not the file name), keeping the `.aif` ending.
 
 The [`test-tones`](../packs/test-tones) pack is a complete small example.
 
 ## pack.json
+
+Create `pack.json` with any plain-text editor. On Windows, Notepad saves
+"Text Documents" as `pack.json.txt` by default, and Explorer hides the
+`.txt` ending: in the Save dialog, set **Save as type** to **All files** and
+type `pack.json`. (A file saved as UTF-8 with a byte order mark, which
+Notepad sometimes adds, is fine.) On a Mac, TextEdit must be in plain-text
+mode (**Format → Make Plain Text**).
 
 ```json
 {
@@ -58,10 +81,11 @@ The [`test-tones`](../packs/test-tones) pack is a complete small example.
 | `tags` | Optional, up to 8 tags of 1 to 20 lower-case letters, digits or hyphens. |
 | `patches` | 1 to 100 entries. `file` is `synth/<name>.aif` or `drum/<name>.aif` (`.aif` or `.aiff`, any case); `notes` is optional, up to 200 characters. |
 
-Patch file names must work on the OP-1's drive: at most 64 characters, no
-`/ \ : * ? " < > |` or control characters, not starting with a dot, and not
-ending in a dot or a space. Two files may not differ only in upper and
-lower case.
+Patch file names must work on the OP-1's drive and on every computer: at
+most 64 characters, no `/ \ : * ? " < > |` or control characters, not
+starting with a dot, not ending in a dot or a space, and not a name Windows
+reserves (`con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`,
+with any extension). Two files may not differ only in upper and lower case.
 
 Each patch must open as an OP-1 patch, and its kind must match its folder:
 synth patches in `synth/`, drum kits in `drum/`.
@@ -101,9 +125,13 @@ pnpm --filter @co-op/web packs:validate
 ```
 
 It prints every problem it finds, grouped by pack, and ends with
-`validated N packs` when everything is fine. The same check runs
-automatically on your pull request, so you can also skip this step and read
-the result there.
+`validated N packs` when everything is fine. The same check runs on your
+pull request, so you can also skip this step and read the result there.
+
+GitHub does not run checks on a first-time contributor's pull request until a
+maintainer approves the run, so the check may say it is waiting for approval
+for a while. That is normal; a maintainer starts it when they look at the
+pull request.
 
 To see your pack in the app before submitting, run
 `pnpm --filter @co-op/web dev` and open the Packs tab.
@@ -136,6 +164,6 @@ To see your pack in the app before submitting, run
    tells you if anything needs fixing; you can keep uploading to the same
    branch until it passes.
 
-A maintainer will listen to the pack, check the licence and merge it. Once
-merged, it appears in the Packs tab after the next deploy, usually within a
-few minutes.
+A maintainer will start the check if needed, listen to the pack, check the
+licence, and merge it once the check passes. Once merged, it appears in the
+Packs tab after the next deploy, usually within a few minutes.

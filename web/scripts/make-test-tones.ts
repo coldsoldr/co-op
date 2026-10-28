@@ -20,8 +20,11 @@ const SAMPLE_RATE = 44100;
 /** Drum slices on the OP-1. */
 const SLOTS = 24;
 /**
- * Drum start/end positions are stored in units of 1/4058 of a frame at 44.1 kHz, so the 12-second
- * drum sampler spans about the whole 31-bit range.
+ * Drum start/end positions appear to count 4058 units per sample frame. This scale is INFERRED and
+ * has not been checked on hardware. The evidence is a real OP-1 drum file: its last `end` divided
+ * by its frame count is 4057.97, and each slice starts exactly 4058 after the previous one ends
+ * (one frame). It also makes 12 s at 44.1 kHz span about the whole 31-bit range. If the drum
+ * slices land in the wrong place on a device, this constant is the first suspect.
  */
 const POSITION_UNITS_PER_FRAME = 4058;
 
