@@ -25,7 +25,7 @@ export default tseslint.config(
     ...reactHooks.configs.flat.recommended,
   },
   {
-    files: ['web/test/**/*.ts', 'web/e2e/**/*.ts', '*.{js,ts}', 'web/*.{js,ts}'],
+    files: ['web/test/**/*.ts', 'web/e2e/**/*.ts', 'web/scripts/**/*.ts', '*.{js,ts}', 'web/*.{js,ts}'],
     languageOptions: { globals: globals.node },
   },
   {
