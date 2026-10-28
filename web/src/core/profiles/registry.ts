@@ -14,12 +14,34 @@ export interface RankedProfile {
   result: DetectResult;
 }
 
-/** Runs every profile's detector and returns the matches, highest confidence first. */
-export async function detectProfiles(root: DirectoryListing): Promise<RankedProfile[]> {
-  const ranked = await Promise.all(
-    profiles.map(async (profile) => ({ profile, result: await profile.detect(root) })),
-  );
-  return ranked
+/**
+ * Runs every candidate's detector and returns one result per candidate, in
+ * candidate order, unfiltered. A detector that throws is reported as
+ * confidence 0 with the error message so one broken profile cannot take the
+ * others down with it.
+ */
+export async function runDetectors(
+  root: DirectoryListing,
+  candidates: readonly DeviceProfile[] = profiles,
+): Promise<RankedProfile[]> {
+  const settled = await Promise.allSettled(candidates.map((profile) => profile.detect(root)));
+  return settled.map((outcome, i) => {
+    const profile = candidates[i] as DeviceProfile;
+    if (outcome.status === 'fulfilled') return { profile, result: outcome.value };
+    const message = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+    return { profile, result: { confidence: 0, reason: `detector failed: ${message}` } };
+  });
+}
+
+/**
+ * Runs every candidate's detector and returns the matches, highest confidence
+ * first. Ties keep candidate (registry) order: Array.prototype.sort is stable.
+ */
+export async function detectProfiles(
+  root: DirectoryListing,
+  candidates: readonly DeviceProfile[] = profiles,
+): Promise<RankedProfile[]> {
+  return (await runDetectors(root, candidates))
     .filter((r) => r.result.confidence > 0)
     .sort((a, b) => b.result.confidence - a.result.confidence);
 }
