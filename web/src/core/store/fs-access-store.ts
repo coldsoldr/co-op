@@ -169,18 +169,35 @@ export class FsAccessStore implements DeviceStore {
   }
 }
 
+interface CoOpDirectoryPickerOptions {
+  id?: string;
+  mode?: 'read' | 'readwrite';
+  startIn?: string;
+}
+
+type CoOpShowDirectoryPicker = (options?: CoOpDirectoryPickerOptions) => Promise<FileSystemDirectoryHandle>;
+
+/**
+ * window.showDirectoryPicker where the browser has it (Chromium), else null. Reached through a cast
+ * rather than a Window augmentation so a future lib.dom declaration cannot clash with ours.
+ */
+function directoryPicker(): CoOpShowDirectoryPicker | null {
+  if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) return null;
+  const picker = (window as { showDirectoryPicker: unknown }).showDirectoryPicker;
+  return typeof picker === 'function' ? (picker.bind(window) as CoOpShowDirectoryPicker) : null;
+}
+
 /** True in browsers that can open a folder for reading and writing (Chromium). */
 export function isFsAccessSupported(): boolean {
-  return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
+  return directoryPicker() !== null;
 }
 
 /** Asks the user to pick the OP-1 drive. Resolves null when the picker is cancelled. */
 export async function connectDevice(): Promise<FsAccessStore | null> {
-  if (!isFsAccessSupported() || !window.showDirectoryPicker) {
-    throw new StoreError('this browser cannot open folders for writing');
-  }
+  const showDirectoryPicker = directoryPicker();
+  if (!showDirectoryPicker) throw new StoreError('this browser cannot open folders for writing');
   try {
-    return new FsAccessStore(await window.showDirectoryPicker({ id: 'op1', mode: 'readwrite' }));
+    return new FsAccessStore(await showDirectoryPicker({ id: 'op1', mode: 'readwrite' }));
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return null;
     throw error;
