@@ -227,10 +227,42 @@ describe('case-only renames on a staged source', () => {
     const store = new StagedStore(base);
     await renameFile(store, 'drum/user/kick.aif', 'Kick.aif');
     const changes = store.changes();
-    expect(summary(changes)).toEqual(['write drum/user/Kick.aif']);
+    expect(summary(changes)).toEqual(['write drum/user/Kick.aif', 'rename drum/user/kick.aif']);
     const text = strFromU8(unzipSync(exportChangeSet(changes))[CHANGES_FILE] as Uint8Array);
-    expect(text).not.toContain('kick.aif');
     expect(text).toMatch(/nothing to delete/i);
+    expect(text).not.toMatch(/^\s*drum\/user\/kick\.aif\s*$/m);
+  });
+
+  it('are reported as a rename to make by hand, after the copy step', async () => {
+    const base = new MemoryStore({ 'drum/user/kick.aif': prettyDrum }, { write: false });
+    const store = new StagedStore(base);
+    await renameFile(store, 'drum/user/kick.aif', 'Kick.aif');
+    expect(store.changes().filter((c) => c.op === 'rename')).toEqual([
+      { op: 'rename', path: 'drum/user/kick.aif', to: 'Kick.aif' },
+    ]);
+    const text = strFromU8(unzipSync(exportChangeSet(store.changes()))[CHANGES_FILE] as Uint8Array);
+    const lines = text.split(/\r?\n/);
+    const heading = lines.findIndex((l) =>
+      l.includes(
+        'Rename these files on the OP-1 drive by hand (the drive keeps the old spelling when a file is replaced):',
+      ),
+    );
+    expect(heading).toBeGreaterThan(lines.findIndex((l) => l.includes('Copy the files from this zip')));
+    expect(lines[heading + 1]?.trim()).toBe('drum/user/kick.aif -> Kick.aif');
+  });
+
+  it('are not reported when nothing was renamed by case', () => {
+    const text = strFromU8(
+      unzipSync(exportChangeSet([{ op: 'write', path: 'synth/user/a.aif', bytes: b(1) }]))[CHANGES_FILE] as Uint8Array,
+    );
+    expect(text).not.toContain('Rename these files');
+  });
+
+  it('do not put the renamed file in the zip twice', async () => {
+    const base = new MemoryStore({ 'drum/user/kick.aif': prettyDrum }, { write: false });
+    const store = new StagedStore(base);
+    await renameFile(store, 'drum/user/kick.aif', 'Kick.aif');
+    expect(Object.keys(unzipSync(exportChangeSet(store.changes()))).sort()).toEqual([CHANGES_FILE, 'drum/user/Kick.aif']);
   });
 });
 

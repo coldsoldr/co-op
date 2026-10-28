@@ -2,11 +2,17 @@ import { strToU8, zipSync, type Zippable } from 'fflate';
 import type { DirEntry } from '../store/listing';
 import { StoreError, basename, dirname, joinPath, splitPath, type DeviceStore, type StoreCapabilities } from '../store/store';
 
-/** One change against the base store, in its final state. 'mkdir' is a new folder left empty. */
+/**
+ * One change against the base store, in its final state. 'mkdir' is a new folder left empty.
+ * 'rename' is a case-only rename: the drive file at `path` must be renamed by hand to `to` (a
+ * file name in the same folder), because a FAT drive keeps the old spelling when the file is
+ * replaced by a copy whose name differs only in case. Its bytes travel as the matching 'write'.
+ */
 export type Change =
   | { op: 'write'; path: string; bytes: Uint8Array }
   | { op: 'remove'; path: string }
-  | { op: 'mkdir'; path: string };
+  | { op: 'mkdir'; path: string }
+  | { op: 'rename'; path: string; to: string };
 
 /** The instructions file inside an exported change set. */
 export const CHANGES_FILE = 'CHANGES.txt';
@@ -123,17 +129,21 @@ export class StagedStore implements DeviceStore {
    * The net changes against the base, sorted by path. Written bytes are the staged buffers, not
    * copies. A removal whose path matches a written path ignoring case is dropped: on the OP-1's
    * FAT drive the two names are one file, so deleting it would lose the patch (a case-only
-   * rename). A folder made with mkdir is listed only while nothing staged lies beneath it.
+   * rename); a 'rename' change to the written spelling takes its place when the file names
+   * differ, so the user can fix the spelling by hand. A folder made with mkdir is listed only while
+   * nothing staged lies beneath it.
    */
   changes(): Change[] {
     const out: Change[] = [];
-    const written = new Set<string>();
+    const written = new Map<string, string>();
     for (const [path, bytes] of this.staged) {
       out.push({ op: 'write', path, bytes });
-      written.add(path.toLowerCase());
+      written.set(path.toLowerCase(), path);
     }
     for (const path of this.removed) {
-      if (!written.has(path.toLowerCase())) out.push({ op: 'remove', path });
+      const replacement = written.get(path.toLowerCase());
+      if (replacement === undefined) out.push({ op: 'remove', path });
+      else if (basename(replacement) !== basename(path)) out.push({ op: 'rename', path, to: basename(replacement) });
     }
     const below = (dir: string, path: string): boolean => path.startsWith(`${dir}/`);
     for (const dir of this.made) {
@@ -179,13 +189,15 @@ export class StagedStore implements DeviceStore {
  * CHANGES.txt with the steps. Deletions come first so that copying never precedes a delete of the
  * same name, and copying is described per destination folder, because copying a whole top-level
  * folder onto the drive can replace the folder there (macOS Finder's "Replace"). Every entry is
- * stamped with `now()`, so the zip is deterministic for a given time.
+ * stamped with `now()`, so the zip is deterministic for a given time. Case-only renames get a final
+ * step listing the files to rename by hand.
  */
 export function exportChangeSet(changes: readonly Change[], now: () => Date = () => new Date()): Uint8Array {
   const mtime = now();
   const zip: Zippable = {};
   const removals: string[] = [];
   const folders: string[] = [];
+  const renames: string[] = [];
   const copies = new Map<string, string[]>();
   for (const change of changes) {
     if (change.op === 'write') {
@@ -194,6 +206,8 @@ export function exportChangeSet(changes: readonly Change[], now: () => Date = ()
       copies.set(dir, [...(copies.get(dir) ?? []), basename(change.path)]);
     } else if (change.op === 'remove') {
       removals.push(change.path);
+    } else if (change.op === 'rename') {
+      renames.push(`${change.path} -> ${change.to}`);
     } else {
       zip[`${change.path}/`] = [new Uint8Array(0), { mtime }];
       folders.push(change.path);
@@ -219,6 +233,13 @@ export function exportChangeSet(changes: readonly Change[], now: () => Date = ()
         ])
       : none('nothing to copy')),
     '',
+    ...(renames.length > 0
+      ? [
+          '4. Rename these files on the OP-1 drive by hand (the drive keeps the old spelling when a file is replaced):',
+          ...renames.map((line) => `   ${line}`),
+          '',
+        ]
+      : []),
     'Copy the files themselves into each folder; never copy a folder from this zip over a folder on the drive.',
     'On a Mac, never choose Replace for a folder; copy the files themselves, or hold Option and choose Merge.',
     '',
