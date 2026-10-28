@@ -7,7 +7,7 @@ Live app: https://coldsoldr.github.io/co-op/
 
 ## What exists today
 
-Phase 3 of 8 is complete. The app is a working librarian for an OP-1 in
+Phase 4 of 8 is complete. The app is a working librarian for an OP-1 in
 disk mode (shift + COM, then DISK):
 
 - **Library tab.** In Chrome or Edge, "Connect OP-1" opens the drive for
@@ -26,6 +26,14 @@ disk mode (shift + COM, then DISK):
 - **Backup and restore.** Download the whole patch tree as a zip with a
   checksummed manifest; restore picks a backup, shows which files are new
   or changed, and writes the ones you select (never deleting anything).
+- **Packs tab.** A catalogue of community patch packs that live in this
+  repository's `packs/` folder: search and filter by kind, firmware,
+  licence and tag, preview patches in the browser, and install a whole pack
+  or selected patches into a folder on the OP-1 (by default
+  `synth/<pack>` and `drum/<pack>`), or add them to the changes to
+  download on a read-only copy. Every download is checked against its
+  SHA-256. Anyone can add a pack by pull request; see
+  [docs/contributing-packs.md](docs/contributing-packs.md).
 - **Inspector tab.** Drop a single `.aif` to see how co-op reads it.
 
 Under the hood: a pure TypeScript AIFF/AIFC codec that round-trips OP-1
@@ -34,7 +42,7 @@ files byte for byte, a device-profile layer for the stock OP-1, a
 staged and in-memory implementations, unit tests with vitest and a
 Playwright smoke test of the library in Chromium.
 
-Still to come, in order: the community pack catalogue, feedback to GitHub
+Still to come, in order: feedback to GitHub
 Issues via a Cloudflare Worker, op1.fun integration, then hundekraft and
 opus firmware profiles. The full design is in
 `docs/superpowers/specs/2026-10-28-op-patch-librarian-design.md`; the
@@ -51,6 +59,7 @@ pnpm --filter @co-op/web dev      # local dev server, open the printed /co-op/ U
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
 pnpm --filter @co-op/web exec playwright install chromium   # once
 pnpm --filter @co-op/web e2e      # Playwright smoke test against the production build
+pnpm --filter @co-op/web packs:validate   # check every pack in packs/
 ```
 
 CI runs the same commands, and the Playwright test in its own job, on every
@@ -60,13 +69,17 @@ push and pull request. Pushes to
 ## Repository layout
 
 ```
-web/      Vite + React + TypeScript app (the only package so far)
-docs/     design spec, implementation plans
+web/      Vite + React + TypeScript app; web/scripts holds the packs CLI
+shared/   pack manifest schema and validation, shared by the app and the CLI
+packs/    community patch packs, one folder each
+docs/     design spec, implementation plans, contributor guide for packs
 vendor/   gitignored clones of third-party firmware repos, see vendor/README.md
 ```
 
-Planned packages `worker/` (Cloudflare Worker) and `shared/` (schemas) are
-already listed in `pnpm-workspace.yaml`.
+The planned `worker/` package (Cloudflare Worker) is already listed in
+`pnpm-workspace.yaml`. `packs/index.json` is never committed: the build
+validates the packs and writes the index into `web/dist/packs/`, and the dev
+server builds it on the fly.
 
 ## Test fixtures
 
@@ -80,8 +93,8 @@ see the README there for provenance.
 
 Conventional commit subjects (`feat(codec): ...`, `fix(profiles): ...`,
 `docs: ...`) keep the history readable. Keep `pnpm lint && pnpm typecheck && pnpm test`
-green. Patch and pack contributions get their own guide once the catalogue
-lands.
+green. To share patches, follow the pack guide in
+[docs/contributing-packs.md](docs/contributing-packs.md).
 
 ## Licence
 
