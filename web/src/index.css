@@ -292,3 +292,48 @@ button.sort {
   white-space: nowrap;
   border: 0;
 }
+
+/* Community packs */
+.packs-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+a.button {
+  display: inline-block;
+  padding: 4px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.pack-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.pack-card {
+  border: 1px solid #d0d0cc;
+  border-radius: 6px;
+  padding: 12px;
+  background: #fff;
+}
+.pack-card h3 {
+  margin: 0;
+}
+.pack-card p {
+  margin: 6px 0;
+}
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.badge.licence {
+  color: var(--accent);
+}
+.badge.firmware {
+  color: var(--muted);
+}

@@ -1,10 +1,12 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { Inspector } from './ui/Inspector';
 import { Library } from './ui/Library';
+import { Packs } from './ui/Packs';
 import { useDevice } from './ui/useDevice';
 
 const TABS = [
   { id: 'library', label: 'Library' },
+  { id: 'packs', label: 'Packs' },
   { id: 'inspector', label: 'Inspector' },
 ] as const;
 
@@ -56,9 +58,12 @@ export function App() {
             </button>
           ))}
         </div>
-        {/* Both panels stay mounted so the connected drive and inspected file survive a tab switch. */}
+        {/* Every panel stays mounted so the connected drive and inspected file survive a tab switch. */}
         <div role="tabpanel" id="panel-library" aria-labelledby="tab-library" hidden={tab !== 'library'}>
           <Library device={device} active={tab === 'library'} />
+        </div>
+        <div role="tabpanel" id="panel-packs" aria-labelledby="tab-packs" hidden={tab !== 'packs'}>
+          <Packs device={device} active={tab === 'packs'} onOpenLibrary={() => setTab('library')} />
         </div>
         <div role="tabpanel" id="panel-inspector" aria-labelledby="tab-inspector" hidden={tab !== 'inspector'}>
           <Inspector active={tab === 'inspector'} />
