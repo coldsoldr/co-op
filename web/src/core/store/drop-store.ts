@@ -3,17 +3,32 @@ import { StoreError, basename, dirname, joinPath, splitPath, type DeviceStore, t
 
 const byCodePoint = (a: DirEntry, b: DirEntry): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
-/** A dropped or picked file and its path, starting with the dropped folder's name. */
+/** A dropped or picked file and its path, starting with the name of the top-level item dropped. */
 export interface DroppedFile {
   path: string;
   file: File;
 }
 
+export interface DropStoreOptions {
+  /**
+   * The source label. Defaults to the folder name for a single dropped folder, and to 'OP-1' when
+   * several folders were dropped together.
+   */
+  label?: string;
+}
+
+/** Label for a drop of several top-level folders, taken to be the drive's own contents. */
+const DRIVE_ROOT_LABEL = 'OP-1';
+
 /**
  * A read-only DeviceStore over a folder dropped onto the page or picked with a `webkitdirectory`
- * input, for browsers without the File System Access API. Every path must start with the same
- * folder name; that segment is stripped and becomes the label. Changes are refused; wrap it in a
- * staging store to collect them.
+ * input, for browsers without the File System Access API.
+ *
+ * Every path must start with a top-level folder. With one top-level folder (the drive itself),
+ * that segment is stripped and becomes the label. With several (the drive's folders, such as
+ * synth and drum, selected and dropped together), they are the drive root's contents and paths
+ * are kept as they are. A loose top-level file is refused with a StoreError. Changes are refused;
+ * wrap it in a staging store to collect them.
  */
 export class DropStore implements DeviceStore {
   readonly capabilities: StoreCapabilities = { write: false };
@@ -22,22 +37,23 @@ export class DropStore implements DeviceStore {
   /** Every folder path except the root ''. */
   private readonly dirs = new Set<string>();
 
-  constructor(entries: DroppedFile[]) {
-    let label: string | undefined;
+  constructor(entries: DroppedFile[], options: DropStoreOptions = {}) {
+    const tops = new Set<string>();
+    for (const { path } of entries) {
+      const parts = splitPath(path);
+      if (parts.length < 2) {
+        throw new StoreError(`${path} is not inside a folder; drop the OP-1 drive folder or its folders`);
+      }
+      tops.add(parts[0] as string);
+    }
+    const single = tops.size === 1 ? [...tops][0] : undefined;
     for (const { path, file } of entries) {
-      const [top, ...rest] = splitPath(path);
-      if (top === undefined || rest.length === 0) {
-        throw new StoreError(`${path} is not inside a folder; drop the OP-1 drive folder itself`);
-      }
-      if (label !== undefined && top !== label) {
-        throw new StoreError(`files come from more than one folder (${label}, ${top}); drop a single folder`);
-      }
-      label = top;
-      const key = rest.join('/');
-      this.files.set(key, file);
+      const parts = splitPath(path);
+      const rest = single === undefined ? parts : parts.slice(1);
+      this.files.set(rest.join('/'), file);
       for (let i = 1; i < rest.length; i++) this.dirs.add(rest.slice(0, i).join('/'));
     }
-    this.label = label ?? '';
+    this.label = options.label ?? single ?? (tops.size > 1 ? DRIVE_ROOT_LABEL : '');
   }
 
   async list(path: string): Promise<DirEntry[]> {
@@ -100,46 +116,73 @@ function readOnly(path: string): StoreError {
 }
 
 /** A DropStore from the files of an `<input type="file" webkitdirectory>`. */
-export function fromInputFiles(files: Iterable<File>): DropStore {
-  return new DropStore([...files].map((file) => ({ path: file.webkitRelativePath, file })));
+export function fromInputFiles(files: Iterable<File>, options: DropStoreOptions = {}): DropStore {
+  return new DropStore(
+    [...files].map((file) => ({ path: file.webkitRelativePath, file })),
+    options,
+  );
+}
+
+/** What a drag-and-drop yielded. */
+export interface DroppedFiles {
+  /** Every readable file, ready for `new DropStore(files)`. */
+  files: DroppedFile[];
+  /** Paths of files that could not be read, and of folders that could not be (fully) listed. */
+  skipped: string[];
 }
 
 function fileOf(entry: FileSystemFileEntry): Promise<File> {
   return new Promise((resolve, reject) => entry.file(resolve, reject));
 }
 
-/** Reads every child of a directory entry; readEntries returns them in batches until an empty one. */
-async function childrenOf(entry: FileSystemDirectoryEntry): Promise<FileSystemEntry[]> {
+/**
+ * Reads the children of a directory entry; readEntries returns them in batches until an empty one.
+ * If a batch fails, the children read so far are returned with `complete: false`.
+ */
+async function childrenOf(entry: FileSystemDirectoryEntry): Promise<{ children: FileSystemEntry[]; complete: boolean }> {
   const reader = entry.createReader();
   const children: FileSystemEntry[] = [];
   for (;;) {
-    const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => reader.readEntries(resolve, reject));
-    if (batch.length === 0) return children;
+    let batch: FileSystemEntry[];
+    try {
+      batch = await new Promise<FileSystemEntry[]>((resolve, reject) => reader.readEntries(resolve, reject));
+    } catch {
+      return { children, complete: false };
+    }
+    if (batch.length === 0) return { children, complete: true };
     children.push(...batch);
   }
 }
 
-async function walk(entry: FileSystemEntry, out: DroppedFile[]): Promise<void> {
+async function walk(entry: FileSystemEntry, out: DroppedFiles): Promise<void> {
+  const path = joinPath(entry.fullPath);
   if (entry.isFile) {
-    out.push({ path: joinPath(entry.fullPath), file: await fileOf(entry as FileSystemFileEntry) });
+    try {
+      out.files.push({ path, file: await fileOf(entry as FileSystemFileEntry) });
+    } catch {
+      out.skipped.push(path);
+    }
   } else if (entry.isDirectory) {
-    for (const child of await childrenOf(entry as FileSystemDirectoryEntry)) await walk(child, out);
+    const { children, complete } = await childrenOf(entry as FileSystemDirectoryEntry);
+    if (!complete) out.skipped.push(path);
+    for (const child of children) await walk(child, out);
   }
 }
 
 /**
  * Every file under the folders (and files) dropped in a drag-and-drop, with paths starting at the
- * dropped item's name. Entries are taken synchronously, since the DataTransfer is emptied once the
- * drop event returns.
+ * dropped item's name. Files that cannot be read and folders that cannot be listed are skipped
+ * and reported in `skipped` rather than failing the whole drop. Entries are taken synchronously,
+ * since the DataTransfer is emptied once the drop event returns.
  */
-export async function filesFromDataTransfer(dt: DataTransfer): Promise<DroppedFile[]> {
+export async function filesFromDataTransfer(dt: DataTransfer): Promise<DroppedFiles> {
   const entries: FileSystemEntry[] = [];
   for (const item of Array.from(dt.items)) {
     if (item.kind !== 'file') continue;
     const entry = item.webkitGetAsEntry();
     if (entry) entries.push(entry);
   }
-  const out: DroppedFile[] = [];
+  const out: DroppedFiles = { files: [], skipped: [] };
   for (const entry of entries) await walk(entry, out);
   return out;
 }

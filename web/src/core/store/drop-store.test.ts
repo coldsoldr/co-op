@@ -86,12 +86,40 @@ describe('DropStore', () => {
     expect(await store.list('')).toEqual([]);
   });
 
-  it('refuses files from more than one top-level folder', () => {
+  it('treats several top-level folders as the contents of the drive root', async () => {
+    const store = new DropStore([
+      { path: 'synth/user/a.aif', file: file('a.aif', 1) },
+      { path: 'drum/user/kit.aif', file: file('kit.aif', 4) },
+    ]);
+    expect(store.label).toBe('OP-1');
+    expect(await store.list('')).toEqual([
+      { name: 'drum', kind: 'dir' },
+      { name: 'synth', kind: 'dir' },
+    ]);
+    expect(await store.read('synth/user/a.aif')).toEqual(Uint8Array.of(1));
+  });
+
+  it('takes the label for a multi-folder drop from the options', () => {
+    const store = new DropStore(
+      [
+        { path: 'synth/user/a.aif', file: file('a.aif') },
+        { path: 'drum/user/kit.aif', file: file('kit.aif') },
+      ],
+      { label: 'my drive' },
+    );
+    expect(store.label).toBe('my drive');
+  });
+
+  it('lets the label option override the dropped folder name', () => {
+    expect(new DropStore([{ path: 'OP-1/synth/user/a.aif', file: file('a.aif') }], { label: 'x' }).label).toBe('x');
+  });
+
+  it('refuses loose top-level files mixed in with folders', () => {
     expect(
       () =>
         new DropStore([
-          { path: 'OP-1/synth/user/a.aif', file: file('a.aif') },
-          { path: 'other/a.aif', file: file('a.aif') },
+          { path: 'synth/user/a.aif', file: file('a.aif') },
+          { path: 'readme.txt', file: file('readme.txt') },
         ]),
     ).toThrow(StoreError);
   });
@@ -116,31 +144,42 @@ describe('fromInputFiles', () => {
 
 describe('filesFromDataTransfer', () => {
   type Entry = FakeFileEntry | FakeDirectoryEntry;
+  type Fail = (error: DOMException) => void;
   interface FakeFileEntry {
     isFile: true;
     isDirectory: false;
     name: string;
     fullPath: string;
-    file(success: (f: File) => void): void;
+    file(success: (f: File) => void, error: Fail): void;
   }
   interface FakeDirectoryEntry {
     isFile: false;
     isDirectory: true;
     name: string;
     fullPath: string;
-    createReader(): { readEntries(success: (entries: Entry[]) => void): void };
+    createReader(): { readEntries(success: (entries: Entry[]) => void, error: Fail): void };
   }
 
-  const fileEntry = (fullPath: string, ...values: number[]): FakeFileEntry => {
-    const name = fullPath.split('/').at(-1) ?? '';
-    return { isFile: true, isDirectory: false, name, fullPath, file: (success) => success(file(name, ...values)) };
-  };
+  const nameOf = (fullPath: string): string => fullPath.split('/').at(-1) ?? '';
+
+  const fileEntry = (fullPath: string, ...values: number[]): FakeFileEntry => ({
+    isFile: true,
+    isDirectory: false,
+    name: nameOf(fullPath),
+    fullPath,
+    file: (success) => success(file(nameOf(fullPath), ...values)),
+  });
+
+  const unreadableFile = (fullPath: string): FakeFileEntry => ({
+    ...fileEntry(fullPath),
+    file: (_success, error) => setTimeout(() => error(new DOMException('gone', 'NotFoundError')), 0),
+  });
 
   /** Hands out children two at a time, like Chromium's 100-entry batches. */
   const dirEntry = (fullPath: string, children: Entry[]): FakeDirectoryEntry => ({
     isFile: false,
     isDirectory: true,
-    name: fullPath.split('/').at(-1) ?? '',
+    name: nameOf(fullPath),
     fullPath,
     createReader: () => {
       let offset = 0;
@@ -152,6 +191,13 @@ describe('filesFromDataTransfer', () => {
         },
       };
     },
+  });
+
+  const unreadableDir = (fullPath: string): FakeDirectoryEntry => ({
+    ...dirEntry(fullPath, []),
+    createReader: () => ({
+      readEntries: (_success, error) => setTimeout(() => error(new DOMException('denied', 'SecurityError')), 0),
+    }),
   });
 
   const transfer = (items: Array<{ kind: string; entry: Entry | null }>): DataTransfer =>
@@ -169,24 +215,49 @@ describe('filesFromDataTransfer', () => {
       dirEntry('/OP-1/tape', []),
       fileEntry('/OP-1/readme.txt', 9),
     ]);
-    const found = await filesFromDataTransfer(
+    const { files, skipped } = await filesFromDataTransfer(
       transfer([
         { kind: 'string', entry: null },
         { kind: 'file', entry: tree },
       ]),
     );
-    expect(found.map((f) => f.path).sort()).toEqual([
+    expect(skipped).toEqual([]);
+    expect(files.map((f) => f.path).sort()).toEqual([
       'OP-1/readme.txt',
       'OP-1/synth/user/a.aif',
       'OP-1/synth/user/b.aif',
       'OP-1/synth/user/c.aif',
     ]);
-    const store = new DropStore(found);
+    const store = new DropStore(files);
     expect(store.label).toBe('OP-1');
     expect(await store.read('synth/user/c.aif')).toEqual(Uint8Array.of(3));
   });
 
+  it('accepts several folders dropped together as the drive root', async () => {
+    const { files } = await filesFromDataTransfer(
+      transfer([
+        { kind: 'file', entry: dirEntry('/synth', [dirEntry('/synth/user', [fileEntry('/synth/user/a.aif', 1)])]) },
+        { kind: 'file', entry: dirEntry('/drum', [dirEntry('/drum/user', [fileEntry('/drum/user/k.aif', 2)])]) },
+      ]),
+    );
+    const store = new DropStore(files);
+    expect(store.label).toBe('OP-1');
+    expect(await store.read('drum/user/k.aif')).toEqual(Uint8Array.of(2));
+  });
+
+  it('skips files and folders that cannot be read, reporting their paths', async () => {
+    const tree = dirEntry('/OP-1', [
+      dirEntry('/OP-1/synth', [
+        dirEntry('/OP-1/synth/user', [fileEntry('/OP-1/synth/user/a.aif', 1), unreadableFile('/OP-1/synth/user/b.aif')]),
+        unreadableDir('/OP-1/synth/locked'),
+      ]),
+    ]);
+    const { files, skipped } = await filesFromDataTransfer(transfer([{ kind: 'file', entry: tree }]));
+    expect(files.map((f) => f.path)).toEqual(['OP-1/synth/user/a.aif']);
+    expect(skipped.sort()).toEqual(['OP-1/synth/locked', 'OP-1/synth/user/b.aif']);
+  });
+
   it('skips items without an entry', async () => {
-    expect(await filesFromDataTransfer(transfer([{ kind: 'file', entry: null }]))).toEqual([]);
+    expect(await filesFromDataTransfer(transfer([{ kind: 'file', entry: null }]))).toEqual({ files: [], skipped: [] });
   });
 });
