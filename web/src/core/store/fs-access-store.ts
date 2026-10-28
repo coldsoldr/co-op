@@ -84,10 +84,25 @@ export class FsAccessStore implements DeviceStore {
       const name = parts.pop();
       if (name === undefined) throw new StoreError('cannot write the drive root');
       const parent = await this.dir(parts, true);
+      const existed = await parent.getFileHandle(name).then(
+        () => true,
+        (error: unknown) => {
+          if (isMissing(error)) return false;
+          throw error;
+        },
+      );
+      // Chromium creates an empty file here, before any bytes are written.
       const handle = await parent.getFileHandle(name, { create: true });
       const writable = await handle.createWritable();
-      await writable.write(bytes.slice());
-      await writable.close();
+      try {
+        await writable.write(bytes.slice());
+        await writable.close();
+      } catch (error) {
+        // Aborting discards the swap file, so an existing file keeps its old contents.
+        await writable.abort().catch(() => {});
+        if (!existed) await parent.removeEntry(name).catch(() => {});
+        throw error;
+      }
     } catch (error) {
       throw storeError('write', joinPath(path), error);
     }
@@ -108,7 +123,11 @@ export class FsAccessStore implements DeviceStore {
         await handle.move(destination, basename(target));
         return;
       } catch (error) {
-        throw storeError(`move ${joinPath(from)} to`, target, error);
+        // A missing source is final; anything else (e.g. NotSupportedError for a move across
+        // folders on some platforms) gets the copy-then-remove fallback below.
+        if (error instanceof DOMException && error.name === 'NotFoundError') {
+          throw storeError(`move ${joinPath(from)} to`, target, error);
+        }
       }
     }
     await this.write(target, await this.read(from));
