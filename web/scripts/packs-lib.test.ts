@@ -132,6 +132,31 @@ describe('loadPacks', () => {
   });
 });
 
+describe('loadPacks extras', () => {
+  it('carries per-patch notes into the index', async () => {
+    await goodPack();
+    const json = manifest('good', ['synth/cluster.aif', 'drum/boombap.aif']);
+    json.patches[0] = { file: 'synth/cluster.aif', notes: 'soft pad' } as { file: string };
+    await put('good/pack.json', json);
+    const { index } = await loadPacks(packsDir, { now: NOW, firmware: FIRMWARE });
+    expect(index.packs[0]?.patches.map((p) => p.notes)).toEqual(['soft pad', undefined]);
+    expect(Object.keys(index.packs[0]?.patches[1] ?? {})).not.toContain('notes');
+  });
+
+  it('ignores .DS_Store, Thumbs.db and desktop.ini and never publishes them', async () => {
+    await goodPack();
+    await put('good/.DS_Store', 'x');
+    await put('good/synth/Thumbs.db', 'x');
+    await put('good/drum/desktop.ini', 'x');
+    expect((await loadPacks(packsDir, { now: NOW, firmware: FIRMWARE })).issues).toEqual([]);
+    const out = join(root, 'dist');
+    await buildPacks(packsDir, out, { now: NOW, firmware: FIRMWARE });
+    expect((await readdir(join(out, 'packs/good'))).sort()).toEqual(['README.md', 'drum', 'pack.json', 'synth']);
+    expect(await readdir(join(out, 'packs/good/synth'))).toEqual(['cluster.aif']);
+    expect(await readdir(join(out, 'packs/good/drum'))).toEqual(['boombap.aif']);
+  });
+});
+
 describe('loadPacks file checks', () => {
   it('accepts a pack.json that starts with a byte order mark', async () => {
     await goodPack();

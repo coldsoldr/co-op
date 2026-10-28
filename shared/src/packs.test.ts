@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   MAX_FILE_BYTES,
+  isIgnoredFile,
   MAX_PACK_BYTES,
   PACK_LICENSES,
   parseManifest,
@@ -225,6 +226,24 @@ describe('patchFileNameProblem', () => {
     expect(patchFileNameProblem('kick.wav')).toMatch(/\.aif or \.aiff/);
     expect(patchFileNameProblem('')).toMatch(/empty/);
   });
+
+  it('rejects names Windows reserves, in any case, with or without more dots', () => {
+    for (const name of ['con.aif', 'PRN.aif', 'Aux.aiff', 'nul.aif', 'com1.aif', 'COM9.aif', 'lpt1.aif', 'lpt9.aif', 'con.x.aif']) {
+      expect(patchFileNameProblem(name)).toMatch(/reserved by Windows/);
+    }
+    for (const name of ['console.aif', 'com10.aif', 'lpt0.aif', 'com.aif', 'my con.aif']) {
+      expect(patchFileNameProblem(name)).toBeNull();
+    }
+  });
+});
+
+describe('isIgnoredFile', () => {
+  it('matches operating-system clutter at any depth', () => {
+    for (const path of ['.DS_Store', 'synth/.DS_Store', 'Thumbs.db', 'drum/thumbs.db', 'desktop.ini', 'synth/Desktop.ini']) {
+      expect(isIgnoredFile(path)).toBe(true);
+    }
+    for (const path of ['pack.json', 'synth/a.aif', 'ds_store', 'synth/.DS_Store.aif']) expect(isIgnoredFile(path)).toBe(false);
+  });
 });
 
 describe('validatePackFiles', () => {
@@ -244,6 +263,11 @@ describe('validatePackFiles', () => {
   it('passes a complete pack, with or without a README', async () => {
     expect(await validatePackFiles(manifest, files(), parsePatch)).toEqual([]);
     expect(await validatePackFiles(manifest, files([{ path: 'README.md', size: 10 }]), parsePatch)).toEqual([]);
+  });
+
+  it('ignores .DS_Store, Thumbs.db and desktop.ini', async () => {
+    const clutter = ['.DS_Store', 'synth/.DS_Store', 'drum/Thumbs.db', 'desktop.ini'].map((path) => ({ path, size: 6000 }));
+    expect(await validatePackFiles(manifest, files(clutter), parsePatch)).toEqual([]);
   });
 
   it('reports a listed file that is missing', async () => {

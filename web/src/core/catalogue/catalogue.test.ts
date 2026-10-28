@@ -73,6 +73,12 @@ describe('fetchIndex', () => {
     expect(modes).toEqual(['no-cache']);
   });
 
+  it('accepts per-patch notes', async () => {
+    const body = index([pack({ patches: [{ ...(pack().patches[0] as PackIndexEntry['patches'][0]), notes: 'soft' }] })]);
+    const { impl } = fakeFetch({ '/co-op/packs/index.json': JSON.stringify(body) });
+    expect((await fetchIndex('/co-op/', impl)).packs[0]?.patches[0]?.notes).toBe('soft');
+  });
+
   it('rejects a pack entry of the wrong shape, naming it', async () => {
     const broken: unknown[] = [
       { ...pack(), slug: 3 },
@@ -82,6 +88,8 @@ describe('fetchIndex', () => {
       { ...pack(), patches: [{ file: 'synth/a.aif', kind: 'tape', name: '', engine: '', sizeBytes: 1, sha256: 'x' }] },
       { ...pack(), patches: [{ file: 'synth/a.aif', kind: 'synth', name: '', engine: '', sizeBytes: 1 }] },
       'pack',
+      { ...pack(), patches: [{ ...pack().patches[0], sha256: 'abc' }] },
+      { ...pack(), patches: [{ ...pack().patches[0], notes: 3 }] },
     ];
     for (const entry of broken) {
       const body = { ...index(), packs: [pack({ slug: 'fine' }), entry] };
@@ -188,6 +196,9 @@ describe('fetchPatchBytes', () => {
     await expect(fetchPatchBytes('/co-op/', '../x', 'synth/a.aif', sha(cluster), impl)).rejects.toThrow(/not a pack slug/);
     await expect(fetchPatchBytes('/co-op/', 'p', 'synth/a.aif', '', impl)).rejects.toThrow(/no SHA-256/);
     await expect(fetchPatchBytes('/co-op/', 'p', 'synth/a.aif', undefined as unknown as string, impl)).rejects.toThrow(/no SHA-256/);
+    for (const bad of ['abc', 'g'.repeat(64), `${sha(cluster)}0`]) {
+      await expect(fetchPatchBytes('/co-op/', 'p', 'synth/a.aif', bad, impl)).rejects.toThrow(/not a SHA-256/);
+    }
     expect(asked).toEqual([]);
   });
 

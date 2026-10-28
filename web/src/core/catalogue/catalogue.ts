@@ -37,6 +37,7 @@ async function get(url: string, what: string, fetchImpl: typeof fetch, init?: Re
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+const SHA256 = /^[0-9a-f]{64}$/i;
 const isStringList = (value: unknown): boolean => Array.isArray(value) && value.every((v) => typeof v === 'string');
 
 /** A cheap shape check, so the UI never trips over a field of the wrong type. */
@@ -52,6 +53,8 @@ function isIndexEntry(value: unknown): value is PackIndexEntry {
       (p) =>
         isRecord(p) &&
         ['file', 'name', 'engine', 'sha256'].every((k) => typeof p[k] === 'string') &&
+        SHA256.test(p.sha256 as string) &&
+        (p.notes === undefined || typeof p.notes === 'string') &&
         (PACK_KINDS as readonly unknown[]).includes(p.kind) &&
         typeof p.sizeBytes === 'number',
     )
@@ -143,6 +146,7 @@ export async function fetchPatchBytes(
   assertSlug(slug);
   packFileKind(file);
   if (typeof sha256 !== 'string' || sha256 === '') throw new CatalogueError(`${slug}/${file} has no SHA-256 in the pack index`);
+  if (!SHA256.test(sha256)) throw new CatalogueError(`${slug}/${file}: ${JSON.stringify(sha256)} is not a SHA-256`);
   const url = `${withSlash(baseUrl)}packs/${[slug, ...splitPath(file)].map(encodeURIComponent).join('/')}`;
   const label = `${slug}/${file}`;
   for (const init of [undefined, { cache: 'no-cache' } as RequestInit]) {

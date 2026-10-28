@@ -14,6 +14,7 @@ import {
   MANIFEST_FILE,
   MAX_TEXT_BYTES,
   README_FILE,
+  isIgnoredFile,
   parseManifest,
   validatePackFiles,
   type PackIndex,
@@ -61,6 +62,8 @@ async function listFiles(dir: string, prefix = '', out: Listing = { files: [], o
   const entries = await readdir(dir, { withFileTypes: true });
   for (const entry of entries.sort((a, b) => byCodePoint(a.name, b.name))) {
     const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+    // Finder and Explorer clutter is skipped outright, whatever kind of entry it is.
+    if (isIgnoredFile(path)) continue;
     const full = join(dir, entry.name);
     const info = await lstat(full);
     if (info.isSymbolicLink()) out.odd.push({ path, message: 'is a link; add the real file instead' });
@@ -130,7 +133,7 @@ async function loadPack(
   });
   if (fileIssues.length > 0) return { issues: fileIssues, entry: null };
 
-  const patches: PackIndexPatch[] = manifest.patches.map(({ file }) => {
+  const patches: PackIndexPatch[] = manifest.patches.map(({ file, notes }) => {
     const { info, bytes } = parsed.get(file) as { info: ParsedPackPatch; bytes: Uint8Array };
     return {
       file,
@@ -139,6 +142,7 @@ async function loadPack(
       engine: info.engine,
       sizeBytes: bytes.length,
       sha256: createHash('sha256').update(bytes).digest('hex'),
+      ...(notes === undefined ? {} : { notes }),
     };
   });
   const entry: PackIndexEntry = {

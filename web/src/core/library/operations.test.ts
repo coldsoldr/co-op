@@ -211,7 +211,7 @@ describe('ensureFolder', () => {
     expect(await ensureFolder(store, 'synth', 'user')).toBe('synth/user');
   });
 
-  it.each(['', 'a/b', '.hidden'])('rejects the folder name %j', async (name) => {
+  it.each(['', 'a/b', '.hidden', 'con', 'LPT1', 'aux.old'])('rejects the folder name %j', async (name) => {
     await expect(ensureFolder(drive(), 'synth', name)).rejects.toThrow(OperationError);
   });
 });

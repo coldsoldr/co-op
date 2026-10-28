@@ -1,4 +1,5 @@
 import { readPatch, withMeta } from '../codec/patch';
+import { isWindowsReservedName } from '@co-op/shared/packs';
 import { writeAtomic } from '../store/atomic';
 import { StoreError, basename, dirname, joinPath, splitPath, type DeviceStore } from '../store/store';
 
@@ -47,6 +48,9 @@ function assertEntryName(name: string, what: string): void {
     );
   }
   if (name.startsWith('.')) throw new OperationError(`${what} name "${name}" starts with "."`);
+  if (isWindowsReservedName(name)) {
+    throw new OperationError(`${what} name "${name}" is reserved by Windows`);
+  }
   if (name.endsWith('.') || name.endsWith(' ')) {
     throw new OperationError(`${what} name "${name}" ends with a dot or a space`);
   }

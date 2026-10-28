@@ -66,6 +66,8 @@ export interface PackIndexPatch {
   sizeBytes: number;
   /** Lower-case hex SHA-256 of the file. */
   sha256: string;
+  /** The entry's notes from pack.json, when it has any. */
+  notes?: string;
 }
 
 export interface PackIndexEntry {
@@ -101,6 +103,25 @@ export interface PackIssue {
 const FAT_ILLEGAL = /[\u0000-\u001f\u007f:*?"<>|/\\]/;
 const PATCH_EXTENSIONS = ['.aif', '.aiff'];
 
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/**
+ * True for names Windows cannot create (CON, PRN, AUX, NUL, COM1-9, LPT1-9), in any case, with or
+ * without an extension: everything before the first dot counts. The same rule as in
+ * web/src/core/library/operations.ts.
+ */
+export function isWindowsReservedName(name: string): boolean {
+  return WINDOWS_RESERVED.test(name.split('.')[0] as string);
+}
+
+/** Clutter that Finder and Explorer leave in folders; ignored in a pack and never published. */
+const IGNORED_FILES = new Set(['.ds_store', 'thumbs.db', 'desktop.ini']);
+
+/** True for `.DS_Store`, `Thumbs.db` or `desktop.ini` (any case) at any depth of a pack folder. */
+export function isIgnoredFile(path: string): boolean {
+  return IGNORED_FILES.has((path.split('/').at(-1) ?? '').toLowerCase());
+}
+
 /**
  * Why `name` cannot be a patch file name on the OP-1's FAT drive, or null when it can. The same
  * rules as assertPatchFileName in web/src/core/library/operations.ts (a test there checks they
@@ -111,6 +132,7 @@ const PATCH_EXTENSIONS = ['.aif', '.aiff'];
 export function patchFileNameProblem(name: string): string | null {
   if (name === '') return 'file name is empty';
   if (name.length > MAX_FILE_NAME) return `file name "${name}" is longer than ${MAX_FILE_NAME} characters`;
+  if (isWindowsReservedName(name)) return `file name "${name}" is reserved by Windows`;
   if (FAT_ILLEGAL.test(name)) {
     return `file name ${JSON.stringify(name)} contains a character the OP-1 drive cannot hold (/ \\ : * ? " < > | or a control character)`;
   }
@@ -298,7 +320,7 @@ function overLimit(size: number, limit: number): string {
  * Checks the files in a pack folder against its (already valid) manifest. `files` lists every
  * file in the folder with its size, by path relative to the folder; `parse` reads one of them as
  * a patch and throws when it cannot. Every listed file must exist with exactly that spelling, no
- * other file may be present except pack.json and README.md, each patch must be at most 2 MB and
+ * other file may be present except pack.json, README.md and ignored clutter (isIgnoredFile), each patch must be at most 2 MB and
  * the patches together at most 20 MB, and each must parse as the kind its folder names.
  */
 export async function validatePackFiles(
@@ -310,6 +332,7 @@ export async function validatePackFiles(
   const fail = (message: string, file?: string): void => {
     issues.push(file === undefined ? { pack: manifest.slug, message } : { pack: manifest.slug, file, message });
   };
+  files = files.filter((f) => !isIgnoredFile(f.path));
   const sizes = new Map(files.map((f) => [f.path, f.size]));
   const listed = new Set(manifest.patches.map((p) => p.file));
 
