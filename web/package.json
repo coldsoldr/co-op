@@ -12,6 +12,7 @@
     "fixtures": "tsx test/fixtures/build-fixtures.ts"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
