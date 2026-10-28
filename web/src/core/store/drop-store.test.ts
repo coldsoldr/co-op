@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DropStore, fromInputFiles, filesFromDataTransfer } from './drop-store';
 import { StoreError } from './store';
+import { describeReadableStore } from '../../../test/store-contract';
 
 const file = (name: string, ...values: number[]): File => new File([Uint8Array.from(values)], name);
 
@@ -13,6 +14,10 @@ function dropped(): DropStore {
     { path: 'OP-1/tape/track1.aif', file: file('track1.aif', 5) },
   ]);
 }
+
+describeReadableStore('DropStore', (files) =>
+  new DropStore(Object.entries(files).map(([path, bytes]) => ({ path: `OP-1/${path}`, file: new File([bytes.slice()], path) }))),
+);
 
 describe('DropStore', () => {
   it('is read-only and labelled with the dropped folder name', () => {

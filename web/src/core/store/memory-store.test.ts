@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { MemoryStore } from './memory-store';
 import { StoreError } from './store';
-import { describeWritableStore } from '../../../test/store-contract';
+import { describeReadableStore, describeWritableStore } from '../../../test/store-contract';
 
 describeWritableStore('MemoryStore', (files) => new MemoryStore(files));
+describeReadableStore('read-only MemoryStore', (files) => new MemoryStore(files, { write: false }));
 
 describe('MemoryStore', () => {
   const files = (): Record<string, Uint8Array> => ({ 'synth/user/a.aif': Uint8Array.of(1, 2) });

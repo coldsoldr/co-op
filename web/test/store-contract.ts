@@ -3,28 +3,42 @@ import { StoreError, type DeviceStore } from '../src/core/store/store';
 
 const bytes = (...values: number[]): Uint8Array => Uint8Array.from(values);
 
-/**
- * Behaviour every writable DeviceStore must share. `make` builds a store holding exactly the given
- * files (folders implied by their paths).
- */
-export function describeWritableStore(
-  name: string,
-  make: (files: Record<string, Uint8Array>) => DeviceStore | Promise<DeviceStore>,
-): void {
-  const seed = (): Record<string, Uint8Array> => ({
+export type StoreFactory = (files: Record<string, Uint8Array>) => DeviceStore | Promise<DeviceStore>;
+
+export interface ContractOptions {
+  /**
+   * Whether the backend can hold two names that differ only by case. False for FAT-style
+   * case-insensitive drives (the OP-1's own disk mode); the seed then leaves out 'synth/user/B.aif'.
+   * Defaults to true.
+   */
+  caseDistinctNames?: boolean;
+}
+
+function seedFor(options: ContractOptions): () => Record<string, Uint8Array> {
+  const caseDistinct = options.caseDistinctNames ?? true;
+  return () => ({
     'synth/user/b.aif': bytes(2, 2),
     'synth/user/a.aif': bytes(1),
-    'synth/user/B.aif': bytes(3, 3, 3),
+    'synth/user/C.aif': bytes(3, 3, 3),
+    ...(caseDistinct ? { 'synth/user/B.aif': bytes(6, 6, 6, 6) } : {}),
     'drum/user/kit.aif': bytes(4),
     'tape/track1.aif': bytes(5),
   });
+}
 
-  describe(`${name} (DeviceStore contract)`, () => {
-    it('is writable', async () => {
-      const store = await make(seed());
-      expect(store.capabilities.write).toBe(true);
-    });
+/** The names in synth/user of the seed, in code-point order. */
+function userNames(options: ContractOptions): string[] {
+  return (options.caseDistinctNames ?? true) ? ['B.aif', 'C.aif', 'a.aif', 'b.aif'] : ['C.aif', 'a.aif', 'b.aif'];
+}
 
+/**
+ * Read-side behaviour every DeviceStore must share, writable or not. `make` builds a store holding
+ * exactly the given files (folders implied by their paths).
+ */
+export function describeReadableStore(name: string, make: StoreFactory, options: ContractOptions = {}): void {
+  const seed = seedFor(options);
+
+  describe(`${name} (readable DeviceStore contract)`, () => {
     it('lists the root with folders implied by file paths', async () => {
       const store = await make(seed());
       expect(await store.list('')).toEqual([
@@ -36,11 +50,7 @@ export function describeWritableStore(
 
     it('lists a folder in code-point order', async () => {
       const store = await make(seed());
-      expect(await store.list('synth/user')).toEqual([
-        { name: 'B.aif', kind: 'file' },
-        { name: 'a.aif', kind: 'file' },
-        { name: 'b.aif', kind: 'file' },
-      ]);
+      expect(await store.list('synth/user')).toEqual(userNames(options).map((n) => ({ name: n, kind: 'file' })));
     });
 
     it('lists [] for a missing path and for a file', async () => {
@@ -55,6 +65,14 @@ export function describeWritableStore(
       expect(await store.read('synth/user/b.aif')).toEqual(bytes(2, 2));
     });
 
+    if (options.caseDistinctNames ?? true) {
+      it('keeps names that differ only by case apart', async () => {
+        const store = await make(seed());
+        expect(await store.read('synth/user/B.aif')).toEqual(bytes(6, 6, 6, 6));
+        expect(await store.read('synth/user/b.aif')).toEqual(bytes(2, 2));
+      });
+    }
+
     it('rejects reading a missing path or a folder with a StoreError naming the path', async () => {
       const store = await make(seed());
       await expect(store.read('synth/user/zz.aif')).rejects.toThrow(StoreError);
@@ -65,18 +83,33 @@ export function describeWritableStore(
 
     it('reports sizes without reading', async () => {
       const store = await make(seed());
-      expect(await store.size('synth/user/B.aif')).toBe(3);
+      expect(await store.size('synth/user/C.aif')).toBe(3);
       await expect(store.size('synth/user/zz.aif')).rejects.toThrow(StoreError);
       await expect(store.size('synth/user/zz.aif')).rejects.toThrow('synth/user/zz.aif');
     });
 
     it('reports whether files and folders exist', async () => {
       const store = await make(seed());
+      expect(await store.exists('')).toBe(true);
       expect(await store.exists('synth/user/a.aif')).toBe(true);
       expect(await store.exists('synth/user')).toBe(true);
       expect(await store.exists('synth/user/zz.aif')).toBe(false);
       expect(await store.exists('nope/zz.aif')).toBe(false);
       expect(await store.exists('synth/user/a.aif/deeper')).toBe(false);
+    });
+  });
+}
+
+/** Everything in describeReadableStore, plus the write side. */
+export function describeWritableStore(name: string, make: StoreFactory, options: ContractOptions = {}): void {
+  const seed = seedFor(options);
+
+  describeReadableStore(name, make, options);
+
+  describe(`${name} (writable DeviceStore contract)`, () => {
+    it('is writable', async () => {
+      const store = await make(seed());
+      expect(store.capabilities.write).toBe(true);
     });
 
     it('writes new files, creating parent folders', async () => {
@@ -154,7 +187,7 @@ export function describeWritableStore(
     it('treats mkdir of an existing folder as a no-op', async () => {
       const store = await make(seed());
       await store.mkdir('synth/user');
-      expect(await store.list('synth/user')).toHaveLength(3);
+      expect(await store.list('synth/user')).toHaveLength(userNames(options).length);
     });
 
     it('refuses mkdir over a file', async () => {
