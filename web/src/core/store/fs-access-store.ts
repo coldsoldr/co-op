@@ -14,6 +14,17 @@ function storeError(action: string, path: string, error: unknown): StoreError {
   return new StoreError(`cannot ${action} ${path}: ${detail}`, { cause: error });
 }
 
+type CoOpNativeMove = (destination: FileSystemDirectoryHandle, name: string) => Promise<void>;
+
+/**
+ * FileSystemFileHandle.move (Chromium 110+) bound to the handle, or null where it is missing.
+ * Reached through a cast rather than a lib.dom augmentation, like showDirectoryPicker below.
+ */
+function nativeMoveOf(handle: FileSystemFileHandle): CoOpNativeMove | null {
+  const move = (handle as { move?: unknown }).move;
+  return typeof move === 'function' ? (move.bind(handle) as CoOpNativeMove) : null;
+}
+
 /** A DeviceStore over a folder picked with the File System Access API (Chromium only). */
 export class FsAccessStore implements DeviceStore {
   readonly capabilities: StoreCapabilities = { write: true };
@@ -117,10 +128,11 @@ export class FsAccessStore implements DeviceStore {
     } catch (error) {
       throw storeError('move', joinPath(from), error);
     }
-    if (typeof handle.move === 'function') {
+    const nativeMove = nativeMoveOf(handle);
+    if (nativeMove) {
       try {
         const destination = await this.dir(splitPath(target).slice(0, -1), true);
-        await handle.move(destination, basename(target));
+        await nativeMove(destination, basename(target));
         return;
       } catch (error) {
         // A missing source is final; anything else (e.g. NotSupportedError for a move across
