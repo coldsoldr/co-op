@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
+import playwright from 'eslint-plugin-playwright';
 import globals from 'globals';
 
 export default tseslint.config(
@@ -24,7 +25,11 @@ export default tseslint.config(
     ...reactHooks.configs.flat.recommended,
   },
   {
-    files: ['web/test/**/*.ts', '*.{js,ts}', 'web/*.{js,ts}'],
+    files: ['web/test/**/*.ts', 'web/e2e/**/*.ts', '*.{js,ts}', 'web/*.{js,ts}'],
     languageOptions: { globals: globals.node },
+  },
+  {
+    files: ['web/e2e/**/*.ts'],
+    ...playwright.configs['flat/recommended'],
   },
 );

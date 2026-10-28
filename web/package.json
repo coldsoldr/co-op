@@ -9,7 +9,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "fixtures": "tsx test/fixtures/build-fixtures.ts"
+    "fixtures": "tsx test/fixtures/build-fixtures.ts",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "fflate": "^0.8.3",
@@ -17,6 +18,7 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
