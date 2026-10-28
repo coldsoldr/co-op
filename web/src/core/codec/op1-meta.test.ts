@@ -24,4 +24,12 @@ describe('op1 metadata guards', () => {
   it('tolerates extra fields from newer firmware', () => {
     expect(isSynthMeta({ ...SYNTH_META, future_field: [1, 2, 3] })).toBe(true);
   });
+
+  it('rejects metadata with wrongly typed or missing required fields', () => {
+    expect(isSynthMeta({ ...SYNTH_META, synth_version: '2' })).toBe(false);
+    expect(isSynthMeta({ ...SYNTH_META, name: 1 })).toBe(false);
+    expect(isDrumMeta({ ...DRUM_META, start: undefined })).toBe(false);
+    expect(isDrumMeta({ ...DRUM_META, name: 1 })).toBe(false);
+    expect(metaKind([])).toBe('unknown');
+  });
 });

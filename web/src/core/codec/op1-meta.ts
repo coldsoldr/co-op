@@ -43,6 +43,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function isSynthMeta(value: unknown): value is SynthMeta {
   return (
     isRecord(value) &&
+    typeof value['name'] === 'string' &&
     typeof value['synth_version'] === 'number' &&
     typeof value['type'] === 'string' &&
     value['type'] !== 'drum' &&
@@ -54,6 +55,7 @@ export function isSynthMeta(value: unknown): value is SynthMeta {
 export function isDrumMeta(value: unknown): value is DrumMeta {
   return (
     isRecord(value) &&
+    typeof value['name'] === 'string' &&
     value['type'] === 'drum' &&
     typeof value['drum_version'] === 'number' &&
     Array.isArray(value['start']) &&
