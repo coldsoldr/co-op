@@ -30,7 +30,7 @@ describe('op-1 APPL chunk', () => {
       const built = buildOp1Chunk(meta);
       const parsed = parseOp1Chunk(built);
       expect(parsed.meta).toEqual(meta);
-      expect(Array.from(buildOp1Chunk(parsed.meta, parsed.trailing))).toEqual(Array.from(built));
+      expect(Array.from(buildOp1Chunk(parsed.meta, parsed.trailing).data)).toEqual(Array.from(built.data));
     }
   });
 
