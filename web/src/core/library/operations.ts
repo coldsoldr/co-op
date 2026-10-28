@@ -52,8 +52,14 @@ function assertEntryName(name: string, what: string): void {
   }
 }
 
+/** The longest patch file name accepted; matches MAX_FILE_NAME in shared/src/packs.ts. */
+export const MAX_FILE_NAME = 64;
+
 export function assertPatchFileName(name: string): void {
   assertEntryName(name, 'file');
+  if (name.length > MAX_FILE_NAME) {
+    throw new OperationError(`file name "${name}" is longer than ${MAX_FILE_NAME} characters`);
+  }
   const lower = name.toLowerCase();
   if (!PATCH_EXTENSIONS.some((ext) => lower.endsWith(ext) && lower.length > ext.length)) {
     throw new OperationError(`file name "${name}" must end in ${PATCH_EXTENSIONS.join(' or ')}`);

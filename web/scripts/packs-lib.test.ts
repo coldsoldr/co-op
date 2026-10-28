@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -132,6 +132,36 @@ describe('loadPacks', () => {
   });
 });
 
+describe('loadPacks file checks', () => {
+  it('accepts a pack.json that starts with a byte order mark', async () => {
+    await goodPack();
+    await put('good/pack.json', `\uFEFF${JSON.stringify(manifest('good', ['synth/cluster.aif', 'drum/boombap.aif']))}`);
+    expect((await loadPacks(packsDir, { now: NOW, firmware: FIRMWARE })).issues).toEqual([]);
+  });
+
+  it('refuses a pack.json over 64 KB without parsing it', async () => {
+    await put('big/pack.json', `${JSON.stringify(manifest('big', ['synth/a.aif']))}${' '.repeat(64 * 1024)}`);
+    const { issues } = await loadPacks(packsDir, { now: NOW, firmware: FIRMWARE });
+    expect(issues).toEqual([{ pack: 'big', file: 'pack.json', message: expect.stringMatching(/over the 64 KB \(65536 bytes\) limit$/) }]);
+  });
+
+  it('reports a symbolic link instead of following it', async (context) => {
+    await goodPack();
+    await put('outside.aif', cluster);
+    try {
+      await symlink(join(packsDir, 'outside.aif'), join(packsDir, 'good', 'synth', 'link.aif'), 'file');
+    } catch (error) {
+      if (['EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+        context.skip('this system does not permit creating symbolic links');
+      }
+      throw error;
+    }
+    const { issues, index } = await loadPacks(packsDir, { now: NOW, firmware: FIRMWARE });
+    expect(index.packs).toEqual([]);
+    expect(issues).toEqual([{ pack: 'good', file: 'synth/link.aif', message: 'is a link; add the real file instead' }]);
+  });
+});
+
 describe('formatIssues', () => {
   it('groups issues by pack', () => {
     const text = formatIssues([
@@ -224,6 +254,27 @@ describe('packsMiddleware', () => {
     expect((await request('/co-op/packs/../package.json')).status).toBe(404);
     expect((await request('/co-op/packs/%2e%2e/%2e%2e/package.json')).status).toBe(404);
     expect((await request('/co-op/packs/good/synth')).status).toBe(404);
+  });
+
+  it('answers 404 for a drive-letter segment, raw or encoded', async () => {
+    await goodPack();
+    for (const path of ['C:', 'C%3A', 'c%3a', 'good/C:', 'C%3A%5CWindows%5Cwin.ini', 'C:/Windows/win.ini']) {
+      expect((await request(`/co-op/packs/${path}`)).status).toBe(404);
+    }
+  });
+
+  it('serves only pack.json, README.md and listed patches of valid packs', async () => {
+    await goodPack();
+    expect((await request('/co-op/packs/good/pack.json')).status).toBe(200);
+    expect((await request('/co-op/packs/good/README.md')).status).toBe(200);
+    // A file in a pack that fails validation is not served, even though it exists.
+    await put('broken/pack.json', manifest('broken', ['synth/cluster.aif']));
+    await put('broken/synth/cluster.aif', cluster);
+    await put('broken/synth/stray.aif', cluster);
+    expect((await request('/co-op/packs/broken/synth/cluster.aif')).status).toBe(404);
+    expect((await request('/co-op/packs/broken/pack.json')).status).toBe(404);
+    // A case variant of a listed path is not the listed path.
+    expect((await request('/co-op/packs/good/synth/Cluster.aif')).status).toBe(404);
   });
 
   it('passes other requests on', async () => {

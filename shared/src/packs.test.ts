@@ -63,8 +63,9 @@ describe('parseManifest', () => {
   });
 
   it('requires format 1', () => {
-    rejects({ format: 2 }, /format must be 1/);
-    rejects({ format: undefined }, /format must be 1/);
+    rejects({ format: 2 }, /format must be 1 \(found 2\)/);
+    rejects({ format: '1' }, /format must be 1 \(found "1"\)/);
+    rejects({ format: undefined }, /format must be 1 \(it is missing\)/);
   });
 
   it('rejects unknown fields', () => {
@@ -168,8 +169,21 @@ describe('parseManifest', () => {
       expect(parse({ patches }).issues).toEqual([]);
     });
 
+    it('says folder names are lower-case', () => {
+      for (const file of ['Synth/a.aif', 'DRUM/a.aif']) {
+        const issues = rejects({ patches: [{ file }] }, /folder names are lower-case: use synth\/ or drum\//);
+        expect(issues[0]?.file).toBe(file);
+      }
+    });
+
+    it('caps a file name at 64 characters', () => {
+      const ok = `synth/${'a'.repeat(60)}.aif`;
+      expect(parse({ patches: [{ file: ok }] }).issues).toEqual([]);
+      rejects({ patches: [{ file: `synth/${'a'.repeat(61)}.aif` }] }, /longer than 64 characters/);
+    });
+
     it('rejects files outside synth/ or drum/, or nested deeper', () => {
-      for (const file of ['a.aif', 'tape/a.aif', 'Synth/a.aif', 'synth/sub/a.aif', 'synth/', '/synth/a.aif', 'synth//a.aif']) {
+      for (const file of ['a.aif', 'tape/a.aif', 'synth/sub/a.aif', 'synth/', '/synth/a.aif', 'synth//a.aif']) {
         const issues = rejects({ patches: [{ file }] }, /must be synth\/<name> or drum\/<name>/);
         expect(issues[0]?.file).toBe(file);
       }
@@ -262,7 +276,7 @@ describe('validatePackFiles', () => {
     };
     const big = files().map((f) => (f.path === 'synth/cluster.aif' ? { ...f, size: MAX_FILE_BYTES + 1 } : f));
     const issues = await validatePackFiles(manifest, big, counting);
-    expect(issues).toEqual([{ pack: 'test-tones', file: 'synth/cluster.aif', message: expect.stringMatching(/larger than 2 MB/) }]);
+    expect(issues).toEqual([{ pack: 'test-tones', file: 'synth/cluster.aif', message: 'is 2097153 bytes, over the 2 MB (2097152 bytes) limit' }]);
     expect(parsed).toBe(1);
     const exact = files().map((f) => (f.path === 'synth/cluster.aif' ? { ...f, size: MAX_FILE_BYTES } : f));
     expect(await validatePackFiles(manifest, exact, parsePatch)).toEqual([]);
@@ -273,8 +287,26 @@ describe('validatePackFiles', () => {
     const big = parseManifest({ ...valid(), patches }, 'test-tones', FIRMWARE).manifest as PackManifest;
     const onDisk = [{ path: 'pack.json', size: 100 }, ...patches.map((p) => ({ path: p.file, size: MAX_FILE_BYTES }))];
     const issues = await validatePackFiles(big, onDisk, async () => ({ kind: 'synth', name: 'p', engine: 'cluster' }));
-    expect(issues).toEqual([{ pack: 'test-tones', message: expect.stringMatching(/larger than 20 MB/) }]);
+    expect(issues).toEqual([{ pack: 'test-tones', message: 'patches total 23068672 bytes, over the 20 MB (20971520 bytes) limit' }]);
     expect(MAX_PACK_BYTES).toBe(20 * 1024 * 1024);
+  });
+
+  it('reports a case variant of a listed file as unlisted when the listed file exists', async () => {
+    const issues = await validatePackFiles(manifest, files([{ path: 'synth/Cluster.aif', size: 1000 }]), parsePatch);
+    expect(issues).toEqual([
+      { pack: 'test-tones', file: 'synth/Cluster.aif', message: 'not listed in pack.json; list it under "patches" or remove it' },
+    ]);
+  });
+
+  it('caps pack.json and README.md at 64 KB', async () => {
+    const big = files().map((f) => (f.path === 'pack.json' ? { ...f, size: 64 * 1024 + 1 } : f));
+    const issues = await validatePackFiles(manifest, [...big, { path: 'README.md', size: 64 * 1024 + 1 }], parsePatch);
+    expect(issues).toEqual([
+      { pack: 'test-tones', file: 'pack.json', message: 'is 65537 bytes, over the 64 KB (65536 bytes) limit' },
+      { pack: 'test-tones', file: 'README.md', message: 'is 65537 bytes, over the 64 KB (65536 bytes) limit' },
+    ]);
+    const exact = files([{ path: 'README.md', size: 64 * 1024 }]);
+    expect(await validatePackFiles(manifest, exact, parsePatch)).toEqual([]);
   });
 
   it('reports a file that does not parse', async () => {

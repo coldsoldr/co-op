@@ -34,6 +34,10 @@ const NAMES = [
   'aiff',
   'x.aiff',
   'x.aifc',
+  `${'a'.repeat(60)}.aif`,
+  `${'a'.repeat(61)}.aif`,
+  `${'a'.repeat(59)}.aiff`,
+  `${'a'.repeat(60)}.aiff`,
 ];
 
 const opsAccepts = (name: string): boolean => {

@@ -1,4 +1,4 @@
-import { INDEX_FORMAT, patchKindOf, type PackIndex, type PackIndexEntry, type PackKind } from '@co-op/shared/packs';
+import { INDEX_FORMAT, PACK_KINDS, SLUG, patchKindOf, type PackIndex, type PackIndexEntry, type PackKind } from '@co-op/shared/packs';
 import { assertPatchFileName, ensureFolder, freeName } from '../library/operations';
 import { getProfile } from '../profiles/registry';
 import { writeAtomic } from '../store/atomic';
@@ -9,13 +9,25 @@ export class CatalogueError extends Error {
   override name = 'CatalogueError';
 }
 
+/** An install that failed part-way; `installed` lists the paths written before the failure. */
+export class InstallError extends CatalogueError {
+  override name = 'InstallError';
+  constructor(
+    message: string,
+    readonly installed: string[],
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+  }
+}
+
 const withSlash = (baseUrl: string): string => (baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
 const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-async function get(url: string, what: string, fetchImpl: typeof fetch): Promise<Response> {
+async function get(url: string, what: string, fetchImpl: typeof fetch, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
-    response = await fetchImpl(url);
+    response = await (init ? fetchImpl(url, init) : fetchImpl(url));
   } catch (error) {
     throw new CatalogueError(`could not ${what}: ${reason(error)}`, { cause: error });
   }
@@ -23,23 +35,49 @@ async function get(url: string, what: string, fetchImpl: typeof fetch): Promise<
   return response;
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+const isStringList = (value: unknown): boolean => Array.isArray(value) && value.every((v) => typeof v === 'string');
+
+/** A cheap shape check, so the UI never trips over a field of the wrong type. */
+function isIndexEntry(value: unknown): value is PackIndexEntry {
+  if (!isRecord(value)) return false;
+  const strings = ['slug', 'name', 'author', 'description', 'license'].every((k) => typeof value[k] === 'string');
+  if (!strings || typeof value.sizeBytes !== 'number' || !isStringList(value.firmware) || !isStringList(value.tags)) {
+    return false;
+  }
+  return (
+    Array.isArray(value.patches) &&
+    value.patches.every(
+      (p) =>
+        isRecord(p) &&
+        ['file', 'name', 'engine', 'sha256'].every((k) => typeof p[k] === 'string') &&
+        (PACK_KINDS as readonly unknown[]).includes(p.kind) &&
+        typeof p.sizeBytes === 'number',
+    )
+  );
+}
+
 /**
  * Loads `<baseUrl>packs/index.json` (baseUrl is the app's base, for example import.meta.env.BASE_URL)
- * and checks that it is an index this version understands.
+ * and checks that it is an index this version understands. The index changes with every deploy,
+ * so it is always revalidated with the server.
  */
 export async function fetchIndex(baseUrl: string, fetchImpl: typeof fetch = fetch): Promise<PackIndex> {
-  const response = await get(`${withSlash(baseUrl)}packs/index.json`, 'load the pack index', fetchImpl);
+  const response = await get(`${withSlash(baseUrl)}packs/index.json`, 'load the pack index', fetchImpl, { cache: 'no-cache' });
   let json: unknown;
   try {
     json = JSON.parse(await response.text());
   } catch (error) {
     throw new CatalogueError(`the pack index is not valid JSON: ${reason(error)}`, { cause: error });
   }
-  const index = json as Partial<PackIndex> | null;
-  if (typeof index !== 'object' || index === null || index.format !== INDEX_FORMAT || !Array.isArray(index.packs)) {
+  if (!isRecord(json) || json.format !== INDEX_FORMAT || !Array.isArray(json.packs)) {
     throw new CatalogueError(`unsupported pack index (expected format ${INDEX_FORMAT})`);
   }
-  return index as PackIndex;
+  json.packs.forEach((entry: unknown, i: number) => {
+    if (!isIndexEntry(entry)) throw new CatalogueError(`pack index entry ${i + 1} is malformed`);
+  });
+  return json as unknown as PackIndex;
 }
 
 export interface PackFilter {
@@ -74,9 +112,26 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+function assertSlug(slug: string): void {
+  if (!SLUG.test(slug)) throw new CatalogueError(`${JSON.stringify(slug)} is not a pack slug`);
+}
+
+/** The kind folder of a pack file path, which must be exactly synth/<name> or drum/<name>. */
+function packFileKind(file: string): PackKind {
+  const kind = patchKindOf(file);
+  if (kind === null || file.split('/').length !== 2) throw new CatalogueError(`${file} is not in synth/ or drum/`);
+  try {
+    assertPatchFileName(basename(file));
+  } catch (error) {
+    throw new CatalogueError(`${file}: ${reason(error)}`, { cause: error });
+  }
+  return kind;
+}
+
 /**
  * Downloads one patch file of a pack and checks it against the SHA-256 from the index, so a stale
- * cache or a broken download never reaches the device.
+ * cache or a broken download never reaches the device. A mismatch is retried once bypassing the
+ * HTTP cache, which covers a file cached from before a deploy.
  */
 export async function fetchPatchBytes(
   baseUrl: string,
@@ -85,14 +140,16 @@ export async function fetchPatchBytes(
   sha256: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Uint8Array> {
-  const path = [slug, ...splitPath(file)].map(encodeURIComponent).join('/');
+  assertSlug(slug);
+  packFileKind(file);
+  if (typeof sha256 !== 'string' || sha256 === '') throw new CatalogueError(`${slug}/${file} has no SHA-256 in the pack index`);
+  const url = `${withSlash(baseUrl)}packs/${[slug, ...splitPath(file)].map(encodeURIComponent).join('/')}`;
   const label = `${slug}/${file}`;
-  const response = await get(`${withSlash(baseUrl)}packs/${path}`, `download ${label}`, fetchImpl);
-  const buffer = await response.arrayBuffer();
-  if ((await sha256Hex(buffer)) !== sha256.toLowerCase()) {
-    throw new CatalogueError(`${label} does not match the pack index; reload the page and try again`);
+  for (const init of [undefined, { cache: 'no-cache' } as RequestInit]) {
+    const buffer = await (await get(url, `download ${label}`, fetchImpl, init)).arrayBuffer();
+    if ((await sha256Hex(buffer)) === sha256.toLowerCase()) return new Uint8Array(buffer);
   }
-  return new Uint8Array(buffer);
+  throw new CatalogueError(`${label} does not match the pack index; reload the page and try again`);
 }
 
 export interface PatchFile {
@@ -104,10 +161,11 @@ export interface PatchFile {
 /**
  * Installs pack files onto a device store and returns the paths written, in order. Each file goes
  * into `targetFolderFor(kind)` (by default the profile's root for that kind plus the slug, such as
- * 'synth/test-tones'), created if missing and matched to an existing folder ignoring case. Bytes
- * are written exactly as given with writeAtomic, under a name that is free ignoring case, so an
- * existing patch is never replaced. Every file is checked before anything is written. A
- * read-only source must be wrapped in a StagedStore.
+ * 'synth/test-tones'), matched to an existing folder ignoring case. Every file is checked and every
+ * target folder is created before the first file is written. Bytes are written exactly as given
+ * with writeAtomic, under a name that is free ignoring case, so an existing patch is never
+ * replaced. A failure part-way throws an InstallError listing what was installed. A read-only
+ * source must be wrapped in a StagedStore.
  */
 export async function installPatches(
   store: DeviceStore,
@@ -116,6 +174,7 @@ export async function installPatches(
   files: readonly PatchFile[],
   targetFolderFor?: (kind: PackKind) => string,
 ): Promise<{ installed: string[] }> {
+  assertSlug(slug);
   const profile = getProfile(profileId);
   if (!profile) throw new CatalogueError(`unknown device profile "${profileId}"`);
   const defaultFolder = (kind: PackKind): string => {
@@ -126,20 +185,29 @@ export async function installPatches(
   const folderFor = targetFolderFor ?? defaultFolder;
 
   const plan = files.map(({ file, bytes }) => {
-    const kind = patchKindOf(file);
-    if (kind === null || splitPath(file).length !== 2) throw new CatalogueError(`${file} is not in synth/ or drum/`);
-    assertPatchFileName(basename(file));
+    const kind = packFileKind(file);
     const folder = joinPath(folderFor(kind));
     if (folder === '') throw new CatalogueError(`no target folder for ${kind} patches`);
     return { name: basename(file), bytes, folder };
   });
 
+  const resolved = new Map<string, string>();
+  for (const { folder } of plan) {
+    if (!resolved.has(folder)) resolved.set(folder, await ensureFolder(store, dirname(folder), basename(folder)));
+  }
+
   const installed: string[] = [];
   for (const { name, bytes, folder } of plan) {
-    const target = await ensureFolder(store, dirname(folder), basename(folder));
-    const path = joinPath(target, await freeName(store, target, name));
-    await writeAtomic(store, path, bytes);
-    installed.push(path);
+    const target = resolved.get(folder) as string;
+    try {
+      const path = joinPath(target, await freeName(store, target, name));
+      await writeAtomic(store, path, bytes);
+      installed.push(path);
+    } catch (error) {
+      throw new InstallError(`installed ${installed.length} of ${plan.length} patches, then failed: ${reason(error)}`, installed, {
+        cause: error,
+      });
+    }
   }
   return { installed };
 }

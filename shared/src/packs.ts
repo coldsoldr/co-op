@@ -24,12 +24,17 @@ export const MAX_NOTES = 200;
 export const MAX_PATCHES = 100;
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const MAX_PACK_BYTES = 20 * 1024 * 1024;
+/** pack.json and README.md are text; anything bigger is a mistake. */
+export const MAX_TEXT_BYTES = 64 * 1024;
+/** The longest patch file name, matching assertPatchFileName in web's operations.ts. */
+export const MAX_FILE_NAME = 64;
 
 /** Files allowed in a pack folder besides the listed patches. */
 export const MANIFEST_FILE = 'pack.json';
 export const README_FILE = 'README.md';
 
-const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/** A pack slug: lower-case letters and digits in words joined by single hyphens. */
+export const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const TAG = /^[a-z0-9-]{1,20}$/;
 
 export interface PackPatchEntry {
@@ -100,10 +105,12 @@ const PATCH_EXTENSIONS = ['.aif', '.aiff'];
  * Why `name` cannot be a patch file name on the OP-1's FAT drive, or null when it can. The same
  * rules as assertPatchFileName in web/src/core/library/operations.ts (a test there checks they
  * agree): not empty, no path separator, none of `:*?"<>|`, no control character, no leading '.',
- * no trailing dot or space, and ending in .aif or .aiff (any case) after at least one character.
+ * no trailing dot or space, at most 64 characters, and ending in .aif or .aiff (any case) after
+ * at least one character.
  */
 export function patchFileNameProblem(name: string): string | null {
   if (name === '') return 'file name is empty';
+  if (name.length > MAX_FILE_NAME) return `file name "${name}" is longer than ${MAX_FILE_NAME} characters`;
   if (FAT_ILLEGAL.test(name)) {
     return `file name ${JSON.stringify(name)} contains a character the OP-1 drive cannot hold (/ \\ : * ? " < > | or a control character)`;
   }
@@ -148,7 +155,10 @@ export function parseManifest(
   }
 
   for (const key of Object.keys(json)) if (!MANIFEST_FIELDS.has(key)) fail(`unknown field "${key}"`);
-  if (json.format !== PACK_FORMAT) fail(`format must be ${PACK_FORMAT}`);
+  if (json.format !== PACK_FORMAT) {
+    const found = json.format === undefined ? 'it is missing' : `found ${JSON.stringify(json.format)}`;
+    fail(`format must be ${PACK_FORMAT} (${found})`);
+  }
 
   const text = (field: string, max: number): string => {
     const value = json[field];
@@ -239,7 +249,9 @@ export function parseManifest(
         else if (entry.notes.length > MAX_NOTES) fail(`notes must be at most ${MAX_NOTES} characters`, file);
       }
       const rest = file.slice(file.indexOf('/') + 1);
-      if (patchKindOf(file) === null || rest === '' || rest.includes('/')) {
+      if (patchKindOf(file) === null && patchKindOf(file.toLowerCase()) !== null) {
+        fail('folder names are lower-case: use synth/ or drum/', file);
+      } else if (patchKindOf(file) === null || rest === '' || rest.includes('/')) {
         fail('must be synth/<name> or drum/<name>', file);
       } else {
         const problem = patchFileNameProblem(rest);
@@ -276,7 +288,11 @@ export interface ParsedPackPatch {
   engine: string;
 }
 
-const MB = 1024 * 1024;
+/** '2097153 bytes, over the 2 MB (2097152 bytes) limit': exact bytes, so nothing rounds under. */
+function overLimit(size: number, limit: number): string {
+  const unit = limit >= 1024 * 1024 ? `${limit / (1024 * 1024)} MB` : `${limit / 1024} KB`;
+  return `${size} bytes, over the ${unit} (${limit} bytes) limit`;
+}
 
 /**
  * Checks the files in a pack folder against its (already valid) manifest. `files` lists every
@@ -307,7 +323,7 @@ export async function validatePackFiles(
     }
     total += size;
     if (size > MAX_FILE_BYTES) {
-      fail(`is ${(size / MB).toFixed(1)} MB, larger than ${MAX_FILE_BYTES / MB} MB`, file);
+      fail(`is ${overLimit(size, MAX_FILE_BYTES)}`, file);
       continue;
     }
     let parsed: ParsedPackPatch;
@@ -324,13 +340,19 @@ export async function validatePackFiles(
     }
   }
 
-  for (const { path } of files) {
-    if (path === MANIFEST_FILE || path === README_FILE || listed.has(path)) continue;
-    // A case-only misspelling of a listed file is reported once, above.
-    if (manifest.patches.some((p) => p.file.toLowerCase() === path.toLowerCase())) continue;
+  for (const { path, size } of files) {
+    if (path === MANIFEST_FILE || path === README_FILE) {
+      if (size > MAX_TEXT_BYTES) fail(`is ${overLimit(size, MAX_TEXT_BYTES)}`, path);
+      continue;
+    }
+    if (listed.has(path)) continue;
+    // A case-only misspelling of a listed file that is itself missing was reported above; when the
+    // listed spelling exists too, this one is an extra file.
+    const variantOf = manifest.patches.find((p) => p.file.toLowerCase() === path.toLowerCase());
+    if (variantOf && !sizes.has(variantOf.file)) continue;
     fail('not listed in pack.json; list it under "patches" or remove it', path);
   }
 
-  if (total > MAX_PACK_BYTES) fail(`patches total ${(total / MB).toFixed(1)} MB, larger than ${MAX_PACK_BYTES / MB} MB`);
+  if (total > MAX_PACK_BYTES) fail(`patches total ${overLimit(total, MAX_PACK_BYTES)}`);
   return issues;
 }

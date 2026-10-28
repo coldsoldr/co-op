@@ -1,5 +1,10 @@
 import { configDefaults, defineConfig, type Plugin } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+// Importing the packs library pulls the codec into the config bundle. Vite then prints a notice
+// that these extensionless imports are "unsupported by configLoader: 'native'". That loader is
+// opt-in today, so the notice is harmless; if a future Vite makes it the default, add file
+// extensions to these imports (or load the plugin another way). Do not silence it globally with
+// VITE_CONFIG_NATIVE_IGNORE_WARNING, which would hide other config warnings too.
 import { DEFAULT_PACKS_DIR, packsMiddleware } from './scripts/packs-lib';
 
 const base = '/co-op/';
