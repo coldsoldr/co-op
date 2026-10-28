@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readForm, writeForm, IffError } from './iff';
+import { readForm, writeForm, writeId, IffError } from './iff';
 
 function ascii(s: string): Uint8Array {
   return new TextEncoder().encode(s);
@@ -43,6 +43,43 @@ describe('readForm', () => {
   it('rejects a chunk that runs past the end of the file', () => {
     const bad = concat(ascii('FORM'), u32(16), ascii('AIFF'), ascii('ABCD'), u32(100), ascii('xy'));
     expect(() => readForm(bad)).toThrow(/runs past end/);
+  });
+
+  it('rejects trailing bytes after the last chunk', () => {
+    expect(() => readForm(concat(file, ascii('abc')))).toThrow(/trailing bytes/);
+  });
+
+  it('rejects an odd-sized chunk with no pad byte at end of file', () => {
+    const bad = concat(ascii('FORM'), u32(15), ascii('AIFF'), ascii('ABCD'), u32(3), ascii('xyz'));
+    expect(() => readForm(bad)).toThrow(/ABCD is odd-sized but has no pad byte/);
+  });
+
+  it('reads from a subarray with a non-zero byteOffset', () => {
+    const big = concat(new Uint8Array([1, 2, 3]), file, new Uint8Array([9]));
+    const form = readForm(big.subarray(3, 3 + file.length));
+    expect(form).toEqual(readForm(file));
+  });
+
+  it('has a distinguishable error name', () => {
+    expect(new IffError('x').name).toBe('IffError');
+  });
+});
+
+describe('writeId', () => {
+  it('writes four latin1 character codes', () => {
+    const out = new Uint8Array(6);
+    writeId(out, 1, 'Aÿ z');
+    expect(Array.from(out)).toEqual([0, 0x41, 0xff, 0x20, 0x7a, 0]);
+  });
+
+  it('rejects ids that are not exactly four characters', () => {
+    expect(() => writeId(new Uint8Array(4), 0, 'ABC')).toThrow(IffError);
+    expect(() => writeForm({ formType: 'AIFF', chunks: [{ id: 'ABC', data: ascii('x') }] })).toThrow(IffError);
+  });
+
+  it('rejects ids with characters outside latin1', () => {
+    expect(() => writeId(new Uint8Array(4), 0, 'AB€D')).toThrow(/latin1/);
+    expect(() => writeForm({ formType: 'AI€F', chunks: [] })).toThrow(IffError);
   });
 });
 
