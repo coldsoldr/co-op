@@ -154,6 +154,41 @@ describe('copyPatch', () => {
     expect(await copyPatch(store, 'synth/user/cluster.aif', 'synth/user')).toBe('synth/user/cluster-2.aif');
     expectSameBytes(store.snapshot()['synth/user/cluster-2.aif'], cluster);
   });
+
+  it('uses a temp name of its own per call, so concurrent copies of one file do not collide', async () => {
+    const store = drive();
+    const temps: string[] = [];
+    const write = store.write.bind(store);
+    store.write = async (path, bytes) => {
+      temps.push(path);
+      await write(path, bytes);
+    };
+    const copies = await Promise.all([
+      copyPatch(store, 'synth/user/cluster.aif', 'synth/user'),
+      copyPatch(store, 'synth/user/cluster.aif', 'synth/user'),
+    ]);
+    expect(new Set(temps).size).toBe(2);
+    for (const temp of temps) expect(temp).toMatch(/^synth\/user\/\.co-op-tmp-/);
+    expect(new Set(copies).size).toBe(2);
+    for (const path of copies) expectSameBytes(store.snapshot()[path], cluster);
+    expect(Object.keys(store.snapshot()).filter((p) => p.includes('.co-op-'))).toEqual([]);
+  });
+
+  it('leaves a temp that recoverStranded cleans up', async () => {
+    const store = drive();
+    store.move = async () => {
+      throw new StoreError('disk full');
+    };
+    store.remove = async () => {
+      throw new StoreError('disk full');
+    };
+    await expect(copyPatch(store, 'synth/user/cluster.aif', 'synth/user')).rejects.toThrow('disk full');
+    const left = Object.keys(store.snapshot()).filter((p) => p.includes('.co-op-tmp-'));
+    expect(left).toHaveLength(1);
+    const clean = new MemoryStore(store.snapshot());
+    await recoverStranded(clean, 'synth/user');
+    expect(Object.keys(clean.snapshot()).filter((p) => p.includes('.co-op-'))).toEqual([]);
+  });
 });
 
 describe('deletePatch', () => {

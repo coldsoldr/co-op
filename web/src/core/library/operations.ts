@@ -21,6 +21,9 @@ const TEMP_PREFIX = '.co-op-tmp-';
 /** How often copyPatch retries when another writer takes its chosen name. */
 const COPY_ATTEMPTS = 5;
 
+/** Numbers copyPatch temp names; the random part covers several tabs on one drive. */
+let copyCounter = 0;
+
 /**
  * Refuses up front on a read-only store, so an operation never gets part-way. Wrap a read-only
  * source in a StagedStore to collect changes instead.
@@ -197,7 +200,8 @@ export async function copyPatch(store: DeviceStore, path: string, targetFolder: 
   const source = joinPath(path);
   const folder = await resolveFolder(store, targetFolder);
   const bytes = await store.read(source);
-  const temp = joinPath(folder, `${TEMP_PREFIX}copy-${basename(source)}`);
+  // Unique per call, so two copies in flight never share (and clobber) one temp file.
+  const temp = joinPath(folder, `${TEMP_PREFIX}copy-${++copyCounter}-${crypto.randomUUID()}-${basename(source)}`);
   await store.write(temp, bytes);
   for (let attempt = 1; ; attempt++) {
     const target = joinPath(folder, await freeName(store, folder, basename(source)));

@@ -68,7 +68,10 @@ export class MemoryStore implements DeviceStore {
     const target = joinPath(to);
     this.assertWritable(source);
     const bytes = this.file(source);
-    if (await this.exists(target)) throw new StoreError(`cannot move ${source} to ${target}: target exists`);
+    // Checked synchronously with the set below, so two moves in flight cannot both take one target.
+    if (this.files.has(target) || this.isDir(target)) {
+      throw new StoreError(`cannot move ${source} to ${target}: target exists`);
+    }
     this.addParents(target);
     this.files.set(target, bytes);
     this.files.delete(source);
