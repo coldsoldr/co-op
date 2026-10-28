@@ -7,12 +7,13 @@
  * Nothing here logs request bodies or headers.
  */
 import type { Env } from './env';
+import { handleFeedback } from './feedback';
 import { allowedOrigin, corsHeaders, errors } from './http';
 
-async function route(request: Request, _env: Env, origin: string): Promise<Response> {
+async function route(request: Request, env: Env, origin: string): Promise<Response> {
   const { pathname } = new URL(request.url);
   if (request.method === 'POST' && pathname === '/feedback') {
-    return errors(501, ['not implemented'], origin);
+    return handleFeedback(request, env, origin);
   }
   if (request.method === 'POST' && pathname === '/op1fun/patches') {
     return errors(501, ['not implemented'], origin);
