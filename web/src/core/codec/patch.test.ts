@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { readPatch, writePatch, withMeta, decodePcm, PatchError } from './patch';
 import { SYNTH_META, SAMPLER_META, DRUM_META } from '../../../test/fixtures/meta';
@@ -68,6 +68,22 @@ describe('writePatch', () => {
     expect(reread.kind).toBe('drum');
     const ids = reread.form.chunks.map((c) => c.id);
     expect(ids.indexOf('APPL')).toBeLessThan(ids.indexOf('SSND'));
+  });
+
+  it('round-trips real device files byte for byte', () => {
+    const dir = fileURLToPath(new URL('../../../test/fixtures/real/', import.meta.url));
+    const files = readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.aif'));
+    expect(files.length).toBeGreaterThan(0);
+    for (const name of files) {
+      const bytes = new Uint8Array(readFileSync(dir + name));
+      const patch = readPatch(bytes);
+      expect(patch.kind).not.toBe('unknown');
+      expect(patch.name.length).toBeGreaterThan(0);
+      expect(Array.from(writePatch(patch))).toEqual(Array.from(bytes));
+      const renamed = readPatch(writePatch(withMeta(patch, { ...patch.meta!, name: 'x' })));
+      expect(renamed.name).toBe('x');
+      expect(renamed.comm).toEqual(patch.comm);
+    }
   });
 });
 
