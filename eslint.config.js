@@ -25,6 +25,14 @@ export default tseslint.config(
     ...reactHooks.configs.flat.recommended,
   },
   {
+    files: ['worker/src/**/*.ts'],
+    languageOptions: { globals: globals.serviceworker },
+  },
+  {
+    files: ['worker/test/**/*.ts'],
+    languageOptions: { globals: { ...globals.serviceworker, ...globals.node } },
+  },
+  {
     files: ['web/test/**/*.ts', 'web/e2e/**/*.ts', 'web/scripts/**/*.ts', '*.{js,ts}', 'web/*.{js,ts}'],
     languageOptions: { globals: globals.node },
   },
