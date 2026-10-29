@@ -4,12 +4,14 @@ import { Inspector } from './ui/Inspector';
 import { Library } from './ui/Library';
 import { Op1FunTab } from './ui/Op1Fun';
 import { Packs } from './ui/Packs';
+import { Plugins } from './ui/Plugins';
 import { useDevice } from './ui/useDevice';
 import { useOp1Fun } from './ui/useOp1Fun';
 
 const TABS = [
   { id: 'library', label: 'Library' },
   { id: 'packs', label: 'Packs' },
+  { id: 'plugins', label: 'Plugins' },
   { id: 'op1fun', label: 'op1.fun' },
   { id: 'inspector', label: 'Inspector' },
 ] as const;
@@ -78,6 +80,9 @@ export function App() {
         </div>
         <div role="tabpanel" id="panel-packs" aria-labelledby="tab-packs" hidden={tab !== 'packs'}>
           <Packs device={device} active={tab === 'packs'} onOpenLibrary={openLibrary} />
+        </div>
+        <div role="tabpanel" id="panel-plugins" aria-labelledby="tab-plugins" hidden={tab !== 'plugins'}>
+          <Plugins active={tab === 'plugins'} />
         </div>
         <div role="tabpanel" id="panel-op1fun" aria-labelledby="tab-op1fun" hidden={tab !== 'op1fun'}>
           <Op1FunTab op1fun={op1fun} device={device} active={tab === 'op1fun'} onOpenLibrary={openLibrary} />

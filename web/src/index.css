@@ -393,3 +393,11 @@ dialog input[type='text'] {
 dialog p.counter {
   margin: -8px 0 12px;
 }
+
+/* Plugin library */
+.plugin-screenshot,
+.markdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}

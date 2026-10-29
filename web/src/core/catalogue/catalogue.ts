@@ -22,10 +22,11 @@ export class InstallError extends CatalogueError {
   }
 }
 
-const withSlash = (baseUrl: string): string => (baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
+export const withSlash = (baseUrl: string): string => (baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
 const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-async function get(url: string, what: string, fetchImpl: typeof fetch, init?: RequestInit): Promise<Response> {
+/** Fetches `url`, turning a network failure or an HTTP error into a CatalogueError about `what`. */
+export async function fetchOk(url: string, what: string, fetchImpl: typeof fetch, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
     response = await (init ? fetchImpl(url, init) : fetchImpl(url));
@@ -68,7 +69,7 @@ function isIndexEntry(value: unknown): value is PackIndexEntry {
  * so it is always revalidated with the server.
  */
 export async function fetchIndex(baseUrl: string, fetchImpl: typeof fetch = fetch): Promise<PackIndex> {
-  const response = await get(`${withSlash(baseUrl)}packs/index.json`, 'load the pack index', fetchImpl, { cache: 'no-cache' });
+  const response = await fetchOk(`${withSlash(baseUrl)}packs/index.json`, 'load the pack index', fetchImpl, { cache: 'no-cache' });
   let json: unknown;
   try {
     json = JSON.parse(await response.text());
@@ -146,7 +147,7 @@ export async function fetchPatchBytes(
   const url = `${withSlash(baseUrl)}packs/${[slug, ...splitPath(file)].map(encodeURIComponent).join('/')}`;
   const label = `${slug}/${file}`;
   for (const init of [undefined, { cache: 'no-cache' } as RequestInit]) {
-    const buffer = await (await get(url, `download ${label}`, fetchImpl, init)).arrayBuffer();
+    const buffer = await (await fetchOk(url, `download ${label}`, fetchImpl, init)).arrayBuffer();
     if ((await sha256Hex(buffer)) === sha256.toLowerCase()) return new Uint8Array(buffer);
   }
   throw new CatalogueError(`${label} does not match the pack index; reload the page and try again`);
