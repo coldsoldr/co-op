@@ -13,8 +13,13 @@ export interface PatchRoot {
 
 export interface DriveLayout {
   patchRoots: PatchRoot[];
-  /** Folders that exist on the drive but hold no patches, kept for detection and backups. */
+  /** Folders that exist on the drive but hold no patches, kept for detection. */
   otherRoots: string[];
+  /**
+   * Those of `otherRoots` that backups include besides the patch roots (opus: `mods`). Tape and
+   * album are never backed up: they are large and not patches.
+   */
+  backupOtherRoots?: string[];
 }
 
 /**
