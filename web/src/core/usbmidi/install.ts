@@ -54,9 +54,11 @@ export interface InstallOptions {
 }
 
 /**
- * `accepted`: the OP-1 answered COMMIT with ok and restarts to install. `unconfirmed`: the prompt
- * was shown and then the OP-1 went quiet, which is what a restart after T1 looks like when its ok
- * was lost; a fresh check after the restart tells.
+ * `accepted`: the OP-1 answered COMMIT with ok and restarts to install. `unconfirmed`: COMMIT was
+ * sent and then the OP-1 went quiet, which is what a restart after T1 looks like when its ok was
+ * lost. That holds even when no "wait key" came back first: the first COMMIT may have raised the
+ * prompt with every reply lost, and the prompt must not be left behind as if nothing was asked. A
+ * fresh check after the restart tells.
  */
 export type InstallOutcome = 'accepted' | 'unconfirmed';
 
@@ -198,8 +200,10 @@ export async function installPlugins(
     } catch (e) {
       if (signal?.aborted) throw e;
       // After the prompt, silence (or a port that went away) is most likely the restart after T1.
-      if (prompted) return 'unconfirmed';
-      if (e instanceof NoAnswerError) throw new Error(stoppedAnswering('before the install prompt'), { cause: e });
+      // Silence after a COMMIT was sent is the same: the OP-1 may be showing its prompt with every
+      // reply lost, so the install goes on to wait for the restart rather than fail as if nothing
+      // was asked.
+      if (prompted || e instanceof NoAnswerError) return 'unconfirmed';
       throw e;
     }
     if (reply.status === Status.OK) return 'accepted';

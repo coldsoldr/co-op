@@ -304,6 +304,11 @@ describe('installPlugins', () => {
     expect(op1.installed).toHaveLength(1);
   });
 
+  it('reports a COMMIT whose every reply is lost as unconfirmed: the OP-1 may be showing its prompt', async () => {
+    const op1 = device({ fate: (r) => (r.cmd === Command.COMMIT ? 'lose' : undefined) });
+    expect(await installPlugins(op1, [DRIVE], fast)).toBe('unconfirmed');
+  });
+
   it('refuses a COMMIT the OP-1 refuses before its prompt', async () => {
     const op1 = device();
     op1.fate = (r) => {

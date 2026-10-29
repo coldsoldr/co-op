@@ -206,7 +206,11 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
           </div>
         )}
         {state.step === 'restarting' && (
-          <p role="status">The OP-1 is installing and restarting. This can take a minute; keep it plugged in.</p>
+          <>
+            <p role="status">The OP-1 is installing and restarting. This can take a minute; keep it plugged in.</p>
+            {/* Its answer to COMMIT may have been lost with the prompt still up: never leave that prompt behind. */}
+            <p className="muted">If the OP-1 still shows the install prompt, press T1 there to install or T2 to cancel.</p>
+          </>
         )}
         {state.step === 'done' && <Installed name={plugin.name} record={state.record} />}
         {state.step === 'cancelled' && <p role="status">Cancelled on the OP-1 (T2). Nothing was installed.</p>}
