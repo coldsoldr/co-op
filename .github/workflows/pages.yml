@@ -21,7 +21,12 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # Repository variables, empty until the Worker is deployed; the app then falls back to
+      # prefilled GitHub issue links for feedback.
       - run: pnpm --filter @co-op/web build
+        env:
+          VITE_WORKER_URL: ${{ vars.WORKER_URL }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
       - uses: actions/upload-pages-artifact@v4
         with:
           path: web/dist

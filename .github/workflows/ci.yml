@@ -24,6 +24,26 @@ jobs:
       - run: pnpm --filter @co-op/web packs:validate
       - run: pnpm build
 
+  # Pack contributions are reviewed separately from code, so a PR that mixes them gets a warning.
+  pack-scope:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          packs=$(printf '%s\n' "$changed" | grep -c '^packs/' || true)
+          other=$(printf '%s\n' "$changed" | grep -v '^packs/' | grep -c . || true)
+          echo "files changed under packs/: $packs, elsewhere: $other"
+          if [ "$packs" -gt 0 ] && [ "$other" -gt 0 ]; then
+            echo "::warning title=Mixed pack and code changes::This PR changes $packs file(s) under packs/ and $other elsewhere. Please send pack contributions in their own PR."
+          fi
+
   e2e:
     runs-on: ubuntu-latest
     steps:
