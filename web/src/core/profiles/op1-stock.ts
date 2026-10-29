@@ -10,6 +10,25 @@ export const STOCK_SYNTH_ENGINES: readonly string[] = [
 ];
 
 /**
+ * Drum engine names in the `type` field on stock firmware: the sample kit and the DBox drum
+ * synth. Both appear in the firmware's engine name table (docs/research/2026-10-28-custom-firmware-notes.md).
+ */
+export const STOCK_DRUM_ENGINES: readonly string[] = ['drum', 'dbox'];
+
+/**
+ * Effect names in the `fx_type` field on stock firmware, confirmed in the firmware's effect name
+ * table; delay, nitro and spring also appear in real device files.
+ */
+export const STOCK_FX_TYPES: readonly string[] = ['cwo', 'delay', 'grid', 'nitro', 'phone', 'punch', 'spring'];
+
+/**
+ * LFO names in the `lfo_type` field on stock firmware, confirmed in the firmware's LFO name table;
+ * random, tremolo and value also appear in real device files. The same table holds 'quad', which
+ * hundekraft adds, so it is not listed here.
+ */
+export const STOCK_LFO_TYPES: readonly string[] = ['bend', 'crank', 'element', 'midi', 'random', 'tremolo', 'value'];
+
+/**
  * Confidence when every signature folder is present. Deliberately below 1:
  * the OP-1 Field presents the same three folders in disk mode, so folder
  * presence alone can never be certain which device this is.

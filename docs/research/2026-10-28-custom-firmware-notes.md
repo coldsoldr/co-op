@@ -14,6 +14,53 @@ a stock DBox kit currently reads as kind `unknown`. Fix before or with the
 hundekraft profile: classify `dbox` as a drum kind and confirm its field
 set from a real DBox file.
 
+## Stock name lists (confirmed 2026-10-29)
+
+Source 1: `hundekraft/op1-workshop-main/base/OP1_vdk.ldr.insert.bin`. This
+is not the stock firmware itself but the code hundekraft inserts into
+stock `OP1_vdk.ldr` (its `manifest.json` names the R246 original
+`op1_246.op1`). The insert keeps NUL-terminated tables of the names it
+compares saved sounds against. Offsets are into that file:
+
+| Offset | Strings in order | Reading |
+| --- | --- | --- |
+| 0x217b9..0x217e5 | grid, punch, delay, phone, spring, cwo, nitro | the seven stock effects |
+| 0x217ed..0x21825 | midi, quad, tremolo, value, random, element, bend, crank | stock LFOs plus `quad` |
+| 0x2182d, 0x21839 | fm, iter (between `knobs` and `sitting`) | stock engines handled apart |
+| 0x218e1..0x21939 | digital, drwave, string, cluster, pulse, sampler, phase, drum, dbox, dna, dsynth, voltage | the stock engine table |
+| 0x21941, 0x2194d | gin_state, gin | hundekraft Gin kits, right after the stock table |
+
+`quad` sits in the LFO table but hundekraft's manifest and manual list the
+"quad LFO" as one of its additions, so it is not a stock name.
+
+Source 2: committed fixtures. `web/test/fixtures/real/synth.aif` (fm,
+spring, tremolo) and `real/drum.aif` (drum, delay, tremolo) are device
+files; the synthetic fixtures use nitro/value, delay/random and
+delay/tremolo.
+
+Source 3: the 152 hundekraft factory presets use the stock names delay,
+nitro, phone, spring, punch, grid, cwo and value, tremolo, element, random
+next to their own effects.
+
+Confirmed lists (in `web/src/core/profiles/op1-stock.ts`, checked against
+the insert by a test that skips without `vendor/`):
+
+- Effects: cwo, delay, grid, nitro, phone, punch, spring.
+- LFOs: bend, crank, element, midi, random, tremolo, value. bend, crank
+  and midi rest on the table alone; no real file uses them yet.
+- Drum engines: drum, dbox. No real DBox file yet, so its field set is
+  still unconfirmed (the codec accepts `dbox` with a string `name`).
+
+Selector words seen in the presets: every hundekraft engine sets
+`knobs[4]` to a word in 0x5300..0x53FF (supersaw 0x5301 to elg 0x5307;
+eva, mbira, oxbow and sid 0x5300), and every hundekraft effect sets
+`fx_params[4]` likewise (most 0x5300, washer 0x5304, some snowglobe
+0x5305). The 12 `iter` presets and all stock-named effects use other
+values. In these presets a selector never appears without a non-stock
+name. Stock knob values run 0..32767, so 0x5300..0x53FF (21248..21503) is
+also a legal stock value: the selector test can flag a genuine stock
+sound whose fifth knob happens to sit in that band.
+
 ## hundekraft 3.0.3
 
 - Browser-built firmware for the original OP-1 on R246, running the

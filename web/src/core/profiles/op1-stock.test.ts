@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   op1Stock,
   STOCK_SYNTH_ENGINES,
+  STOCK_DRUM_ENGINES,
+  STOCK_FX_TYPES,
+  STOCK_LFO_TYPES,
   FULL_MATCH,
   PARTIAL_MATCH,
   folderDetect,
@@ -16,6 +19,35 @@ import { SYNTH_META } from '../../../test/fixtures/meta';
 
 const fixture = (name: string) =>
   readPatch(new Uint8Array(readFileSync(fileURLToPath(new URL(`../../../test/fixtures/${name}`, import.meta.url)))));
+
+/** The hundekraft firmware insert (gitignored, GPL): read only to check names, never copied. */
+const FIRMWARE_TABLE = fileURLToPath(
+  new URL('../../../../vendor/hundekraft/op1-workshop-main/base/OP1_vdk.ldr.insert.bin', import.meta.url),
+);
+
+/** Every committed fixture with op-1 metadata, real device files included. */
+const META_FIXTURES = ['real/synth.aif', 'real/drum.aif', 'synth-cluster.aif', 'synth-sampler-sowt.aif', 'drum-boombap.aif'];
+
+describe('stock name lists', () => {
+  it('lists the stock effects, LFOs and drum engines', () => {
+    expect([...STOCK_FX_TYPES].sort()).toEqual(['cwo', 'delay', 'grid', 'nitro', 'phone', 'punch', 'spring']);
+    expect([...STOCK_LFO_TYPES].sort()).toEqual(['bend', 'crank', 'element', 'midi', 'random', 'tremolo', 'value']);
+    expect([...STOCK_DRUM_ENGINES].sort()).toEqual(['dbox', 'drum']);
+  });
+
+  it.each(META_FIXTURES)('%s uses only stock names', (name) => {
+    const meta = fixture(name).meta!;
+    expect(STOCK_FX_TYPES).toContain(meta.fx_type);
+    expect(STOCK_LFO_TYPES).toContain(meta.lfo_type);
+    expect([...STOCK_SYNTH_ENGINES, ...STOCK_DRUM_ENGINES]).toContain(meta.type);
+  });
+
+  it.skipIf(!existsSync(FIRMWARE_TABLE))('finds every stock name in the firmware string table', () => {
+    const table = readFileSync(FIRMWARE_TABLE).toString('latin1');
+    const names = [...STOCK_SYNTH_ENGINES, ...STOCK_DRUM_ENGINES, ...STOCK_FX_TYPES, ...STOCK_LFO_TYPES];
+    for (const name of names) expect(table, name).toContain(`\0${name}\0`);
+  });
+});
 
 describe('op1/stock detection', () => {
   it('is confident when synth, drum and tape folders exist', async () => {
