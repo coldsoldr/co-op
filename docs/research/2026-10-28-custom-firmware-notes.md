@@ -160,3 +160,7 @@ assumptions rather than real files, to revisit when real files turn up:
   (selectors 0x5301..0x53ff).
 - Detection reads only names in `mods/`; the OPMD magic is checked when
   the Library lists plugins.
+- opus loads plugins "in file-name order". The Library lists them in
+  code-point order; on the FAT drive that order may be case-insensitive,
+  which is unverified, so names that differ only in case may load in a
+  different order than shown.

@@ -1,9 +1,11 @@
-# Deploying the feedback Worker
+# Deploying the Worker
 
-The app's Feedback button works without any of this: until the Worker is
-deployed, it opens a prefilled GitHub issue that the user submits with their
-own GitHub account. Deploying the Worker lets anyone send feedback without
-an account. The Worker checks a Cloudflare Turnstile token, rate limits, and
+The Worker does two jobs. Installing patches from op1.fun and uploading to
+op1.fun need it: op1.fun's file host sends no CORS headers and its API
+refuses cross-origin uploads, so both stay disabled until it is deployed.
+The Feedback button works without it: until the Worker is deployed, it opens
+a prefilled GitHub issue that the user submits with their own GitHub
+account. Deploying the Worker lets anyone send feedback without an account. The Worker checks a Cloudflare Turnstile token, rate limits, and
 opens a labelled issue in `coldsoldr/co-op` with a token that can do nothing
 else.
 

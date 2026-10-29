@@ -91,6 +91,10 @@ pnpm --filter @co-op/web packs:validate   # check every pack in packs/
 pnpm --filter @co-op/worker exec wrangler deploy --dry-run --outdir dist   # bundle the Worker without deploying
 ```
 
+Tests that read the gitignored `vendor/` clones skip when they are absent;
+`CO_OP_PRESETS_ZIP` and `CO_OP_FIRMWARE_TABLE` point them at other copies
+(see [vendor/README.md](vendor/README.md)).
+
 CI runs the same commands, and the Playwright test in its own job, on every
 push and pull request. Pushes to
 `main` that pass are deployed to GitHub Pages automatically.

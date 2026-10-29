@@ -75,13 +75,20 @@ The app is layered so that browser APIs, device and firmware specifics, and
 UI never mix.
 
 ```
-ui/          React screens and components
-features/    device-library, catalogue, op1fun, feedback
-core/
-  codec/     AIFF reader/writer, OP-1 APPL JSON chunk, patch model
-  profiles/  DeviceProfile registry: op1/stock, op1/hundekraft, op1/opus
-  store/     DeviceStore interface and adapters (fs-access, drag-drop)
-  services/  packs index client, op1.fun client, feedback client
+web/src/
+  ui/          React screens, components and hooks (useDevice, useOp1Fun), one tab each
+  core/
+    codec/     AIFF reader/writer, OP-1 APPL JSON chunk, patch model, sound traits
+    store/     DeviceStore interface and adapters (File System Access, dropped folder,
+               in-memory), atomic writes and recovery
+    library/   scanning and loading, operations, staged changes, backup and restore,
+               drive recovery, opus plugin listing
+    profiles/  DeviceProfile registry (op1/stock, op1/hundekraft, op1/opus),
+               compatibility from traits, write-guard check
+    catalogue/ pack index client and installs
+    op1fun/    op1.fun client and installs
+    feedback/  feedback client
+    util.ts    small shared helpers
 ```
 
 `core/` is pure TypeScript with no React and no direct browser globals
@@ -92,9 +99,9 @@ fixture files.
 
 A `Patch` is the in-memory representation of one patch file:
 
-- `kind`: `synth`, `drum` or `unknown`. Firmware-specific kinds (for example
-  hundekraft `gin` drum kits) arrive with the profile that needs them, in
-  phase 7.
+- `kind`: `synth`, `drum` or `unknown`. Drum covers the stock sample kit
+  (`drum`), the stock DBox drum synth (`dbox`) and hundekraft Gin kits
+  (`gin`).
 - `name` from the metadata, `comm` (sample rate, channels, bit depth,
   compression), `form` (the parsed chunk list)
 - `meta`: parsed JSON from the OP-1 `APPL` chunk, kept as a typed object
@@ -493,7 +500,14 @@ install and upload show as unavailable rather than failing.
   detection on synthetic directory listings; manifest validation; Worker
   handlers with mocked fetch.
 - Playwright: mount a fixture folder through drag-and-drop, browse, preview,
-  stage a change, download the zip; feedback form against a mocked Worker.
+  stage a change, download the zip; packs and op1.fun installs (op1.fun and
+  the Worker mocked with page.route); firmware suggestion, write guard and
+  opus plugin listing. Feedback is covered only in its GitHub-issue fallback:
+  the Worker-mode form (Turnstile and the feedback endpoint) is unit-tested
+  only, because the e2e build has no Turnstile site key.
+- Vendor data: tests that read `vendor/` (the hundekraft factory presets and
+  firmware name table) skip when it is absent, as in CI. `CO_OP_PRESETS_ZIP`
+  and `CO_OP_FIRMWARE_TABLE` point them at other copies.
 - Fixtures: a small set of real stock patches contributed under a permissive
   license, checked into `web/test/fixtures`.
 
@@ -515,8 +529,11 @@ Each phase is independently shippable and ends with a deploy.
 
 ## 12. Open items for the implementation plan
 
-- Confirm the exact stock OP-1 drive layout and patch limits per folder
-  against a mounted device before writing the stock profile.
+- Still open: confirm the exact stock OP-1 drive layout and patch limits
+  per folder against a mounted device. The stock profile was built from
+  the owner's real device files and the firmware notes, but no mounted
+  drive has been walked end to end, so per-folder patch limits are not
+  enforced.
 - Decide the pack size limit for `packs/` once the first real packs are in,
   and whether Git LFS is needed.
 - Settled: op1.fun's API docs put files, previews and pack zips in the
