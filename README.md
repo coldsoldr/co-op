@@ -7,7 +7,7 @@ Live app: https://coldsoldr.github.io/co-op/
 
 ## What exists today
 
-Phase 5 of 8 is complete. The app is a working librarian for an OP-1 in
+Phase 6 of 8 is complete. The app is a working librarian for an OP-1 in
 disk mode (shift + COM, then DISK):
 
 - **Library tab.** In Chrome or Edge, "Connect OP-1" opens the drive for
@@ -34,6 +34,14 @@ disk mode (shift + COM, then DISK):
   download on a read-only copy. Every download is checked against its
   SHA-256. Anyone can add a pack by pull request; see
   [docs/contributing-packs.md](docs/contributing-packs.md).
+- **op1.fun tab.** Enter your op1.fun email and API token (kept for the
+  page only unless you tick "Remember on this device"), load any user's
+  patches and packs, filter them, preview the MP3, and install a patch or
+  a whole pack into `synth/op1fun` and `drum/op1fun` (or the changes to
+  download). Each file is checked as an OP-1 patch before it is written.
+  Library rows get an Upload action that sends the patch file unchanged to
+  your op1.fun account through the co-op Worker; it is disabled until the
+  Worker is deployed.
 - **Inspector tab.** Drop a single `.aif` to see how co-op reads it.
 - **Feedback.** The Feedback button in the header sends a bug report, idea,
   pack request or anything else, with a short list of attached context
@@ -50,8 +58,7 @@ staged and in-memory implementations, a Cloudflare Worker tested by calling
 its handler directly, unit tests with vitest and Playwright smoke tests in
 Chromium.
 
-Still to come, in order: op1.fun integration, then hundekraft and
-opus firmware profiles. The full design is in
+Still to come, in order: the hundekraft and opus firmware profiles. The full design is in
 `docs/superpowers/specs/2026-10-28-op-patch-librarian-design.md`; the
 implementation plans are in `docs/superpowers/plans/`.
 
@@ -78,7 +85,7 @@ push and pull request. Pushes to
 
 ```
 web/      Vite + React + TypeScript app; web/scripts holds the packs CLI
-worker/   Cloudflare Worker: POST /feedback files GitHub issues
+worker/   Cloudflare Worker: POST /feedback files GitHub issues; op1.fun upload and file proxy
 shared/   pack and feedback schemas and validation, shared by the app, CLI and Worker
 packs/    community patch packs, one folder each
 docs/     design spec, implementation plans, pack and Worker guides

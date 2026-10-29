@@ -46,7 +46,7 @@ Non-goals for v1
 | Community patch storage | In the repo under `packs/`, submitted by pull request |
 | Feedback | In-app form; Worker opens a labelled GitHub Issue |
 | Device access | File System Access API on Chromium, drag-and-drop fallback elsewhere |
-| op1.fun | Browse and pull directly from the browser; upload via the Worker |
+| op1.fun | Browse and pull directly from the browser (API reads allow CORS); patch files direct, falling back to the Worker file proxy if S3 blocks the browser; upload via the Worker (the API refuses cross-origin POST); credentials in memory unless the user ticks Remember |
 | Firmware model | `DeviceProfile` registry; stock OP-1 is the base profile |
 | Reference firmware repos | `vendor/hundekraft`, `vendor/opus`, gitignored |
 | Web stack | Vite, React, TypeScript |
@@ -218,13 +218,28 @@ Community catalogue
 
 op1.fun
 
-- Settings screen stores email and API token in `localStorage` only after
-  the user opts in, with a clear note that nothing is sent to us.
-- Browse own and other users' packs and patches, preview via the MP3 link,
-  pull a patch or a pack onto the device.
-- Upload a device patch: the app sends the request to the Worker, which
-  forwards it to op1.fun with the user's headers and returns the response.
-  The Worker never logs or stores credentials or file contents.
+- The op1.fun tab holds the email, API token and username. They stay in
+  memory for the page unless "Remember on this device" is ticked, which
+  stores them in `localStorage` (`co-op.op1fun`); Forget clears both. The
+  token goes only to `api.op1.fun` (redirects refused) and to the Worker's
+  upload route. Test connection loads the user, since the API has no "me"
+  call.
+- Browse any user's patches and packs (filtered in the browser; the API has
+  no search), preview with an `<audio>` element on the MP3 link, and
+  install a patch or every patch of a pack (from the pack's `included`
+  list, not the zip). Each file is fetched without credentials (directly,
+  then through the Worker file proxy on a network/CORS failure, 20 MB cap),
+  checked with `readPatch`, and written unchanged through the catalogue
+  install path into `<synth root>/op1fun` or `<drum root>/op1fun` (kind
+  from the file, else op1.fun's patch type) under a free name, as one
+  queued device action. Failures are reported per file and the rest carry on.
+- Upload a library patch: a dialog (name, description, licence blank or
+  one of the four CC values, public) sends the raw file bytes as a data URI
+  to the Worker, which forwards it to op1.fun with the user's headers and
+  returns the response; the dialog links to the new patch. Files over 9 MB
+  are refused before sending. The action is disabled, with the reason, when
+  the build has no Worker URL or no credentials are saved. The Worker never
+  logs or stores credentials or file contents.
 
 Feedback
 
@@ -315,7 +330,20 @@ Endpoints
 - `POST /op1fun/patches` Validates that the body matches op1.fun's create
   patch shape and size limit, forwards it with the caller's `X-User-Email`
   and `X-User-Token` headers to `https://api.op1.fun/v1/patches`, and
-  returns the upstream status and body unchanged.
+  returns the upstream status and body unchanged. Both headers are
+  required (401); the body is capped at 12 MB while it streams (413) and
+  must be a `patches` resource whose `file` is an
+  `data:audio/x-aiff;base64,` URI (400). Only those two headers and
+  `Content-Type: application/json` are forwarded, redirects are refused,
+  and the subrequest times out after 60 s (502).
+- `GET /op1fun/file?url=` A file proxy for when S3 does not allow the
+  browser to fetch a patch file. Only `https:` URLs (no credentials or
+  port) on `op1.fun`, `www.op1.fun` or a host ending in `.amazonaws.com`,
+  whose path ends in `.aif`, `.aiff`, `.mp3` or `.zip`, are fetched (400
+  otherwise), without credentials and with `redirect: 'manual'`: an
+  upstream redirect is a 502, not followed. The body streams back with its
+  `Content-Type`, cut off once it passes 20 MB (a larger declared
+  `Content-Length` is a 413 up front).
 
 Rules
 
@@ -327,7 +355,11 @@ Rules
 - Rate limiting uses the Workers Rate Limiting binding (`[[ratelimits]]` in
   `wrangler.toml`): `FEEDBACK_LIMIT`, 5 a minute per client keyed by
   `CF-Connecting-IP` (IPv6 by its /64), and `FEEDBACK_GLOBAL_LIMIT`, 30 a
-  minute under one `global` key. Counts are per Cloudflare location.
+  minute under one `global` key. The op1.fun routes use `OP1FUN_LIMIT`, 60
+  a minute per client, keyed `op1fun-upload:<client>` and
+  `op1fun-file:<client>` (a pack install through the proxy fetches one file
+  per patch, so the feedback limit would be too low). Counts are per
+  Cloudflare location.
 - No persistent storage. No logging of request bodies or headers.
 - Vars: `ALLOWED_ORIGINS`, `GITHUB_REPO` (`coldsoldr/co-op`). Secrets:
   `GITHUB_TOKEN`, `TURNSTILE_SECRET`, set with `wrangler secret put` (or
@@ -409,5 +441,8 @@ Each phase is independently shippable and ends with a deploy.
   against a mounted device before writing the stock profile.
 - Decide the pack size limit for `packs/` once the first real packs are in,
   and whether Git LFS is needed.
-- Confirm op1.fun's S3 file links allow cross-origin `fetch`; if not, the
-  pull path also goes through the Worker.
+- Confirm op1.fun's S3 file links allow cross-origin `fetch`. Phase 6 does
+  not depend on the answer: the client falls back to the Worker file proxy
+  on a network/CORS failure. Still unverified against the live API: the
+  exact list, pack and create response shapes, pagination, and where the
+  profile page shows the API token.

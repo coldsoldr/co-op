@@ -63,9 +63,11 @@ pnpm --filter @co-op/worker exec wrangler secret put TURNSTILE_SECRET   # paste 
 `wrangler deploy` prints the Worker URL. Secrets are stored encrypted by
 Cloudflare and are never in the repository.
 
-The two rate limiters in `wrangler.toml` (5 requests a minute per client,
-30 a minute in total) are created on deploy. Their `namespace_id` values
-(`1001`, `1002`) only need to be unique within your account.
+The three rate limiters in `wrangler.toml` are created on deploy: the
+feedback limits (5 requests a minute per client, 30 a minute in total) and
+`OP1FUN_LIMIT` for the op1.fun routes (60 a minute per client). Their
+`namespace_id` values (`1001`, `1002`, `1003`) only need to be unique
+within your account.
 
 ## 5. Repository secrets and variables
 
@@ -130,9 +132,30 @@ hostname as an origin (for example `http://example.com`). Never put it in
 `wrangler.toml`. Use a scratch repository in `GITHUB_REPO` (also
 overridable in `.dev.vars`) if you do not want test issues here.
 
+## Routes
+
+| Route | What it does |
+| --- | --- |
+| `POST /feedback` | Checks the feedback and its Turnstile token, then files a labelled issue in `GITHUB_REPO`. |
+| `POST /op1fun/patches` | Uploads a patch to op1.fun for the app: requires `X-User-Email` and `X-User-Token`, caps the body at 12 MB, checks it is a `patches` resource with an AIFF data URI, and forwards it with only those two headers and `Content-Type` to `https://api.op1.fun/v1/patches` (redirects refused). The upstream status and body come back unchanged. |
+| `GET /op1fun/file?url=` | Fetches a patch file, MP3 preview or pack zip for the app when op1.fun's file host does not allow the browser to: `https` only, on `op1.fun`, `www.op1.fun` or `*.amazonaws.com`, paths ending `.aif`, `.aiff`, `.mp3` or `.zip`. No credentials are sent, redirects are refused, and the body is cut off past 20 MB. |
+
+Every route answers only the origins in `ALLOWED_ORIGINS`. The op1.fun
+routes need no secrets, so the op1.fun tab's uploads work as soon as the
+Worker is deployed and `WORKER_URL` is set for the Pages build. To check
+the file proxy refuses other hosts:
+
+```bash
+curl -i 'https://co-op-feedback.<subdomain>.workers.dev/op1fun/file?url=https%3A%2F%2Fexample.com%2Fx.aif' \
+  -H 'Origin: https://coldsoldr.github.io'
+# HTTP/2 400
+```
+
 ## What the Worker does and does not keep
 
-It stores nothing and logs no request bodies or headers. Each issue holds
+It stores nothing and logs no request bodies or headers. op1.fun uploads
+and files pass straight through: the email, token and file are never
+written anywhere. Each issue holds
 the message, the optional contact (public, the form says so), and the
 context table shown in the dialog's "What is attached" section. The
 Turnstile token is never written anywhere.
