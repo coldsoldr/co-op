@@ -18,11 +18,11 @@ import { useConfirmUnsupported } from './ConfirmUnsupported';
 import { playPcm } from './audio';
 import { formatSize } from './format';
 import type { Device } from './useDevice';
+import { messageOf } from '../core/util';
 
 /** The contributor guide, linked from "Share a pack". */
 export const SHARE_URL = 'https://github.com/coldsoldr/co-op/blob/main/docs/contributing-packs.md';
 
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 const firmwareLabel = (id: string): string => getProfile(id)?.label ?? id;
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 const base = (): string => import.meta.env.BASE_URL;

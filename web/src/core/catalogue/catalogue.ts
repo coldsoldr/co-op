@@ -3,6 +3,7 @@ import { assertPatchFileName, ensureFolder, freeName } from '../library/operatio
 import { getProfile } from '../profiles/registry';
 import { writeAtomic } from '../store/atomic';
 import { basename, dirname, joinPath, splitPath, type DeviceStore } from '../store/store';
+import { sha256Hex } from '../util';
 
 /** The catalogue could not be loaded, a download failed its check, or an install was refused. */
 export class CatalogueError extends Error {
@@ -108,11 +109,6 @@ export function filterPacks(index: PackIndex, filter: PackFilter): PackIndexEntr
       .toLowerCase();
     return words.every((word) => haystack.includes(word));
   });
-}
-
-async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-  return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 function assertSlug(slug: string): void {

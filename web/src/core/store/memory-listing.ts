@@ -1,10 +1,8 @@
 import type { DirectoryListing, DirEntry } from './listing';
+import { byEntryName } from '../util';
 
 /** A folder is an object; a file is the string 'file'. */
 export type MemoryTree = { [name: string]: MemoryTree | 'file' };
-
-const byCodePoint = (a: DirEntry, b: DirEntry): number =>
-  a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 
 export class MemoryListing implements DirectoryListing {
   constructor(private readonly tree: MemoryTree) {}
@@ -18,6 +16,6 @@ export class MemoryListing implements DirectoryListing {
     if (node === 'file') return [];
     return Object.entries(node)
       .map(([name, value]): DirEntry => ({ name, kind: value === 'file' ? 'file' : 'dir' }))
-      .sort(byCodePoint);
+      .sort(byEntryName);
   }
 }

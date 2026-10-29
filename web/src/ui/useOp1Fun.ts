@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Op1FunClient } from '../core/op1fun/client';
 import { clearCredentials, loadCredentials, saveCredentials, type SavedCredentials } from '../core/op1fun/credentials';
 import { Op1FunAuthError, type Op1FunCredentials } from '../core/op1fun/types';
+import { messageOf } from '../core/util';
 
 /** The co-op Worker this build knows, or '' when it has none (uploads are then unavailable). */
 export const WORKER_URL: string = import.meta.env.VITE_WORKER_URL?.trim() ?? '';
@@ -69,8 +70,6 @@ export function useOp1Fun(): Op1Fun {
 
   return { creds, client, workerUrl: WORKER_URL, version, save, setUsername, forget };
 }
-
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** An op1.fun error as shown to the user; auth errors point at the Account settings. */
 export function op1FunMessage(error: unknown): string {

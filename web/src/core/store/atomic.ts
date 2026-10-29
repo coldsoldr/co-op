@@ -1,7 +1,11 @@
 import { StoreError, basename, dirname, joinPath, type DeviceStore } from './store';
 
-const TEMP_PREFIX = '.co-op-tmp-';
-const OLD_PREFIX = '.co-op-old-';
+/** A write in progress: removed by recoverStranded. */
+export const TEMP_PREFIX = '.co-op-tmp-';
+/** A file set aside during a write or move: put back by recoverStranded when its target is missing. */
+export const OLD_PREFIX = '.co-op-old-';
+/** Every file co-op leaves behind starts with this. */
+export const CO_OP_PREFIX = '.co-op-';
 
 async function removeQuietly(store: DeviceStore, path: string): Promise<void> {
   try {

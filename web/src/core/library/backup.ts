@@ -3,6 +3,7 @@ import { writeAtomic } from '../store/atomic';
 import { StoreError, joinPath, splitPath, type DeviceStore } from '../store/store';
 import { getProfile } from '../profiles/registry';
 import type { DeviceProfile } from '../profiles/types';
+import { byCodePoint, bytesEqual, sha256Hex } from '../util';
 
 /** The manifest's name inside a backup zip. */
 export const MANIFEST_FILE = 'co-op-backup.json';
@@ -67,19 +68,6 @@ export class RestoreError extends BackupError {
     super(message, options);
     this.restored = restored;
   }
-}
-
-const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-
-function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
-
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>));
-  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /** Every file below `root` at any depth, skipping dot-prefixed files and folders. */

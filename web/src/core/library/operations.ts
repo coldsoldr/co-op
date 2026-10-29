@@ -1,6 +1,6 @@
 import { readPatch, withMeta } from '../codec/patch';
 import { isWindowsReservedName } from '@co-op/shared/packs';
-import { writeAtomic } from '../store/atomic';
+import { OLD_PREFIX, TEMP_PREFIX, writeAtomic } from '../store/atomic';
 import { StoreError, basename, dirname, joinPath, splitPath, type DeviceStore } from '../store/store';
 
 /** A library operation was refused because of its arguments (a bad name, an occupied target). */
@@ -14,10 +14,6 @@ export const MAX_PATCH_NAME = 24;
 /** Extensions a renamed patch file must keep, compared case-insensitively. */
 export const PATCH_EXTENSIONS: readonly string[] = ['.aif', '.aiff'];
 
-/** Matches `.co-op-old-` in store/atomic.ts, so recoverStranded restores a file parked there. */
-const OLD_PREFIX = '.co-op-old-';
-/** Matches `.co-op-tmp-` in store/atomic.ts, so recoverStranded removes a leftover copy. */
-const TEMP_PREFIX = '.co-op-tmp-';
 
 /** How often copyPatch retries when another writer takes its chosen name. */
 const COPY_ATTEMPTS = 5;

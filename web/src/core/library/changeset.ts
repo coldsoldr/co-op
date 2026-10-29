@@ -1,6 +1,7 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import type { DirEntry } from '../store/listing';
 import { StoreError, basename, dirname, joinPath, splitPath, type DeviceStore, type StoreCapabilities } from '../store/store';
+import { byCodePoint, bytesEqual } from '../util';
 
 /**
  * One change against the base store, in its final state. 'mkdir' is a new folder left empty.
@@ -16,14 +17,6 @@ export type Change =
 
 /** The instructions file inside an exported change set. */
 export const CHANGES_FILE = 'CHANGES.txt';
-
-const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-
-function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
 
 /** Every ancestor folder of a path, outermost first, excluding the root and the path itself. */
 function ancestors(key: string): string[] {

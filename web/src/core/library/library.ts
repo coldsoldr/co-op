@@ -3,6 +3,7 @@ import { readPatch } from '../codec/patch';
 import type { Compat, DeviceProfile } from '../profiles/types';
 import { scanDrive, type ScannedPatch } from '../profiles/scan';
 import type { DeviceStore } from '../store/store';
+import { messageOf } from '../util';
 
 export interface LibraryEntry extends ScannedPatch {
   sizeBytes: number;
@@ -17,8 +18,6 @@ export interface LibraryEntry extends ScannedPatch {
 
 /** How many store calls run at once by default. */
 export const DEFAULT_CONCURRENCY = 4;
-
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /**
  * Maps `items` through `fn` with at most `concurrency` calls in flight, keeping input order.

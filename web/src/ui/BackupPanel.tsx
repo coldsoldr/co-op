@@ -16,6 +16,7 @@ import { useConfirmUnsupported } from './ConfirmUnsupported';
 import { saveBlob } from './download';
 import { dateStamp } from './format';
 import type { Operation, Progress } from './useDevice';
+import { messageOf } from '../core/util';
 
 interface BackupPanelProps {
   store: DeviceStore;
@@ -57,8 +58,6 @@ class NeedsConfirmation extends Error {
     super('the drive changed since you confirmed; please confirm again');
   }
 }
-
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** Paths among `selected` that still differ from the backup, and those of them that would overwrite. */
 function plan(diff: BackupDiff, selected: ReadonlySet<string>): { paths: string[]; overwrites: string[] } {

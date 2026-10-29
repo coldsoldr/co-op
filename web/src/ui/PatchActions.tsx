@@ -13,6 +13,7 @@ import { ConfirmDialog, Dialog } from './Dialog';
 import { folderOf, rootOf } from './format';
 import type { LibraryRow } from './rows';
 import type { Operation } from './useDevice';
+import { messageOf } from '../core/util';
 
 type Mode = 'rename' | 'name' | 'move' | 'copy' | 'delete';
 
@@ -38,8 +39,6 @@ interface PatchActionsProps {
   /** The id of an element holding uploadUnavailable, for aria-describedby. */
   uploadNoteId: string;
 }
-
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** Play, rename, set name, move, copy and delete for one library row. Errors show in the row. */
 export const PatchActions = memo(function PatchActions({

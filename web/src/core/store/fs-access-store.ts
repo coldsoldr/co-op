@@ -1,7 +1,6 @@
 import type { DirEntry } from './listing';
 import { StoreError, basename, joinPath, splitPath, type DeviceStore, type StoreCapabilities } from './store';
-
-const byCodePoint = (a: DirEntry, b: DirEntry): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+import { byEntryName } from '../util';
 
 /** Chromium's errors for a missing entry, or a file where a folder was expected (and vice versa). */
 function isMissing(error: unknown): boolean {
@@ -42,7 +41,7 @@ export class FsAccessStore implements DeviceStore {
       for await (const [name, handle] of dir.entries()) {
         entries.push({ name, kind: handle.kind === 'directory' ? 'dir' : 'file' });
       }
-      return entries.sort(byCodePoint);
+      return entries.sort(byEntryName);
     } catch (error) {
       if (isMissing(error)) return [];
       throw storeError('list', joinPath(path), error);

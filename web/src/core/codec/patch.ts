@@ -3,6 +3,7 @@ import { parseComm, type CommInfo } from './comm';
 import { isOp1Chunk, parseOp1Chunk, buildOp1Chunk } from './op1-chunk';
 import { metaKind, type Op1Meta, type PatchKind } from './op1-meta';
 import { decodeSsnd } from './ssnd';
+import { bytesEqual } from '../util';
 
 export interface Patch {
   kind: PatchKind;
@@ -26,12 +27,6 @@ export interface Patch {
    * False means an edit will canonicalise the chunk. True when there is no APPL chunk.
    */
   op1Canonical: boolean;
-}
-
-function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
 }
 
 export class PatchError extends Error {

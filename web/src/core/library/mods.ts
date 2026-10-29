@@ -1,5 +1,6 @@
 import { joinPath, type DeviceStore } from '../store/store';
 import { MODS_FOLDER, OPUS_PLUGIN_EXTENSION } from '../profiles/op1-opus';
+import { byCodePoint, messageOf } from '../util';
 
 /** One opus plugin file in mods/. */
 export interface OpusPlugin {
@@ -13,9 +14,6 @@ export interface OpusPlugin {
 }
 
 const MAGIC = [0x4f, 0x50, 0x4d, 0x44]; // 'OPMD'
-
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * The .opmod files directly in the drive's mods/ folder (any case), in file-name order, which is

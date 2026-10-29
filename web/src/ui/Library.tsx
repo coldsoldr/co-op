@@ -34,11 +34,10 @@ import {
   type SortKey,
 } from './rows';
 import type { Device, Operation } from './useDevice';
+import { messageOf } from '../core/util';
 
 /** React does not type webkitdirectory; it passes the attribute through to the DOM. */
 const folderInputProps = { webkitdirectory: '', directory: '' } as InputHTMLAttributes<HTMLInputElement>;
-
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /**
  * `device` is the connection shared with the other tabs. `active` is false while the Library tab

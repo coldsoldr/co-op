@@ -1,7 +1,6 @@
 import type { DirEntry } from './listing';
 import { StoreError, basename, dirname, joinPath, splitPath, type DeviceStore, type StoreCapabilities } from './store';
-
-const byCodePoint = (a: DirEntry, b: DirEntry): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+import { byEntryName } from '../util';
 
 /** A dropped or picked file and its path, starting with the name of the top-level item dropped. */
 export interface DroppedFile {
@@ -67,7 +66,7 @@ export class DropStore implements DeviceStore {
     const entries: DirEntry[] = [];
     for (const file of this.files.keys()) if (dirname(file) === dir) entries.push({ name: basename(file), kind: 'file' });
     for (const folder of this.dirs) if (dirname(folder) === dir) entries.push({ name: basename(folder), kind: 'dir' });
-    return entries.sort(byCodePoint);
+    return entries.sort(byEntryName);
   }
 
   async read(path: string): Promise<Uint8Array> {
