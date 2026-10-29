@@ -66,12 +66,17 @@ export async function handleUpload(request: Request, env: Env, origin: string): 
       method: 'POST',
       headers: { 'X-User-Email': email, 'X-User-Token': token, 'Content-Type': 'application/json' },
       body,
-      // Never replay the credentials to wherever a redirect points.
-      redirect: 'error',
+      // Never replay the credentials to wherever a redirect points. Workers reject redirect: 'error'
+      // (every fetch with it throws), so take the redirect as a response and refuse it here.
+      redirect: 'manual',
       signal: AbortSignal.timeout(OP1FUN_TIMEOUT_MS),
     });
   } catch (_error) {
     return errors(502, ['could not reach op1.fun'], origin);
+  }
+  if (upstream.status >= 300 && upstream.status < 400) {
+    await upstream.body?.cancel().catch(() => undefined);
+    return errors(502, ['op1.fun redirected the upload; not followed'], origin);
   }
   return new Response(upstream.body, {
     status: upstream.status,

@@ -90,7 +90,7 @@ describe('op1.fun routes', () => {
       expect(url).toBe(OP1FUN_PATCHES);
       expect(OP1FUN_PATCHES).toBe('https://api.op1.fun/v1/patches');
       expect(init.method).toBe('POST');
-      expect(init.redirect).toBe('error');
+      expect(init.redirect).toBe('manual');
       const headers = new Headers(init.headers);
       expect([...headers.keys()].sort()).toEqual(['content-type', 'x-user-email', 'x-user-token']);
       expect(headers.get('X-User-Email')).toBe('me@example.com');
@@ -105,6 +105,17 @@ describe('op1.fun routes', () => {
       expect(res.status).toBe(401);
       expectCors(res);
       expect(await res.text()).toBe('{"errors":[{"title":"Unauthorized"}]}');
+    });
+
+    it('refuses upstream redirects instead of following them with the credentials', async () => {
+      for (const status of [301, 302, 307, 308]) {
+        fetchMock.mockResolvedValueOnce(new Response(null, { status, headers: { Location: 'https://evil.example/x' } }));
+        const res = await call(post(JSON.stringify(upload())));
+        expect(res.status).toBe(502);
+        expectCors(res);
+        expect(await res.json()).toEqual({ errors: ['op1.fun redirected the upload; not followed'] });
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(4);
     });
 
     it('requires both credential headers', async () => {
