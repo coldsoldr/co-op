@@ -20,7 +20,7 @@ export const MAX_TOKEN = 2048;
 export const MAX_TITLE = 80;
 
 /** Bounds on the context strings so a hand-made request cannot bloat the issue. */
-const CONTEXT_LIMITS = { appVersion: 50, commit: 40, profile: 100, userAgent: 500 } as const;
+export const CONTEXT_LIMITS = { appVersion: 50, commit: 40, profile: 100, userAgent: 500 } as const;
 
 export interface FeedbackContext {
   /** The web package version. */

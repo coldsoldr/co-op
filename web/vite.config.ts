@@ -1,5 +1,6 @@
 import { configDefaults, defineConfig, type Plugin } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
 // Importing the packs library pulls the codec into the config bundle. Vite then prints a notice
 // that these extensionless imports are "unsupported by configLoader: 'native'". That loader is
 // opt-in today, so the notice is harmless; if a future Vite makes it the default, add file
@@ -26,9 +27,16 @@ function communityPacks(): Plugin {
   };
 }
 
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
+
 export default defineConfig({
   base,
   plugins: [react(), communityPacks()],
+  // Build facts attached to feedback (see src/vite-env.d.ts).
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+    __COMMIT__: JSON.stringify(process.env.GITHUB_SHA?.slice(0, 7) ?? 'dev'),
+  },
   test: {
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts'],

@@ -1,4 +1,5 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
+import { Feedback } from './ui/Feedback';
 import { Inspector } from './ui/Inspector';
 import { Library } from './ui/Library';
 import { Packs } from './ui/Packs';
@@ -38,7 +39,10 @@ export function App() {
   return (
     <>
       <main>
-        <h1>co-op patch librarian</h1>
+        <header className="app-header">
+          <h1>co-op patch librarian</h1>
+          <Feedback device={device} />
+        </header>
         <div role="tablist" aria-label="Views" className="tabs" onKeyDown={onKeyDown}>
           {TABS.map((t) => (
             <button

@@ -337,3 +337,31 @@ a.button {
 .badge.firmware {
   color: var(--muted);
 }
+.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+a.button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+dialog textarea,
+dialog input[type='text'] {
+  font: inherit;
+  padding: 4px;
+}
+.feedback details {
+  margin-bottom: 12px;
+}
+.feedback-context th {
+  text-align: left;
+  padding-right: 12px;
+  font-weight: normal;
+  color: var(--muted);
+}
+.feedback-context td {
+  word-break: break-word;
+}
