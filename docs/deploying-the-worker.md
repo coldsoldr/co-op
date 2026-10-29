@@ -24,24 +24,33 @@ enough) and admin rights on this repository. Everything below is a one-off.
 ## 2. Turnstile widget
 
 1. In the dashboard, Turnstile, Add widget.
-2. Name it `co-op feedback`. Hostnames: `coldsoldr.github.io` and
-   `localhost`. Widget mode: Managed.
+2. Name it `co-op feedback`. Hostname: `coldsoldr.github.io` only.
+   Widget mode: Managed.
 3. Copy the **Site key** (public) and the **Secret key** (private).
 
 The Worker only accepts a token solved on the hostname of one of its
-`ALLOWED_ORIGINS` (`worker/wrangler.toml`), so a token from another site is
-refused even if Turnstile says it is valid.
+`ALLOWED_ORIGINS`, which in `worker/wrangler.toml` is just
+`https://coldsoldr.github.io`, so a token from another site is refused even
+if Turnstile says it is valid. For local development, make a second widget
+(see "Local development" below) rather than adding `localhost` to this one.
 
 ## 3. GitHub token for filing issues
 
-1. GitHub, Settings, Developer settings, Personal access tokens,
+1. Sign in to GitHub **as the account that owns the repository**
+   (`coldsoldr`). A fine-grained token can only reach repositories its own
+   account owns (or an organisation that account belongs to), so a token
+   made by a collaborator cannot be scoped to this repository. Feedback
+   issues will show `coldsoldr` as their author.
+2. Settings, Developer settings, Personal access tokens,
    **Fine-grained tokens**, Generate new token.
-2. Resource owner: `coldsoldr`. Repository access: **Only select
+3. Resource owner: `coldsoldr`. Repository access: **Only select
    repositories**, `coldsoldr/co-op`.
-3. Repository permissions: **Issues: Read and write**. Leave everything
+4. Repository permissions: **Issues: Read and write**. Leave everything
    else at No access (Metadata: Read-only is added automatically).
-4. Pick an expiry you will remember to renew (the Worker answers
-   `could not file feedback` once it expires).
+5. Pick an expiry and put a reminder in your calendar. Once the token
+   expires, the Worker answers every submission with `could not file
+   feedback` until you replace it (step 5 below, then run the worker
+   workflow).
 
 The labels the Worker applies (`feedback`, `bug`, `idea`, `pack-request`,
 `other`) already exist. If one is ever deleted, recreate it with
@@ -50,7 +59,15 @@ to create labels itself.
 
 ## 4. First deploy and the Worker's secrets
 
-From the repository root:
+The simplest path needs no local tools: set all four repository secrets in
+step 5, including the optional `FEEDBACK_GITHUB_TOKEN` and
+`TURNSTILE_SECRET`, then run Actions, **worker**, Run workflow on `main`.
+The workflow uploads those two secrets together with the deploy
+(`wrangler deploy --secrets-file`), so the very first deploy already has
+them and there is no window where the Worker runs without a token. The
+workflow's log prints the Worker URL.
+
+Or, from your own machine, at the repository root:
 
 ```bash
 pnpm install
@@ -60,8 +77,10 @@ pnpm --filter @co-op/worker exec wrangler secret put GITHUB_TOKEN       # paste 
 pnpm --filter @co-op/worker exec wrangler secret put TURNSTILE_SECRET   # paste the Turnstile secret key
 ```
 
-`wrangler deploy` prints the Worker URL. Secrets are stored encrypted by
-Cloudflare and are never in the repository.
+Here the Worker exists for a moment before its secrets do; anything sent
+in that window gets a 502 and nothing is filed. `wrangler deploy` prints
+the Worker URL. Secrets are stored encrypted by Cloudflare and are never in
+the repository.
 
 The three rate limiters in `wrangler.toml` are created on deploy: the
 feedback limits (5 requests a minute per client, 30 a minute in total) and
@@ -80,11 +99,18 @@ to `main` that touches `worker/` or `shared/`):
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | the API token from step 1 |
 | `CLOUDFLARE_ACCOUNT_ID` | the account ID from step 1 |
-| `FEEDBACK_GITHUB_TOKEN` | optional: the GitHub token from step 3; the workflow then writes it to the Worker's `GITHUB_TOKEN` on each deploy, so renewing it is a matter of updating this secret |
-| `TURNSTILE_SECRET` | optional: the Turnstile secret key, written to the Worker the same way |
+| `FEEDBACK_GITHUB_TOKEN` | optional: the GitHub token from step 3; the workflow uploads it as the Worker's `GITHUB_TOKEN` with each deploy |
+| `TURNSTILE_SECRET` | optional: the Turnstile secret key, uploaded the same way |
 
 Without the two Cloudflare secrets the workflow still runs the tests and a
-dry-run build, then skips the deploy with a notice.
+dry-run build, then skips the deploy with a notice. It only ever deploys
+from `main`. A secret you leave unset keeps the value the Worker already
+has.
+
+**After changing any secret** (for example a renewed GitHub token), run
+Actions, **worker**, Run workflow on `main`. The workflow only runs by
+itself when `worker/` or `shared/` changes, so a new secret does nothing
+until the next run.
 
 Variables (read by `.github/workflows/pages.yml` when building the app):
 
@@ -118,19 +144,33 @@ GitHub issue".
 
 ## Local development
 
-Put the secrets in `worker/.dev.vars` (gitignored), one `NAME=value` per line
-(`GITHUB_TOKEN=...`, `TURNSTILE_SECRET=...`), then run
-`pnpm --filter @co-op/worker dev` and start the app with
-`VITE_WORKER_URL=http://localhost:8787` and `VITE_TURNSTILE_SITE_KEY` set
-(in `web/.env.local`, also gitignored).
+The deployed Worker allows only the Pages origin. Locally, `.dev.vars`
+overrides the `[vars]` in `wrangler.toml`, so localhost never reaches
+production.
+
+1. Create a second Turnstile widget, `co-op feedback (dev)`, with the
+   hostname `localhost`, and copy its keys.
+2. Write `worker/.dev.vars` (gitignored), one `NAME=value` per line:
+
+   ```
+   ALLOWED_ORIGINS=http://localhost:5173,http://localhost:4173
+   GITHUB_REPO=<you>/<scratch-repo>
+   GITHUB_TOKEN=<a fine-grained token for the scratch repo>
+   TURNSTILE_SECRET=<the dev widget's secret key>
+   ```
+
+3. Run `pnpm --filter @co-op/worker dev` (it listens on
+   `http://localhost:8787`).
+4. In `web/.env.local` (gitignored) set
+   `VITE_WORKER_URL=http://localhost:8787` and
+   `VITE_TURNSTILE_SITE_KEY=<the dev widget's site key>`, then run
+   `pnpm --filter @co-op/web dev`.
 
 Cloudflare's Turnstile test keys (site key `1x00000000000000000000AA`,
-secret `1x0000000000000000000000000000000AA`) always pass, but siteverify
-then reports a placeholder hostname rather than `localhost`. To use them,
-override `ALLOWED_ORIGINS` in `.dev.vars` with your local origins plus that
-hostname as an origin (for example `http://example.com`). Never put it in
-`wrangler.toml`. Use a scratch repository in `GITHUB_REPO` (also
-overridable in `.dev.vars`) if you do not want test issues here.
+secret `1x0000000000000000000000000000000AA`) also work but report a
+placeholder hostname rather than `localhost`; add that hostname as an origin
+(for example `http://example.com`) to `ALLOWED_ORIGINS` in `.dev.vars` to
+use them.
 
 ## Routes
 
@@ -153,9 +193,16 @@ curl -i 'https://co-op-feedback.<subdomain>.workers.dev/op1fun/file?url=https%3A
 
 ## What the Worker does and does not keep
 
-It stores nothing and logs no request bodies or headers. op1.fun uploads
-and files pass straight through: the email, token and file are never
-written anywhere. Each issue holds
-the message, the optional contact (public, the form says so), and the
-context table shown in the dialog's "What is attached" section. The
-Turnstile token is never written anywhere.
+It stores nothing and logs no request bodies or headers.
+
+- **Feedback.** The message, the optional contact and the context table
+  shown in the dialog's "What is attached" section go into a public GitHub
+  issue. The verification check runs through Cloudflare Turnstile, which
+  sees the sender's IP address and browser. The Worker uses the IP address
+  only as a rate-limit key (IPv6 by its /64) and passes it to Turnstile's
+  siteverify; it keeps nothing. The Turnstile token is never written
+  anywhere.
+- **op1.fun.** Uploads and files pass straight through: the email, token
+  and file are never written anywhere.
+
+The Feedback dialog says the same in its "What is attached" section.
