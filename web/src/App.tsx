@@ -2,12 +2,15 @@ import { useRef, useState, type KeyboardEvent } from 'react';
 import { Feedback } from './ui/Feedback';
 import { Inspector } from './ui/Inspector';
 import { Library } from './ui/Library';
+import { Op1FunTab } from './ui/Op1Fun';
 import { Packs } from './ui/Packs';
 import { useDevice } from './ui/useDevice';
+import { useOp1Fun } from './ui/useOp1Fun';
 
 const TABS = [
   { id: 'library', label: 'Library' },
   { id: 'packs', label: 'Packs' },
+  { id: 'op1fun', label: 'op1.fun' },
   { id: 'inspector', label: 'Inspector' },
 ] as const;
 
@@ -17,7 +20,14 @@ export function App() {
   const [tab, setTab] = useState<TabId>('library');
   // One connection for every tab, so the Packs tab installs onto the drive the Library shows.
   const device = useDevice();
+  // The op1.fun account, shared by the op1.fun tab and the Library's upload action.
+  const op1fun = useOp1Fun();
   const buttons = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
+
+  function openLibrary(): void {
+    setTab('library');
+    buttons.current.library?.focus();
+  }
 
   /** Arrow keys, Home and End move between tabs, as in the WAI-ARIA tabs pattern. */
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
@@ -67,10 +77,10 @@ export function App() {
           <Library device={device} active={tab === 'library'} />
         </div>
         <div role="tabpanel" id="panel-packs" aria-labelledby="tab-packs" hidden={tab !== 'packs'}>
-          <Packs device={device} active={tab === 'packs'} onOpenLibrary={() => {
-              setTab('library');
-              buttons.current.library?.focus();
-            }} />
+          <Packs device={device} active={tab === 'packs'} onOpenLibrary={openLibrary} />
+        </div>
+        <div role="tabpanel" id="panel-op1fun" aria-labelledby="tab-op1fun" hidden={tab !== 'op1fun'}>
+          <Op1FunTab op1fun={op1fun} device={device} active={tab === 'op1fun'} onOpenLibrary={openLibrary} />
         </div>
         <div role="tabpanel" id="panel-inspector" aria-labelledby="tab-inspector" hidden={tab !== 'inspector'}>
           <Inspector active={tab === 'inspector'} />
