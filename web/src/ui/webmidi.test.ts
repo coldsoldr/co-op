@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MIDI_REFUSED, NO_OP1_PORT, NO_WEB_MIDI, openOp1Port } from './webmidi';
+import { MIDI_REFUSED, NO_OP1_PORT, NO_WEB_MIDI, RESTART_TIMEOUT, openOp1Port, waitForOp1Restart } from './webmidi';
 
 /** Just enough of a Web MIDI port for openOp1Port. */
 class FakePort {
@@ -125,5 +125,78 @@ describe('openOp1Port', () => {
     const controller = new AbortController();
     controller.abort(new Error('closed'));
     await expect(openOp1Port(controller.signal)).rejects.toThrow('closed');
+  });
+});
+
+describe('waitForOp1Restart', () => {
+  const tick = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+  const setup = () => {
+    const input = new FakePort('OP-1');
+    const output = new FakePort('OP-1');
+    const access = new FakeAccess(portsOf(input), portsOf(output));
+    stubMidi(access);
+    const set = (state: MIDIPortDeviceState): void => {
+      input.state = state;
+      output.state = state;
+      access.dispatchEvent(new Event('statechange'));
+    };
+    return { set };
+  };
+  /** Long enough that only the events and the poll can end the wait. */
+  const slow = { goneMs: 10_000, timeoutMs: 10_000, pollMs: 10_000 };
+
+  it('resolves once the ports went away and came back', async () => {
+    const { set } = setup();
+    let done = false;
+    const wait = waitForOp1Restart(undefined, slow).then(() => (done = true));
+    await tick(5);
+    expect(done).toBe(false);
+    set('disconnected');
+    await tick(5);
+    expect(done).toBe(false);
+    set('connected');
+    await wait;
+  });
+
+  it('resolves when the ports were already gone and come back', async () => {
+    const { set } = setup();
+    set('disconnected');
+    const wait = waitForOp1Restart(undefined, slow);
+    await tick(5);
+    set('connected');
+    await wait;
+  });
+
+  it('notices the change by polling when no statechange comes', async () => {
+    const input = new FakePort('OP-1');
+    const output = new FakePort('OP-1');
+    stubMidi(new FakeAccess(portsOf(input), portsOf(output)));
+    const wait = waitForOp1Restart(undefined, { ...slow, pollMs: 5 });
+    input.state = 'disconnected';
+    await tick(20);
+    input.state = 'connected';
+    await wait;
+  });
+
+  it('counts the OP-1 as back when its ports never seemed to go away', async () => {
+    setup();
+    await waitForOp1Restart(undefined, { ...slow, goneMs: 10 });
+  });
+
+  it('gives up after the timeout', async () => {
+    const { set } = setup();
+    const wait = waitForOp1Restart(undefined, { ...slow, timeoutMs: 20 });
+    set('disconnected');
+    await expect(wait).rejects.toThrow(RESTART_TIMEOUT);
+    expect(RESTART_TIMEOUT).toMatch(/switch it off and on: it then starts without plugin files/);
+  });
+
+  it('stops when aborted', async () => {
+    setup();
+    const controller = new AbortController();
+    const wait = waitForOp1Restart(controller.signal, slow);
+    await tick(1);
+    controller.abort(new Error('closed'));
+    await expect(wait).rejects.toThrow('closed');
   });
 });

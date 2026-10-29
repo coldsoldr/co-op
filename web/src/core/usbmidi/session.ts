@@ -42,7 +42,7 @@ export const DEFAULT_TRIES = 5;
 /** The most text one LIST or OFF_GET reply carries. */
 export const PAGE_BYTES = 64;
 
-const COMMAND_NAMES: Record<number, string> = { [Command.HELLO]: 'HELLO', [Command.LIST]: 'LIST', [Command.OFF_GET]: 'OFF_GET' };
+const COMMAND_NAMES: Record<number, string> = Object.fromEntries(Object.entries(Command).map(([name, cmd]) => [cmd, name]));
 const commandName = (cmd: number): string => COMMAND_NAMES[cmd] ?? `command ${cmd}`;
 
 /** No reply came after every try: the firmware does not speak the protocol, or the OP-1 is busy. */
@@ -76,6 +76,14 @@ export interface Hello {
   inventory: boolean;
   /** Plugin files can be sent and deleted (capability bit 1). */
   plugins: boolean;
+}
+
+/** Reads a HELLO reply. Throws RefusedError on a status other than ok. */
+export function parseHello(reply: Reply): Hello {
+  if (reply.status !== Status.OK) throw new RefusedError(reply.cmd, reply.status, 'HELLO');
+  // Builds without the capabilities byte send only the version.
+  const caps = reply.payload[4] ?? 0;
+  return { version: readU32le(reply.payload), inventory: (caps & 1) !== 0, plugins: (caps & 2) !== 0 };
 }
 
 /** Which switched-off list OFF_GET reads. */
@@ -196,12 +204,7 @@ export function createSession(port: MidiPort, options: SessionOptions = {}): Ses
   return {
     ask,
     hello() {
-      hello ??= ask(Command.HELLO).then((reply) => {
-        expectOk(reply, 'HELLO');
-        // Builds without the capabilities byte send only the version.
-        const caps = reply.payload[4] ?? 0;
-        return { version: readU32le(reply.payload), inventory: (caps & 1) !== 0, plugins: (caps & 2) !== 0 };
-      });
+      hello ??= ask(Command.HELLO).then(parseHello);
       // A failed HELLO may be asked again.
       hello.catch(() => {
         hello = null;

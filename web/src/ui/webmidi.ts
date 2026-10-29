@@ -55,15 +55,68 @@ function noOp1Port(access: MIDIAccess): string {
   return `${NO_OP1_PORT} ${seen} On Windows only one program can use a MIDI port at a time: close other browsers and music software that may hold it, then quit and reopen this browser.`;
 }
 
-export async function openOp1Port(signal?: AbortSignal): Promise<Op1Port> {
+async function midiAccess(signal: AbortSignal | undefined): Promise<MIDIAccess> {
   if (typeof navigator === 'undefined' || typeof navigator.requestMIDIAccess !== 'function') throw new Error(NO_WEB_MIDI);
-  let access: MIDIAccess;
   try {
-    access = await untilAborted(navigator.requestMIDIAccess({ sysex: true }), signal);
+    return await untilAborted(navigator.requestMIDIAccess({ sysex: true }), signal);
   } catch (e) {
     if (signal?.aborted) throw e;
     throw new Error(MIDI_REFUSED, { cause: e });
   }
+}
+
+export const RESTART_TIMEOUT =
+  'The OP-1 did not come back on USB. If it shows the tape screen, unplug the cable and plug it in again, then check it over USB. If it does not start, switch it off and on: it then starts without plugin files.';
+
+export interface RestartWait {
+  /** How long the whole restart may take. */
+  timeoutMs?: number;
+  /**
+   * How long to wait for the ports to go away. Some systems may not report it; after this the OP-1
+   * counts as back while its ports are there.
+   */
+  goneMs?: number;
+  /** How often to look at the ports besides on statechange, which a system may not send. */
+  pollMs?: number;
+}
+
+/**
+ * Waits for the OP-1 to restart after an install: its MIDI ports go away, then come back. Resolves
+ * once both are back, rejects with RESTART_TIMEOUT after `timeoutMs`.
+ */
+export async function waitForOp1Restart(signal?: AbortSignal, wait: RestartWait = {}): Promise<void> {
+  const { timeoutMs = 90_000, goneMs = 15_000, pollMs = 1_000 } = wait;
+  const access = await midiAccess(signal);
+  const present = (): boolean => findOp1(access.inputs.values()) !== undefined && findOp1(access.outputs.values()) !== undefined;
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    let gone = !present();
+    const check = (): void => {
+      if (!present()) gone = true;
+      else if (gone) finish();
+    };
+    const finish = (error?: unknown): void => {
+      clearTimeout(goneTimer);
+      clearTimeout(timer);
+      clearInterval(poll);
+      access.removeEventListener('statechange', check);
+      signal?.removeEventListener('abort', onAbort);
+      if (error === undefined) resolve();
+      else reject(error);
+    };
+    const onAbort = (): void => finish(abortReason(signal as AbortSignal));
+    const goneTimer = setTimeout(() => {
+      if (!gone && present()) finish();
+    }, goneMs);
+    const timer = setTimeout(() => finish(new Error(RESTART_TIMEOUT)), timeoutMs);
+    const poll = setInterval(check, pollMs);
+    access.addEventListener('statechange', check);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+export async function openOp1Port(signal?: AbortSignal): Promise<Op1Port> {
+  const access = await midiAccess(signal);
   const input = findOp1(access.inputs.values());
   const output = findOp1(access.outputs.values());
   if (!input || !output) throw new Error(noOp1Port(access));

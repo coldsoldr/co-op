@@ -1,9 +1,11 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useRef, useState, type KeyboardEvent } from 'react';
+import type { PluginIndexEntry } from '@co-op/shared/plugins';
 import { Feedback } from './ui/Feedback';
 import { Inspector } from './ui/Inspector';
 import { Library } from './ui/Library';
 import { Op1FunTab } from './ui/Op1Fun';
 import { Packs } from './ui/Packs';
+import { InstallOverUsb } from './ui/PluginInstall';
 import { Plugins } from './ui/Plugins';
 import { useDevice } from './ui/useDevice';
 import { useOp1Fun } from './ui/useOp1Fun';
@@ -24,6 +26,13 @@ export function App() {
   const device = useDevice();
   // The op1.fun account, shared by the op1.fun tab and the Library's upload action.
   const op1fun = useOp1Fun();
+  const { setInstalledPlugins } = device;
+  // hundekraft plugins install over USB MIDI; the inventory the OP-1 reports afterwards is shared.
+  const pluginActions = useCallback(
+    (plugin: PluginIndexEntry) =>
+      plugin.firmware === 'op1/hundekraft' ? <InstallOverUsb plugin={plugin} onInstalled={setInstalledPlugins} /> : null,
+    [setInstalledPlugins],
+  );
   const buttons = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
 
   function openLibrary(): void {
@@ -82,7 +91,7 @@ export function App() {
           <Packs device={device} active={tab === 'packs'} onOpenLibrary={openLibrary} />
         </div>
         <div role="tabpanel" id="panel-plugins" aria-labelledby="tab-plugins" hidden={tab !== 'plugins'}>
-          <Plugins active={tab === 'plugins'} />
+          <Plugins active={tab === 'plugins'} renderActions={pluginActions} />
         </div>
         <div role="tabpanel" id="panel-op1fun" aria-labelledby="tab-op1fun" hidden={tab !== 'op1fun'}>
           <Op1FunTab op1fun={op1fun} device={device} active={tab === 'op1fun'} onOpenLibrary={openLibrary} />

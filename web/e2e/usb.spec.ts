@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stubOp1, type StubOptions } from './op1-stub';
 
 const fixtures = fileURLToPath(new URL('../test/fixtures/', import.meta.url));
 
@@ -13,84 +14,9 @@ const INVENTORY = [
   ['fx', 'delay', 'builtin', '', '', '', '0', '00000000', 'loaded', '', ''].join('\t'),
 ].join('\n');
 
-interface StubOptions {
-  /** False for firmware that shows the port but never answers HELLO. */
-  answer: boolean;
-  /** Drop the OP-1's ports when it is asked for the inventory. */
-  disconnectOnList?: boolean;
-  /** Show no OP-1 port at all, as in disk mode. */
-  noPorts?: boolean;
-}
-
-/**
- * Replaces Web MIDI in the page with a fake OP-1 that answers HELLO, LIST and OFF_GET the way
- * hundekraft 3.x does (see docs/research/2026-10-29-hundekraft-usb-and-plugins.md).
- */
-async function stubOp1(page: Page, options: StubOptions): Promise<void> {
-  await page.addInitScript(
-    ({ answer, disconnectOnList, noPorts, inventory, off }) => {
-      const HEADER = [0xf0, 0x00, 0x20, 0x76, 0x7d];
-      const pack7 = (raw: number[]): number[] => {
-        const out: number[] = [];
-        for (let i = 0; i < raw.length; i += 7) {
-          const group = raw.slice(i, i + 7);
-          out.push(group.reduce((high, b, k) => high | ((b >> 7) << k), 0), ...group.map((b) => b & 0x7f));
-        }
-        return out;
-      };
-      const unpack7 = (packed: number[]): number[] => {
-        const out: number[] = [];
-        for (let i = 0; i < packed.length; ) {
-          const high = packed[i++] as number;
-          for (let k = 0; k < 7 && i < packed.length; k++) out.push((packed[i++] as number) | (((high >> k) & 1) << 7));
-        }
-        return out;
-      };
-      const u32 = (v: number): number[] => [v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff];
-      const pageOf = (text: number[], offset: number): number[] =>
-        offset > text.length ? [5] : [0, ...u32(text.length), ...text.slice(offset, offset + 64)];
-      const listText = [...new TextEncoder().encode(inventory)];
-      const offText = [...new TextEncoder().encode(off)];
-
-      const access = new EventTarget() as EventTarget & { inputs: Map<string, unknown>; outputs: Map<string, unknown> };
-      const input = { name: 'OP-1 Midi Device', state: 'connected', onmidimessage: null as null | ((e: unknown) => void), open: () => Promise.resolve(), close: () => Promise.resolve() };
-      const output = {
-        name: 'OP-1 Midi Device',
-        state: 'connected',
-        open: () => Promise.resolve(),
-        close: () => Promise.resolve(),
-        send(data: Uint8Array) {
-          const bytes = [...data];
-          const cmd = bytes[5] as number;
-          const payload = unpack7(bytes.slice(8, -1));
-          if (cmd === 7 && disconnectOnList) {
-            input.state = 'disconnected';
-            output.state = 'disconnected';
-            access.dispatchEvent(new Event('statechange'));
-            return;
-          }
-          if (!answer) return;
-          const body =
-            cmd === 1 ? [0, ...u32(1), 3]
-            : cmd === 7 ? pageOf(listText, (payload[0] ?? 0) | ((payload[1] ?? 0) << 8))
-            : cmd === 8 ? pageOf(offText, (payload[1] ?? 0) | ((payload[2] ?? 0) << 8))
-            : [1];
-          const reply = [...HEADER, cmd | 0x40, bytes[6] as number, bytes[7] as number, ...pack7(body), 0xf7];
-          // A clock byte inside the SysEx, as a real OP-1 may send.
-          reply.splice(3, 0, 0xf8);
-          setTimeout(() => input.onmidimessage?.({ data: Uint8Array.from(reply) }), 1);
-        },
-      };
-      access.inputs = new Map(noPorts ? [] : [['in', input]]);
-      access.outputs = new Map(noPorts ? [] : [['out', output]]);
-      Object.defineProperty(navigator, 'requestMIDIAccess', {
-        configurable: true,
-        value: () => Promise.resolve(access),
-      });
-    },
-    { ...options, disconnectOnList: options.disconnectOnList ?? false, noPorts: options.noPorts ?? false, inventory: INVENTORY, off: 'tape_echo' },
-  );
-}
+/** The shared Web MIDI stub, with this file's inventory and switched-off list. */
+const stub = (page: Page, options: Omit<StubOptions, 'inventory'> = {}): Promise<void> =>
+  stubOp1(page, { inventory: INVENTORY, off: 'tape_echo', ...options });
 
 let parent: string;
 let drive: string;
@@ -111,7 +37,7 @@ test.afterEach(() => {
 const panel = (page: Page) => page.getByRole('dialog', { name: 'Check the OP-1 over USB' });
 
 test('lists the plugins of a hundekraft OP-1 and remembers the profile for the next drive', async ({ page }) => {
-  await stubOp1(page, { answer: true });
+  await stub(page, { answer: true });
   await page.goto('./');
   await page.getByRole('button', { name: 'Check over USB' }).click();
   const dialog = panel(page);
@@ -136,7 +62,7 @@ test('lists the plugins of a hundekraft OP-1 and remembers the profile for the n
 });
 
 test('switches a dropped copy of the drive to the hundekraft profile at once', async ({ page }) => {
-  await stubOp1(page, { answer: true });
+  await stub(page, { answer: true });
   await page.goto('./');
   await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
   await expect(page.getByLabel('Profile')).toHaveValue('op1/stock');
@@ -155,7 +81,7 @@ test('switches a dropped copy of the drive to the hundekraft profile at once', a
 test('leaves a connected drive alone and starts it on the hundekraft profile when it is opened again', async ({
   page,
 }) => {
-  await stubOp1(page, { answer: true });
+  await stub(page, { answer: true });
   await page.goto('./');
   // The browser's origin-private file system stands in for the drive behind the folder picker.
   const cluster = readFileSync(join(fixtures, 'synth-cluster.aif')).toString('base64');
@@ -192,7 +118,7 @@ test('leaves a connected drive alone and starts it on the hundekraft profile whe
 
 test('explains an OP-1 that does not answer', async ({ page }) => {
   await page.clock.install();
-  await stubOp1(page, { answer: false });
+  await stub(page, { answer: false });
   await page.goto('./');
   await page.getByRole('button', { name: 'Check over USB' }).click();
   const dialog = panel(page);
@@ -206,7 +132,7 @@ test('explains an OP-1 that does not answer', async ({ page }) => {
 });
 
 test('says when the OP-1 disconnects during the check', async ({ page }) => {
-  await stubOp1(page, { answer: true, disconnectOnList: true });
+  await stub(page, { answer: true, disconnectOnList: true });
   await page.goto('./');
   await page.getByRole('button', { name: 'Check over USB' }).click();
   const dialog = panel(page);
@@ -216,7 +142,7 @@ test('says when the OP-1 disconnects during the check', async ({ page }) => {
 });
 
 test('points out disk mode when there is no OP-1 MIDI port', async ({ page }) => {
-  await stubOp1(page, { answer: true, noPorts: true });
+  await stub(page, { answer: true, noPorts: true });
   await page.goto('./');
   await page.getByRole('button', { name: 'Check over USB' }).click();
   const dialog = panel(page);

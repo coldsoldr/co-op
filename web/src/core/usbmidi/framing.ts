@@ -23,12 +23,23 @@ export const MAX_MESSAGE = 96;
 /** Sequence numbers are 14 bits, sent as two 7-bit bytes. */
 export const SEQ_MASK = 0x3fff;
 
-/** The read-only commands co-op sends. */
+/**
+ * The commands co-op sends: the reads, and the ones that stage and commit plugin files. co-op never
+ * sends OFF_SET (9), DELETE (10) or RESTART (11).
+ */
 export const Command = {
   HELLO: 1,
+  BEGIN: 2,
+  DATA: 3,
+  END: 4,
+  COMMIT: 5,
+  ABORT: 6,
   LIST: 7,
   OFF_GET: 8,
 } as const;
+
+/** The most raw file bytes one DATA message carries: u32 offset + 72 bytes packs to a 96-byte message. */
+export const MAX_DATA = 72;
 
 /** Reply statuses. */
 export const Status = {

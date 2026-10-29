@@ -10,13 +10,11 @@ import {
   type PluginFilter,
 } from '../core/plugins/catalogue';
 import { getProfile } from '../core/profiles/registry';
+import { WORKSHOP_URL } from '../core/usbmidi/install';
 import { messageOf } from '../core/util';
 import { saveBlob } from './download';
 import { formatSize } from './format';
 import { Markdown } from './Markdown';
-
-/** Where hundekraft plugins are installed and removed. */
-export const WORKSHOP_URL = 'https://hundekraft.github.io/op1-workshop/';
 
 const firmwareLabel = (id: string): string => getProfile(id)?.label ?? id;
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
@@ -27,7 +25,7 @@ interface PluginsProps {
   active: boolean;
   /**
    * More actions for a plugin, shown beside Download on its card and manual: "Install over USB"
-   * for hundekraft (phase 12, task 9) and "Copy to mods/" for opus (task 10). Nothing yet.
+   * for hundekraft and, later, "Copy to mods/" for opus.
    */
   renderActions?: (plugin: PluginIndexEntry) => ReactNode;
 }
@@ -288,7 +286,7 @@ function PluginDownload({ plugin, renderActions }: { plugin: PluginIndexEntry; r
       </p>
       {hundekraft && (
         <p className="notice" id={noteId}>
-          A plugin runs as firmware code on the OP-1. Install it with the{' '}
+          A plugin runs as firmware code on the OP-1. Install it over USB here or with the{' '}
           <a href={WORKSHOP_URL} target="_blank" rel="noopener noreferrer">
             hundekraft workshop
           </a>
