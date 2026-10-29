@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -14,13 +15,15 @@ import { decodePcm, readPatch } from '../core/codec/patch';
 import { exportChangeSet } from '../core/library/changeset';
 import { filesFromDataTransfer } from '../core/store/drop-store';
 import { profiles } from '../core/profiles/registry';
+import { installedNames } from '../core/plugins/requirements';
 import { playPcm } from './audio';
 import { BackupPanel } from './BackupPanel';
 import { ConfirmDialog } from './Dialog';
 import { saveBlob, zipBlob } from './download';
 import { compatView, dateStamp, formatSize, groupByFolder, kindMismatchText, rootOf } from './format';
 import { OpusPlugins } from './OpusPlugins';
-import { TraitsPopover } from './TraitsPopover';
+import { usePluginPrompt } from './PluginPrompt';
+import { TraitsPopover, type PluginRequirements } from './TraitsPopover';
 import { UsbCheck } from './UsbCheck';
 import { PatchActions } from './PatchActions';
 import { UploadDialog, uploadUnavailable } from './Op1FunUpload';
@@ -196,6 +199,12 @@ function Connected({
   const [uploading, setUploading] = useState<LibraryRow | null>(null);
   const uploadNoteId = useId();
   const uploadWhy = uploadUnavailable(op1fun);
+  const { confirmPlugins, dialog: pluginDialog } = usePluginPrompt(device);
+  /** What the rows' details need to name the plugins a patch needs. */
+  const plugins = useMemo(
+    () => ({ index: device.pluginIndex, firmwareId: device.profile.id, loaded: installedNames(device.installedPlugins) }),
+    [device.pluginIndex, device.profile.id, device.installedPlugins],
+  );
   const store = source?.store ?? null;
 
   useEffect(() => {
@@ -299,6 +308,7 @@ function Connected({
       uploadNoteId={uploadNoteId}
       selected={selected.has(row.path)}
       onSelect={toggleSelected}
+      plugins={plugins}
     />
   );
 
@@ -498,7 +508,9 @@ function Connected({
         busy={device.busy}
         exclusive={device.exclusive}
         run={device.run}
+        confirmPlugins={confirmPlugins}
       />
+      {pluginDialog}
 
       {uploading && (
         <UploadDialog
@@ -541,6 +553,7 @@ interface RowProps {
   uploadNoteId: string;
   selected: boolean;
   onSelect: (path: string, on: boolean) => void;
+  plugins: PluginRequirements;
 }
 
 const Row = memo(function Row({
@@ -556,6 +569,7 @@ const Row = memo(function Row({
   uploadNoteId,
   selected,
   onSelect,
+  plugins,
 }: RowProps) {
   const mismatch = kindMismatchText(row);
   const nonStandard = row.info !== null && !row.info.canonical;
@@ -589,7 +603,7 @@ const Row = memo(function Row({
       <td className="size">{formatSize(row.sizeBytes)}</td>
       <td className="compat">
         <CompatBadge row={row} />
-        {row.info?.traits && <TraitsPopover row={row} traits={row.info.traits} />}
+        {row.info?.traits && <TraitsPopover row={row} traits={row.info.traits} plugins={plugins} />}
       </td>
       <td>
         <PatchActions

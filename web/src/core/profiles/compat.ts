@@ -1,4 +1,4 @@
-import type { Compat, DeviceProfile, ProfileSupports } from './types';
+import type { Compat, DeviceProfile, PluginContext, ProfileSupports } from './types';
 import type { Patch } from '../codec/patch';
 import { soundTraits, type SoundTraits } from '../codec/sound-traits';
 
@@ -63,4 +63,30 @@ export function traitCompatibility(
     if (level === 'unsupported' && options.unsupportedNote) reasons.push(options.unsupportedNote);
     return { level, reason: reasons.join('; ') };
   };
+}
+
+/**
+ * Rewrites the supported-name findings for an engine (synth sounds only) or effect that is a
+ * library plugin: `needs plugin "<id>"` as a warning, or nothing once the device reports it
+ * loaded. Other findings pass through. Run it before a profile's own rule, which then sees only
+ * the findings that are not about library plugins.
+ */
+export function pluginFindings(traits: SoundTraits, findings: readonly Finding[], context: PluginContext): Finding[] {
+  return findings.flatMap((finding): Finding[] => {
+    const named = finding.subject === 'fx' || (finding.subject === 'engine' && traits.kind === 'synth');
+    const id = named && finding.name !== undefined ? context.library.get(finding.name) : undefined;
+    if (id === undefined) return [finding];
+    if (context.loaded.has(finding.name as string)) return [];
+    return [{ level: 'warn', reason: `needs plugin "${id}"` }];
+  });
+}
+
+/**
+ * The profile with a compatibility check that knows the plugin library and what is loaded, for
+ * the places the UI judges patches. Profiles without `pluginCompatibility`, or no context, give
+ * the profile back unchanged.
+ */
+export function withPlugins(profile: DeviceProfile, context: PluginContext | null): DeviceProfile {
+  if (!context || !profile.pluginCompatibility) return profile;
+  return { ...profile, compatibility: profile.pluginCompatibility(context) };
 }

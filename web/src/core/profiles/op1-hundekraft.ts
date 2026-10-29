@@ -1,6 +1,6 @@
-import type { DetectResult, DeviceProfile, ProfileSupports } from './types';
+import type { DetectResult, DeviceProfile, PluginContext, ProfileSupports } from './types';
 import { isOp1rSelector, type SoundTraits } from '../codec/sound-traits';
-import { traitCompatibility, type Finding, type TraitRule } from './compat';
+import { pluginFindings, traitCompatibility, type Finding, type TraitRule } from './compat';
 import {
   op1Stock,
   folderDetect,
@@ -93,6 +93,16 @@ export const hundekraftRule: TraitRule = (traits, findings) => {
   return all;
 };
 
+/**
+ * hundekraftRule once the plugin library is known: an engine or effect that is a library plugin
+ * needs that plugin (a warning) instead of the generic finding, and is fine once the USB check
+ * shows it loaded.
+ */
+export const hundekraftPluginRule =
+  (context: PluginContext): TraitRule =>
+  (traits, findings) =>
+    hundekraftRule(traits, pluginFindings(traits, findings, context));
+
 function sniff(traits: readonly SoundTraits[]): DetectResult {
   const matches = traits.filter(hasHundekraftTraits).length;
   if (matches === 0) return { confidence: 0, reason: 'no patches with hundekraft engines, effects or kits' };
@@ -113,4 +123,5 @@ export const op1Hundekraft: DeviceProfile = {
   sniff,
   supports: HUNDEKRAFT_SUPPORTS,
   compatibility: traitCompatibility(HUNDEKRAFT_SUPPORTS, { rule: hundekraftRule }),
+  pluginCompatibility: (context) => traitCompatibility(HUNDEKRAFT_SUPPORTS, { rule: hundekraftPluginRule(context) }),
 };

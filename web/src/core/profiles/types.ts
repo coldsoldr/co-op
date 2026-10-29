@@ -83,4 +83,17 @@ export interface DeviceProfile {
   sniff?(traits: readonly SoundTraits[]): DetectResult;
   supports: ProfileSupports;
   compatibility(patch: Patch): Compat;
+  /**
+   * The compatibility check once the plugin library and the plugins loaded on the device are known
+   * (see withPlugins). Absent when the firmware has no plugins co-op can name.
+   */
+  pluginCompatibility?(context: PluginContext): DeviceProfile['compatibility'];
+}
+
+/** What the UI knows about plugins, passed in as plain data so profiles stay pure. */
+export interface PluginContext {
+  /** The library plugins for this firmware, by the name sounds save for them, to their ids. */
+  library: ReadonlyMap<string, string>;
+  /** Saved names of the plugins the device reported loaded (the USB check); empty when unknown. */
+  loaded: ReadonlySet<string>;
 }

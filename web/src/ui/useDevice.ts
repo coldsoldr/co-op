@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { PluginIndex } from '@co-op/shared/plugins';
 import type { DeviceProfile } from '../core/profiles/types';
 import {
   detectProfiles,
@@ -10,6 +11,9 @@ import {
 } from '../core/profiles/registry';
 import type { SoundTraits } from '../core/codec/sound-traits';
 import type { Inventory } from '../core/usbmidi/inventory';
+import { fetchPluginIndex } from '../core/plugins/catalogue';
+import { pluginContext } from '../core/plugins/requirements';
+import { withPlugins } from '../core/profiles/compat';
 import { DEFAULT_CONCURRENCY, loadAllPatches, loadLibrary } from '../core/library/library';
 import { StagedStore, countChanges } from '../core/library/changeset';
 import { recoverDrive } from '../core/library/recover';
@@ -52,6 +56,10 @@ export type Operation = (store: DeviceStore, source: DeviceSource) => Promise<un
 
 export interface Device {
   source: DeviceSource | null;
+  /**
+   * The active profile. Its compatibility check knows the plugin library and what the last USB
+   * check found loaded (withPlugins), so rows and write guards judge patches the same way.
+   */
   profile: DeviceProfile;
   /** Why this profile was chosen. */
   detection: string;
@@ -106,7 +114,15 @@ export interface Device {
    * check that found none, or on a build without the inventory. Kept in memory only.
    */
   installedPlugins: Inventory | null;
+  /** Records a USB check's inventory; the library is judged again when the profile knows plugins. */
   setInstalledPlugins(inventory: Inventory | null): void;
+  /** The plugin library published with the app, or null until it loads (or when it cannot be). */
+  pluginIndex: PluginIndex | null;
+  /**
+   * The plugin library, loading it first if it has not loaded; null when it cannot be loaded. A
+   * failed load is tried again on the next call.
+   */
+  loadPluginIndex(): Promise<PluginIndex | null>;
   /**
    * Queues an operation, runs it against the source, then reloads, re-reading `touched` paths and
    * any whose size changed. Errors are rethrown for the caller to show.
@@ -193,7 +209,8 @@ export function useDevice(): Device {
   /** revision when the changes were last downloaded; null when never downloaded. */
   const [downloadedRevision, setDownloadedRevision] = useState<number | null>(null);
   const [remembered, setRemembered] = useState<FileSystemDirectoryHandle | null>(null);
-  const [installedPlugins, setInstalledPlugins] = useState<Inventory | null>(null);
+  const [installedPlugins, setInstalledPluginsState] = useState<Inventory | null>(null);
+  const [pluginIndex, setPluginIndex] = useState<PluginIndex | null>(null);
   const [fsAccess] = useState(isFsAccessSupported);
   const [pending, setPending] = useState(0);
   const [mutating, setMutating] = useState(0);
@@ -203,6 +220,9 @@ export function useDevice(): Device {
   const sourceRef = useRef<DeviceSource | null>(null);
   const profileRef = useRef<DeviceProfile>(defaultProfile);
   const rowsRef = useRef<LibraryRow[]>([]);
+  const installedRef = useRef<Inventory | null>(null);
+  const pluginIndexRef = useRef<PluginIndex | null>(null);
+  const indexRequest = useRef<Promise<PluginIndex | null> | null>(null);
   /** Bumped by every load, so a superseded load never writes state. */
   const generation = useRef(0);
   /** Bumped by every open and disconnect, so a superseded open stops. */
@@ -247,6 +267,13 @@ export function useDevice(): Device {
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
 
+  /** A profile as the library judges it: with what is known about plugins right now. */
+  const judge = useCallback(
+    (p: DeviceProfile): DeviceProfile =>
+      withPlugins(p, pluginContext(pluginIndexRef.current, p.id, installedRef.current)),
+    [],
+  );
+
   /**
    * Lists the drive and reads patches. With `touched` (after an operation), rows whose path and
    * size are unchanged keep their details and only the rest are read; with null everything is read.
@@ -275,7 +302,7 @@ export function useDevice(): Device {
         setProgress({ done: 0, total: merged.toLoad.length });
         const loaded = await loadAllPatches(
           next.store,
-          nextProfile,
+          judge(nextProfile),
           merged.toLoad,
           (done, total) => {
             const now = performance.now();
@@ -301,7 +328,7 @@ export function useDevice(): Device {
         }
       }
     },
-    [setRows],
+    [judge, setRows],
   );
 
   /** Opens a store: detects the profile, recovers interrupted writes, wraps read-only sources, loads. */
@@ -455,6 +482,49 @@ export function useDevice(): Device {
     [exclusive, load],
   );
 
+  /**
+   * After what is known about plugins changes, reads the library again when the active profile
+   * judges patches by it, so badges follow the plugin library and the USB check.
+   */
+  const rejudge = useCallback(() => {
+    const current = sourceRef.current;
+    if (!current || !profileRef.current.pluginCompatibility) return;
+    void exclusive(async () => {
+      if (sourceRef.current === current) await load(current, profileRef.current, null);
+    });
+  }, [exclusive, load]);
+
+  const setInstalledPlugins = useCallback(
+    (inventory: Inventory | null) => {
+      installedRef.current = inventory;
+      setInstalledPluginsState(inventory);
+      rejudge();
+    },
+    [rejudge],
+  );
+
+  const loadPluginIndex = useCallback((): Promise<PluginIndex | null> => {
+    indexRequest.current ??= fetchPluginIndex(import.meta.env.BASE_URL).then(
+      (index) => {
+        pluginIndexRef.current = index;
+        setPluginIndex(index);
+        rejudge();
+        return index;
+      },
+      () => {
+        // Never blocks anything: without the index, patches are judged without it.
+        indexRequest.current = null;
+        return null;
+      },
+    );
+    return indexRequest.current;
+  }, [rejudge]);
+
+  // Loaded with the page, so the library is judged with it from the first drive opened.
+  useEffect(() => {
+    void loadPluginIndex();
+  }, [loadPluginIndex]);
+
   const disconnect = useCallback(() => {
     session.current++;
     generation.current++;
@@ -479,6 +549,10 @@ export function useDevice(): Device {
     source && settledSuggestion?.key === source.key && !dismissed.has(source.key) ? settledSuggestion.value : null;
 
   const currentProfile = useCallback(() => profileRef.current, []);
+  const judgedProfile = useMemo(
+    () => withPlugins(profile, pluginContext(pluginIndex, profile.id, installedPlugins)),
+    [profile, pluginIndex, installedPlugins],
+  );
 
   const dismissSuggestion = useCallback(() => {
     const key = sourceRef.current?.key;
@@ -487,7 +561,7 @@ export function useDevice(): Device {
 
   return {
     source,
-    profile,
+    profile: judgedProfile,
     detection,
     suggestion,
     dismissSuggestion,
@@ -514,6 +588,8 @@ export function useDevice(): Device {
     fail,
     setProfile,
     installedPlugins,
+    pluginIndex,
+    loadPluginIndex,
     setInstalledPlugins,
     run,
     exclusive,

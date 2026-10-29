@@ -15,6 +15,7 @@ import { getProfile, profiles } from '../core/profiles/registry';
 import { joinPath } from '../core/store/store';
 import { findUnsupported } from '../core/profiles/guard';
 import { useConfirmUnsupported } from './ConfirmUnsupported';
+import { usePluginPrompt } from './PluginPrompt';
 import { playPcm } from './audio';
 import { formatSize } from './format';
 import type { Device } from './useDevice';
@@ -268,6 +269,7 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
   const [working, setWorking] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const { confirmUnsupported, dialog } = useConfirmUnsupported();
+  const { confirmPlugins, dialog: pluginDialog } = usePluginPrompt(device);
   const [playing, setPlaying] = useState<string | null>(null);
   const [playError, setPlayError] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -349,6 +351,7 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
         profile,
       );
       if (!(await confirmUnsupported(risky, profile))) return;
+      if (!(await confirmPlugins(downloads.map((d) => d.bytes), profile))) return;
       await device.run(async (store, source) => {
         if (source.key !== key) throw new CatalogueError('the drive changed; install again');
         // The guard judged the patches for this profile; another profile may judge them differently.
@@ -518,6 +521,7 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
         )}
         {working && <p role="status">Installing…</p>}
         {dialog}
+        {pluginDialog}
         {outcome && (
           <div role={outcome.ok ? 'status' : 'alert'} className={outcome.ok ? 'notice' : 'error'}>
             <p>{outcome.message}</p>

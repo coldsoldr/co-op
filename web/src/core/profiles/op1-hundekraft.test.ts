@@ -11,6 +11,7 @@ import {
 } from './op1-hundekraft';
 import { op1Stock, FULL_MATCH, STOCK_SYNTH_ENGINES, STOCK_FX_TYPES, STOCK_LFO_TYPES } from './op1-stock';
 import { MemoryListing } from '../store/memory-listing';
+import { withPlugins } from './compat';
 import { readPatch, withMeta, type Patch } from '../codec/patch';
 import type { Op1Meta } from '../codec/op1-meta';
 import { soundTraits, type SoundTraits } from '../codec/sound-traits';
@@ -137,6 +138,47 @@ describe('op1/hundekraft compatibility', () => {
 
   it('marks files without metadata unsupported', () => {
     expect(op1Hundekraft.compatibility(fixture('no-metadata.aif')).level).toBe('unsupported');
+  });
+});
+
+describe('op1/hundekraft compatibility with the plugin library', () => {
+  const library = new Map([
+    ['rings', 'rings'],
+    ['tape drive', 'tape_drive'],
+  ]);
+  const judged = (loaded: string[] = []) => withPlugins(op1Hundekraft, { library, loaded: new Set(loaded) });
+
+  it('says which library plugin an engine or effect needs, as a warning', () => {
+    expect(judged().compatibility(synth({ type: 'rings' }))).toEqual({ level: 'warn', reason: 'needs plugin "rings"' });
+    expect(judged().compatibility(synth({ type: 'rings', knobs: selector(0x5340) }))).toEqual({
+      level: 'warn',
+      reason: 'needs plugin "rings"',
+    });
+    expect(judged().compatibility(synth({ fx_type: 'tape drive', fx_params: selector(0x5340) }))).toEqual({
+      level: 'warn',
+      reason: 'needs plugin "tape_drive"',
+    });
+  });
+
+  it('is fine once the USB check shows the plugin loaded', () => {
+    expect(judged(['rings']).compatibility(synth({ type: 'rings' }))).toEqual({ level: 'ok' });
+    expect(judged(['rings']).compatibility(synth({ type: 'rings', fx_type: 'tape drive' }))).toEqual({
+      level: 'warn',
+      reason: 'needs plugin "tape_drive"',
+    });
+  });
+
+  it('keeps the other findings as they were', () => {
+    expect(judged().compatibility(synth({ type: 'newthing' }))).toEqual(op1Hundekraft.compatibility(synth({ type: 'newthing' })));
+    expect(judged().compatibility(fixture('synth-cluster.aif'))).toEqual({ level: 'ok' });
+    // A drum kit's engine is never a synth plugin.
+    const kit = withMeta(fixture('drum-boombap.aif'), { ...DRUM_META, type: 'rings' } as Op1Meta);
+    expect(judged().compatibility(kit)).toEqual(op1Hundekraft.compatibility(kit));
+  });
+
+  it('leaves profiles without plugin support, and a missing context, unchanged', () => {
+    expect(withPlugins(op1Stock, { library, loaded: new Set() })).toBe(op1Stock);
+    expect(withPlugins(op1Hundekraft, null)).toBe(op1Hundekraft);
   });
 });
 

@@ -7,6 +7,7 @@ import { installUnavailable, makeClient, op1FunMessage, type Op1Fun } from './us
 import type { Device, Progress } from './useDevice';
 import { findUnsupported } from '../core/profiles/guard';
 import { useConfirmUnsupported } from './ConfirmUnsupported';
+import { usePluginPrompt } from './PluginPrompt';
 
 export const OP1FUN_SITE = 'https://op1.fun';
 
@@ -215,6 +216,7 @@ function Browse({ client, initialUsername, workerUrl, onUsername, device, onOpen
   const [progress, setProgress] = useState<Progress | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const { confirmUnsupported, dialog } = useConfirmUnsupported();
+  const { confirmPlugins, dialog: pluginDialog } = usePluginPrompt(device);
   const noticeId = useId();
   const workerNoteId = useId();
   /** Bumped by every load, so a slow answer for an earlier username is dropped. */
@@ -284,7 +286,8 @@ function Browse({ client, initialUsername, workerUrl, onUsername, device, onOpen
         }),
         profile,
       );
-      if (!(await confirmUnsupported(risky, profile))) {
+      const bytes = [...fetched.values()].filter((b): b is Uint8Array => b instanceof Uint8Array);
+      if (!(await confirmUnsupported(risky, profile)) || !(await confirmPlugins(bytes, profile))) {
         cancelled = true;
         return;
       }
@@ -345,6 +348,7 @@ function Browse({ client, initialUsername, workerUrl, onUsername, device, onOpen
       )}
       {outcome && <InstallOutcome outcome={outcome} staged={staged} />}
       {dialog}
+      {pluginDialog}
     </>
   );
 

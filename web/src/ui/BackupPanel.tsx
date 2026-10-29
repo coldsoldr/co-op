@@ -31,6 +31,8 @@ interface BackupPanelProps {
   exclusive: <T>(task: () => Promise<T>) => Promise<T>;
   /** Queues a write, then reloads the library. */
   run: (op: Operation, touched?: readonly string[]) => Promise<void>;
+  /** The plugin prompt (usePluginPrompt), asked after the write guard; absent means no prompt. */
+  confirmPlugins?: (files: readonly Uint8Array[], profile: DeviceProfile) => Promise<boolean>;
 }
 
 interface Pending {
@@ -69,7 +71,7 @@ function plan(diff: BackupDiff, selected: ReadonlySet<string>): { paths: string[
 }
 
 /** Download a backup zip of the patch folders (all or selected), and restore selected files from one. */
-export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclusive, run }: BackupPanelProps) {
+export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclusive, run, confirmPlugins }: BackupPanelProps) {
   const [backupProgress, setBackupProgress] = useState<Progress | null>(null);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -137,14 +139,13 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
       const diff = await exclusive(() => diffBackup(store, current.backup));
       setPending({ ...current, diff });
       const { paths, overwrites } = plan(diff, current.selected);
-      const risky = findUnsupported(
-        paths.flatMap((path) => {
-          const bytes = current.backup.files.get(path);
-          return bytes ? [{ path, bytes }] : [];
-        }),
-        profile,
-      );
+      const files = paths.flatMap((path) => {
+        const bytes = current.backup.files.get(path);
+        return bytes && !isPluginFile(path) ? [{ path, bytes }] : [];
+      });
+      const risky = findUnsupported(files, profile);
       if (!(await confirmUnsupported(risky, profile))) return;
+      if (confirmPlugins && !(await confirmPlugins(files.map((f) => f.bytes), profile))) return;
       guarded.current = new Set(paths);
       if (overwrites.length > 0) setConfirming(overwrites);
       else await apply([], current);
