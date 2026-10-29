@@ -76,6 +76,23 @@ Next: the OP-1 Field and OP-XY, which need their own profiles. The full design i
 `docs/superpowers/specs/2026-10-28-op-patch-librarian-design.md`; the
 implementation plans are in `docs/superpowers/plans/`.
 
+## Plugin library
+
+The `plugins/` folder holds community plugins for OP-1 custom firmware:
+synth engines, effects and sequencers, one folder each with the plugin file,
+a `plugin.json`, a manual and a screenshot. It starts with ten hundekraft
+3.0.3 plugins by coldsoldr (rings, bitcrusher, drive, tape drive,
+wavefolder, freq shift, ensemble, tape echo, marbles and grids; source at
+[coldsoldr/te-op1-cfw](https://github.com/coldsoldr/te-op1-cfw)). The build
+checks every plugin and publishes them with an index; a Plugins tab to
+browse, read and install them is in progress.
+
+A plugin runs as firmware code, so maintainers merge one only from an author
+they trust or with source they have looked at. To add one, follow
+[docs/contributing-plugins.md](docs/contributing-plugins.md); the manual
+structure, as a prompt for your coding agent, is in
+[docs/plugin-manual-prompt.md](docs/plugin-manual-prompt.md).
+
 ## Running it
 
 Requires Node 22 or newer and pnpm 11 (pinned through `packageManager`, so
@@ -107,7 +124,8 @@ web/      Vite + React + TypeScript app; web/scripts holds the packs CLI
 worker/   Cloudflare Worker: POST /feedback files GitHub issues; op1.fun upload and file proxy
 shared/   pack and feedback schemas and validation, shared by the app, CLI and Worker
 packs/    community patch packs, one folder each
-docs/     design spec, implementation plans, pack and Worker guides
+plugins/  community firmware plugins, one folder each
+docs/     design spec, implementation plans, pack, plugin and Worker guides
 vendor/   gitignored clones of third-party firmware repos, see vendor/README.md
 ```
 
@@ -128,8 +146,11 @@ see the README there for provenance.
 Conventional commit subjects (`feat(codec): ...`, `fix(profiles): ...`,
 `docs: ...`) keep the history readable. Keep `pnpm lint && pnpm typecheck && pnpm test`
 green. To share patches, follow the pack guide in
-[docs/contributing-packs.md](docs/contributing-packs.md).
+[docs/contributing-packs.md](docs/contributing-packs.md); to share a
+plugin, the plugin guide in
+[docs/contributing-plugins.md](docs/contributing-plugins.md).
 
 ## Licence
 
-MIT, see `LICENSE`.
+MIT, see `LICENSE`. Packs and plugins carry their own licences, given in
+each `pack.json` and `plugin.json`.

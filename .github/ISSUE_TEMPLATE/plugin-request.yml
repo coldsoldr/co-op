@@ -1,0 +1,38 @@
+name: Plugin idea or request
+description: Suggest a plugin you would like to see in the library, or offer one you made.
+title: "Plugin: "
+labels: ["plugin-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Want to add a plugin yourself? The guide is in [docs/contributing-plugins.md](https://github.com/coldsoldr/co-op/blob/main/docs/contributing-plugins.md). A plugin runs as firmware code, so a link to its source helps a lot.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What should it do?
+      description: A synth engine, an effect or a feature (sequencer, tool), and what it does to the sound.
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Are you offering to make or share it?
+      options:
+        - "No, this is a request"
+        - "Yes, I made a plugin and want to share it"
+        - "It exists elsewhere, and I am asking for it to be added"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware
+      description: The firmware and version it runs on.
+      placeholder: hundekraft 3.0.3
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: A link to the source code, if there is one.
+      placeholder: https://github.com/...
