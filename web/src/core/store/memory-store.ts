@@ -45,6 +45,10 @@ export class MemoryStore implements DeviceStore {
     return this.file(path).slice();
   }
 
+  async readHead(path: string, n: number): Promise<Uint8Array> {
+    return this.file(path).slice(0, Math.max(0, n));
+  }
+
   async size(path: string): Promise<number> {
     return this.file(path).length;
   }

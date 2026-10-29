@@ -57,6 +57,15 @@ export class FsAccessStore implements DeviceStore {
     }
   }
 
+  async readHead(path: string, n: number): Promise<Uint8Array> {
+    try {
+      const file = await (await this.fileHandle(path)).getFile();
+      return new Uint8Array(await file.slice(0, Math.max(0, n)).arrayBuffer());
+    } catch (error) {
+      throw storeError('read', joinPath(path), error);
+    }
+  }
+
   async size(path: string): Promise<number> {
     try {
       return (await (await this.fileHandle(path)).getFile()).size;

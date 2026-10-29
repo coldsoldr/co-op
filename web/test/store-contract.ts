@@ -65,6 +65,15 @@ export function describeReadableStore(name: string, make: StoreFactory, options:
       expect(await store.read('synth/user/b.aif')).toEqual(bytes(2, 2));
     });
 
+    it('reads the first bytes of a file with readHead', async () => {
+      const store = await make(seed());
+      expect(store.readHead).toBeTypeOf('function');
+      expect(await store.readHead?.('synth/user/C.aif', 2)).toEqual(bytes(3, 3));
+      expect(await store.readHead?.('synth/user/C.aif', 10)).toEqual(bytes(3, 3, 3));
+      expect(await store.readHead?.('synth/user/C.aif', 0)).toEqual(bytes());
+      await expect(store.readHead?.('synth/user/missing.aif', 2)).rejects.toBeInstanceOf(StoreError);
+    });
+
     if (options.caseDistinctNames ?? true) {
       it('keeps names that differ only by case apart', async () => {
         const store = await make(seed());

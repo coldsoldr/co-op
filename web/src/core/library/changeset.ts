@@ -68,6 +68,15 @@ export class StagedStore implements DeviceStore {
     return this.base.read(key);
   }
 
+  async readHead(path: string, n: number): Promise<Uint8Array> {
+    const key = joinPath(path);
+    const bytes = this.staged.get(key);
+    if (bytes) return bytes.slice(0, Math.max(0, n));
+    if (this.removed.has(key)) throw new StoreError(`no such file: ${key}`);
+    if (this.base.readHead) return this.base.readHead(key, n);
+    return (await this.base.read(key)).slice(0, Math.max(0, n));
+  }
+
   async size(path: string): Promise<number> {
     const key = joinPath(path);
     const bytes = this.staged.get(key);

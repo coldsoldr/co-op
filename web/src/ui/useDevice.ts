@@ -11,7 +11,7 @@ import {
 import type { SoundTraits } from '../core/codec/sound-traits';
 import { DEFAULT_CONCURRENCY, loadAllPatches, loadLibrary } from '../core/library/library';
 import { StagedStore, countChanges } from '../core/library/changeset';
-import { recoverStranded } from '../core/store/atomic';
+import { recoverDrive } from '../core/library/recover';
 import { DropStore, fromInputFiles, type DroppedFile } from '../core/store/drop-store';
 import {
   FsAccessStore,
@@ -21,7 +21,7 @@ import {
   rememberHandle,
   restoreHandle,
 } from '../core/store/fs-access-store';
-import { joinPath, type DeviceStore } from '../core/store/store';
+import type { DeviceStore } from '../core/store/store';
 import { createQueue } from './queue';
 import { mergeRows, toRow, type LibraryRow } from './rows';
 import { messageOf } from '../core/util';
@@ -61,6 +61,8 @@ export interface Device {
   dismissSuggestion(): void;
   /** The active profile right now, for async work that must check it has not changed. */
   currentProfile(): DeviceProfile;
+  /** Bumped each time a load of the library settles; read-only views re-read the drive then. */
+  settledCount: number;
   rows: LibraryRow[];
   /** Folder names under each patch root, keyed by root path ('synth'). */
   folders: Record<string, string[]>;
@@ -125,16 +127,6 @@ async function listFolders(store: DeviceStore, profile: DeviceProfile): Promise<
   return out;
 }
 
-/** Puts back files stranded by interrupted writes in every patch folder of a writable drive. */
-async function recover(store: DeviceStore, profile: DeviceProfile): Promise<string[]> {
-  if (!store.capabilities.write) return [];
-  const restored: string[] = [];
-  for (const [root, names] of Object.entries(await listFolders(store, profile))) {
-    for (const name of names) restored.push(...(await recoverStranded(store, joinPath(root, name))));
-  }
-  return restored;
-}
-
 async function detect(store: DeviceStore): Promise<{ profile: DeviceProfile; detection: string; confidence: number }> {
   const [best] = await detectProfiles(store);
   if (best) return { profile: best.profile, detection: `detected: ${best.result.reason}`, confidence: best.result.confidence };
@@ -158,6 +150,7 @@ export function useDevice(): Device {
    * The suggestion computed when the last load of a source settled. It is kept while a later load
    * runs, so the notice does not flicker, and recomputed only when a load settles.
    */
+  const [settledCount, setSettledCount] = useState(0);
   const [settledSuggestion, setSettledSuggestion] = useState<{ key: number; value: RankedProfile | null } | null>(null);
   const [rows, setRowsState] = useState<LibraryRow[]>([]);
   const [folders, setFolders] = useState<Record<string, string[]>>({});
@@ -276,6 +269,7 @@ export function useDevice(): Device {
           setProgress(null);
           const traits = rowsRef.current.map((row) => row.info?.traits).filter((t): t is SoundTraits => t != null);
           setSettledSuggestion({ key: next.key, value: suggestProfile(traits, nextProfile, confidenceRef.current) });
+          setSettledCount((n) => n + 1);
         }
       }
     },
@@ -299,7 +293,7 @@ export function useDevice(): Device {
         if (!live()) return;
         let restored: string[] = [];
         try {
-          restored = await recover(base, found.profile);
+          restored = await recoverDrive(base, found.profile);
         } catch (e) {
           // Kept apart from error, which the load below clears.
           setRecoveryError(`could not finish recovering interrupted writes: ${messageOf(e)}`);
@@ -469,6 +463,7 @@ export function useDevice(): Device {
     suggestion,
     dismissSuggestion,
     currentProfile,
+    settledCount,
     rows,
     folders,
     progress,

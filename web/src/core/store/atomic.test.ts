@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { writeAtomic, recoverStranded } from './atomic';
+import { writeAtomic, recoverStranded, recoverTree } from './atomic';
 import { MemoryStore } from './memory-store';
 import { StoreError } from './store';
 
@@ -175,5 +175,31 @@ describe('recoverStranded', () => {
     const store = new MemoryStore({ 'synth/user/.co-op-old-a.aif': bytes(1) }, { write: false });
     expect(await recoverStranded(store, 'synth/user')).toEqual([]);
     expect(store.snapshot()).toEqual({ 'synth/user/.co-op-old-a.aif': bytes(1) });
+  });
+});
+
+describe('recoverTree', () => {
+  const bytes = (value: number): Uint8Array => Uint8Array.of(value);
+
+  it('recovers a folder and every subfolder below it, skipping dot folders', async () => {
+    const store = new MemoryStore({
+      'mods/.co-op-old-a.opmod': bytes(1),
+      'mods/.co-op-tmp-b.opmod': bytes(2),
+      'mods/dx/.co-op-old-bank.syx': bytes(3),
+      'mods/dx/deep/.co-op-tmp-x': bytes(4),
+      'mods/.trash/.co-op-old-y': bytes(5),
+    });
+    expect(await recoverTree(store, 'mods')).toEqual(['mods/a.opmod', 'mods/dx/bank.syx']);
+    expect(store.snapshot()).toEqual({
+      'mods/a.opmod': bytes(1),
+      'mods/dx/bank.syx': bytes(3),
+      'mods/.trash/.co-op-old-y': bytes(5),
+    });
+  });
+
+  it('does nothing for a missing folder or a read-only store', async () => {
+    expect(await recoverTree(new MemoryStore({}), 'mods')).toEqual([]);
+    const store = new MemoryStore({ 'mods/.co-op-old-a.opmod': bytes(1) }, { write: false });
+    expect(await recoverTree(store, 'mods')).toEqual([]);
   });
 });

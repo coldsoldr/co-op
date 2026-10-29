@@ -130,6 +130,7 @@ test('detects an opus drive by its mods folder and lists the plugins', async ({ 
   mkdirSync(join(drive, 'mods'), { recursive: true });
   writeFileSync(join(drive, 'mods', 'x.opmod'), Buffer.from('OPMD\u0001\u0002\u0003\u0004', 'latin1'));
   writeFileSync(join(drive, 'mods', 'y.opmod'), Buffer.from('nope', 'latin1'));
+  writeFileSync(join(drive, 'mods', '.co-op-tmp-z.opmod'), Buffer.from('OPMD', 'latin1'));
   await page.goto('./');
   await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
 
@@ -140,6 +141,10 @@ test('detects an opus drive by its mods folder and lists the plugins', async ({ 
   await expect(plugins.locator('tr[data-plugin="mods/x.opmod"] .badge')).toHaveText('ok');
   await expect(plugins.locator('tr[data-plugin="mods/y.opmod"] .badge')).toContainText('not an opus plugin');
   await expect(page.locator('tr[data-path="synth/user/cluster.aif"] .badge')).toHaveText('ok');
+
+  // A read-only copy is never cleaned up, so the leftover is shown, not listed as a plugin.
+  await expect(plugins.getByRole('status')).toContainText('mods/.co-op-tmp-z.opmod');
+  await expect(plugins.locator('tbody tr')).toHaveCount(2);
 
   // Switching to stock hides the opus-only section.
   await page.getByLabel('Profile').selectOption('op1/stock');

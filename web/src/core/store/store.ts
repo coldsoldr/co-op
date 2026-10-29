@@ -16,6 +16,11 @@ export interface DeviceStore extends DirectoryListing {
   readonly label: string;
   /** Throws StoreError if the path is missing or is a folder. */
   read(path: string): Promise<Uint8Array>;
+  /**
+   * The first `n` bytes of a file (fewer when the file is shorter), without reading the rest.
+   * Optional: callers fall back to read. Throws StoreError if the path is missing or is a folder.
+   */
+  readHead?(path: string, n: number): Promise<Uint8Array>;
   /** Size in bytes without reading the file. Throws StoreError if missing. */
   size(path: string): Promise<number>;
   /** True when the path names an existing file or folder. */

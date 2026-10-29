@@ -90,3 +90,18 @@ export async function recoverStranded(store: DeviceStore, folder: string): Promi
   }
   return restored;
 }
+
+/**
+ * recoverStranded on `root` and every folder below it, skipping dot folders. For trees such as
+ * opus's mods/, whose plugins may keep their own subfolders. Returns the restored paths.
+ */
+export async function recoverTree(store: DeviceStore, root: string): Promise<string[]> {
+  if (!store.capabilities.write) return [];
+  const restored = await recoverStranded(store, root);
+  for (const entry of await store.list(root)) {
+    if (entry.kind === 'dir' && !entry.name.startsWith('.')) {
+      restored.push(...(await recoverTree(store, joinPath(root, entry.name))));
+    }
+  }
+  return restored;
+}

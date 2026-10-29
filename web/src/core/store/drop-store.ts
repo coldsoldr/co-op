@@ -78,6 +78,15 @@ export class DropStore implements DeviceStore {
     }
   }
 
+  async readHead(path: string, n: number): Promise<Uint8Array> {
+    const file = this.file(path);
+    try {
+      return new Uint8Array(await file.slice(0, Math.max(0, n)).arrayBuffer());
+    } catch (error) {
+      throw new StoreError(`cannot read ${joinPath(path)}: ${(error as Error).message}`, { cause: error });
+    }
+  }
+
   async size(path: string): Promise<number> {
     return this.file(path).size;
   }

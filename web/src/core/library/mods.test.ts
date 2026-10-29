@@ -17,7 +17,7 @@ describe('listOpusPlugins', () => {
       'mods/.hidden.opmod': bytes(...OPMD),
       'synth/user/a.aif': bytes(1),
     });
-    expect(await listOpusPlugins(store)).toEqual([
+    expect((await listOpusPlugins(store)).plugins).toEqual([
       { path: 'mods/Alpha.OPMOD', name: 'Alpha.OPMOD', sizeBytes: 4, valid: true, error: null },
       { path: 'mods/broken.opmod', name: 'broken.opmod', sizeBytes: 5, valid: false, error: null },
       { path: 'mods/short.opmod', name: 'short.opmod', sizeBytes: 1, valid: false, error: null },
@@ -27,20 +27,55 @@ describe('listOpusPlugins', () => {
 
   it('finds the mods folder whatever its case', async () => {
     const store = new MemoryStore({ 'MODS/a.opmod': bytes(...OPMD) });
-    expect((await listOpusPlugins(store)).map((p) => p.path)).toEqual(['MODS/a.opmod']);
+    expect((await listOpusPlugins(store)).plugins.map((p) => p.path)).toEqual(['MODS/a.opmod']);
   });
 
   it('returns nothing without a mods folder', async () => {
-    expect(await listOpusPlugins(new MemoryStore({ 'synth/user/a.aif': bytes(1) }))).toEqual([]);
+    expect(await listOpusPlugins(new MemoryStore({ 'synth/user/a.aif': bytes(1) }))).toEqual({ plugins: [], leftovers: [] });
   });
 
   it('reports a file it cannot read instead of failing the list', async () => {
     const store = new MemoryStore({ 'mods/a.opmod': bytes(...OPMD) });
-    store.read = async () => {
+    store.readHead = async () => {
       throw new Error('gone');
     };
-    expect(await listOpusPlugins(store)).toEqual([
+    expect((await listOpusPlugins(store)).plugins).toEqual([
       { path: 'mods/a.opmod', name: 'a.opmod', sizeBytes: 4, valid: false, error: 'gone' },
     ]);
+  });
+});
+
+describe('listOpusPlugins details', () => {
+  it('reads only the head of each plugin', async () => {
+    const store = new MemoryStore({ 'mods/a.opmod': bytes(...OPMD, 9, 9, 9) });
+    const asked: number[] = [];
+    const head = store.readHead.bind(store);
+    store.read = async () => {
+      throw new Error('read the whole file');
+    };
+    store.readHead = async (path, n) => {
+      asked.push(n);
+      return head(path, n);
+    };
+    expect((await listOpusPlugins(store)).plugins[0]).toMatchObject({ valid: true, sizeBytes: 7 });
+    expect(asked).toEqual([4]);
+  });
+
+  it('falls back to read for a store without readHead', async () => {
+    const store = new MemoryStore({ 'mods/a.opmod': bytes(...OPMD) });
+    Object.defineProperty(store, 'readHead', { value: undefined });
+    expect((await listOpusPlugins(store)).plugins[0]?.valid).toBe(true);
+  });
+
+  it('lists co-op leftovers anywhere under mods', async () => {
+    const store = new MemoryStore({
+      'mods/a.opmod': bytes(...OPMD),
+      'mods/.co-op-old-b.opmod': bytes(...OPMD),
+      'mods/dx/.co-op-tmp-bank.syx': bytes(1),
+      'mods/.DS_Store': bytes(1),
+    });
+    expect(await listOpusPlugins(store)).toMatchObject({
+      leftovers: ['mods/.co-op-old-b.opmod', 'mods/dx/.co-op-tmp-bank.syx'],
+    });
   });
 });
