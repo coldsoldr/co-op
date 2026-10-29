@@ -20,6 +20,8 @@ import { ConfirmDialog } from './Dialog';
 import { saveBlob, zipBlob } from './download';
 import { compatView, dateStamp, formatSize, groupByFolder, kindMismatchText, rootOf, traitDetails } from './format';
 import type { SoundTraits } from '../core/codec/sound-traits';
+import { listOpusPlugins, type OpusPlugin } from '../core/library/mods';
+import type { DeviceStore } from '../core/store/store';
 import { PatchActions } from './PatchActions';
 import { UploadDialog, uploadUnavailable } from './Op1FunUpload';
 import type { Op1Fun } from './useOp1Fun';
@@ -457,6 +459,10 @@ function Connected({ device, active, op1fun }: { device: Device; active: boolean
         </>
       )}
 
+      {device.profile.firmware === 'opus' && (
+        <OpusPlugins store={source.store} exclusive={device.exclusive} rows={device.rows} />
+      )}
+
       <BackupPanel
         store={source.store}
         profile={device.profile}
@@ -608,5 +614,79 @@ function TraitsPopover({ row, traits }: { row: LibraryRow; traits: SoundTraits }
         ))}
       </dl>
     </details>
+  );
+}
+
+/**
+ * The opus profile's read-only list of plugins in mods/: file names in load order and sizes,
+ * flagging files that do not start with the OPMD magic. Re-read whenever the library reloads.
+ */
+function OpusPlugins({
+  store,
+  exclusive,
+  rows,
+}: {
+  store: DeviceStore;
+  exclusive: Device['exclusive'];
+  rows: readonly LibraryRow[];
+}) {
+  const [plugins, setPlugins] = useState<OpusPlugin[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    exclusive(() => listOpusPlugins(store)).then(
+      (list) => {
+        if (!live) return;
+        setPlugins(list);
+        setError(null);
+      },
+      (e: unknown) => {
+        if (live) setError(messageOf(e));
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [store, exclusive, rows]);
+
+  return (
+    <section className="panel" aria-labelledby="opus-plugins-heading">
+      <h3 id="opus-plugins-heading">Installed opus plugins</h3>
+      {error && <p className="error">Could not list mods: {error}</p>}
+      {plugins === null && !error && <p role="status">Reading mods…</p>}
+      {plugins?.length === 0 && <p>No .opmod files in the mods folder.</p>}
+      {plugins && plugins.length > 0 && (
+        <table className="plugins">
+          <caption>{plugins.length} plugin file(s) in mods, in the order opus loads them</caption>
+          <thead>
+            <tr>
+              <th scope="col">File</th>
+              <th scope="col">Size</th>
+              <th scope="col">Check</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plugins.map((plugin) => (
+              <tr key={plugin.path} data-plugin={plugin.path}>
+                <td>
+                  <code>{plugin.name}</code>
+                </td>
+                <td>{formatSize(plugin.sizeBytes)}</td>
+                <td>
+                  {plugin.error ? (
+                    <span className="badge unreadable">unreadable ({plugin.error})</span>
+                  ) : plugin.valid ? (
+                    <span className="badge ok">ok</span>
+                  ) : (
+                    <span className="badge unsupported">not an opus plugin (no OPMD header)</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }

@@ -110,3 +110,38 @@ test('warns before installing a hundekraft pack patch onto a stock drive', async
   await page.getByRole('tab', { name: 'Library' }).click();
   await expect(page.locator('tr[data-path="synth/saws/saw.aif"] .badge')).toContainText('unsupported');
 });
+
+test('a profile chosen by hand is never second-guessed', async ({ page }) => {
+  writeFileSync(join(drive, 'synth', 'user', 'saw.aif'), supersaw());
+  await page.goto('./');
+  await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
+  const suggestion = page.getByRole('status').filter({ hasText: 'Switch profile?' });
+  await expect(suggestion).toBeVisible();
+  await page.getByLabel('Profile').selectOption('op1/stock');
+  await expect(page.getByText('chosen by hand')).toBeVisible();
+  await expect(page.locator('tr[data-path="synth/user/saw.aif"] .badge')).toContainText('unsupported');
+  await expect(suggestion).toBeHidden();
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(page.locator('tbody tr[data-path]')).toHaveCount(2);
+  await expect(suggestion).toBeHidden();
+});
+
+test('detects an opus drive by its mods folder and lists the plugins', async ({ page }) => {
+  mkdirSync(join(drive, 'mods'), { recursive: true });
+  writeFileSync(join(drive, 'mods', 'x.opmod'), Buffer.from('OPMD\u0001\u0002\u0003\u0004', 'latin1'));
+  writeFileSync(join(drive, 'mods', 'y.opmod'), Buffer.from('nope', 'latin1'));
+  await page.goto('./');
+  await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
+
+  await expect(page.getByLabel('Profile')).toHaveValue('op1/opus');
+  await expect(page.getByText('detected: found mods folder with opus plugins')).toBeVisible();
+  const plugins = page.getByRole('region', { name: 'Installed opus plugins' });
+  await expect(plugins.locator('tr[data-plugin="mods/x.opmod"]')).toContainText('8 B');
+  await expect(plugins.locator('tr[data-plugin="mods/x.opmod"] .badge')).toHaveText('ok');
+  await expect(plugins.locator('tr[data-plugin="mods/y.opmod"] .badge')).toContainText('not an opus plugin');
+  await expect(page.locator('tr[data-path="synth/user/cluster.aif"] .badge')).toHaveText('ok');
+
+  // Switching to stock hides the opus-only section.
+  await page.getByLabel('Profile').selectOption('op1/stock');
+  await expect(plugins).toBeHidden();
+});
