@@ -26,8 +26,9 @@ compares saved sounds against. Offsets are into that file:
 | --- | --- | --- |
 | 0x217b9..0x217e5 | grid, punch, delay, phone, spring, cwo, nitro | the seven stock effects |
 | 0x217ed..0x21825 | midi, quad, tremolo, value, random, element, bend, crank | stock LFOs plus `quad` |
-| 0x2182d, 0x21839 | fm, iter (between `knobs` and `sitting`) | stock engines handled apart |
-| 0x218e1..0x21939 | digital, drwave, string, cluster, pulse, sampler, phase, drum, dbox, dna, dsynth, voltage | the stock engine table |
+| 0x2182d | fm (after `crank`, before `knobs`) | stock engine handled apart |
+| 0x21839 | iter (between `knobs` and `sitting`) | stock engine handled apart |
+| 0x218e1..0x21939 | digital, drwave, string, cluster, pulse, sampler, phase, drum, dbox, dna, dsynth, voltage | the stock engine table; a two-letter `ls` at 0x21929 between dbox and dna is not an engine name |
 | 0x21941, 0x2194d | gin_state, gin | hundekraft Gin kits, right after the stock table |
 
 `quad` sits in the LFO table but hundekraft's manifest and manual list the
@@ -50,6 +51,10 @@ the insert by a test that skips without `vendor/`):
   and midi rest on the table alone; no real file uses them yet.
 - Drum engines: drum, dbox. No real DBox file yet, so its field set is
   still unconfirmed (the codec accepts `dbox` with a string `name`).
+  Revisit with a real DBox file: hundekraft builds Gin kits from the
+  stock DBox fields plus `dbox_data`, so `dbox_data` may be a stock
+  DBox field. Until that is known, only `type: "gin"` or a `gin_state`
+  member marks a Gin kit; `dbox_data` alone does not.
 
 Selector words seen in the presets: every hundekraft engine sets
 `knobs[4]` to a word in 0x5300..0x53FF (supersaw 0x5301 to elg 0x5307;

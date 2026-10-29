@@ -21,6 +21,7 @@ describe('soundTraits', () => {
       fx: 'nitro',
       lfo: 'value',
       engineSelector: null,
+      opusMark: null,
       fxSelector: null,
       hasGin: false,
       hasOpus: false,
@@ -66,9 +67,10 @@ describe('soundTraits', () => {
 
   it('reads an opus engine mark only when there is an opus member', () => {
     const knobs = [0, 0, 0, 0, 0x100, 0, 0, 0];
-    expect(soundTraits(meta({ type: 'iter', knobs }))?.engineSelector).toBeNull();
+    expect(soundTraits(meta({ type: 'iter', knobs }))).toMatchObject({ engineSelector: null, opusMark: null });
     const opus = soundTraits(meta({ type: 'iter', knobs, opus: { plugin: 'opus.dx' } }));
-    expect(opus?.engineSelector).toBe(0x100);
+    expect(opus?.opusMark).toBe(0x100);
+    expect(opus?.engineSelector).toBeNull();
     expect(opus?.hasOpus).toBe(true);
     expect(opus?.opusPlugin).toBe('opus.dx');
   });
@@ -79,6 +81,12 @@ describe('soundTraits', () => {
     );
     expect(traits?.opusEffects).toEqual(['opus.bitcrush']);
     expect(traits?.opusPlugin).toBe('opus.amp');
+  });
+
+  it('only falls back to strings that look like an opus plugin id', () => {
+    expect(soundTraits(meta({ opus: { note: 'hello there' } }))?.opusPlugin).toBeNull();
+    expect(soundTraits(meta({ opus: { note: 'opus.bad id' } }))?.opusPlugin).toBeNull();
+    expect(soundTraits(meta({ opus: { note: 'opus.out_a-time2' } }))?.opusPlugin).toBe('opus.out_a-time2');
   });
 
   it('has no plugin when the opus member names none', () => {
@@ -96,6 +104,12 @@ describe('soundTraits', () => {
     } as unknown as Op1Meta;
     expect(soundTraits(gin)).toMatchObject({ kind: 'drum', engine: 'gin', hasGin: true });
     expect(soundTraits({ ...DRUM_META, type: 'dbox' } as Op1Meta)).toMatchObject({ kind: 'drum', engine: 'dbox', hasGin: false });
+    expect(soundTraits({ ...DRUM_META, type: 'gin' } as Op1Meta)?.hasGin).toBe(true);
+  });
+
+  it('does not take dbox_data alone for a Gin kit: stock DBox kits may carry it too', () => {
+    const dbox = { ...DRUM_META, type: 'dbox', dbox_data: [[0, 0, 0, 0, 0, 0, 0, 0]] } as unknown as Op1Meta;
+    expect(soundTraits(dbox)?.hasGin).toBe(false);
   });
 });
 

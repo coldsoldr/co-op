@@ -92,6 +92,8 @@ describe('op1/hundekraft sniff', () => {
       synth({ type: 'iter', knobs: selector(0x100), opus: { plugin: 'opus.dx' } }),
       synth({ knobs: selector(0x5301) }),
       synth({ fx_params: selector(0x5304) }),
+      withMeta(fixture('drum-boombap.aif'), { ...DRUM_META, type: 'dbox', dbox_data: [[0, 0, 0, 0, 0, 0, 0, 0]] } as Op1Meta),
+      synth({ fx_type: 'tape', opus: { plugin: 'opus.dx' } }),
     ]);
     expect(result.confidence).toBe(0);
     expect(op1Hundekraft.sniff!([]).confidence).toBe(0);

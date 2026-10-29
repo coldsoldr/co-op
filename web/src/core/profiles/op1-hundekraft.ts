@@ -56,9 +56,12 @@ const customOnly = (name: string | null, stock: readonly string[], hundekraft: r
 
 /**
  * True when a sound's names (engine, effect, LFO) or Gin members can only have come from
- * hundekraft. Selector words alone do not count: they are legal stock knob values too.
+ * hundekraft. Selector words alone do not count: they are legal stock knob values too. Sounds
+ * with an `opus` member never count: they were saved on opus.
  */
 export function hasHundekraftTraits(traits: SoundTraits): boolean {
+  // An opus sound may name hundekraft-like effects, but it was made on opus.
+  if (traits.hasOpus) return false;
   const engine =
     traits.kind === 'drum'
       ? customOnly(traits.engine, STOCK_DRUM_ENGINES, HUNDEKRAFT_SUPPORTS.drumEngines)

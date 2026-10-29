@@ -20,9 +20,9 @@ const fixture = (name: string) =>
   readPatch(new Uint8Array(readFileSync(fileURLToPath(new URL(`../../../test/fixtures/${name}`, import.meta.url)))));
 
 /** The hundekraft firmware insert (gitignored, GPL): read only to check names, never copied. */
-const FIRMWARE_TABLE = fileURLToPath(
-  new URL('../../../../vendor/hundekraft/op1-workshop-main/base/OP1_vdk.ldr.insert.bin', import.meta.url),
-);
+const FIRMWARE_TABLE =
+  process.env['CO_OP_FIRMWARE_TABLE'] ??
+  fileURLToPath(new URL('../../../../vendor/hundekraft/op1-workshop-main/base/OP1_vdk.ldr.insert.bin', import.meta.url));
 
 /** Every committed fixture with op-1 metadata, real device files included. */
 const META_FIXTURES = ['real/synth.aif', 'real/drum.aif', 'synth-cluster.aif', 'synth-sampler-sowt.aif', 'drum-boombap.aif'];

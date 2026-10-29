@@ -12,11 +12,16 @@ export interface SoundTraits {
   fx: string | null;
   /** `lfo_type`, whether or not the LFO is switched on; null when missing or empty. */
   lfo: string | null;
-  /** `knobs[4]` when it holds an op1r-family selector or an opus engine mark; otherwise null. */
+  /** `knobs[4]` when it holds an op1r-family selector (0x5300..0x53ff); otherwise null. */
   engineSelector: number | null;
+  /** `knobs[4]` when it is an opus engine mark (0x100 or more, with an `opus` member); otherwise null. */
+  opusMark: number | null;
   /** `fx_params[4]` when it holds an op1r-family selector; otherwise null. */
   fxSelector: number | null;
-  /** True for a hundekraft Gin kit: a `gin_state` or `dbox_data` member is present. */
+  /**
+   * True for a hundekraft Gin kit: `type` is 'gin' or a `gin_state` member is present. `dbox_data`
+   * alone does not count: stock DBox kits may carry it too (no real DBox file seen yet).
+   */
   hasGin: boolean;
   /** True when the sound has an `opus` member (saved on opus firmware). */
   hasOpus: boolean;
@@ -37,6 +42,8 @@ export const OPUS_MARK_MIN = 0x100;
  * plugin but not under which key, so these are guesses tried in order before any other string.
  */
 const OPUS_PLUGIN_KEYS = ['plugin', 'engine', 'id', 'name'];
+/** What a plugin id looks like ('opus.dx'); the fallback over other keys only accepts these. */
+const OPUS_PLUGIN_ID = /^opus\.[a-z0-9_-]+$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -62,8 +69,7 @@ function opusPluginOf(opus: Record<string, unknown>): string | null {
   }
   for (const [key, value] of Object.entries(opus)) {
     if (key.endsWith('_type')) continue;
-    const text = nonEmptyString(value);
-    if (text) return text;
+    if (typeof value === 'string' && OPUS_PLUGIN_ID.test(value)) return value;
   }
   return null;
 }
@@ -74,15 +80,16 @@ export function soundTraits(meta: Op1Meta | null): SoundTraits | null {
   const opus = isRecord(meta['opus']) ? meta['opus'] : null;
   const knob4 = slot(meta['knobs'], 4);
   const fx4 = slot(meta['fx_params'], 4);
-  const opusMark = opus !== null && typeof knob4 === 'number' && knob4 >= OPUS_MARK_MIN;
+  const opusMark = opus !== null && typeof knob4 === 'number' && knob4 >= OPUS_MARK_MIN ? knob4 : null;
   return {
     kind: metaKind(meta),
     engine: typeof meta['type'] === 'string' ? meta['type'] : '',
     fx: nonEmptyString(meta['fx_type']),
     lfo: nonEmptyString(meta['lfo_type']),
-    engineSelector: isOp1rSelector(knob4) || opusMark ? (knob4 as number) : null,
+    engineSelector: isOp1rSelector(knob4) ? knob4 : null,
+    opusMark,
     fxSelector: isOp1rSelector(fx4) ? fx4 : null,
-    hasGin: meta['gin_state'] !== undefined || meta['dbox_data'] !== undefined,
+    hasGin: meta['type'] === 'gin' || meta['gin_state'] !== undefined,
     hasOpus: opus !== null,
     opusPlugin: opus ? opusPluginOf(opus) : null,
     opusEffects: opus
