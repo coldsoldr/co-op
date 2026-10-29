@@ -117,6 +117,32 @@ describe('loadPacks', () => {
     ]);
   });
 
+  it('fails a pack whose patch is unsupported on a firmware it declares', async () => {
+    const patch = readPatch(cluster);
+    const saw = withMeta(patch, { ...patch.meta, type: 'supersaw' } as Op1Meta).raw;
+    await put('saws/pack.json', manifest('saws', ['synth/saw.aif', 'synth/cluster.aif'], { firmware: ['op1/stock', 'op1/hundekraft'] }));
+    await put('saws/synth/saw.aif', saw);
+    await put('saws/synth/cluster.aif', cluster);
+    const { issues, index } = await loadPacks(packsDir, { now: NOW });
+    expect(index.packs).toEqual([]);
+    expect(issues).toEqual([
+      {
+        pack: 'saws',
+        file: 'synth/saw.aif',
+        message:
+          'unsupported on op1/stock: engine "supersaw" is not part of this firmware; may stop a stock OP-1 at boot',
+      },
+    ]);
+  });
+
+  it('accepts the same patch in a pack that declares only op1/hundekraft', async () => {
+    const patch = readPatch(cluster);
+    const saw = withMeta(patch, { ...patch.meta, type: 'supersaw' } as Op1Meta).raw;
+    await put('saws/pack.json', manifest('saws', ['synth/saw.aif'], { firmware: ['op1/hundekraft'] }));
+    await put('saws/synth/saw.aif', saw);
+    expect((await loadPacks(packsDir, { now: NOW })).issues).toEqual([]);
+  });
+
   it('accepts op1/hundekraft as a registered firmware', async () => {
     await put('hk/pack.json', manifest('hk', ['synth/cluster.aif'], { firmware: ['op1/stock', 'op1/hundekraft'] }));
     await put('hk/synth/cluster.aif', cluster);

@@ -77,7 +77,7 @@ mode (**Format → Make Plain Text**).
 | `author` | 1 to 60 characters. |
 | `description` | 1 to 500 characters. |
 | `license` | One of `CC0-1.0`, `CC-BY-4.0`, `CC-BY-SA-4.0`, `CC-BY-NC-4.0`, `CC-BY-NC-SA-4.0`. See below. |
-| `firmware` | At least one device profile the patches are made for. Today `op1/stock`, `op1/hundekraft` and `op1/opus`. List `op1/stock` only when every patch uses stock engines, effects and LFOs: other sounds can stop a stock OP-1 at boot. |
+| `firmware` | At least one device profile the patches are made for. Today `op1/stock`, `op1/hundekraft` and `op1/opus`. Validation fails when a patch is unsupported on a listed profile (for example a hundekraft engine under `op1/stock`, which can stop a stock OP-1 at boot). |
 | `tags` | Optional, up to 8 tags of 1 to 20 lower-case letters, digits or hyphens. |
 | `patches` | 1 to 100 entries. `file` is `synth/<name>.aif` or `drum/<name>.aif` (`.aif` or `.aiff`, any case); `notes` is optional, up to 200 characters. |
 

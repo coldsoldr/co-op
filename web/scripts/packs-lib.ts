@@ -25,7 +25,7 @@ import {
   type ParsedPackPatch,
 } from '@co-op/shared/packs';
 import { readPatch } from '../src/core/codec/patch';
-import { profiles } from '../src/core/profiles/registry';
+import { getProfile, profiles } from '../src/core/profiles/registry';
 
 /** The repository's packs/ folder. */
 export const DEFAULT_PACKS_DIR = fileURLToPath(new URL('../../packs', import.meta.url));
@@ -133,6 +133,20 @@ async function loadPack(
     return info;
   });
   if (fileIssues.length > 0) return { issues: fileIssues, entry: null };
+
+  // A pack may only claim firmware its patches are safe on: an unsupported patch on stock can
+  // stop the OP-1 at boot.
+  const compatIssues: PackIssue[] = [];
+  for (const { file } of manifest.patches) {
+    const patch = readPatch((parsed.get(file) as { bytes: Uint8Array }).bytes);
+    for (const id of manifest.firmware) {
+      const compat = getProfile(id)?.compatibility(patch);
+      if (compat?.level === 'unsupported') {
+        compatIssues.push({ pack: folder, file, message: `unsupported on ${id}: ${compat.reason ?? 'unsupported'}` });
+      }
+    }
+  }
+  if (compatIssues.length > 0) return { issues: compatIssues, entry: null };
 
   const patches: PackIndexPatch[] = manifest.patches.map(({ file, notes }) => {
     const { info, bytes } = parsed.get(file) as { info: ParsedPackPatch; bytes: Uint8Array };
