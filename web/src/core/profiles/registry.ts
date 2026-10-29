@@ -1,5 +1,6 @@
 import type { DeviceProfile, DetectResult } from './types';
 import type { DirectoryListing } from '../store/listing';
+import type { SoundTraits } from '../codec/sound-traits';
 import { op1Stock } from './op1-stock';
 import { op1Hundekraft } from './op1-hundekraft';
 
@@ -48,4 +49,33 @@ export async function detectProfiles(
   return (await runDetectors(root, candidates))
     .filter((r) => r.result.confidence > 0)
     .sort((a, b) => b.result.confidence - a.result.confidence);
+}
+
+/**
+ * Content detection after the library loads: runs every candidate's sniff over the loaded
+ * patches' traits and returns the best one when it is not the active profile and is more
+ * confident than the active profile's folder detection was. Null otherwise, and always null
+ * without traits. A sniff that throws counts as confidence 0. The result is only a suggestion:
+ * patch contents prove where sounds came from, not which firmware is installed now.
+ */
+export function suggestProfile(
+  traits: readonly SoundTraits[],
+  active: DeviceProfile,
+  activeConfidence: number,
+  candidates: readonly DeviceProfile[] = profiles,
+): RankedProfile | null {
+  if (traits.length === 0) return null;
+  let best: RankedProfile | null = null;
+  for (const profile of candidates) {
+    if (!profile.sniff) continue;
+    let result: DetectResult;
+    try {
+      result = profile.sniff(traits);
+    } catch {
+      continue;
+    }
+    if (result.confidence > 0 && (!best || result.confidence > best.result.confidence)) best = { profile, result };
+  }
+  if (!best || best.profile.id === active.id || best.result.confidence <= activeConfidence) return null;
+  return best;
 }

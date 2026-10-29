@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { profiles, getProfile, detectProfiles, runDetectors } from './registry';
+import { profiles, getProfile, detectProfiles, runDetectors, suggestProfile } from './registry';
+import { soundTraits, type SoundTraits } from '../codec/sound-traits';
+import { SYNTH_META } from '../../../test/fixtures/meta';
 import type { DeviceProfile, DetectResult } from './types';
 import { MemoryListing } from '../store/memory-listing';
 
@@ -85,5 +87,40 @@ describe('profile registry', () => {
     expect(results[1]?.result).toEqual({ confidence: 0.5, reason: 'fixed 0.5' });
     const ranked = await detectProfiles(new MemoryListing({}), [broken, fixed('fine', 0.5)]);
     expect(ranked.map((r) => r.profile.id)).toEqual(['fine']);
+  });
+});
+
+describe('suggestProfile', () => {
+  const sniffing = (id: string, confidence: number): DeviceProfile => ({
+    ...fixed(id, 0.9),
+    sniff: () => ({ confidence, reason: `${id} sniffed` }),
+  });
+  const traits = [soundTraits(SYNTH_META) as SoundTraits];
+
+  it('suggests the best sniffing profile when it beats the active folder confidence', () => {
+    const stock = fixed('stock', 0.9);
+    const hk = sniffing('hk', 0.95);
+    expect(suggestProfile(traits, stock, 0.9, [stock, sniffing('low', 0.5), hk])).toEqual({
+      profile: hk,
+      result: { confidence: 0.95, reason: 'hk sniffed' },
+    });
+  });
+
+  it('suggests nothing when the active profile is the best, or nothing beats it', () => {
+    const hk = sniffing('hk', 0.95);
+    expect(suggestProfile(traits, hk, 0.85, [fixed('stock', 0.9), hk])).toBeNull();
+    expect(suggestProfile(traits, fixed('stock', 0.9), 0.95, [hk])).toBeNull();
+    expect(suggestProfile(traits, fixed('stock', 0.9), 0.9, [sniffing('none', 0)])).toBeNull();
+  });
+
+  it('suggests nothing without loaded patches', () => {
+    expect(suggestProfile([], fixed('stock', 0.9), 0, [sniffing('hk', 0.95)])).toBeNull();
+  });
+
+  it('suggests hundekraft for a stock drive holding hundekraft sounds', () => {
+    const supersaw = soundTraits({ ...SYNTH_META, type: 'supersaw' }) as SoundTraits;
+    const stock = profiles[0] as DeviceProfile;
+    expect(suggestProfile([supersaw], stock, 0.9)?.profile.id).toBe('op1/hundekraft');
+    expect(suggestProfile(traits, stock, 0.9)).toBeNull();
   });
 });
