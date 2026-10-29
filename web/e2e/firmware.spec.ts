@@ -146,6 +146,8 @@ test('detects an opus drive by its mods folder and lists the plugins', async ({ 
   await expect(plugins.getByRole('status')).toContainText('mods/.co-op-tmp-z.opmod');
   await expect(plugins.locator('tbody tr')).toHaveCount(2);
 
+  await expect(page.getByText('also include mods/ (the opus plugins)')).toBeVisible();
+
   // Switching to stock hides the opus-only section.
   await page.getByLabel('Profile').selectOption('op1/stock');
   await expect(plugins).toBeHidden();

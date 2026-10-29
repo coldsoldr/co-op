@@ -1,7 +1,7 @@
 import { Zip, ZipPassThrough, strFromU8, strToU8, unzipSync } from 'fflate';
 import { writeAtomic } from '../store/atomic';
 import { StoreError, joinPath, splitPath, type DeviceStore } from '../store/store';
-import { getProfile } from '../profiles/registry';
+import { getProfile, profiles } from '../profiles/registry';
 import type { DeviceProfile } from '../profiles/types';
 import { byCodePoint, bytesEqual, sha256Hex } from '../util';
 
@@ -168,12 +168,15 @@ function isSafePath(path: string): boolean {
 
 /**
  * The folders a backup may hold and that diffBackup compares: the profile's backup roots, or, for a
- * profile this build does not know, the top-level folders of the backed-up paths.
+ * profile this build does not know, the union of every known profile's backup roots, so a backup
+ * from elsewhere can never write outside the folders co-op manages.
  */
 function coveredRoots(manifest: BackupManifest): string[] {
   const profile = getProfile(manifest.profile);
   if (profile) return backupRoots(profile);
-  return [...new Set(manifest.files.filter((f) => splitPath(f.path).length > 1).map((f) => splitPath(f.path)[0] as string))];
+  const roots = new Map<string, string>();
+  for (const known of profiles) for (const root of backupRoots(known)) roots.set(root.toLowerCase(), root);
+  return [...roots.values()];
 }
 
 /** True when `path` is inside one of `roots` (compared ignoring case, as on the FAT drive). */

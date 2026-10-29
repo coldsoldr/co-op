@@ -201,9 +201,11 @@ describe('readBackup', () => {
     await expect(readBackup(zip)).rejects.toThrow(/case/);
   });
 
-  it('accepts any folder path for a profile it does not know, but not a top-level file', async () => {
-    const ok = handMade({ 'presets/a.aif': b(1) }, 'future/device');
-    expect([...(await readBackup(ok)).files.keys()]).toEqual(['presets/a.aif']);
+  it('limits a backup of a profile it does not know to the folders any known profile backs up', async () => {
+    const ok = handMade({ 'synth/x/a.aif': b(1), 'mods/a.opmod': b(2) }, 'future/device');
+    expect([...(await readBackup(ok)).files.keys()]).toEqual(['synth/x/a.aif', 'mods/a.opmod']);
+    await expect(readBackup(handMade({ 'presets/a.aif': b(1) }, 'future/device'))).rejects.toThrow(/outside/);
+    await expect(readBackup(handMade({ 'tape/a.aif': b(1) }, 'future/device'))).rejects.toThrow(/outside/);
     await expect(readBackup(handMade({ 'a.aif': b(1) }, 'future/device'))).rejects.toThrow(/outside/);
   });
 });
@@ -239,12 +241,12 @@ describe('diffBackup and applyRestore', () => {
     expect((await diffBackup(store, backup)).entries).toEqual([{ path: 'synth/user/a.aif', status: 'changed' }]);
   });
 
-  it('uses the top-level folders of the backup for a profile it does not know', async () => {
-    const backup = await readBackup(handMade({ 'presets/a.aif': b(1) }, 'future/device'));
-    const store = new MemoryStore({ 'presets/a.aif': b(1), 'presets/b.aif': b(2), 'synth/user/c.aif': b(3) });
+  it('compares the folders any known profile backs up for a profile it does not know', async () => {
+    const backup = await readBackup(handMade({ 'synth/user/a.aif': b(1) }, 'future/device'));
+    const store = new MemoryStore({ 'synth/user/a.aif': b(1), 'mods/x.opmod': b(2), 'tape/t.aif': b(3) });
     expect(await diffBackup(store, backup)).toEqual({
-      entries: [{ path: 'presets/a.aif', status: 'same' }],
-      onDeviceOnly: ['presets/b.aif'],
+      entries: [{ path: 'synth/user/a.aif', status: 'same' }],
+      onDeviceOnly: ['mods/x.opmod'],
     });
   });
 

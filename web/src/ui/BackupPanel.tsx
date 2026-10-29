@@ -59,6 +59,9 @@ class NeedsConfirmation extends Error {
   }
 }
 
+/** True for a file under mods/, which holds opus plugins rather than patches. */
+const isPluginFile = (path: string): boolean => path.toLowerCase().startsWith('mods/');
+
 /** Paths among `selected` that still differ from the backup, and those of them that would overwrite. */
 function plan(diff: BackupDiff, selected: ReadonlySet<string>): { paths: string[]; overwrites: string[] } {
   const chosen = diff.entries.filter((e) => selected.has(e.path) && e.status !== 'same');
@@ -199,6 +202,7 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
   const sameCount = pending ? pending.diff.entries.length - changedOrNew.length : 0;
   const profileMismatch = pending && pending.backup.manifest.profile !== profile.id;
   const working = busy || backupProgress !== null || restoreProgress !== null;
+  const extraRoots = profile.layout.backupOtherRoots ?? [];
 
   return (
     <section className="panel" aria-labelledby="backup-heading">
@@ -223,6 +227,12 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
       {backupError && (
         <p role="alert" className="error">
           Backup failed: {backupError}
+        </p>
+      )}
+      {extraRoots.length > 0 && (
+        <p className="muted">
+          Backups with the {profile.label} profile also include {extraRoots.map((r) => `${r}/`).join(', ')}
+          {extraRoots.includes('mods') ? ' (the opus plugins)' : ''}.
         </p>
       )}
 
@@ -264,6 +274,7 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
                         onChange={(ev) => toggle(e.path, ev.target.checked)}
                       />{' '}
                       <code>{e.path}</code> <span className={`tag ${e.status}`}>{e.status}</span>
+                      {isPluginFile(e.path) && <span className="tag plugin"> plugin file</span>}
                     </label>
                   </li>
                 ))}
