@@ -10,6 +10,8 @@ export interface Env {
   FEEDBACK_LIMIT?: RateLimiter;
   /** Shared limit across all clients, checked with the single key 'global'. */
   FEEDBACK_GLOBAL_LIMIT?: RateLimiter;
+  /** Per-client limit for the op1.fun routes, keyed op1fun-upload:<client> and op1fun-file:<client>. */
+  OP1FUN_LIMIT?: RateLimiter;
 }
 
 export interface RateLimiter {

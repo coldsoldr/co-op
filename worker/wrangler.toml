@@ -27,3 +27,12 @@ simple = { limit = 5, period = 60 }
 name = "FEEDBACK_GLOBAL_LIMIT"
 namespace_id = "1002"
 simple = { limit = 30, period = 60 }
+
+# OP1FUN_LIMIT: 60 requests per 60 seconds per client for the op1.fun routes, keyed
+# "op1fun-upload:<client>" and "op1fun-file:<client>" so uploads and file downloads count
+# separately. Installing a pack through the file proxy fetches one file per patch, so this is
+# higher than the feedback limit.
+[[ratelimits]]
+name = "OP1FUN_LIMIT"
+namespace_id = "1003"
+simple = { limit = 60, period = 60 }

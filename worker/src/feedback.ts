@@ -4,41 +4,16 @@
  */
 import { issueBody, issueTitle, validateFeedback } from '@co-op/shared/feedback';
 import type { Env } from './env';
-import { allowedHostnames, clientKey, errors, json } from './http';
+import { allowedHostnames, clientKey, errors, json, readCapped } from './http';
 
 export const MAX_BODY_BYTES = 16 * 1024;
 export const SUBREQUEST_TIMEOUT_MS = 10_000;
 const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
-/**
- * The body as text, or null once it passes MAX_BODY_BYTES. A declared Content-Length over the
- * cap is refused without reading; otherwise the stream is counted as it arrives and cancelled as
- * soon as it goes over, so a missing or lying Content-Length cannot make the Worker buffer more.
- */
-async function readCapped(request: Request): Promise<string | null> {
-  const declared = Number(request.headers.get('Content-Length'));
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return null;
-  if (request.body === null) return '';
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > MAX_BODY_BYTES) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
+/** The body as text, or null once it passes MAX_BODY_BYTES (see readCapped). */
+async function readText(request: Request): Promise<string | null> {
+  const bytes = await readCapped(request, MAX_BODY_BYTES);
+  return bytes === null ? null : new TextDecoder().decode(bytes);
 }
 
 /** Both limiters, when bound: per client (IPv4 address or IPv6 /64), then one shared key. */
@@ -72,7 +47,7 @@ async function verifyTurnstile(token: string, ip: string | null, env: Env): Prom
 }
 
 export async function handleFeedback(request: Request, env: Env, origin: string): Promise<Response> {
-  const text = await readCapped(request);
+  const text = await readText(request);
   if (text === null) return errors(413, ['feedback is too large'], origin);
 
   let input: unknown;

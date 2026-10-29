@@ -31,8 +31,8 @@ export function corsHeaders(origin: string | null): Record<string, string> {
   if (origin === null) return { Vary: 'Origin' };
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    // X-User-Email and X-User-Token are for the op1.fun upload proxy (Phase 6).
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    // X-User-Email and X-User-Token are for the op1.fun upload proxy.
     'Access-Control-Allow-Headers': 'Content-Type, X-User-Email, X-User-Token',
     'Access-Control-Expose-Headers': 'Retry-After',
     'Access-Control-Max-Age': '86400',
@@ -72,4 +72,35 @@ export function clientKey(ip: string | null): string {
   const prefix = all.slice(0, 4);
   if (prefix.length < 4 || prefix.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return ip.toLowerCase();
   return `${prefix.map((g) => parseInt(g, 16).toString(16)).join(':')}::/64`;
+}
+
+/**
+ * The body as bytes, or null once it passes `max` bytes. A declared Content-Length over the cap is
+ * refused without reading; otherwise the stream is counted as it arrives and cancelled as soon as
+ * it goes over, so a missing or lying Content-Length cannot make the Worker buffer more.
+ */
+export async function readCapped(request: Request, max: number): Promise<Uint8Array | null> {
+  const declared = Number(request.headers.get('Content-Length'));
+  if (Number.isFinite(declared) && declared > max) return null;
+  if (request.body === null) return new Uint8Array(0);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }

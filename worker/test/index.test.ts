@@ -24,7 +24,7 @@ describe('worker routing and CORS', () => {
       );
       expect(res.status).toBe(204);
       expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ORIGIN);
-      expect(res.headers.get('Access-Control-Allow-Methods')).toBe('POST, OPTIONS');
+      expect(res.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, OPTIONS');
       expect(res.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type, X-User-Email, X-User-Token');
       expect(res.headers.get('Access-Control-Expose-Headers')).toBe('Retry-After');
       expect(res.headers.get('Access-Control-Max-Age')).toBe('86400');
@@ -68,11 +68,11 @@ describe('worker routing and CORS', () => {
     expect(res.status).toBe(403);
   });
 
-  it('returns 501 for the op1.fun proxy until Phase 6', async () => {
+  it('routes the op1.fun upload proxy (credentials are checked first)', async () => {
     const res = await call(request('/op1fun/patches', { body: '{}' }));
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(401);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ORIGIN);
-    expect(await res.json()).toEqual({ errors: ['not implemented'] });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('returns 404 with CORS headers for unknown routes and methods', async () => {
@@ -82,6 +82,8 @@ describe('worker routing and CORS', () => {
       ['PUT', '/feedback'],
       ['POST', '/feedback/extra'],
       ['GET', '/op1fun/patches'],
+      ['POST', '/op1fun/file'],
+      ['GET', '/op1fun/file/x'],
     ] as const) {
       const res = await call(request(path, { method }));
       expect(res.status, `${method} ${path}`).toBe(404);
