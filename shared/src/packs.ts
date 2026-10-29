@@ -35,7 +35,8 @@ export const README_FILE = 'README.md';
 
 /** A pack slug: lower-case letters and digits in words joined by single hyphens. */
 export const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const TAG = /^[a-z0-9-]{1,20}$/;
+/** A tag: 1 to 20 lower-case letters, digits or hyphens. */
+export const TAG = /^[a-z0-9-]{1,20}$/;
 
 export interface PackPatchEntry {
   /** 'synth/<name>.aif' or 'drum/<name>.aif', relative to the pack folder. */
@@ -313,7 +314,7 @@ export interface ParsedPackPatch {
 }
 
 /** '2097153 bytes, over the 2 MB (2097152 bytes) limit': exact bytes, so nothing rounds under. */
-function overLimit(size: number, limit: number): string {
+export function overLimit(size: number, limit: number): string {
   const unit = limit >= 1024 * 1024 ? `${limit / (1024 * 1024)} MB` : `${limit / 1024} KB`;
   return `${size} bytes, over the ${unit} (${limit} bytes) limit`;
 }
