@@ -45,14 +45,20 @@ describe('installPlugins', () => {
     const op1 = device();
     const progress: [number, number][] = [];
     let prompts = 0;
+    let sentBeforePrompt: string[] = [];
     const outcome = await installPlugins(op1, [TAPE_DRIVE], {
       ...fast,
       onProgress: (sent, total) => progress.push([sent, total]),
-      onPrompt: () => prompts++,
+      onPrompt: () => {
+        prompts++;
+        sentBeforePrompt = names(op1.requests);
+      },
     });
     expect(outcome).toBe('accepted');
     expect(op1.installed).toEqual([{ path: TAPE_DRIVE.path, bytes: TAPE_DRIVE.bytes }]);
+    // Once, just before the first COMMIT: from then on the caller must wait for T1 or T2.
     expect(prompts).toBe(1);
+    expect(sentBeforePrompt.at(-1)).toBe('END');
 
     const size = TAPE_DRIVE.bytes.length;
     const pieces = Math.ceil(size / MAX_DATA);
@@ -269,6 +275,25 @@ describe('installPlugins', () => {
     await expect(done).rejects.toThrow('closed');
     expect(op1.prompting).toBe(true);
     expect(op1.installed).toBeNull();
+  });
+
+  it('cannot stop a T1 left on an abandoned prompt from installing the next COMMIT at once', async () => {
+    // Why the caller keeps the install running while the prompt is up: the OP-1 keeps a T1
+    // pressed after the host left, through ABORT, and the next COMMIT applies without a prompt.
+    const op1 = device({ press: undefined });
+    const controller = new AbortController();
+    const first = installPlugins(op1, [DRIVE], { ...fast, signal: controller.signal });
+    while (!op1.prompting) await new Promise((resolve) => setTimeout(resolve, 1));
+    controller.abort(new Error('closed'));
+    await expect(first).rejects.toThrow('closed');
+    op1.pressKey('T1');
+    op1.pressKey('T2');
+    expect(op1.installed).toBeNull();
+
+    const requestsBefore = op1.requests.length;
+    expect(await installPlugins(op1, [TAPE_DRIVE], fast)).toBe('accepted');
+    expect(op1.installed?.map((f) => f.path)).toEqual([TAPE_DRIVE.path]);
+    expect(names(op1.requests.slice(requestsBefore)).filter((n) => n === 'COMMIT')).toEqual(['COMMIT']);
   });
 
   it('reports a silent OP-1 after the prompt as unconfirmed (the ok of a T1 restart was lost)', async () => {

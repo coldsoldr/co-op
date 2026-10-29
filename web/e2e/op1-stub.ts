@@ -90,7 +90,8 @@ export async function stubOp1(page: Page, options: StubOptions): Promise<void> {
         installed: [],
         prompting: false,
         press(key) {
-          if (!stub.prompting) return;
+          // After T1 the prompt takes no more keys.
+          if (!stub.prompting || confirmed) return;
           if (key === 'T1') confirmed = true;
           else {
             open = null;

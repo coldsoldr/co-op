@@ -9,6 +9,24 @@ export const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b
 /** Compares directory entries by name, by code point. */
 export const byEntryName = (a: { name: string }, b: { name: string }): number => byCodePoint(a.name, b.name);
 
+/** Resolves after `ms`, or rejects with the signal's reason as soon as it aborts. */
+export const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
 export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;

@@ -4,7 +4,7 @@ import { fetchPluginBytes } from '../core/plugins/catalogue';
 import { checkDevice, type CheckResult } from '../core/usbmidi/check';
 import { CancelledOnOp1Error, WORKSHOP_URL, installPlugins, type PluginFile } from '../core/usbmidi/install';
 import type { Inventory, InventoryRecord } from '../core/usbmidi/inventory';
-import { messageOf } from '../core/util';
+import { messageOf, sleep } from '../core/util';
 import { Dialog } from './Dialog';
 import { formatSize } from './format';
 import { openOp1Port, waitForOp1Restart } from './webmidi';
@@ -31,19 +31,6 @@ type Step =
   | { step: 'failed'; message: string };
 
 const base = (): string => import.meta.env.BASE_URL;
-
-const sleep = (ms: number, signal: AbortSignal): Promise<void> =>
-  new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason);
-      },
-      { once: true },
-    );
-  });
 
 /**
  * Checks the OP-1 again once it is back from its restart. Right after the ports return it may not
@@ -95,7 +82,8 @@ interface PluginInstallProps {
 /**
  * Installs one hundekraft plugin over USB MIDI: explains and confirms, downloads and checks the
  * file, sends it, waits for T1 or T2 on the OP-1, waits for its restart and checks it again. The
- * port is closed on every way out, and closing the dialog stops whatever is running.
+ * port is closed on every way out, and closing the dialog stops whatever is running. While the
+ * OP-1 shows its prompt the dialog cannot be closed: the answer is T1 or T2 on the OP-1.
  */
 export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallProps) {
   const [state, setState] = useState<Step>({ step: 'confirm' });
@@ -103,10 +91,15 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
   const path = `plugins/${plugin.file}`;
 
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const promptRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => controller.current?.abort(new Error(CLOSED)), []);
   // Cancel is the default. This runs after the dialog's showModal, which focuses the first link.
   useEffect(() => cancelRef.current?.focus(), []);
+  // The prompt has no buttons here: focus goes to its instruction.
+  useEffect(() => {
+    if (state.step === 'prompt') promptRef.current?.focus();
+  }, [state.step]);
 
   async function install(): Promise<void> {
     controller.current?.abort(new Error(CLOSED));
@@ -157,9 +150,17 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
     }
   }
 
-  const running = state.step === 'working' || state.step === 'sending' || state.step === 'prompt' || state.step === 'restarting';
+  // While the OP-1 shows its prompt only T1 or T2 on it ends the install: a prompt left behind
+  // stays up after T1 and applies the next COMMIT from any host without asking again.
+  const prompting = state.step === 'prompt';
+  const running = state.step === 'working' || state.step === 'sending' || state.step === 'restarting';
   return (
-    <Dialog title={`Install ${plugin.name} over USB`} onClose={onClose}>
+    <Dialog
+      title={`Install ${plugin.name} over USB`}
+      onClose={() => {
+        if (!prompting) onClose();
+      }}
+    >
       <div className="usb-check">
         <p className="notice" role="note">
           The OP-1 must be out of disk mode and plugged in by USB normally: in disk mode it has no MIDI. Eject the drive
@@ -196,12 +197,12 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
             <progress max={state.total} value={state.sent} aria-label={`Sending ${path}`} />
           </>
         )}
-        {state.step === 'prompt' && (
-          <div role="status">
+        {prompting && (
+          <div role="status" ref={promptRef} tabIndex={-1}>
             <p>
               <strong>Press T1 on the OP-1 to install and restart, or T2 to cancel.</strong>
             </p>
-            <p className="muted">If you close this window now, press T2 on the OP-1 to dismiss its prompt.</p>
+            <p className="muted">This window waits for your answer on the OP-1; to cancel, press T2 there.</p>
           </div>
         )}
         {state.step === 'restarting' && (
@@ -216,9 +217,11 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
         )}
 
         <div className="dialog-buttons">
-          <button ref={cancelRef} type="button" onClick={onClose}>
-            {state.step === 'confirm' || running ? 'Cancel' : 'Close'}
-          </button>
+          {!prompting && (
+            <button ref={cancelRef} type="button" onClick={onClose}>
+              {state.step === 'confirm' || running ? 'Cancel' : 'Close'}
+            </button>
+          )}
           {state.step === 'confirm' && (
             <button type="button" className="danger" onClick={() => void install()}>
               Install {plugin.file}

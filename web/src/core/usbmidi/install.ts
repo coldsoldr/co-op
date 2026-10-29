@@ -10,6 +10,7 @@
  */
 import { checkKnl, checkOp1p, idFromSavedName } from '@co-op/shared/plugins';
 import { Command, MAX_DATA, Status, crc32, readU32le, statusName, u32le, type Reply } from './framing';
+import { sleep } from '../util';
 import { parseInventory, type InventoryRecord } from './inventory';
 import { NoAnswerError, createSession, parseHello, type MidiPort, type Session } from './session';
 
@@ -34,7 +35,12 @@ export interface PluginFile {
 export interface InstallOptions {
   /** Bytes the OP-1 has confirmed so far, of all files. */
   onProgress?: (sent: number, total: number) => void;
-  /** The OP-1 shows its prompt: T1 installs and restarts, T2 cancels. */
+  /**
+   * Called once, just before the first COMMIT goes out: from then on the OP-1 shows its prompt (T1
+   * installs and restarts, T2 cancels). The caller should keep the install running until one of
+   * them is pressed: a prompt left without a host never applies anything, but after a T1 on it
+   * the OP-1 keeps the prompt up and applies the next COMMIT it gets, from any host, at once.
+   */
   onPrompt?: () => void;
   /** Stops at the next step; the install rejects with the signal's reason. */
   signal?: AbortSignal;
@@ -106,19 +112,6 @@ function installedAs(id: string, records: readonly InventoryRecord[]): Inventory
     (r) => paths.includes(r.path) || (r.name === id && (r.source === 'knl' || r.source === 'op1p')),
   );
 }
-
-const sleep = (ms: number, signal: AbortSignal | undefined): Promise<void> =>
-  new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    const onAbort = (): void => {
-      clearTimeout(timer);
-      reject(signal?.reason);
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
 
 /**
  * Installs `files` and resolves once COMMIT is through (see InstallOutcome). Rejects with a
@@ -196,6 +189,7 @@ export async function installPlugins(
   }
 
   // 5. COMMIT: the OP-1 asks for T1 or T2 and answers "wait key" until one is pressed.
+  onPrompt?.();
   let prompted = false;
   for (;;) {
     let reply: Reply;
@@ -211,10 +205,7 @@ export async function installPlugins(
     if (reply.status === Status.OK) return 'accepted';
     if (reply.status === Status.STATE && prompted) throw new CancelledOnOp1Error();
     if (reply.status !== Status.WAIT_KEY) throw new Error(`The OP-1 refused the install (${statusName(reply.status)}). ${NOTHING_INSTALLED}`);
-    if (!prompted) {
-      prompted = true;
-      onPrompt?.();
-    }
+    prompted = true;
     await sleep(pollMs, signal);
   }
 

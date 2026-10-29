@@ -137,9 +137,13 @@ export class FakeOp1 implements MidiPort {
     this.closed = true;
   }
 
-  /** A key on the COMMIT prompt: T1 installs at the next COMMIT, T2 drops what was staged. */
+  /**
+   * A key on the COMMIT prompt: T1 installs at the next COMMIT, T2 drops what was staged and closes
+   * the prompt. After T1 the prompt takes no more keys and stays up until a COMMIT, which ABORT
+   * does not change: the next COMMIT, of whatever was staged since, installs at once.
+   */
   pressKey(key: 'T1' | 'T2'): void {
-    if (!this.prompting) return;
+    if (!this.prompting || this.confirmed) return;
     if (key === 'T1') {
       this.confirmed = true;
     } else {

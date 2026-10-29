@@ -85,6 +85,24 @@ test('reports T2 on the OP-1 as cancelled', async ({ page }) => {
   expect(await page.evaluate(() => window.op1Stub.installed)).toEqual([]);
 });
 
+test('stays open while the OP-1 shows its prompt: the answer is T1 or T2 there', async ({ page }) => {
+  await stubOp1(page, { inventory: inventoryOf(DELAY) });
+  const dialog = await openInstall(page);
+  await dialog.getByRole('button', { name: 'Install ensemble.knl' }).click();
+  const prompt = dialog.getByRole('status');
+  await expect(prompt).toContainText('to cancel, press T2 there');
+  await expect(prompt).toBeFocused();
+  await expect(dialog.getByRole('button')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
+  expect(await page.evaluate(() => window.op1Stub.prompting)).toBe(true);
+
+  await page.evaluate(() => window.op1Stub.press('T2'));
+  await expect(prompt).toHaveText('Cancelled on the OP-1 (T2). Nothing was installed.');
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).toBeHidden();
+});
+
 test('refuses a plugin that is already installed, before sending anything', async ({ page }) => {
   await stubOp1(page, { inventory: inventoryOf(DELAY, ENSEMBLE('loaded')) });
   const dialog = await openInstall(page);
