@@ -16,36 +16,42 @@
 
 ## Phase 7: hundekraft
 
-### Task 1: stock name lists from the firmware
+Status: done (2026-10-29). Deviations from the tasks below, decided during review: a selector-like
+fifth knob or effect value with otherwise stock names only warns on stock and does not sniff as
+hundekraft; `dbox_data` alone is not a Gin trait; `opusMark` is separate from `engineSelector`;
+sounds with an `opus` member never sniff as hundekraft; pack and op1.fun installs download before
+the write guard asks, so nothing is written until the user confirms.
+
+### Task 1 (done): stock name lists from the firmware
 
 Extract the stock R246 engine, effect and LFO names as they appear in saved sounds. Sources: the research notes, existing `STOCK_SYNTH_ENGINES`, and the stock firmware string table at `vendor/hundekraft/op1-workshop-main/base/OP1_vdk.ldr.insert.bin` (read-only; search for the lower-case names near the known engine list). Expected stock effects include `delay`, `cwo`, `grid`, `nitro`, `phone`, `punch`, `spring`; stock LFOs include `bend`, `crank`, `element`, `midi`, `random`, `tremolo`, `value`; confirm each against the binary and the real fixtures, and record the evidence in the research notes. Add `STOCK_FX_TYPES`, `STOCK_LFO_TYPES`, `STOCK_DRUM_ENGINES = ['drum', 'dbox']` to `op1-stock.ts`. If a name cannot be confirmed, leave it out and note it.
 
-### Task 2: codec drum kinds and sound traits
+### Task 2 (done): codec drum kinds and sound traits
 
 - `op1-meta.ts`: `isDrumMeta` accepts `type` in `drum | dbox | gin` with a string `name` (the per-slot arrays become optional in the type for dbox/gin); `metaKind` follows. Keep existing tests green; add tests for dbox and gin shapes (gin: `dbox_data` 24x8 numbers, `gin_state` string).
 - `sound-traits.ts`: `SoundTraits { kind; engine: string; fx: string | null; lfo: string | null; engineSelector: number | null; fxSelector: number | null; hasGin: boolean; opusPlugin: string | null; opusEffects: string[] }` and `soundTraits(meta: Op1Meta | null): SoundTraits | null`. `engineSelector` is `knobs[4]` when it is in `0x5300..0x53FF` (op1r family) or `>= 0x100` with an `opus` member (opus mark); otherwise null. `opusEffects` lists `opus.*_type` values found in the `opus` member. Tests with hand-built metas and, when `vendor/` exists, every patch in `vendor/hundekraft/op1-workshop-main/variants/7ff/presets.zip` (read with fflate in the test, never copied into the repo).
 
-### Task 3: profile model update
+### Task 3 (done): profile model update
 
 - `types.ts`: add `sniff?(traits: SoundTraits[]): DetectResult` to `DeviceProfile` and a `supports` block: `{ synthEngines: readonly string[]; drumEngines: readonly string[]; fx: readonly string[]; lfo: readonly string[] }`.
 - Replace `engineCompatibility(engines)` with `traitCompatibility(supports, extra?)` returning `ok`, `warn` or `unsupported` with reasons; unknown kinds stay unsupported; a missing trait (no fx) is fine. Stock uses it with the strict rule above. Keep `engineCompatibility` exported as a thin wrapper if other code uses it, or update callers.
 - Update stock tests; real fixtures and test-tones must stay `ok`.
 
-### Task 4: hundekraft profile
+### Task 4 (done): hundekraft profile
 
 - `op1-hundekraft.ts`: `id 'op1/hundekraft'`, label "OP-1 (hundekraft)", same layout and folder detection as stock but `FULL_MATCH` reduced so stock wins ties on folders alone (stock 0.9, hundekraft 0.85). `supports` = stock lists plus the hundekraft engines (supersaw, fmbell, granular, wavetable, taffy, pew, elg, mixtur, arc, aether, eva, mbira, oxbow, sid, amp, iter), drum engines plus `gin`, effects plus (tape, clouds, reverb, washer, snowglobe, palme, "in a room", stutter, hail, crush, warble, plate, father), LFOs plus `quad` (marked unconfirmed in a comment). Compatibility: opus-only traits (an `opus` member) -> warn "needs the opus bridge or opus firmware". Unknown engine in the op1r selector range -> warn "plugin may not be installed; plays as stock Iter" (per the hundekraft manual).
 - `sniff`: confidence 0.95 when at least one loaded patch has a hundekraft-only engine/effect, gin traits, or an op1r selector; otherwise 0.
 - Register in `registry.ts` after stock. Packs may now list `op1/hundekraft` in `firmware` (the validator uses the registry list automatically; add a test).
 - Tests including the vendor presets (skip without vendor).
 
-### Task 5: UI for content detection and write guards
+### Task 5 (done): UI for content detection and write guards
 
 - After loadAllPatches completes, compute traits and run every profile's `sniff`; if the best sniff profile differs from the active profile and scores above the active profile's folder confidence, show a dismissible suggestion with a "Switch to <label>" button. Remember dismissal per source in memory.
 - Write guards: a shared `confirmUnsupported(patches, profile)` dialog used by pack install, op1.fun install, restore, and copy/move when any patch is `unsupported` on the active profile. The dialog names each patch and reason, and for the stock profile says "may stop a stock OP-1 at boot". Default button is Cancel.
 - Library rows show traits in a details popover (engine, effect, LFO, plugin) to explain badges.
 - e2e: a dropped drive with a hand-built hundekraft patch (supersaw) shows the suggestion; switching profile turns its badge `ok`; installing a pack patch tagged with a hundekraft engine onto a stock drive shows the boot warning.
 
-### Task 6: docs and deploy
+### Task 6 (done): docs and deploy
 
 Spec sections 5.2 and 11 updated (sniff phase, supports block, write guards); research notes updated with confirmed stock lists; README phase 7; push; watch ci and pages.
 

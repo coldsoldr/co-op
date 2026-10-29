@@ -7,7 +7,7 @@ Live app: https://coldsoldr.github.io/co-op/
 
 ## What exists today
 
-Phase 6 of 8 is complete. The app is a working librarian for an OP-1 in
+Phase 7 of 8 is complete. The app is a working librarian for an OP-1 in
 disk mode (shift + COM, then DISK):
 
 - **Library tab.** In Chrome or Edge, "Connect OP-1" opens the drive for
@@ -43,7 +43,16 @@ disk mode (shift + COM, then DISK):
   your op1.fun account. Both go through the co-op Worker (op1.fun's file
   host does not let the browser download directly), so installing and
   uploading stay disabled until the Worker is deployed.
-- **Inspector tab.** Drop a single `.aif` to see how co-op reads it.
+- **Firmware profiles.** Stock OP-1 and hundekraft. Hundekraft drives look
+  the same as stock ones in disk mode, so co-op detects stock and, once
+  the patches are read, offers to switch when they use hundekraft engines,
+  effects or Gin kits (it never switches by itself). Each badge has a
+  details popover with the patch's engine, effect, LFO and plugin. The
+  stock profile is strict: sounds from custom firmware can stop a stock
+  OP-1 at boot, so installing, restoring, copying or moving such a patch
+  onto a stock drive asks first, naming each patch and the reason.
+- **Inspector tab.** Drop a single `.aif` to see how co-op reads it and
+  how the open drive's profile (or one you pick) judges it.
 - **Feedback.** The Feedback button in the header sends a bug report, idea,
   pack request or anything else, with a short list of attached context
   (app version, profile, store type, browser) shown before sending. Once the
@@ -53,13 +62,13 @@ disk mode (shift + COM, then DISK):
   setup is in [docs/deploying-the-worker.md](docs/deploying-the-worker.md).
 
 Under the hood: a pure TypeScript AIFF/AIFC codec that round-trips OP-1
-files byte for byte, a device-profile layer for the stock OP-1, a
+files byte for byte, a device-profile layer for stock and hundekraft OP-1 firmware, a
 `DeviceStore` abstraction with File System Access, dropped-folder,
 staged and in-memory implementations, a Cloudflare Worker tested by calling
 its handler directly, unit tests with vitest and Playwright smoke tests in
 Chromium.
 
-Still to come, in order: the hundekraft and opus firmware profiles. The full design is in
+Still to come: the opus firmware profile. The full design is in
 `docs/superpowers/specs/2026-10-28-op-patch-librarian-design.md`; the
 implementation plans are in `docs/superpowers/plans/`.
 

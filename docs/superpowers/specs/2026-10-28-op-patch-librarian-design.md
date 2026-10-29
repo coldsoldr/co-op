@@ -134,26 +134,61 @@ interface DeviceProfile {
   firmware: string;
   label: string;
   layout: DriveLayout;            // folders to scan and what each holds
-  patchKinds: PatchKindSpec[];    // kind, extensions; parser/validator hooks deferred to phase 7
+  patchKinds: PatchKindSpec[];    // kind, extensions; the codec classifies every kind so far
   detect(root: DirectoryListing): Promise<DetectResult>; // folder-level; confidence 0..1 plus reason
-  compatibility(patch: Patch): Compat;          // ok | warn | unsupported
+  sniff?(traits: SoundTraits[]): DetectResult;  // content-level, over loaded patches
+  supports: {                     // names as saved in sounds
+    synthEngines: readonly string[];
+    drumEngines: readonly string[];
+    fx: readonly string[];
+    lfo: readonly string[];
+  };
+  compatibility(patch: Patch): Compat;          // ok | warn | unsupported, from traits
 }
 ```
+
+Profiles never read raw JSON to judge a patch. `core/codec/sound-traits.ts`
+extracts `SoundTraits` from any metadata: kind, engine (`type`), effect
+(`fx_type`), LFO (`lfo_type`), an op1r selector word in `knobs[4]` or
+`fx_params[4]` (0x5300..0x53ff), an opus engine mark (`knobs[4]` of 0x100
+or more with an `opus` member), Gin kit members, and the `opus` member's
+plugin and effect slots. `traitCompatibility(supports, { rule })` marks every
+name outside `supports` unsupported and lets the profile's rule add, drop or
+soften findings. The codec reads `drum`, `dbox` (stock DBox) and `gin`
+(hundekraft Gin) as drum kinds.
 
 - `op1/stock` is written first from the real device layout, which the
   implementation plan verifies against a mounted OP-1. Expected top-level
   folders are `album`, `drum`, `synth` and `tape`, with `synth` and `drum`
   holding category subfolders of patches.
-- `op1/hundekraft` and `op1/opus` extend the stock profile. Their extra
-  patch kinds, metadata fields and folder differences are read from the
-  clones in `vendor/` during their own implementation phases. They are not
-  specified further here.
-- Detection runs on every mount. The UI shows the detected profile and lets
-  the user override it. Folder-level detection cannot tell stock from
-  hundekraft (plugins live on the internal volume, so disk mode looks
-  identical) or from OP-1 Field, so stock caps its confidence below 1 and
-  the hundekraft profile adds a content-sniff phase over file bytes. Every patch shown anywhere carries a compatibility
-  badge for the active profile.
+- `op1/stock` is strict, because stock R246 can stop at boot on a sound
+  from custom firmware: a non-stock engine, effect or LFO, or an `opus`
+  member, is `unsupported` with "may stop a stock OP-1 at boot". A
+  selector-like fifth knob or effect value with otherwise stock names is
+  only a warning, since 0x5300..0x53ff is also a legal stock value. The
+  stock name lists are confirmed in `docs/research/2026-10-28-custom-firmware-notes.md`.
+- `op1/hundekraft` (phase 7) has the stock layout and folder detection at
+  0.85 (stock 0.9), so stock wins on folders alone. It supports the stock
+  names plus its own engines, effects, Gin kits and the `quad` LFO; a
+  missing plugin is a warning (an unknown engine with a selector plays as
+  stock Iter, an unknown effect with a selector as the stock filter), and
+  an opus sound needs the opus bridge. Its sniff returns 0.95 when a loaded
+  patch uses a hundekraft-only name or a Gin kit.
+- `op1/opus` (phase 8) is read from `vendor/opus` in its own phase.
+- Detection runs on every mount and picks the best folder match. After all
+  patches are read, the library runs every profile's `sniff` over their
+  traits; if another profile beats the active profile's folder confidence,
+  a dismissible notice offers "Switch to <label>". It never switches by
+  itself: patch contents prove where sounds came from, not which firmware
+  is installed now. A profile chosen by hand is never second-guessed.
+  Every patch shown anywhere carries a compatibility badge for the active
+  profile, with a details popover listing its traits.
+- Writes are guarded. Pack installs, op1.fun installs, restores and copy
+  or move first check the active profile's compatibility; any
+  `unsupported` patch needs an explicit confirm in a shared dialog that
+  names each patch and reason (and, on stock, the boot risk). Cancel is
+  the default. Files that do not parse as patches are left to the
+  writers' own checks.
 
 ### 5.3 Device store
 
@@ -450,7 +485,9 @@ install and upload show as unavailable rather than failing.
 4. Packs validator, index generation, catalogue UI, contributor guide.
 5. Worker with feedback endpoint, feedback UI.
 6. op1.fun client, browse and pull, Worker upload proxy, upload UI.
-7. hundekraft profile from `vendor/hundekraft`.
+7. hundekraft profile from `vendor/hundekraft`: sound traits, strict
+   stock compatibility, content sniffing with a switch suggestion, and
+   write guards.
 8. opus profile from `vendor/opus`.
 
 Each phase is independently shippable and ends with a deploy.
