@@ -1,4 +1,27 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const fixtures = fileURLToPath(new URL('../test/fixtures/', import.meta.url));
+const S3 = 'https://op1fun.s3.amazonaws.com/patches';
+
+let parent: string;
+let drive: string;
+
+test.beforeEach(() => {
+  parent = mkdtempSync(join(tmpdir(), 'co-op-e2e-op1fun-'));
+  drive = join(parent, 'OP-1');
+  mkdirSync(join(drive, 'synth', 'user'), { recursive: true });
+  mkdirSync(join(drive, 'drum', 'user'), { recursive: true });
+  mkdirSync(join(drive, 'tape'), { recursive: true });
+  copyFileSync(join(fixtures, 'synth-cluster.aif'), join(drive, 'synth', 'user', 'cluster.aif'));
+});
+
+test.afterEach(() => {
+  rmSync(parent, { recursive: true, force: true });
+});
 
 const CORS = { 'access-control-allow-origin': '*', 'content-type': 'application/vnd.api+json' };
 
@@ -98,4 +121,94 @@ test('a rejected token asks to check the credentials', async ({ page }) => {
   await account.getByRole('button', { name: 'Test connection' }).click();
   await expect(account.getByRole('alert')).toContainText('op1.fun rejected the email or token');
   expect(await stored(page)).toBeNull();
+});
+
+const patchResource = (id: string, name: string, type: string, file: string) => ({
+  id,
+  type: 'patches',
+  attributes: { name, description: `${name} from op1.fun`, license: 'CC BY', public: true, 'patch-type': type, 'user-id': 'alice' },
+  links: { self: `https://op1.fun/users/alice/patches/${id}`, file: `${S3}/${file}`, preview: `${S3}/${id}.mp3` },
+});
+
+const patchesBody = {
+  data: [patchResource('1', 'Boom Kit', 'drum', 'boombap.aif'), patchResource('2', 'Cluster Pad', 'synth', 'cluster.aif')],
+};
+const packsBody = {
+  data: [
+    {
+      id: '9',
+      type: 'packs',
+      attributes: { name: 'Starter', description: 'two patches', public: true, 'user-id': 'alice' },
+      relationships: { patches: { data: [{ id: '2', type: 'patches' }, { id: '3', type: 'patches' }] } },
+    },
+  ],
+};
+const packBody = {
+  data: packsBody.data[0],
+  included: [patchResource('2', 'Cluster Pad', 'synth', 'cluster.aif'), patchResource('3', 'Gone', 'synth', 'missing.aif')],
+};
+
+/** Serves fixture AIFFs for the S3 file links; any other file is a 404. */
+async function mockFiles(page: Page): Promise<void> {
+  const files: Record<string, Buffer> = {
+    'boombap.aif': readFileSync(join(fixtures, 'drum-boombap.aif')),
+    'cluster.aif': readFileSync(join(fixtures, 'synth-cluster.aif')),
+  };
+  await page.route(`${S3}/**`, async (route) => {
+    const name = new URL(route.request().url()).pathname.split('/').pop() ?? '';
+    const body = files[name];
+    // File links never get the op1.fun credentials.
+    expect(route.request().headers()['x-user-token']).toBeUndefined();
+    if (!body) {
+      await route.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: 'missing' });
+      return;
+    }
+    await route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'audio/aiff' }, body });
+  });
+}
+
+async function signIn(page: Page): Promise<void> {
+  await mockApi(page, { '/users/alice': userBody, '/users/alice/patches': patchesBody, '/users/alice/packs': packsBody, '/users/alice/packs/9': packBody });
+  await mockFiles(page);
+  await page.goto('./');
+  await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
+  await expect(page.locator('tbody tr[data-path]')).toHaveCount(1);
+  await page.getByRole('tab', { name: 'op1.fun' }).click();
+  await fillAccount(page);
+  await page.getByRole('form', { name: 'op1.fun account' }).getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Load' }).click();
+}
+
+test('browses op1.fun patches and installs one into a dropped drive', async ({ page }) => {
+  await signIn(page);
+  const table = page.getByRole('table', { name: "alice's patches" });
+  await expect(table.getByRole('row')).toHaveCount(3);
+  await expect(table).toContainText('Boom Kit');
+  await expect(table).toContainText('CC BY');
+  await expect(table.getByLabel('Preview Boom Kit')).toHaveAttribute('src', `${S3}/1.mp3`);
+
+  await page.getByRole('searchbox', { name: 'Filter' }).fill('synth');
+  await expect(table.getByRole('row')).toHaveCount(2);
+  await page.getByRole('searchbox', { name: 'Filter' }).fill('');
+
+  await table.getByRole('button', { name: 'Install Boom Kit' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Installed 1 patch.' })).toContainText('drum/op1fun/Boom Kit.aif');
+
+  await page.getByRole('tab', { name: 'Library' }).click();
+  await expect(page.getByRole('button', { name: 'Download changes (1)' })).toBeEnabled();
+  await expect(page.locator('tr[data-path="drum/op1fun/Boom Kit.aif"]')).toBeVisible();
+});
+
+test('installs an op1.fun pack patch by patch and reports a failed file', async ({ page }) => {
+  await signIn(page);
+  await page.getByRole('radio', { name: /Packs/ }).check();
+  await page.getByRole('button', { name: 'View pack Starter' }).click();
+  const table = page.getByRole('table', { name: 'Patches in Starter' });
+  await expect(table.getByRole('row')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Install all (2)' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Installed 1 patch.' })).toContainText('synth/op1fun/Cluster Pad.aif');
+  await expect(page.getByRole('alert')).toContainText('Gone: download failed: HTTP 404');
+
+  await page.getByRole('tab', { name: 'Library' }).click();
+  await expect(page.getByRole('button', { name: 'Download changes (1)' })).toBeEnabled();
 });
