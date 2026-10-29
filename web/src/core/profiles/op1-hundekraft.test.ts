@@ -68,13 +68,11 @@ describe('op1/hundekraft detection', () => {
 describe('op1/hundekraft sniff', () => {
   const sniff = (patches: Patch[]) => op1Hundekraft.sniff!(patches.map(traitsOf));
 
-  it('is confident when a patch uses a hundekraft engine, effect, Gin kit or selector', () => {
+  it('is confident when a patch uses a hundekraft engine, effect, LFO or Gin kit', () => {
     for (const patch of [
       synth({ type: 'supersaw' }),
       synth({ fx_type: 'in a room' }),
       synth({ lfo_type: 'quad' }),
-      synth({ knobs: selector(0x5300) }),
-      synth({ fx_params: selector(0x5304) }),
       withMeta(fixture('drum-boombap.aif'), { ...DRUM_META, type: 'gin', gin_state: 'x' } as Op1Meta),
     ]) {
       const result = sniff([fixture('synth-cluster.aif'), patch]);
@@ -84,7 +82,7 @@ describe('op1/hundekraft sniff', () => {
     expect(HUNDEKRAFT_SNIFF).toBe(0.95);
   });
 
-  it('is not confident about stock patches, iter, DBox or opus sounds', () => {
+  it('is not confident about stock patches, iter, DBox, opus sounds or selector-like knob values', () => {
     const result = sniff([
       fixture('synth-cluster.aif'),
       fixture('real/synth.aif'),
@@ -92,6 +90,8 @@ describe('op1/hundekraft sniff', () => {
       synth({ type: 'iter' }),
       withMeta(fixture('drum-boombap.aif'), { ...DRUM_META, type: 'dbox' } as Op1Meta),
       synth({ type: 'iter', knobs: selector(0x100), opus: { plugin: 'opus.dx' } }),
+      synth({ knobs: selector(0x5301) }),
+      synth({ fx_params: selector(0x5304) }),
     ]);
     expect(result.confidence).toBe(0);
     expect(op1Hundekraft.sniff!([]).confidence).toBe(0);

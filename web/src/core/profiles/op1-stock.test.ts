@@ -131,14 +131,40 @@ describe('op1/stock compatibility', () => {
     ['effect with spaces', { fx_type: 'in a room' }, /effect "in a room"/],
     ['LFO', { lfo_type: 'quad' }, /LFO "quad"/],
     ['opus member', { opus: { plugin: 'opus.dx' } }, /opus/],
-    ['engine selector', { knobs: [0, 0, 0, 0, 0x5301, 0, 0, 0] }, /knobs\[4\] 0x5301/],
-    ['effect selector', { fx_params: [0, 0, 0, 0, 0x5300, 0, 0, 0] }, /fx_params\[4\] 0x5300/],
   ])('marks a non-stock %s unsupported because it may stop the OP-1 at boot', (_what, change, reason) => {
     const patch = withMeta(fixture('synth-cluster.aif'), { ...SYNTH_META, ...change } as Op1Meta);
     const compat = op1Stock.compatibility(patch);
     expect(compat.level).toBe('unsupported');
     expect(compat.reason).toMatch(reason);
     expect(compat.reason).toMatch(/may stop a stock OP-1 at boot/);
+  });
+
+  it('only warns about a selector-like fifth knob on an otherwise stock sound', () => {
+    const patch = withMeta(fixture('synth-cluster.aif'), { ...SYNTH_META, knobs: [0, 0, 0, 0, 0x5301, 0, 0, 0] });
+    expect(op1Stock.compatibility(patch)).toEqual({
+      level: 'warn',
+      reason: 'fifth knob value matches a hundekraft engine selector; probably fine on stock',
+    });
+  });
+
+  it('only warns about a selector-like fifth effect value on an otherwise stock sound', () => {
+    const patch = withMeta(fixture('synth-cluster.aif'), { ...SYNTH_META, fx_params: [0, 0, 0, 0, 0x5300, 0, 0, 0] });
+    expect(op1Stock.compatibility(patch)).toEqual({
+      level: 'warn',
+      reason: 'fifth effect value matches a hundekraft effect selector; probably fine on stock',
+    });
+  });
+
+  it('does not add the selector note when the sound is already unsupported', () => {
+    const patch = withMeta(fixture('synth-cluster.aif'), {
+      ...SYNTH_META,
+      type: 'supersaw',
+      knobs: [0, 0, 0, 0, 0x5301, 0, 0, 0],
+    });
+    expect(op1Stock.compatibility(patch)).toEqual({
+      level: 'unsupported',
+      reason: 'engine "supersaw" is not part of this firmware; may stop a stock OP-1 at boot',
+    });
   });
 
   it('names every problem in one reason', () => {

@@ -54,7 +54,10 @@ export const HUNDEKRAFT_SNIFF = 0.95;
 const customOnly = (name: string | null, stock: readonly string[], hundekraft: readonly string[]): boolean =>
   name !== null && !stock.includes(name) && hundekraft.includes(name);
 
-/** True when a sound can only have come from hundekraft or another op1r-family firmware. */
+/**
+ * True when a sound's names (engine, effect, LFO) or Gin members can only have come from
+ * hundekraft. Selector words alone do not count: they are legal stock knob values too.
+ */
 export function hasHundekraftTraits(traits: SoundTraits): boolean {
   const engine =
     traits.kind === 'drum'
@@ -64,9 +67,7 @@ export function hasHundekraftTraits(traits: SoundTraits): boolean {
     engine ||
     customOnly(traits.fx, STOCK_FX_TYPES, HUNDEKRAFT_SUPPORTS.fx) ||
     customOnly(traits.lfo, STOCK_LFO_TYPES, HUNDEKRAFT_SUPPORTS.lfo) ||
-    traits.hasGin ||
-    isOp1rSelector(traits.engineSelector) ||
-    isOp1rSelector(traits.fxSelector)
+    traits.hasGin
   );
 }
 
@@ -91,10 +92,10 @@ export const hundekraftRule: TraitRule = (traits, findings) => {
 
 function sniff(traits: readonly SoundTraits[]): DetectResult {
   const matches = traits.filter(hasHundekraftTraits).length;
-  if (matches === 0) return { confidence: 0, reason: 'no patches with hundekraft engines, effects or selectors' };
+  if (matches === 0) return { confidence: 0, reason: 'no patches with hundekraft engines, effects or kits' };
   return {
     confidence: HUNDEKRAFT_SNIFF,
-    reason: `${matches} of ${traits.length} patches use hundekraft engines, effects or selectors`,
+    reason: `${matches} of ${traits.length} patches use hundekraft engines, effects or kits`,
   };
 }
 

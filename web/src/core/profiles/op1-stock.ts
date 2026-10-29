@@ -88,22 +88,21 @@ export const STOCK_SUPPORTS: ProfileSupports = {
 /** Why a stock-unsafe patch matters: stock R246 is not forgiving about custom-firmware sounds. */
 export const STOCK_BOOT_RISK = 'may stop a stock OP-1 at boot';
 
-const hex = (value: number): string => `0x${value.toString(16)}`;
-
 /**
- * Stock is strict: besides unknown names, an opus member or an op1r selector word marks a sound
- * saved on custom firmware, and all of them are unsupported. Selector words are legal stock knob
- * values too, so a stock sound whose fifth knob sits in 0x5300..0x53ff is flagged as well; the
- * cost is an extra confirm, the alternative a device that may not boot.
+ * Stock is strict: an unknown name or an opus member marks a sound saved on custom firmware, and
+ * either is unsupported. An op1r selector word on its own is only a warning: 0x5300..0x53ff is also
+ * a legal stock knob value, and hundekraft always pairs its selectors with its own names, so a
+ * sound whose names are all stock is probably a stock sound whose fifth knob sits in that band.
  */
 export const stockRule: TraitRule = (traits, findings) => {
   const all = [...findings];
   if (traits.hasOpus) all.push({ level: 'unsupported', reason: 'saved on opus firmware (has an opus member)' });
+  if (all.length > 0) return all;
   if (isOp1rSelector(traits.engineSelector)) {
-    all.push({ level: 'unsupported', reason: `knobs[4] ${hex(traits.engineSelector)} is a custom-firmware engine selector` });
+    all.push({ level: 'warn', reason: 'fifth knob value matches a hundekraft engine selector; probably fine on stock' });
   }
   if (isOp1rSelector(traits.fxSelector)) {
-    all.push({ level: 'unsupported', reason: `fx_params[4] ${hex(traits.fxSelector)} is a custom-firmware effect selector` });
+    all.push({ level: 'warn', reason: 'fifth effect value matches a hundekraft effect selector; probably fine on stock' });
   }
   return all;
 };
