@@ -21,8 +21,10 @@ import {
   rememberHandle,
   restoreHandle,
 } from '../core/store/fs-access-store';
+import type { DirectoryListing } from '../core/store/listing';
 import type { DeviceStore } from '../core/store/store';
 import { createQueue } from './queue';
+import { OVERRIDE_CONFIDENCE, loadRememberedProfile, rememberProfile } from './remembered-profile';
 import { mergeRows, toRow, type LibraryRow } from './rows';
 import { messageOf } from '../core/util';
 
@@ -127,10 +129,28 @@ async function listFolders(store: DeviceStore, profile: DeviceProfile): Promise<
   return out;
 }
 
-async function detect(store: DeviceStore): Promise<{ profile: DeviceProfile; detection: string; confidence: number }> {
-  const [best] = await detectProfiles(store);
-  if (best) return { profile: best.profile, detection: `detected: ${best.result.reason}`, confidence: best.result.confidence };
-  const reasons = (await runDetectors(store)).map((r) => r.result.reason).join('; ');
+/**
+ * Picks the profile for a newly opened drive. The profile remembered from last time wins, unless
+ * folder detection proves a different one (OVERRIDE_CONFIDENCE). `confidence` is the picked
+ * profile's own folder-detection confidence, which the content sniff must beat to suggest another.
+ */
+export async function detect(
+  root: DirectoryListing,
+  rememberedId: string | null,
+): Promise<{ profile: DeviceProfile; detection: string; confidence: number }> {
+  const ranked = await detectProfiles(root);
+  const [best] = ranked;
+  const remembered = rememberedId === null ? undefined : getProfile(rememberedId);
+  const proven = best !== undefined && best.profile.id !== remembered?.id && best.result.confidence >= OVERRIDE_CONFIDENCE;
+  if (remembered && !proven) {
+    const own = ranked.find((r) => r.profile.id === remembered.id)?.result.confidence ?? 0;
+    return { profile: remembered, detection: 'remembered from last time', confidence: own };
+  }
+  if (best) {
+    const note = remembered ? ` (you chose ${remembered.label} last time)` : '';
+    return { profile: best.profile, detection: `detected: ${best.result.reason}${note}`, confidence: best.result.confidence };
+  }
+  const reasons = (await runDetectors(root)).map((r) => r.result.reason).join('; ');
   return {
     profile: defaultProfile,
     detection: `not recognised (${reasons}); assuming ${defaultProfile.label}`,
@@ -289,7 +309,7 @@ export function useDevice(): Device {
       setSkipped(droppedSkips);
       setLoading(true);
       try {
-        const found = await detect(base);
+        const found = await detect(base, loadRememberedProfile());
         if (!live()) return;
         let restored: string[] = [];
         try {
@@ -385,6 +405,7 @@ export function useDevice(): Device {
       exclusive(async () => {
         const next = getProfile(id);
         if (!next) return;
+        rememberProfile(next.id);
         setProfileBoth(next);
         setDetection('chosen by hand');
         // A choice made by hand is never second-guessed.

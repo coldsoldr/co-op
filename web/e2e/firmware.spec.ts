@@ -152,3 +152,45 @@ test('detects an opus drive by its mods folder and lists the plugins', async ({ 
   await page.getByLabel('Profile').selectOption('op1/stock');
   await expect(plugins).toBeHidden();
 });
+
+test('remembers the profile chosen last time', async ({ page }) => {
+  await page.goto('./');
+  await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
+  await expect(page.getByLabel('Profile')).toHaveValue('op1/stock');
+  await page.getByLabel('Profile').selectOption('op1/hundekraft');
+  await expect(page.getByText('chosen by hand')).toBeVisible();
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+
+  await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
+  await expect(page.getByLabel('Profile')).toHaveValue('op1/hundekraft');
+  await expect(page.getByText('remembered from last time')).toBeVisible();
+
+  // Also on a later visit.
+  await page.reload();
+  await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
+  await expect(page.getByLabel('Profile')).toHaveValue('op1/hundekraft');
+  await expect(page.getByText('remembered from last time')).toBeVisible();
+});
+
+test('an opus mods folder overrides the remembered profile', async ({ page }) => {
+  await page.goto('./');
+  await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
+  await page.getByLabel('Profile').selectOption('op1/hundekraft');
+  await expect(page.getByText('chosen by hand')).toBeVisible();
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+
+  mkdirSync(join(drive, 'mods'), { recursive: true });
+  writeFileSync(join(drive, 'mods', 'x.opmod'), Buffer.from('OPMD\u0001\u0002\u0003\u0004', 'latin1'));
+  await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
+  await expect(page.getByLabel('Profile')).toHaveValue('op1/opus');
+  await expect(
+    page.getByText('detected: found mods folder with opus plugins (you chose OP-1 (hundekraft) last time)'),
+  ).toBeVisible();
+
+  // Overriding is not a choice: without the mods folder the remembered profile is back.
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+  rmSync(join(drive, 'mods'), { recursive: true, force: true });
+  await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
+  await expect(page.getByLabel('Profile')).toHaveValue('op1/hundekraft');
+  await expect(page.getByText('remembered from last time')).toBeVisible();
+});
