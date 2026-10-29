@@ -169,7 +169,7 @@ interface DeviceProfile {
     lfo: readonly string[];
   };
   compatibility(patch: Patch): Compat;          // ok | warn | unsupported, from traits
-  pluginCompatibility?(context: PluginContext): DeviceProfile["compatibility"]; // see 5.6
+  pluginCompatibility?(context: PluginContext): (traits: SoundTraits | null) => Compat; // see 5.6
 }
 ```
 
@@ -500,7 +500,10 @@ Patches that need a plugin
   `pluginCompatibility` (stock, opus, whose own "needs plugin <id>"
   warnings stand) or a missing index leave the profile as it is. Rows,
   write guards and the Inspector all use the wrapped profile, and the
-  traits popover names the plugins a row needs.
+  traits popover names the plugins a row needs. `pluginCompatibility`
+  judges traits, not patches, so when the index loads or a USB check
+  reports what is loaded the rows already read are judged again in memory:
+  the drive is never re-read then (out of disk mode it is gone).
 - Pack, op1.fun and restore installs, after the write guard and before
   writing, collect the plugins the patches need that are not known to be
   there (loaded in the last USB check for hundekraft; a valid `.opmod` of

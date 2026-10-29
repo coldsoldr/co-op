@@ -55,6 +55,11 @@ disk mode (shift + COM, then DISK):
   on stock the warning is stronger, because sounds from custom firmware can
   stop a stock OP-1 at boot. hundekraft and opus only warn when a sound
   needs a plugin.
+- **USB check.** "Check over USB" asks a hundekraft 3.x OP-1 (plugged in
+  normally, not in disk mode) which firmware it runs and which plugins it
+  loaded, read only. The profile you choose by hand, or from the check, is
+  remembered for the next drive; a drive whose `mods/` folder proves opus
+  still opens as opus.
 - **Inspector tab.** Drop a single `.aif` to see how co-op reads it and
   how the open drive's profile (or one you pick) judges it.
 - **Feedback.** The Feedback button in the header sends a bug report, idea,
@@ -84,8 +89,12 @@ a `plugin.json`, a manual and a screenshot. It starts with ten hundekraft
 3.0.3 plugins by coldsoldr (rings, bitcrusher, drive, tape drive,
 wavefolder, freq shift, ensemble, tape echo, marbles and grids; source at
 [coldsoldr/te-op1-cfw](https://github.com/coldsoldr/te-op1-cfw)). The build
-checks every plugin and publishes them with an index; a Plugins tab to
-browse, read and install them is in progress.
+checks every plugin and publishes them with an index, and the **Plugins**
+tab lists them: search and filter, read each manual, download the file,
+install a hundekraft plugin over USB MIDI (the OP-1 asks for T1 and
+restarts), or copy an opus plugin into `mods/` on an open opus drive. When a
+pack, op1.fun or restore install has patches that need a library plugin not
+known to be on the OP-1, co-op names it and offers to install it first.
 
 A plugin runs as firmware code, so maintainers merge one only from an author
 they trust or with source they have looked at. To add one, follow

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPatch, withMeta } from '../src/core/codec/patch';
 import type { Op1Meta } from '../src/core/codec/op1-meta';
+import { stubOp1 } from './op1-stub';
 
 const fixtures = fileURLToPath(new URL('../test/fixtures/', import.meta.url));
 
@@ -104,4 +105,45 @@ test('installs without asking when the plugin index cannot be loaded', async ({ 
   await page.getByRole('dialog', { name: 'Not supported on OP-1 (hundekraft)' }).getByRole('button', { name: 'Write anyway' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Installed 1 patch' })).toBeVisible();
   await expect(page.getByRole('dialog', { name: 'Plugin needed' })).toBeHidden();
+});
+
+test('judges an open drive again after a USB check without reading it, as it is gone out of disk mode', async ({ page }) => {
+  const inventory = [
+    'kennel-inventory 1',
+    ['synth', 'rings', 'knl', 'plugins/rings.knl', '1.0', 'coldsoldr', '111768', '0badf00d', 'loaded', '+engine:rings', ''].join('\t'),
+  ].join('\n');
+  await stubOp1(page, { answer: true, inventory });
+  await page.goto('./');
+  // The browser's origin-private file system stands in for the drive behind the folder picker.
+  const ring = Buffer.from(ringsPatch()).toString('base64');
+  await page.evaluate(async (base64) => {
+    const root = await navigator.storage.getDirectory();
+    for (const name of ['synth', 'drum', 'tape']) await root.removeEntry(name, { recursive: true }).catch(() => {});
+    await root.getDirectoryHandle('tape', { create: true });
+    await root.getDirectoryHandle('drum', { create: true }).then((d) => d.getDirectoryHandle('user', { create: true }));
+    const user = await (await root.getDirectoryHandle('synth', { create: true })).getDirectoryHandle('user', { create: true });
+    const writable = await (await user.getFileHandle('ring.aif', { create: true })).createWritable();
+    await writable.write(Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)));
+    await writable.close();
+    Object.defineProperty(window, 'showDirectoryPicker', { value: async () => root, configurable: true });
+  }, ring);
+  await page.getByRole('button', { name: 'Connect OP-1' }).click();
+  await page.getByLabel('Profile').selectOption('op1/hundekraft');
+  const row = page.locator('tr[data-path="synth/user/ring.aif"]');
+  await expect(row.locator('.badge')).toContainText('needs plugin "rings"');
+
+  // Out of disk mode the drive is gone: here its folders are, so a re-read would list nothing.
+  await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    for (const name of ['synth', 'drum', 'tape']) await root.removeEntry(name, { recursive: true });
+  });
+  await page.getByRole('button', { name: 'Check over USB' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Check the OP-1 over USB' });
+  await dialog.getByRole('button', { name: 'Check', exact: true }).click();
+  await expect(dialog).toContainText('Firmware: hundekraft 3.x');
+  await dialog.getByRole('button', { name: 'Close' }).click();
+
+  await expect(row.locator('.badge')).toContainText('ok');
+  await expect(row.locator('.badge')).not.toContainText('needs plugin');
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });

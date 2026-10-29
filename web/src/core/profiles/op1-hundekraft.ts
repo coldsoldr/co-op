@@ -1,6 +1,6 @@
 import type { DetectResult, DeviceProfile, PluginContext, ProfileSupports } from './types';
 import { isOp1rSelector, type SoundTraits } from '../codec/sound-traits';
-import { pluginFindings, traitCompatibility, type Finding, type TraitRule } from './compat';
+import { pluginFindings, traitCompatibility, traitsCompatibility, type Finding, type TraitRule } from './compat';
 import {
   op1Stock,
   folderDetect,
@@ -123,5 +123,5 @@ export const op1Hundekraft: DeviceProfile = {
   sniff,
   supports: HUNDEKRAFT_SUPPORTS,
   compatibility: traitCompatibility(HUNDEKRAFT_SUPPORTS, { rule: hundekraftRule }),
-  pluginCompatibility: (context) => traitCompatibility(HUNDEKRAFT_SUPPORTS, { rule: hundekraftPluginRule(context) }),
+  pluginCompatibility: (context) => traitsCompatibility(HUNDEKRAFT_SUPPORTS, { rule: hundekraftPluginRule(context) }),
 };

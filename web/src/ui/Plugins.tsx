@@ -25,7 +25,7 @@ interface PluginsProps {
   active: boolean;
   /**
    * More actions for a plugin, shown beside Download on its card and manual: "Install over USB"
-   * for hundekraft and, later, "Copy to mods/" for opus.
+   * for hundekraft and "Copy to mods/" for opus.
    */
   renderActions?: (plugin: PluginIndexEntry) => ReactNode;
 }

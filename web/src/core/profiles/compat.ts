@@ -1,8 +1,8 @@
-import type { Compat, DeviceProfile, PluginContext, ProfileSupports } from './types';
+import type { Compat, DeviceProfile, PluginContext, ProfileSupports, TraitsCompatibility } from './types';
 import type { Patch } from '../codec/patch';
 import { soundTraits, type SoundTraits } from '../codec/sound-traits';
 
-export type { ProfileSupports };
+export type { ProfileSupports, TraitsCompatibility };
 
 /** One reason a patch may not work on a firmware. */
 export interface Finding {
@@ -42,17 +42,14 @@ export function nameFindings(traits: SoundTraits, supports: ProfileSupports): Fi
 }
 
 /**
- * Builds a compatibility check from the names a firmware supports. Files without usable op-1
- * metadata, and metadata of an unknown kind, are unsupported. Otherwise every engine, effect or
- * LFO name outside `supports` is an unsupported finding, then the profile's `rule` has the final
- * say. The result takes the worst level and joins the reasons with '; '.
+ * Builds a compatibility check over a sound's traits (null when the file has no usable op-1
+ * metadata) from the names a firmware supports. No traits, and metadata of an unknown kind, are
+ * unsupported. Otherwise every engine, effect or LFO name outside `supports` is an unsupported
+ * finding, then the profile's `rule` has the final say. The result takes the worst level and joins
+ * the reasons with '; '.
  */
-export function traitCompatibility(
-  supports: ProfileSupports,
-  options: TraitCompatibilityOptions = {},
-): DeviceProfile['compatibility'] {
-  return (patch: Patch): Compat => {
-    const traits = soundTraits(patch.meta);
+export function traitsCompatibility(supports: ProfileSupports, options: TraitCompatibilityOptions = {}): TraitsCompatibility {
+  return (traits: SoundTraits | null): Compat => {
     if (!traits) return { level: 'unsupported', reason: 'file has no op-1 metadata' };
     if (traits.kind === 'unknown') return { level: 'unsupported', reason: 'op-1 metadata is of an unrecognised kind' };
     const named = nameFindings(traits, supports);
@@ -63,6 +60,20 @@ export function traitCompatibility(
     if (level === 'unsupported' && options.unsupportedNote) reasons.push(options.unsupportedNote);
     return { level, reason: reasons.join('; ') };
   };
+}
+
+/** traitsCompatibility as a check over a whole patch, judging the traits of its metadata. */
+export const overPatch =
+  (judge: TraitsCompatibility): DeviceProfile['compatibility'] =>
+  (patch: Patch): Compat =>
+    judge(soundTraits(patch.meta));
+
+/** traitsCompatibility over a whole patch: the form a profile's `compatibility` takes. */
+export function traitCompatibility(
+  supports: ProfileSupports,
+  options: TraitCompatibilityOptions = {},
+): DeviceProfile['compatibility'] {
+  return overPatch(traitsCompatibility(supports, options));
 }
 
 /**
@@ -88,5 +99,5 @@ export function pluginFindings(traits: SoundTraits, findings: readonly Finding[]
  */
 export function withPlugins(profile: DeviceProfile, context: PluginContext | null): DeviceProfile {
   if (!context || !profile.pluginCompatibility) return profile;
-  return { ...profile, compatibility: profile.pluginCompatibility(context) };
+  return { ...profile, compatibility: overPatch(profile.pluginCompatibility(context)) };
 }

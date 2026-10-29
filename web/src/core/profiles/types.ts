@@ -85,10 +85,14 @@ export interface DeviceProfile {
   compatibility(patch: Patch): Compat;
   /**
    * The compatibility check once the plugin library and the plugins loaded on the device are known
-   * (see withPlugins). Absent when the firmware has no plugins co-op can name.
+   * (see withPlugins). It judges a sound's traits rather than the patch, so rows already read can be
+   * judged again without reading the drive. Absent when the firmware has no plugins co-op can name.
    */
-  pluginCompatibility?(context: PluginContext): DeviceProfile['compatibility'];
+  pluginCompatibility?(context: PluginContext): TraitsCompatibility;
 }
+
+/** A compatibility check over a sound's traits; null traits mean the file has no usable op-1 metadata. */
+export type TraitsCompatibility = (traits: SoundTraits | null) => Compat;
 
 /** What the UI knows about plugins, passed in as plain data so profiles stay pure. */
 export interface PluginContext {

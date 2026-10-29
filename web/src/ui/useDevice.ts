@@ -30,7 +30,7 @@ import type { DirectoryListing } from '../core/store/listing';
 import type { DeviceStore } from '../core/store/store';
 import { createQueue } from './queue';
 import { OVERRIDE_CONFIDENCE, loadRememberedProfile, rememberProfile } from './remembered-profile';
-import { mergeRows, toRow, type LibraryRow } from './rows';
+import { mergeRows, rejudgeRows, toRow, type LibraryRow } from './rows';
 import { messageOf } from '../core/util';
 
 /** What the library is showing. */
@@ -483,16 +483,22 @@ export function useDevice(): Device {
   );
 
   /**
-   * After what is known about plugins changes, reads the library again when the active profile
-   * judges patches by it, so badges follow the plugin library and the USB check.
+   * After what is known about plugins changes, judges the rows again when the active profile judges
+   * patches by it, so badges follow the plugin library and the USB check. It works from the traits
+   * already read and never touches the drive: during a USB check the OP-1 is out of disk mode, so
+   * an open drive cannot be read. Queued, so it runs after a load in flight, which judged its rows
+   * with what was known when it started.
    */
   const rejudge = useCallback(() => {
     const current = sourceRef.current;
     if (!current || !profileRef.current.pluginCompatibility) return;
     void exclusive(async () => {
-      if (sourceRef.current === current) await load(current, profileRef.current, null);
+      const active = profileRef.current;
+      const context = pluginContext(pluginIndexRef.current, active.id, installedRef.current);
+      if (sourceRef.current !== current || !active.pluginCompatibility || !context) return;
+      setRows(rejudgeRows(rowsRef.current, active.pluginCompatibility(context)));
     });
-  }, [exclusive, load]);
+  }, [exclusive, setRows]);
 
   const setInstalledPlugins = useCallback(
     (inventory: Inventory | null) => {

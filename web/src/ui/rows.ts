@@ -1,6 +1,7 @@
 import type { PatchKind } from '../core/codec/op1-meta';
 import type { LibraryEntry } from '../core/library/library';
 import { soundTraits, type SoundTraits } from '../core/codec/sound-traits';
+import type { TraitsCompatibility } from '../core/profiles/types';
 
 /** What the table needs from a parsed patch; the bytes are not kept. */
 export interface PatchInfo {
@@ -63,6 +64,19 @@ export function mergeRows(
     }
   }
   return { rows, toLoad };
+}
+
+/**
+ * The rows judged again by `judge`, from the traits already read, without reading the drive. Only
+ * rows whose patch was read are judged; a row whose verdict does not change is returned as it was,
+ * so memoised rows do not re-render.
+ */
+export function rejudgeRows(rows: readonly LibraryRow[], judge: TraitsCompatibility): LibraryRow[] {
+  return rows.map((row) => {
+    if (row.info === null || row.compat === null) return row;
+    const compat = judge(row.info.traits);
+    return compat.level === row.compat.level && compat.reason === row.compat.reason ? row : { ...row, compat };
+  });
 }
 
 /** The name to show: the metadata name, falling back to the file name. */
