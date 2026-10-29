@@ -5,10 +5,13 @@ compatibility_date = "2026-10-28"
 # Secrets, set once with `wrangler secret put` and never committed:
 #   GITHUB_TOKEN      fine-grained token, Issues read/write on coldsoldr/co-op only
 #   TURNSTILE_SECRET  secret key of the Turnstile widget
-# For `wrangler dev`, put them in worker/.dev.vars (gitignored).
+# For `wrangler dev`, put them in worker/.dev.vars (gitignored), together with a local
+# ALLOWED_ORIGINS such as "http://localhost:5173,http://localhost:4173" and the secret of a
+# separate development Turnstile widget (see docs/deploying-the-worker.md).
 
 [vars]
-ALLOWED_ORIGINS = "https://coldsoldr.github.io,http://localhost:5173,http://localhost:4173"
+# Production allows only the Pages origin; localhost is for .dev.vars, never the deployed Worker.
+ALLOWED_ORIGINS = "https://coldsoldr.github.io"
 GITHUB_REPO = "coldsoldr/co-op"
 
 # Workers Rate Limiting bindings. namespace_id is any account-unique integer, as a string.

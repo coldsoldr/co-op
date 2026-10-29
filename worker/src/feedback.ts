@@ -25,7 +25,7 @@ async function rateLimited(env: Env, ip: string | null): Promise<boolean> {
 
 /**
  * True only for success: true on a hostname of ALLOWED_ORIGINS. Throws when siteverify cannot
- * answer (network, timeout, non-2xx, non-JSON, or its own internal-error).
+ * answer (network, timeout, non-2xx, non-JSON, internal-error, or a bad secret).
  */
 async function verifyTurnstile(token: string, ip: string | null, env: Env): Promise<boolean> {
   const form = new URLSearchParams({ secret: env.TURNSTILE_SECRET, response: token });
@@ -38,7 +38,10 @@ async function verifyTurnstile(token: string, ip: string | null, env: Env): Prom
   if (!res.ok) throw new Error('siteverify unavailable');
   const outcome = (await res.json()) as { success?: unknown; hostname?: unknown; 'error-codes'?: unknown };
   const codes = Array.isArray(outcome['error-codes']) ? outcome['error-codes'] : [];
-  if (codes.includes('internal-error')) throw new Error('siteverify internal error');
+  // Cloudflare's own failure, or a wrong or missing secret on our side: not the user's fault.
+  if (codes.some((c) => c === 'internal-error' || c === 'invalid-input-secret' || c === 'missing-input-secret')) {
+    throw new Error('siteverify could not check the token');
+  }
   return (
     outcome.success === true &&
     typeof outcome.hostname === 'string' &&

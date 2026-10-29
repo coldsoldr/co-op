@@ -29,14 +29,16 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
+      # A pull_request run checks out the PR merged onto its base (refs/pull/N/merge). Its first
+      # parent is the base commit GitHub merged onto, so two commits of history are all that is
+      # needed, and diffing against that parent (rather than a freshly fetched base branch) cannot
+      # pick up commits that landed on the base after the merge ref was made.
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
-      - env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          git fetch --no-tags origin "$BASE_REF"
-          changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          fetch-depth: 2
+          persist-credentials: false
+      - run: |
+          changed=$(git diff --name-only HEAD^1 HEAD)
           packs=$(printf '%s\n' "$changed" | grep -c '^packs/' || true)
           other=$(printf '%s\n' "$changed" | grep -v '^packs/' | grep -c . || true)
           echo "files changed under packs/: $packs, elsewhere: $other"

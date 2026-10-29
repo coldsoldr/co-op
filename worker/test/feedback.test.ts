@@ -263,6 +263,10 @@ describe('POST /feedback', () => {
       ['::1', '0:0:0:0::/64'],
       ['fe80::', 'fe80:0:0:0::/64'],
       [IP, IP],
+      // IPv4-mapped IPv6 is the IPv4 client, so it shares that client's bucket.
+      ['::ffff:203.0.113.7', IP],
+      ['::FFFF:198.51.100.2', '198.51.100.2'],
+      ['0:0:0:0:0:ffff:192.0.2.1', '192.0.2.1'],
     ];
     for (const [ip, key] of cases) {
       const limit = vi.fn(async () => ({ success: true }));
@@ -314,6 +318,9 @@ describe('POST /feedback', () => {
   it('treats an unreachable or broken siteverify as 502 and files nothing', async () => {
     for (const route of [
       () => jsonResponse(200, { success: false, 'error-codes': ['internal-error'] }),
+      // A wrong or missing secret is our configuration, not the user's token.
+      () => jsonResponse(200, { success: false, 'error-codes': ['invalid-input-secret'] }),
+      () => jsonResponse(200, { success: false, 'error-codes': ['missing-input-secret'] }),
       () => {
         throw new DOMException('The operation timed out.', 'TimeoutError');
       },

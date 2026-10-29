@@ -365,3 +365,6 @@ dialog input[type='text'] {
 .feedback-context td {
   word-break: break-word;
 }
+dialog p.counter {
+  margin: -8px 0 12px;
+}

@@ -8,10 +8,10 @@ import {
   type FeedbackStore,
 } from '@co-op/shared/feedback';
 import {
-  FeedbackError,
   buildConfig,
   feedbackAvailable,
   feedbackContext,
+  feedbackErrorMessages,
   githubIssueUrl,
   sendFeedback,
 } from '../core/feedback/client';
@@ -43,25 +43,35 @@ interface Turnstile {
 
 let turnstileLoad: Promise<Turnstile> | null = null;
 
-/** Loads the Turnstile script once, on first use. */
+/**
+ * Loads the Turnstile script once, on first use. A failed load removes its script element and
+ * forgets the promise, so opening the dialog again retries cleanly.
+ */
 function loadTurnstile(): Promise<Turnstile> {
   turnstileLoad ??= new Promise<Turnstile>((resolve, reject) => {
     const script = document.createElement('script');
     script.src = TURNSTILE_SCRIPT;
     script.async = true;
-    script.onload = () => {
-      const api = (window as unknown as { turnstile?: Turnstile }).turnstile;
-      if (api) resolve(api);
-      else reject(new Error('Turnstile did not load'));
-    };
-    script.onerror = () => {
+    const fail = () => {
+      script.remove();
       turnstileLoad = null;
       reject(new Error('Turnstile did not load'));
     };
+    script.onload = () => {
+      const api = (window as unknown as { turnstile?: Turnstile }).turnstile;
+      if (api) resolve(api);
+      else fail();
+    };
+    script.onerror = fail;
     document.head.appendChild(script);
   });
   return turnstileLoad;
 }
+
+const LOAD_FAILED =
+  'The verification check could not load. Check your connection, or allow challenges.cloudflare.com if a blocker stops it, then close and reopen this dialog.';
+const CHECK_FAILED =
+  'The verification check failed. Reload the page and try again; privacy extensions and strict tracking protection can make it fail.';
 
 /** The verification widget; reports a token, or null when it expires or fails. */
 function TurnstileWidget({
@@ -75,7 +85,7 @@ function TurnstileWidget({
 }) {
   const container = useRef<HTMLDivElement>(null);
   const widget = useRef<{ api: Turnstile; id: string } | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const report = useRef(onToken);
   useEffect(() => {
     report.current = onToken;
@@ -88,14 +98,20 @@ function TurnstileWidget({
         if (cancelled || !container.current) return;
         const id = api.render(container.current, {
           sitekey: siteKey,
-          callback: (token) => report.current(token),
+          callback: (token) => {
+            setProblem(null);
+            report.current(token);
+          },
           'expired-callback': () => report.current(null),
-          'error-callback': () => report.current(null),
+          'error-callback': () => {
+            setProblem(CHECK_FAILED);
+            report.current(null);
+          },
         });
         widget.current = { api, id };
       },
       () => {
-        if (!cancelled) setFailed(true);
+        if (!cancelled) setProblem(LOAD_FAILED);
       },
     );
     return () => {
@@ -113,7 +129,11 @@ function TurnstileWidget({
   return (
     <>
       <div ref={container} />
-      {failed && <p className="error">The verification check could not load. Try again later.</p>}
+      {problem && (
+        <p className="error" role="alert">
+          {problem}
+        </p>
+      )}
     </>
   );
 }
@@ -135,6 +155,9 @@ function FeedbackDialog({ device, onClose }: { device: Device; onClose: () => vo
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<Result>(null);
   const counterId = useId();
+  const alertRef = useRef<HTMLDivElement>(null);
+  // While sending, Escape and Cancel do nothing, so the result is never lost.
+  const close = sending ? () => undefined : onClose;
 
   const context = feedbackContext({
     profile: device.profile.id,
@@ -143,6 +166,11 @@ function FeedbackDialog({ device, onClose }: { device: Device; onClose: () => vo
   });
   const length = message.trim().length;
   const messageOk = length >= MIN_MESSAGE && length <= MAX_MESSAGE;
+
+  // After a failed send, focus moves to the errors so they are read out and easy to find.
+  useEffect(() => {
+    if (result?.kind === 'failed') alertRef.current?.focus();
+  }, [result]);
 
   async function send(): Promise<void> {
     if (!token) return;
@@ -153,13 +181,7 @@ function FeedbackDialog({ device, onClose }: { device: Device; onClose: () => vo
       const sent = await sendFeedback(contact.trim() ? { ...payload, contact: contact.trim() } : payload);
       setResult({ kind: 'sent', ...sent });
     } catch (error) {
-      const errors =
-        error instanceof FeedbackError
-          ? error.status === 429
-            ? ['Too much feedback from here just now. Try again in a minute.']
-            : error.errors
-          : ['Something went wrong sending feedback.'];
-      setResult({ kind: 'failed', errors });
+      setResult({ kind: 'failed', errors: feedbackErrorMessages(error) });
       setToken(null);
       setResetKey((k) => k + 1);
     } finally {
@@ -196,7 +218,7 @@ function FeedbackDialog({ device, onClose }: { device: Device; onClose: () => vo
   ];
 
   return (
-    <Dialog title="Send feedback" onClose={onClose}>
+    <Dialog title="Send feedback" onClose={close}>
       <form
         className="feedback"
         onSubmit={(event) => {
@@ -224,10 +246,10 @@ function FeedbackDialog({ device, onClose }: { device: Device; onClose: () => vo
             aria-describedby={counterId}
             required
           />
-          <span id={counterId} className="muted">
-            {length} / {MAX_MESSAGE} characters{length < MIN_MESSAGE ? `, at least ${MIN_MESSAGE}` : ''}
-          </span>
         </label>
+        <p id={counterId} className="muted counter">
+          {length} / {MAX_MESSAGE} characters{length < MIN_MESSAGE ? `, at least ${MIN_MESSAGE}` : ''}
+        </p>
         {available && (
           <label>
             Contact (optional, shown publicly on the issue)
@@ -236,10 +258,15 @@ function FeedbackDialog({ device, onClose }: { device: Device; onClose: () => vo
         )}
         <details>
           <summary>What is attached</summary>
-          <p className="muted">
-            {available ? 'This goes into a public GitHub issue' : 'The issue is prefilled with this'}, along with your
-            message. Nothing else is sent.
-          </p>
+          {available ? (
+            <p className="muted">
+              Your message, your contact if you give one, and this table go into a public GitHub issue. The
+              verification check runs through Cloudflare Turnstile, which sees your IP address and browser. The co-op
+              Worker uses your IP address only for rate limiting and keeps nothing.
+            </p>
+          ) : (
+            <p className="muted">The new issue is prefilled with your message and this table. Nothing is sent until you submit it on GitHub.</p>
+          )}
           <table className="feedback-context">
             <tbody>
               {rows.map(([field, value]) => (
@@ -255,14 +282,16 @@ function FeedbackDialog({ device, onClose }: { device: Device; onClose: () => vo
           <>
             <TurnstileWidget siteKey={buildConfig.siteKey ?? ''} onToken={setToken} resetKey={resetKey} />
             {result?.kind === 'failed' && (
-              <ul className="error" role="alert">
-                {result.errors.map((e) => (
-                  <li key={e}>{e}</li>
-                ))}
-              </ul>
+              <div role="alert" tabIndex={-1} ref={alertRef}>
+                <ul className="error">
+                  {result.errors.map((e) => (
+                    <li key={e}>{e}</li>
+                  ))}
+                </ul>
+              </div>
             )}
             <div className="dialog-buttons">
-              <button type="button" onClick={onClose}>
+              <button type="button" onClick={close} disabled={sending}>
                 Cancel
               </button>
               <button type="submit" className="primary" disabled={!messageOk || !token || sending}>

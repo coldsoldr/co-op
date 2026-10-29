@@ -56,12 +56,16 @@ export const errors = (status: number, messages: string[], origin: string | null
   json(status, { errors: messages }, origin, extra);
 
 /**
- * The rate limit key for a client: an IPv4 address as is, an IPv6 address by its /64 prefix
- * (one subscriber usually holds a whole /64), anything unparseable as given.
+ * The rate limit key for a client: an IPv4 address as is (also when IPv4-mapped), an IPv6
+ * address by its /64 prefix (one subscriber usually holds a whole /64), anything unparseable as
+ * given.
  */
 export function clientKey(ip: string | null): string {
   if (ip === null || ip === '') return 'unknown';
   if (!ip.includes(':')) return ip;
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d, possibly written out in full) is the IPv4 client.
+  const mapped = /^(?:0{0,4}:){0,5}:?ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (mapped?.[1]) return mapped[1];
   const parts = ip.toLowerCase().split('::');
   if (parts.length > 2) return ip.toLowerCase();
   const groups = (s: string | undefined) => (s ? s.split(':') : []);

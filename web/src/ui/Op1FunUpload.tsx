@@ -30,6 +30,8 @@ export function UploadDialog({ entry, op1fun, read, onClose }: UploadDialogProps
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState<Op1FunPatch | null>(null);
+  // While uploading, Escape and Cancel do nothing, so the result is never lost.
+  const close = sending ? () => undefined : onClose;
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -48,7 +50,7 @@ export function UploadDialog({ entry, op1fun, read, onClose }: UploadDialogProps
   }
 
   return (
-    <Dialog title={`Upload ${entry.fileName} to op1.fun`} onClose={onClose}>
+    <Dialog title={`Upload ${entry.fileName} to op1.fun`} onClose={close}>
       {uploaded ? (
         <>
           <p role="status">
@@ -101,7 +103,7 @@ export function UploadDialog({ entry, op1fun, read, onClose }: UploadDialogProps
             </p>
           )}
           <div className="dialog-buttons">
-            <button type="button" onClick={onClose}>
+            <button type="button" onClick={close} disabled={sending}>
               Cancel
             </button>
             <button type="submit" className="primary" disabled={sending || name.trim() === ''}>

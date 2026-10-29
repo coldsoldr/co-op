@@ -98,6 +98,29 @@ export async function sendFeedback(
   throw new FeedbackError(errors, res.status, res.status === 429 && Number.isFinite(retry) ? retry : null);
 }
 
+/** What to show the user for a failed send. */
+export function feedbackErrorMessages(error: unknown): string[] {
+  if (!(error instanceof FeedbackError)) return ['Something went wrong sending feedback.'];
+  if (error.status !== 429) return error.errors;
+  const wait =
+    error.retryAfter === null || error.retryAfter <= 0
+      ? 'a minute'
+      : `${error.retryAfter} second${error.retryAfter === 1 ? '' : 's'}`;
+  return [`Too much feedback from here just now. Try again in ${wait}.`];
+}
+
+/** Replaces lone surrogates with U+FFFD, as String.prototype.toWellFormed does (ES2024). */
+const toWellFormed = (s: string): string =>
+  s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
+
+/** User-perceived characters where Intl.Segmenter exists, code points otherwise. */
+function graphemes(s: string): string[] {
+  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+    return Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s), (g) => g.segment);
+  }
+  return Array.from(s);
+}
+
 function issueUrl(category: FeedbackCategory, message: string, context: FeedbackContext): string {
   const p: FeedbackPayload = { category, message, context, turnstileToken: '' };
   return (
@@ -109,13 +132,21 @@ function issueUrl(category: FeedbackCategory, message: string, context: Feedback
 /**
  * A prefilled new-issue link, for builds without the Worker. Labels only apply when the user can
  * triage the repo; the [category] title prefix tells the owner either way. Links longer than
- * MAX_ISSUE_URL keep as much of the message as fits, cut on a code point, with a note.
+ * MAX_ISSUE_URL keep as much of the message as fits, cut between grapheme clusters, with a note.
+ * Lone surrogates become U+FFFD first, since encodeURIComponent throws on them.
  */
-export function githubIssueUrl(category: FeedbackCategory, message: string, context: FeedbackContext): string {
-  const text = message.trim();
+export function githubIssueUrl(category: FeedbackCategory, message: string, given: FeedbackContext): string {
+  const text = toWellFormed(message.trim());
+  const context: FeedbackContext = {
+    ...given,
+    appVersion: toWellFormed(given.appVersion),
+    commit: toWellFormed(given.commit),
+    profile: given.profile === null ? null : toWellFormed(given.profile),
+    userAgent: toWellFormed(given.userAgent),
+  };
   const full = issueUrl(category, text, context);
   if (full.length <= MAX_ISSUE_URL) return full;
-  const points = Array.from(text);
+  const points = graphemes(text);
   let lo = 0;
   let hi = points.length;
   while (lo < hi) {

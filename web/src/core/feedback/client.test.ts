@@ -5,6 +5,7 @@ import {
   MAX_ISSUE_URL,
   feedbackAvailable,
   feedbackContext,
+  feedbackErrorMessages,
   githubIssueUrl,
   sendFeedback,
 } from './client';
@@ -138,6 +139,28 @@ describe('sendFeedback', () => {
   });
 });
 
+describe('feedbackErrorMessages', () => {
+  it('passes server errors through', () => {
+    expect(feedbackErrorMessages(new FeedbackError(['verification failed'], 403))).toEqual(['verification failed']);
+  });
+
+  it('uses Retry-After for rate limiting', () => {
+    expect(feedbackErrorMessages(new FeedbackError(['x'], 429, 60))).toEqual([
+      'Too much feedback from here just now. Try again in 60 seconds.',
+    ]);
+    expect(feedbackErrorMessages(new FeedbackError(['x'], 429, 1))).toEqual([
+      'Too much feedback from here just now. Try again in 1 second.',
+    ]);
+    expect(feedbackErrorMessages(new FeedbackError(['x'], 429, null))).toEqual([
+      'Too much feedback from here just now. Try again in a minute.',
+    ]);
+  });
+
+  it('has a fallback for anything else', () => {
+    expect(feedbackErrorMessages(new Error('boom'))).toEqual(['Something went wrong sending feedback.']);
+  });
+});
+
 describe('githubIssueUrl', () => {
   const query = (url: string) => new URL(url).searchParams;
 
@@ -165,6 +188,25 @@ describe('githubIssueUrl', () => {
   it('does not truncate a message that fits', () => {
     const url = githubIssueUrl('other', 'x'.repeat(1000), context);
     expect(query(url).get('body')).not.toContain('cut to fit');
+  });
+
+  it('never throws on lone surrogates, replacing them', () => {
+    const lone = String.fromCharCode(0xd83c);
+    const url = githubIssueUrl('bug', `broken ${lone} text that is long enough`, context);
+    expect(url).toContain(encodeURIComponent('\uFFFD'));
+    expect(() => githubIssueUrl('bug', `${lone}`.repeat(4000), context)).not.toThrow();
+  });
+
+  it('truncates on grapheme cluster boundaries', () => {
+    const family = '👨\u200D👩\u200D👧';
+    expect(family).toHaveLength(8);
+    const url = githubIssueUrl('bug', family.repeat(2000), context);
+    expect(url.length).toBeLessThanOrEqual(MAX_ISSUE_URL);
+    const body = new URL(url).searchParams.get('body') ?? '';
+    const quoted = body.split('\n').find((l) => l.startsWith(`> ${family}`)) ?? '';
+    const kept = quoted.slice(2);
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept.length % family.length).toBe(0);
   });
 
   it('truncates on code point boundaries', () => {
