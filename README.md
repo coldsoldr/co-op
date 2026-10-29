@@ -40,8 +40,9 @@ disk mode (shift + COM, then DISK):
   a whole pack into `synth/op1fun` and `drum/op1fun` (or the changes to
   download). Each file is checked as an OP-1 patch before it is written.
   Library rows get an Upload action that sends the patch file unchanged to
-  your op1.fun account through the co-op Worker; it is disabled until the
-  Worker is deployed.
+  your op1.fun account. Both go through the co-op Worker (op1.fun's file
+  host does not let the browser download directly), so installing and
+  uploading stay disabled until the Worker is deployed.
 - **Inspector tab.** Drop a single `.aif` to see how co-op reads it.
 - **Feedback.** The Feedback button in the header sends a bug report, idea,
   pack request or anything else, with a short list of attached context

@@ -177,12 +177,12 @@ use them.
 | Route | What it does |
 | --- | --- |
 | `POST /feedback` | Checks the feedback and its Turnstile token, then files a labelled issue in `GITHUB_REPO`. |
-| `POST /op1fun/patches` | Uploads a patch to op1.fun for the app: requires `X-User-Email` and `X-User-Token`, caps the body at 12 MB, checks it is a `patches` resource with an AIFF data URI, and forwards it with only those two headers and `Content-Type` to `https://api.op1.fun/v1/patches` (redirects refused). The upstream status and body come back unchanged. |
-| `GET /op1fun/file?url=` | Fetches a patch file, MP3 preview or pack zip for the app when op1.fun's file host does not allow the browser to: `https` only, on `op1.fun`, `www.op1.fun` or `*.amazonaws.com`, paths ending `.aif`, `.aiff`, `.mp3` or `.zip`. No credentials are sent, redirects are refused, and the body is cut off past 20 MB. |
+| `POST /op1fun/patches` | Uploads a patch to op1.fun for the app: requires `X-User-Email` and `X-User-Token`, caps the body at 13 MiB, checks it is a `patches` resource with an AIFF data URI, and forwards it with only those two headers and `Content-Type` to `https://api.op1.fun/v1/patches` (redirects refused). The upstream status and body come back unchanged. |
+| `GET /op1fun/file?url=` | Fetches a patch file or MP3 preview for the app, since op1.fun's S3 bucket sends no CORS headers: `https` only, on `op1.fun`, `www.op1.fun`, `op1fun.s3[.<region>].amazonaws.com`, or `s3[.<region>].amazonaws.com/op1fun/...`, paths ending `.aif`, `.aiff` or `.mp3`. No credentials are sent, redirects are refused, the body is cut off past 20 MB, and it comes back as an attachment with an audio (or `application/octet-stream`) type and a sandboxing CSP. |
 
 Every route answers only the origins in `ALLOWED_ORIGINS`. The op1.fun
-routes need no secrets, so the op1.fun tab's uploads work as soon as the
-Worker is deployed and `WORKER_URL` is set for the Pages build. To check
+routes need no secrets, so the op1.fun tab's installs and uploads (both
+need the Worker) work as soon as it is deployed and `WORKER_URL` is set for the Pages build. To check
 the file proxy refuses other hosts:
 
 ```bash

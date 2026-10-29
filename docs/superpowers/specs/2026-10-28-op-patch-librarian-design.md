@@ -46,7 +46,7 @@ Non-goals for v1
 | Community patch storage | In the repo under `packs/`, submitted by pull request |
 | Feedback | In-app form; Worker opens a labelled GitHub Issue |
 | Device access | File System Access API on Chromium, drag-and-drop fallback elsewhere |
-| op1.fun | Browse and pull directly from the browser (API reads allow CORS); patch files direct, falling back to the Worker file proxy if S3 blocks the browser; upload via the Worker (the API refuses cross-origin POST); credentials in memory unless the user ticks Remember |
+| op1.fun | Browse directly from the browser (API reads allow CORS); patch files through the Worker file proxy (op1.fun's S3 bucket sends no CORS headers); upload via the Worker (the API refuses cross-origin POST); credentials in memory unless the user ticks Remember |
 | Firmware model | `DeviceProfile` registry; stock OP-1 is the base profile |
 | Reference firmware repos | `vendor/hundekraft`, `vendor/opus`, gitignored |
 | Web stack | Vite, React, TypeScript |
@@ -227,18 +227,23 @@ op1.fun
 - Browse any user's patches and packs (filtered in the browser; the API has
   no search), preview with an `<audio>` element on the MP3 link, and
   install a patch or every patch of a pack (from the pack's `included`
-  list, not the zip). Each file is fetched without credentials (directly,
-  then through the Worker file proxy on a network/CORS failure, 20 MB cap),
-  checked with `readPatch`, and written unchanged through the catalogue
+  list, not the zip). op1.fun's files live in the `op1fun` S3 bucket,
+  which sends no CORS headers, so installs need the Worker: without a
+  Worker URL, Install and Install all are disabled and the reason is shown
+  above the list. Each file is fetched without credentials (the client
+  tries the link directly, then the Worker file proxy on the resulting
+  network/CORS failure; 20 MB cap), checked with `readPatch`, and written unchanged through the catalogue
   install path into `<synth root>/op1fun` or `<drum root>/op1fun` (kind
   from the file, else op1.fun's patch type) under a free name, as one
   queued device action. Failures are reported per file and the rest carry on.
 - Upload a library patch: a dialog (name, description, licence blank or
   one of the four CC values, public) sends the raw file bytes as a data URI
   to the Worker, which forwards it to op1.fun with the user's headers and
-  returns the response; the dialog links to the new patch. Files over 9 MB
-  are refused before sending. The action is disabled, with the reason, when
-  the build has no Worker URL or no credentials are saved. The Worker never
+  returns the response; the dialog links to the new patch. Files over
+  9 MiB and descriptions over 2000 characters are refused before sending,
+  and the request times out after 65 s. The action is disabled, with the
+  reason shown once above the library table, when the build has no Worker
+  URL or no credentials are saved. The Worker never
   logs or stores credentials or file contents.
 
 Feedback
@@ -332,19 +337,25 @@ Endpoints
   patch shape and size limit, forwards it with the caller's `X-User-Email`
   and `X-User-Token` headers to `https://api.op1.fun/v1/patches`, and
   returns the upstream status and body unchanged. Both headers are
-  required (401); the body is capped at 12 MB while it streams (413) and
+  required (401); the body is capped at 13 MiB while it streams (413) and
   must be a `patches` resource whose `file` is an
   `data:audio/x-aiff;base64,` URI (400). Only those two headers and
   `Content-Type: application/json` are forwarded, redirects are refused,
   and the subrequest times out after 60 s (502).
-- `GET /op1fun/file?url=` A file proxy for when S3 does not allow the
-  browser to fetch a patch file. Only `https:` URLs (no credentials or
-  port) on `op1.fun`, `www.op1.fun` or a host ending in `.amazonaws.com`,
-  whose path ends in `.aif`, `.aiff`, `.mp3` or `.zip`, are fetched (400
-  otherwise), without credentials and with `redirect: 'manual'`: an
-  upstream redirect is a 502, not followed. The body streams back with its
-  `Content-Type`, cut off once it passes 20 MB (a larger declared
-  `Content-Length` is a 413 up front).
+- `GET /op1fun/file?url=` The file proxy op1.fun installs go through,
+  since op1.fun's S3 bucket sends no CORS headers. Only `https:` URLs (no
+  credentials or port) on `op1.fun`, `www.op1.fun`, the bucket's own hosts
+  (`op1fun.s3.amazonaws.com`, `op1fun.s3.<region>.amazonaws.com`) or path
+  style under `/op1fun/` on `s3.amazonaws.com` or
+  `s3.<region>.amazonaws.com`, whose path ends in `.aif`, `.aiff` or
+  `.mp3`, are fetched (400 otherwise; other buckets and AWS hosts are
+  refused), without credentials and with `redirect: 'manual'`: an
+  upstream redirect is a 502, not followed. The body streams back cut off
+  once it passes 20 MB (a larger declared `Content-Length` is a 413 up
+  front), with `Content-Type` limited to `audio/x-aiff`, `audio/aiff` or
+  `audio/mpeg` (anything else becomes `application/octet-stream`),
+  `Content-Disposition: attachment` and
+  `Content-Security-Policy: default-src 'none'; sandbox`.
 
 Rules
 
@@ -405,7 +416,7 @@ direct.
 The owner supplies a Cloudflare account, a Turnstile widget and the GitHub
 fine-grained token (`docs/deploying-the-worker.md`). Until the Worker is
 deployed, feedback falls back to a prefilled GitHub issue link and op1.fun
-upload shows as unavailable rather than failing.
+install and upload show as unavailable rather than failing.
 
 ## 9. Error handling
 
@@ -417,7 +428,7 @@ upload shows as unavailable rather than failing.
   differently is flagged via `op1Canonical`, not rejected; unchanged
   operations always copy `raw`.
 - Network features degrade independently: a Worker outage disables feedback
-  and op1.fun upload while the catalogue and device library keep working.
+  and op1.fun install and upload while the catalogue and device library keep working.
 - op1.fun 401 responses prompt the user to re-check credentials; other
   upstream errors are shown with the upstream message.
 
@@ -450,8 +461,8 @@ Each phase is independently shippable and ends with a deploy.
   against a mounted device before writing the stock profile.
 - Decide the pack size limit for `packs/` once the first real packs are in,
   and whether Git LFS is needed.
-- Confirm op1.fun's S3 file links allow cross-origin `fetch`. Phase 6 does
-  not depend on the answer: the client falls back to the Worker file proxy
-  on a network/CORS failure. Still unverified against the live API: the
-  exact list, pack and create response shapes, pagination, and where the
-  profile page shows the API token.
+- Settled: op1.fun's API docs put files, previews and pack zips in the
+  `op1fun` S3 bucket, which sends no CORS headers (its preflight is a 403),
+  so installs need the Worker file proxy. Still unverified against the live
+  API: the exact list, pack and create response shapes, pagination, and
+  where the profile page shows the API token.
