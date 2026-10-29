@@ -69,6 +69,18 @@ describe('openOp1Port', () => {
     expect(NO_OP1_PORT).toMatch(/not in disk mode/);
   });
 
+  it('lists the ports it does see, and says when there are none', async () => {
+    stubMidi(new FakeAccess(portsOf(new FakePort('Keystep')), portsOf(new FakePort('Keystep'))));
+    await expect(openOp1Port()).rejects.toThrow('MIDI ports this browser sees: Keystep.');
+    stubMidi(new FakeAccess(portsOf(), portsOf()));
+    await expect(openOp1Port()).rejects.toThrow('sees no MIDI ports at all');
+  });
+
+  it('never takes an OP-1 Field for an OP-1', async () => {
+    stubMidi(new FakeAccess(portsOf(new FakePort('OP-1 Field')), portsOf(new FakePort('OP-1 Field'))));
+    await expect(openOp1Port()).rejects.toThrow('MIDI ports this browser sees: OP-1 Field.');
+  });
+
   it('asks for SysEx, opens the connected OP-1 ports and queues early messages', async () => {
     const input = new FakePort('OP-1 Midi Device');
     const output = new FakePort('op1 out');

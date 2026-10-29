@@ -12,6 +12,8 @@ export interface Op1Port extends MidiPort {
 }
 
 const OP1_NAME = /op-?1/i;
+/** An OP-1 Field matches OP1_NAME too, but runs neither hundekraft nor its protocol. */
+const FIELD_NAME = /field/i;
 
 export const NO_WEB_MIDI = 'This browser cannot talk to MIDI devices. Use Chrome, Edge or Firefox on a computer to check the OP-1 over USB.';
 export const MIDI_REFUSED =
@@ -33,8 +35,24 @@ function untilAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): 
 }
 
 function findOp1<T extends MIDIPort>(ports: Iterable<T>): T | undefined {
-  for (const port of ports) if (port.state !== 'disconnected' && OP1_NAME.test(port.name ?? '')) return port;
+  for (const port of ports) {
+    const name = port.name ?? '';
+    if (port.state !== 'disconnected' && OP1_NAME.test(name) && !FIELD_NAME.test(name)) return port;
+  }
   return undefined;
+}
+
+/**
+ * NO_OP1_PORT plus the ports the browser does show, so a port held by another program (Windows
+ * lets one program at a time use a MIDI port) or an unexpected name is visible in the message.
+ */
+function noOp1Port(access: MIDIAccess): string {
+  const names = new Set<string>();
+  for (const ports of [access.inputs.values(), access.outputs.values()]) {
+    for (const port of ports) if (port.state !== 'disconnected') names.add(port.name || '(unnamed)');
+  }
+  const seen = names.size > 0 ? `MIDI ports this browser sees: ${[...names].join(', ')}.` : 'This browser sees no MIDI ports at all.';
+  return `${NO_OP1_PORT} ${seen} On Windows only one program can use a MIDI port at a time: close other browsers and music software that may hold it, then quit and reopen this browser.`;
 }
 
 export async function openOp1Port(signal?: AbortSignal): Promise<Op1Port> {
@@ -48,7 +66,7 @@ export async function openOp1Port(signal?: AbortSignal): Promise<Op1Port> {
   }
   const input = findOp1(access.inputs.values());
   const output = findOp1(access.outputs.values());
-  if (!input || !output) throw new Error(NO_OP1_PORT);
+  if (!input || !output) throw new Error(noOp1Port(access));
 
   // Listen before opening: the input opens asynchronously, and a reply can arrive before open()
   // settles. Messages that come before onSysex has a listener wait in `early`.
