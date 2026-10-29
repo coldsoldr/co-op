@@ -50,6 +50,10 @@ export type FeedbackResult = { ok: true; value: FeedbackPayload } | { ok: false;
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** True when the string has no lone surrogates (String.prototype.isWellFormed is ES2024). */
+const wellFormed = (s: string): boolean =>
+  !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(s);
+
 const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T =>
   typeof v === 'string' && (list as readonly string[]).includes(v);
 
@@ -66,6 +70,10 @@ function validateContext(input: unknown, errors: string[]): FeedbackContext | un
       errors.push(`context.${key} must be a string of at most ${max} characters`);
       return '';
     }
+    if (!wellFormed(v)) {
+      errors.push(`context.${key} must be valid Unicode text`);
+      return '';
+    }
     return v;
   };
   const appVersion = text('appVersion');
@@ -75,6 +83,8 @@ function validateContext(input: unknown, errors: string[]): FeedbackContext | un
   const profile = input.profile;
   if (profile !== null && (typeof profile !== 'string' || profile.length > CONTEXT_LIMITS.profile)) {
     errors.push('context.profile must be a string or null');
+  } else if (profile !== null && !wellFormed(profile)) {
+    errors.push('context.profile must be valid Unicode text');
   }
   const store = input.store;
   if (!oneOf(FEEDBACK_STORES, store)) {
@@ -107,12 +117,16 @@ export function validateFeedback(input: unknown): FeedbackResult {
   const message = typeof input.message === 'string' ? input.message.trim() : '';
   if (message.length < MIN_MESSAGE || message.length > MAX_MESSAGE) {
     errors.push(`message must be ${MIN_MESSAGE} to ${MAX_MESSAGE} characters`);
+  } else if (!wellFormed(message)) {
+    errors.push('message must be valid Unicode text');
   }
 
   let contact: string | undefined;
   if (input.contact !== undefined) {
     if (typeof input.contact !== 'string' || input.contact.trim().length > MAX_CONTACT) {
       errors.push(`contact must be at most ${MAX_CONTACT} characters`);
+    } else if (!wellFormed(input.contact)) {
+      errors.push('contact must be valid Unicode text');
     } else if (input.contact.trim() !== '') {
       contact = input.contact.trim();
     }
@@ -123,6 +137,8 @@ export function validateFeedback(input: unknown): FeedbackResult {
   const token = input.turnstileToken;
   if (typeof token !== 'string' || token.length < 1 || token.length > MAX_TOKEN) {
     errors.push(`turnstileToken must be 1 to ${MAX_TOKEN} characters`);
+  } else if (!wellFormed(token)) {
+    errors.push('turnstileToken must be valid Unicode text');
   }
 
   if (errors.length > 0 || context === undefined) return { ok: false, errors };
@@ -142,18 +158,21 @@ const ZWSP = '\u200B';
  * Puts a zero-width space after '@' and before the number in '#123' and 'GH-123', so GitHub
  * neither notifies users or teams nor links or cross-references issues. Like GitHub, an '@' right
  * after a letter, digit or underscore is not a mention, so email addresses stay copyable.
- * Idempotent.
+ * 'github.com' (any case) is broken too, so full issue, pull request and commit URLs do not
+ * cross-reference. Idempotent.
  */
 export function neutraliseMentions(text: string): string {
   return text
     .replace(/(?<![A-Za-z0-9_])@(?=[A-Za-z0-9])/g, `@${ZWSP}`)
     .replace(/#(?=\d)/g, `#${ZWSP}`)
-    .replace(/\b(GH-)(?=\d)/gi, `$1${ZWSP}`);
+    .replace(/\b(GH-)(?=\d)/gi, `$1${ZWSP}`)
+    .replace(/github(?=\.com\b)/gi, `$&${ZWSP}`);
 }
 
 const LINE_BREAK = /\r\n|[\r\n\u2028\u2029]/;
+/** C0 and C1 controls and the bidi embedding, override and isolate characters. */
 // eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u001F\u007F]/g;
+const CONTROL = /[\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/g;
 
 /**
  * Escapes the characters that could open HTML, code spans or fences, or split table cells. Hex

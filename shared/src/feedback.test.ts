@@ -123,6 +123,22 @@ describe('validateFeedback', () => {
     expect(errorsFor(input({ context: { ...context(), commit: 'c'.repeat(41) } }))).toHaveLength(1);
   });
 
+  it('rejects strings that are not well-formed unicode', () => {
+    const lone = String.fromCharCode(0xd800);
+    const trailing = String.fromCharCode(0xdc00);
+    expect(errorsFor(input({ message: `a lone ${lone} surrogate here` }))).toEqual([
+      'message must be valid Unicode text',
+    ]);
+    expect(errorsFor(input({ message: `${trailing} trailing surrogate first` }))).toHaveLength(1);
+    expect(errorsFor(input({ contact: `x${lone}` }))).toEqual(['contact must be valid Unicode text']);
+    expect(errorsFor(input({ context: { ...context(), userAgent: `UA${trailing}` } }))).toEqual([
+      'context.userAgent must be valid Unicode text',
+    ]);
+    expect(errorsFor(input({ context: { ...context(), profile: `p${lone}` } }))).toHaveLength(1);
+    expect(errorsFor(input({ turnstileToken: lone }))).toHaveLength(1);
+    expect(payload({ message: 'paired 🎹 surrogates are fine' }).message).toContain('🎹');
+  });
+
   it('reports every problem at once', () => {
     expect(errorsFor({ category: 'nope', message: '', context: {}, turnstileToken: '' }).length).toBeGreaterThanOrEqual(5);
   });
@@ -169,7 +185,20 @@ describe('neutraliseMentions', () => {
     expect(neutraliseMentions('# heading, @ alone, C# code, 100%')).toBe('# heading, @ alone, C# code, 100%');
   });
 
+  it('breaks github.com links so full URLs do not cross-reference', () => {
+    expect(neutraliseMentions('https://github.com/owner/repo/issues/5')).toBe(
+      `https://github${ZWSP}.com/owner/repo/issues/5`,
+    );
+    expect(neutraliseMentions('see https://github.com/o/r/pull/6 and http://www.GitHub.COM/o/r/commit/abc')).toBe(
+      `see https://github${ZWSP}.com/o/r/pull/6 and http://www.GitHub${ZWSP}.COM/o/r/commit/abc`,
+    );
+    expect(neutraliseMentions('notgithub.community')).toBe('notgithub.community');
+  });
+
   it('is idempotent', () => {
+    expect(neutraliseMentions(neutraliseMentions('github.com/a/b/issues/1'))).toBe(
+      neutraliseMentions('github.com/a/b/issues/1'),
+    );
     const once = neutraliseMentions('@a #1 GH-1');
     expect(neutraliseMentions(once)).toBe(once);
   });
@@ -291,6 +320,20 @@ describe('issueBody', () => {
   it('preserves unicode text', () => {
     const body = issueBody(payload({ message: 'Ünïcödé 🎛️ テスト\nزر لا يعمل' }));
     expect(quoteLines(body)).toEqual(['> Ünïcödé 🎛️ テスト', '> زر لا يعمل']);
+  });
+
+  it('strips C0, C1 and bidi control characters from title and body', () => {
+    const controls = [0x07, 0x85, 0x9b, 0x202a, 0x202e, 0x2066, 0x2069].map((c) => String.fromCharCode(c)).join('');
+    const p = payload({
+      message: `safe${controls} text here`,
+      contact: `me${controls}`,
+      context: { ...context(), userAgent: `UA${controls}` },
+    });
+    // eslint-disable-next-line no-control-regex
+    const pattern = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/;
+    expect(issueTitle(p)).toBe('[bug] safe text here');
+    expect(issueBody(p)).not.toMatch(pattern);
+    expect(issueBody(p)).toContain('> safe text here');
   });
 
   it('normalises carriage returns so no line escapes the quote', () => {

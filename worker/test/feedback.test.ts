@@ -40,7 +40,7 @@ describe('POST /feedback', () => {
 
   beforeEach(() => {
     routes = {
-      [SITEVERIFY]: () => jsonResponse(200, { success: true }),
+      [SITEVERIFY]: () => jsonResponse(200, { success: true, hostname: 'coldsoldr.github.io' }),
       [ISSUES]: () => jsonResponse(201, { html_url: 'https://github.com/coldsoldr/co-op/issues/42', number: 42 }),
     };
     fetchMock.mockReset();
@@ -160,6 +160,42 @@ describe('POST /feedback', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('caps a streamed body without Content-Length and cancels the stream', async () => {
+    let cancelled = false;
+    let pulled = 0;
+    const chunk = new Uint8Array(1024).fill(0x61);
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const req = new Request('https://co-op-feedback.example.workers.dev/feedback', {
+      method: 'POST',
+      headers: { Origin: ORIGIN, 'CF-Connecting-IP': IP },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    expect(req.headers.get('Content-Length')).toBeNull();
+    const res = await call(req);
+    expect(res.status).toBe(413);
+    expectCors(res);
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThanOrEqual(MAX_BODY_BYTES / 1024 + 3);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('treats a non-numeric Content-Length as unknown and still caps the body', async () => {
+    const big = JSON.stringify(feedback({ message: 'x'.repeat(MAX_BODY_BYTES) }));
+    const res = await call(post(big, { 'Content-Length': 'lots' }));
+    expect(res.status).toBe(413);
+    const ok = await call(post(JSON.stringify(feedback()), { 'Content-Length': 'lots' }));
+    expect(ok.status).not.toBe(413);
+  });
+
   it('rejects non-JSON with 400', async () => {
     for (const body of ['', 'not json', '{"category":', '<xml/>']) {
       const res = await call(post(body));
@@ -189,16 +225,50 @@ describe('POST /feedback', () => {
     expect(res.status).toBe(429);
     expectCors(res);
     expect(res.headers.get('Retry-After')).toBe('60');
+    expect(res.headers.get('Access-Control-Expose-Headers')).toBe('Retry-After');
     expect(await res.json()).toEqual({ errors: ['too many requests, try again in a minute'] });
     expect(limit).toHaveBeenCalledWith({ key: IP });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('carries on when the rate limiter allows the request', async () => {
+  it('carries on when both rate limiters allow the request', async () => {
     const limit = vi.fn(async () => ({ success: true }));
-    const res = await call(post(JSON.stringify(feedback())), env({ FEEDBACK_LIMIT: { limit } }));
+    const global = vi.fn(async () => ({ success: true }));
+    const res = await call(
+      post(JSON.stringify(feedback())),
+      env({ FEEDBACK_LIMIT: { limit }, FEEDBACK_GLOBAL_LIMIT: { limit: global } }),
+    );
     expect(res.status).toBe(201);
     expect(limit).toHaveBeenCalledTimes(1);
+    expect(global).toHaveBeenCalledWith({ key: 'global' });
+  });
+
+  it('refuses with 429 when the global limit is spent', async () => {
+    const limit = vi.fn(async () => ({ success: true }));
+    const global = vi.fn(async () => ({ success: false }));
+    const res = await call(
+      post(JSON.stringify(feedback())),
+      env({ FEEDBACK_LIMIT: { limit }, FEEDBACK_GLOBAL_LIMIT: { limit: global } }),
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('60');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('keys IPv6 clients by their /64 prefix', async () => {
+    const cases: [string, string][] = [
+      ['2001:db8:85a3:12:8a2e:370:7334:1', '2001:db8:85a3:12::/64'],
+      ['2001:0DB8:85A3:0012:ffff:0:0:2', '2001:db8:85a3:12::/64'],
+      ['2001:db8::1', '2001:db8:0:0::/64'],
+      ['::1', '0:0:0:0::/64'],
+      ['fe80::', 'fe80:0:0:0::/64'],
+      [IP, IP],
+    ];
+    for (const [ip, key] of cases) {
+      const limit = vi.fn(async () => ({ success: true }));
+      await call(post(JSON.stringify(feedback()), { 'CF-Connecting-IP': ip }), env({ FEEDBACK_LIMIT: { limit } }));
+      expect(limit, ip).toHaveBeenCalledWith({ key });
+    }
   });
 
   it('turns an unexpected failure into a quiet 500 with CORS headers', async () => {
@@ -221,8 +291,32 @@ describe('POST /feedback', () => {
     expect(callsTo(ISSUES)).toHaveLength(0);
   });
 
+  it('refuses a token solved on a hostname that is not an allowed origin', async () => {
+    for (const hostname of ['evil.example', undefined, 'coldsoldr.github.io.evil.example']) {
+      routes[SITEVERIFY] = () => jsonResponse(200, { success: true, hostname });
+      const res = await call(post(JSON.stringify(feedback())));
+      expect(res.status, String(hostname)).toBe(403);
+      expect(await res.json()).toEqual({ errors: ['verification failed'] });
+    }
+    routes[SITEVERIFY] = () => jsonResponse(200, { success: true, hostname: 'localhost' });
+    expect((await call(post(JSON.stringify(feedback())))).status).toBe(201);
+    expect(callsTo(ISSUES)).toHaveLength(1);
+  });
+
+  it('puts a 10 second timeout on both subrequests', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    await call(post(JSON.stringify(feedback())));
+    expect(timeout).toHaveBeenCalledTimes(2);
+    expect(timeout).toHaveBeenCalledWith(10_000);
+    for (const [, init] of fetchMock.mock.calls) expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it('treats an unreachable or broken siteverify as 502 and files nothing', async () => {
     for (const route of [
+      () => jsonResponse(200, { success: false, 'error-codes': ['internal-error'] }),
+      () => {
+        throw new DOMException('The operation timed out.', 'TimeoutError');
+      },
       () => jsonResponse(500, { success: true }),
       () => new Response('<html>', { status: 200 }),
       () => {

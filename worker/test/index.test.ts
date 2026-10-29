@@ -25,7 +25,8 @@ describe('worker routing and CORS', () => {
       expect(res.status).toBe(204);
       expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ORIGIN);
       expect(res.headers.get('Access-Control-Allow-Methods')).toBe('POST, OPTIONS');
-      expect(res.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type');
+      expect(res.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type, X-User-Email, X-User-Token');
+      expect(res.headers.get('Access-Control-Expose-Headers')).toBe('Retry-After');
       expect(res.headers.get('Access-Control-Max-Age')).toBe('86400');
       expect(res.headers.get('Vary')).toBe('Origin');
     }
@@ -52,6 +53,14 @@ describe('worker routing and CORS', () => {
       expect(await res.json()).toEqual({ errors: ['origin not allowed'] });
     }
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('never allows an empty origin, even with blank entries in the list', async () => {
+    const e = env({ ALLOWED_ORIGINS: 'https://coldsoldr.github.io,, ,' });
+    const res = await call(request('/feedback', { origin: '', body: '{}' }), e);
+    expect(res.status).toBe(403);
+    const ok = await call(request('/nowhere', { body: '{}' }), e);
+    expect(ok.status).toBe(404);
   });
 
   it('matches origins exactly', async () => {

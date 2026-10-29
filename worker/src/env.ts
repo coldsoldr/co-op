@@ -6,6 +6,12 @@ export interface Env {
   ALLOWED_ORIGINS: string;
   /** 'owner/repo' that feedback issues are filed in. */
   GITHUB_REPO: string;
-  /** Workers Rate Limiting binding; absent in tests and when not configured. */
-  FEEDBACK_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
+  /** Per-client Workers Rate Limiting binding; absent in tests and when not configured. */
+  FEEDBACK_LIMIT?: RateLimiter;
+  /** Shared limit across all clients, checked with the single key 'global'. */
+  FEEDBACK_GLOBAL_LIMIT?: RateLimiter;
+}
+
+export interface RateLimiter {
+  limit(o: { key: string }): Promise<{ success: boolean }>;
 }
