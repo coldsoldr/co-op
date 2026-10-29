@@ -3,6 +3,8 @@ import { readPatch } from '../codec/patch';
 
 /** A file about to be written that the profile marks unsupported. */
 export interface UnsupportedPatch {
+  /** A stable id when the path may repeat (op1.fun patch names); list keys use it. */
+  id?: string;
   path: string;
   reason: string;
 }
@@ -13,18 +15,20 @@ export interface UnsupportedPatch {
  * device would try to load, and the writers check readability themselves.
  */
 export function findUnsupported(
-  files: Iterable<{ path: string; bytes: Uint8Array }>,
+  files: Iterable<{ id?: string; path: string; bytes: Uint8Array }>,
   profile: DeviceProfile,
 ): UnsupportedPatch[] {
   const found: UnsupportedPatch[] = [];
-  for (const { path, bytes } of files) {
+  for (const { id, path, bytes } of files) {
     let compat;
     try {
       compat = profile.compatibility(readPatch(bytes));
     } catch {
       continue;
     }
-    if (compat.level === 'unsupported') found.push({ path, reason: compat.reason ?? 'unsupported' });
+    if (compat.level === 'unsupported') {
+      found.push({ ...(id !== undefined ? { id } : {}), path, reason: compat.reason ?? 'unsupported' });
+    }
   }
   return found;
 }

@@ -44,8 +44,8 @@ export function useConfirmUnsupported(): {
     <Dialog title={`Not supported on ${asking.profile.label}`} onClose={() => answer(false)}>
       <p>{unsupportedMessage(asking.profile)}</p>
       <ul className="file-list">
-        {asking.patches.map((p) => (
-          <li key={p.path}>
+        {asking.patches.map((p, index) => (
+          <li key={p.id ?? index}>
             <code>{p.path}</code>: {p.reason}
           </li>
         ))}

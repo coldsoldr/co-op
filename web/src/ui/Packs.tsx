@@ -351,6 +351,8 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
       if (!(await confirmUnsupported(risky, profile))) return;
       await device.run(async (store, source) => {
         if (source.key !== key) throw new CatalogueError('the drive changed; install again');
+        // The guard judged the patches for this profile; another profile may judge them differently.
+        if (device.currentProfile().id !== profileId) throw new CatalogueError('the profile changed; install again');
         installed = (await installPatches(store, profileId, pack.slug, downloads, (kind) => chosen[kind])).installed;
       });
       const where = staged ? ' Download them from the Library tab to copy them onto the OP-1.' : '';

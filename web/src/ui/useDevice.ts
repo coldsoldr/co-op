@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DeviceProfile } from '../core/profiles/types';
 import {
   detectProfiles,
@@ -58,6 +58,8 @@ export interface Device {
   suggestion: RankedProfile | null;
   /** Hides the suggestion for the open source. */
   dismissSuggestion(): void;
+  /** The active profile right now, for async work that must check it has not changed. */
+  currentProfile(): DeviceProfile;
   rows: LibraryRow[];
   /** Folder names under each patch root, keyed by root path ('synth'). */
   folders: Record<string, string[]>;
@@ -150,9 +152,14 @@ export function useDevice(): Device {
   const [profile, setProfileState] = useState<DeviceProfile>(defaultProfile);
   const [detection, setDetection] = useState('');
   /** The active profile's folder-detection confidence; Infinity once a profile is chosen by hand. */
-  const [detectionConfidence, setDetectionConfidence] = useState(0);
+  const confidenceRef = useRef(0);
   /** Source keys whose suggestion was dismissed. Kept in memory only. */
   const [dismissed, setDismissed] = useState<ReadonlySet<number>>(() => new Set());
+  /**
+   * The suggestion computed when the last load of a source settled. It is kept while a later load
+   * runs, so the notice does not flicker, and recomputed only when a load settles.
+   */
+  const [settledSuggestion, setSettledSuggestion] = useState<{ key: number; value: RankedProfile | null } | null>(null);
   const [rows, setRowsState] = useState<LibraryRow[]>([]);
   const [folders, setFolders] = useState<Record<string, string[]>>({});
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -268,6 +275,8 @@ export function useDevice(): Device {
         if (current()) {
           setLoading(false);
           setProgress(null);
+          const traits = rowsRef.current.map((row) => row.info?.traits).filter((t): t is SoundTraits => t != null);
+          setSettledSuggestion({ key: next.key, value: suggestProfile(traits, nextProfile, confidenceRef.current) });
         }
       }
     },
@@ -302,7 +311,7 @@ export function useDevice(): Device {
         setRows([]);
         setProfileBoth(found.profile);
         setDetection(found.detection);
-        setDetectionConfidence(found.confidence);
+        confidenceRef.current = found.confidence;
         setRecovered(restored);
         setSource(next);
         await load(next, found.profile, null);
@@ -386,7 +395,8 @@ export function useDevice(): Device {
         setProfileBoth(next);
         setDetection('chosen by hand');
         // A choice made by hand is never second-guessed.
-        setDetectionConfidence(Number.POSITIVE_INFINITY);
+        confidenceRef.current = Number.POSITIVE_INFINITY;
+        setSettledSuggestion(null);
         const current = sourceRef.current;
         if (current) await load(current, next, null);
       }),
@@ -443,12 +453,10 @@ export function useDevice(): Device {
 
   const markDownloaded = useCallback(() => setDownloadedRevision(revision), [revision]);
 
-  const settled = source !== null && !loading && progress === null;
-  const suggestion = useMemo(() => {
-    if (!settled || !source || dismissed.has(source.key)) return null;
-    const traits = rows.map((row) => row.info?.traits).filter((t): t is SoundTraits => t != null);
-    return suggestProfile(traits, profile, detectionConfidence);
-  }, [settled, source, dismissed, rows, profile, detectionConfidence]);
+  const suggestion =
+    source && settledSuggestion?.key === source.key && !dismissed.has(source.key) ? settledSuggestion.value : null;
+
+  const currentProfile = useCallback(() => profileRef.current, []);
 
   const dismissSuggestion = useCallback(() => {
     const key = sourceRef.current?.key;
@@ -461,6 +469,7 @@ export function useDevice(): Device {
     detection,
     suggestion,
     dismissSuggestion,
+    currentProfile,
     rows,
     folders,
     progress,

@@ -30,6 +30,11 @@ describe('findUnsupported', () => {
     expect(findUnsupported([{ path: 'saw.aif', bytes: supersaw }], op1Hundekraft)).toEqual([]);
   });
 
+  it('carries an id through for list keys', () => {
+    expect(findUnsupported([{ id: '42', path: 'saw', bytes: supersaw }], op1Stock)[0]?.id).toBe('42');
+    expect('id' in (findUnsupported([{ path: 'saw', bytes: supersaw }], op1Stock)[0] ?? {})).toBe(false);
+  });
+
   it('skips files that are not patches at all', () => {
     expect(findUnsupported([{ path: 'notes.txt', bytes: new TextEncoder().encode('hello') }], op1Stock)).toEqual([]);
   });

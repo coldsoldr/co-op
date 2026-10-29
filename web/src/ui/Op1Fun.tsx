@@ -280,7 +280,7 @@ function Browse({ client, initialUsername, workerUrl, onUsername, device, onOpen
       const risky = findUnsupported(
         list.flatMap((patch) => {
           const bytes = patch.fileUrl ? fetched.get(patch.fileUrl) : undefined;
-          return bytes instanceof Uint8Array ? [{ path: patch.name || `op1.fun patch ${patch.id}`, bytes }] : [];
+          return bytes instanceof Uint8Array ? [{ id: patch.id, path: patch.name || `op1.fun patch ${patch.id}`, bytes }] : [];
         }),
         profile,
       );
@@ -291,6 +291,8 @@ function Browse({ client, initialUsername, workerUrl, onUsername, device, onOpen
       setProgress({ done: 0, total: list.length });
       await device.run(async (store, source) => {
         if (source.key !== key) throw new Error('the drive changed; install again');
+        // The guard judged the patches for this profile; another profile may judge them differently.
+        if (device.currentProfile().id !== profileId) throw new Error('the profile changed; install again');
         const done = await installOp1FunPatches(
           store,
           profileId,

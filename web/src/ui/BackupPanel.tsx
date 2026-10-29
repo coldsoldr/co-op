@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import type { DeviceProfile } from '../core/profiles/types';
 import {
   RestoreError,
@@ -44,6 +44,13 @@ interface Outcome {
   failed: boolean;
 }
 
+/** Raised inside a restore when it would write a file the unsupported-patch guard did not see. */
+class NeedsGuard extends Error {
+  constructor(readonly diff: BackupDiff) {
+    super('the drive changed since the patches were checked; please confirm again');
+  }
+}
+
 /** Raised inside a restore when the drive changed since the overwrite was confirmed. */
 class NeedsConfirmation extends Error {
   constructor(readonly diff: BackupDiff) {
@@ -69,6 +76,8 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
   const [confirming, setConfirming] = useState<string[] | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const { confirmUnsupported, dialog } = useConfirmUnsupported();
+  /** The paths the unsupported-patch guard last judged; a restore writing any other path asks again. */
+  const guarded = useRef<ReadonlySet<string>>(new Set());
 
   async function download(paths?: readonly string[]): Promise<void> {
     setBackupError(null);
@@ -119,33 +128,34 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
   }
 
   /** Compares the selection with the drive as it is now, then confirms overwrites or applies. */
-  async function requestApply(): Promise<void> {
-    if (!pending) return;
+  async function requestApply(current: Pending | null = pending): Promise<void> {
+    if (!current) return;
     setRestoreError(null);
     try {
-      const diff = await exclusive(() => diffBackup(store, pending.backup));
-      setPending({ ...pending, diff });
-      const { paths, overwrites } = plan(diff, pending.selected);
+      const diff = await exclusive(() => diffBackup(store, current.backup));
+      setPending({ ...current, diff });
+      const { paths, overwrites } = plan(diff, current.selected);
       const risky = findUnsupported(
         paths.flatMap((path) => {
-          const bytes = pending.backup.files.get(path);
+          const bytes = current.backup.files.get(path);
           return bytes ? [{ path, bytes }] : [];
         }),
         profile,
       );
       if (!(await confirmUnsupported(risky, profile))) return;
+      guarded.current = new Set(paths);
       if (overwrites.length > 0) setConfirming(overwrites);
-      else await apply([]);
+      else await apply([], current);
     } catch (e) {
       setRestoreError(messageOf(e));
     }
   }
 
   /** Applies the restore, re-checking the drive first; `confirmed` are the overwrites the user accepted. */
-  async function apply(confirmed: readonly string[]): Promise<void> {
+  async function apply(confirmed: readonly string[], current: Pending | null = pending): Promise<void> {
     setConfirming(null);
-    if (!pending) return;
-    const { backup, selected } = pending;
+    if (!current) return;
+    const { backup, selected } = current;
     let restoring: string[] = [];
     setRestoreError(null);
     try {
@@ -153,6 +163,7 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
         async (target) => {
           const diff = await diffBackup(target, backup);
           const { paths, overwrites } = plan(diff, selected);
+          if (paths.some((path) => !guarded.current.has(path))) throw new NeedsGuard(diff);
           if (overwrites.some((path) => !confirmed.includes(path))) throw new NeedsConfirmation(diff);
           restoring = paths;
           let done = 0;
@@ -170,7 +181,9 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
       });
       setPending(null);
     } catch (e) {
-      if (e instanceof NeedsConfirmation) {
+      if (e instanceof NeedsGuard) {
+        void requestApply({ backup, selected, diff: e.diff });
+      } else if (e instanceof NeedsConfirmation) {
         setPending({ backup, selected, diff: e.diff });
         setConfirming(plan(e.diff, selected).overwrites);
       } else {
