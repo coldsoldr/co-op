@@ -234,6 +234,19 @@ Feedback
   browser user agent, and whether a device was mounted.
 - Submission goes to the Worker, which opens a GitHub Issue labelled
   `feedback` plus the category. The user gets the Issue URL back.
+- The Feedback button sits in the app header. The dialog lists exactly what
+  is attached. A build knows the Worker through `VITE_WORKER_URL` and
+  `VITE_TURNSTILE_SITE_KEY`; when either is missing it shows the same
+  fields with an "Open GitHub issue" link prefilled with the same title and
+  body (capped at 6000 characters by cutting the message, with a note).
+  The Turnstile script is loaded only when the dialog opens in Worker mode.
+- `shared/src/feedback.ts` holds the payload schema, validation, and the
+  issue title and body. Every user string is treated as hostile: mentions,
+  `#123`, `GH-123` and `github.com` get a zero-width space so feedback
+  cannot ping people or cross-reference issues; ampersands, angle brackets,
+  backticks, backslashes and pipes become entities; control and bidi characters are stripped; the message is quoted
+  line by line, never inside a fence the user could close; lone surrogates
+  are rejected.
 
 ## 6. Community packs
 
@@ -290,10 +303,15 @@ Cloudflare Worker, TypeScript, deployed with wrangler.
 
 Endpoints
 
-- `POST /feedback` Validates the payload against the shared schema, applies
-  a per-IP rate limit, verifies a Cloudflare Turnstile token, then creates
-  an Issue through the GitHub REST API using a fine-grained token scoped to
-  Issues on this repo. Returns the Issue URL.
+- `POST /feedback` Refuses bodies over 16 KB (counted as the body streams,
+  413) and non-JSON (400), validates the payload against the shared schema
+  (400 with the errors), applies the rate limits (429, `Retry-After: 60`),
+  verifies the Turnstile token with siteverify, requiring `success` and a
+  `hostname` that belongs to `ALLOWED_ORIGINS` (403; siteverify unreachable
+  or `internal-error` is 502), then creates an Issue through the GitHub REST
+  API using a fine-grained token scoped to Issues on this repo (any failure
+  is 502 without GitHub's answer). Both subrequests time out after 10 s.
+  Returns 201 `{ url, number }`.
 - `POST /op1fun/patches` Validates that the body matches op1.fun's create
   patch shape and size limit, forwards it with the caller's `X-User-Email`
   and `X-User-Token` headers to `https://api.op1.fun/v1/patches`, and
@@ -301,10 +319,23 @@ Endpoints
 
 Rules
 
-- CORS allows only the Pages origin and localhost for development.
-- No persistent storage. No logging of request bodies or auth headers.
-- Secrets: `GITHUB_TOKEN`, `TURNSTILE_SECRET`. Set through wrangler, never
-  committed. `.dev.vars` is gitignored.
+- CORS allows only the exact origins in the `ALLOWED_ORIGINS` var (the
+  Pages origin and localhost 5173 and 4173). Other origins, and requests
+  without one, get 403; preflights from them get no CORS headers. Allowed
+  headers are `Content-Type, X-User-Email, X-User-Token`; `Retry-After` is
+  exposed.
+- Rate limiting uses the Workers Rate Limiting binding (`[[ratelimits]]` in
+  `wrangler.toml`): `FEEDBACK_LIMIT`, 5 a minute per client keyed by
+  `CF-Connecting-IP` (IPv6 by its /64), and `FEEDBACK_GLOBAL_LIMIT`, 30 a
+  minute under one `global` key. Counts are per Cloudflare location.
+- No persistent storage. No logging of request bodies or headers.
+- Vars: `ALLOWED_ORIGINS`, `GITHUB_REPO` (`coldsoldr/co-op`). Secrets:
+  `GITHUB_TOKEN`, `TURNSTILE_SECRET`, set with `wrangler secret put` (or
+  synced by `worker.yml` from the repo secrets `FEEDBACK_GITHUB_TOKEN` and
+  `TURNSTILE_SECRET`), never committed. `.dev.vars` is gitignored.
+- Tests call the handler directly with `Request` objects and a stubbed
+  global `fetch`; there is no Miniflare dependency. The owner's setup is in
+  `docs/deploying-the-worker.md`.
 
 Why a proxy for uploads: api.op1.fun answers preflight with
 `Access-Control-Allow-Methods: GET, OPTIONS` only, so browsers block a
@@ -315,17 +346,25 @@ direct.
 
 - `pages.yml`: on push to `main`, check, run the Playwright test, build `web/`
   (which validates the packs and writes `dist/packs/index.json`), upload to
-  GitHub Pages.
-- `worker.yml`: on push to `main` touching `worker/` or `shared/`, deploy
-  with wrangler using `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
-  repo secrets.
-- `ci.yml`: typecheck, lint, unit tests, pack validation, build and the
-  Playwright smoke test on every PR and push. There is no separate packs
-  workflow: packs are validated in `ci.yml` and indexed by the Pages build.
+  GitHub Pages. The build passes the repository variables `WORKER_URL` and
+  `TURNSTILE_SITE_KEY` as `VITE_WORKER_URL` and `VITE_TURNSTILE_SITE_KEY`,
+  and `GITHUB_SHA` becomes the commit shown in feedback context.
+- `worker.yml`: on push to `main` touching `worker/`, `shared/` or the
+  lockfile, and on demand: test, typecheck and `wrangler deploy --dry-run`,
+  then deploy with wrangler only when the `CLOUDFLARE_API_TOKEN` and
+  `CLOUDFLARE_ACCOUNT_ID` repo secrets are set (a `check` step turns their
+  presence into an output, since `secrets` cannot be used in `if:`).
+  Without them the deploy is skipped with a notice and the job passes.
+- `ci.yml`: typecheck, lint, unit tests (web, shared and worker), pack
+  validation, build and the Playwright smoke test on every PR and push.
+  On pull requests it also warns when a PR changes files under `packs/`
+  and elsewhere. There is no separate packs workflow: packs are validated in
+  `ci.yml` and indexed by the Pages build.
 
-The owner supplies a Cloudflare account and the GitHub fine-grained token.
-Until the Worker is deployed the app shows feedback and op1.fun upload as
-unavailable rather than failing.
+The owner supplies a Cloudflare account, a Turnstile widget and the GitHub
+fine-grained token (`docs/deploying-the-worker.md`). Until the Worker is
+deployed, feedback falls back to a prefilled GitHub issue link and op1.fun
+upload shows as unavailable rather than failing.
 
 ## 9. Error handling
 

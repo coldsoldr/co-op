@@ -7,7 +7,7 @@ Live app: https://coldsoldr.github.io/co-op/
 
 ## What exists today
 
-Phase 4 of 8 is complete. The app is a working librarian for an OP-1 in
+Phase 5 of 8 is complete. The app is a working librarian for an OP-1 in
 disk mode (shift + COM, then DISK):
 
 - **Library tab.** In Chrome or Edge, "Connect OP-1" opens the drive for
@@ -35,15 +35,22 @@ disk mode (shift + COM, then DISK):
   SHA-256. Anyone can add a pack by pull request; see
   [docs/contributing-packs.md](docs/contributing-packs.md).
 - **Inspector tab.** Drop a single `.aif` to see how co-op reads it.
+- **Feedback.** The Feedback button in the header sends a bug report, idea,
+  pack request or anything else, with a short list of attached context
+  (app version, profile, store type, browser) shown before sending. Once the
+  Cloudflare Worker in `worker/` is deployed, it goes through a Turnstile
+  check and becomes a labelled GitHub issue without needing an account;
+  until then the button opens a prefilled GitHub issue instead. The owner's
+  setup is in [docs/deploying-the-worker.md](docs/deploying-the-worker.md).
 
 Under the hood: a pure TypeScript AIFF/AIFC codec that round-trips OP-1
 files byte for byte, a device-profile layer for the stock OP-1, a
 `DeviceStore` abstraction with File System Access, dropped-folder,
-staged and in-memory implementations, unit tests with vitest and a
-Playwright smoke test of the library in Chromium.
+staged and in-memory implementations, a Cloudflare Worker tested by calling
+its handler directly, unit tests with vitest and Playwright smoke tests in
+Chromium.
 
-Still to come, in order: feedback to GitHub
-Issues via a Cloudflare Worker, op1.fun integration, then hundekraft and
+Still to come, in order: op1.fun integration, then hundekraft and
 opus firmware profiles. The full design is in
 `docs/superpowers/specs/2026-10-28-op-patch-librarian-design.md`; the
 implementation plans are in `docs/superpowers/plans/`.
@@ -60,6 +67,7 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm build
 pnpm --filter @co-op/web exec playwright install chromium   # once
 pnpm --filter @co-op/web e2e      # Playwright smoke test against the production build
 pnpm --filter @co-op/web packs:validate   # check every pack in packs/
+pnpm --filter @co-op/worker exec wrangler deploy --dry-run --outdir dist   # bundle the Worker without deploying
 ```
 
 CI runs the same commands, and the Playwright test in its own job, on every
@@ -70,14 +78,14 @@ push and pull request. Pushes to
 
 ```
 web/      Vite + React + TypeScript app; web/scripts holds the packs CLI
-shared/   pack manifest schema and validation, shared by the app and the CLI
+worker/   Cloudflare Worker: POST /feedback files GitHub issues
+shared/   pack and feedback schemas and validation, shared by the app, CLI and Worker
 packs/    community patch packs, one folder each
-docs/     design spec, implementation plans, contributor guide for packs
+docs/     design spec, implementation plans, pack and Worker guides
 vendor/   gitignored clones of third-party firmware repos, see vendor/README.md
 ```
 
-The planned `worker/` package (Cloudflare Worker) is already listed in
-`pnpm-workspace.yaml`. `packs/index.json` is never committed: the build
+`packs/index.json` is never committed: the build
 validates the packs and writes the index into `web/dist/packs/`, and the dev
 server builds it on the fly.
 
