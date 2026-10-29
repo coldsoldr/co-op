@@ -100,31 +100,40 @@ describe('soundTraits', () => {
 });
 
 /** hundekraft's factory presets (gitignored, GPL): read in place, never copied into the repo. */
-const PRESETS = fileURLToPath(
-  new URL('../../../../vendor/hundekraft/op1-workshop-main/variants/7ff/presets.zip', import.meta.url),
-);
+const PRESETS =
+  process.env['CO_OP_PRESETS_ZIP'] ??
+  fileURLToPath(new URL('../../../../vendor/hundekraft/op1-workshop-main/variants/7ff/presets.zip', import.meta.url));
 
-describe.skipIf(!existsSync(PRESETS))('soundTraits on the hundekraft factory presets', () => {
-  const patches = Object.entries(unzipSync(new Uint8Array(readFileSync(PRESETS))))
+/**
+ * Read lazily: vitest runs a describe callback even when the block is skipped, so reading the zip
+ * there fails on machines without vendor/ (CI).
+ */
+let cached: { name: string; traits: ReturnType<typeof soundTraits> }[] | null = null;
+function presets() {
+  cached ??= Object.entries(unzipSync(new Uint8Array(readFileSync(PRESETS))))
     .filter(([name]) => /\.aiff?$/i.test(name))
     .map(([name, bytes]) => ({ name, traits: soundTraits(readPatch(bytes).meta) }));
+  return cached;
+}
+
+describe.skipIf(!existsSync(PRESETS))('soundTraits on the hundekraft factory presets', () => {
 
   it('reads all 152 presets as synths', () => {
-    expect(patches).toHaveLength(152);
-    for (const { name, traits } of patches) {
+    expect(presets()).toHaveLength(152);
+    for (const { name, traits } of presets()) {
       expect(traits?.kind, name).toBe('synth');
       expect(traits?.engine, name).not.toBe('');
     }
   });
 
   it('finds an engine selector on every non-iter engine and none on iter', () => {
-    for (const { name, traits } of patches) {
+    for (const { name, traits } of presets()) {
       if (traits?.engine === 'iter') expect(traits.engineSelector, name).toBeNull();
       else expect(traits?.engineSelector, name).not.toBeNull();
     }
   });
 
   it('has no opus or Gin traits', () => {
-    for (const { traits } of patches) expect(traits).toMatchObject({ hasOpus: false, hasGin: false, opusEffects: [] });
+    for (const { traits } of presets()) expect(traits).toMatchObject({ hasOpus: false, hasGin: false, opusEffects: [] });
   });
 });
