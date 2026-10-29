@@ -94,7 +94,8 @@ const stripBom = (text: string): string => (text.startsWith('\uFEFF') ? text.sli
 /** Reads a patch file for the validator and the index. */
 function describePatch(bytes: Uint8Array): ParsedPackPatch {
   const patch = readPatch(bytes);
-  const engine = patch.kind === 'drum' ? 'drum' : typeof patch.meta?.type === 'string' ? patch.meta.type : '';
+  // The engine in `type`: a synth engine, or drum, dbox or gin for drum kits.
+  const engine = typeof patch.meta?.type === 'string' ? patch.meta.type : patch.kind === 'drum' ? 'drum' : '';
   return { kind: patch.kind, name: patch.name, engine };
 }
 

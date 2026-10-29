@@ -61,7 +61,7 @@ export interface PackIndexPatch {
   kind: PackKind;
   /** The name stored in the patch's op-1 metadata. */
   name: string;
-  /** The synth engine (`type` in the metadata), or 'drum'. */
+  /** The engine (`type` in the metadata): a synth engine, or 'drum', 'dbox' or 'gin' for drum kits. */
   engine: string;
   sizeBytes: number;
   /** Lower-case hex SHA-256 of the file. */

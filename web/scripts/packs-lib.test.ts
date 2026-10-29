@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { buildPacks, formatIssues, loadPacks, packsMiddleware } from './packs-lib';
 import { fixtureBytes } from '../test/fixture-bytes';
+import { readPatch, withMeta } from '../src/core/codec/patch';
+import type { Op1Meta } from '../src/core/codec/op1-meta';
 
 const cluster = fixtureBytes('synth-cluster.aif');
 const boombap = fixtureBytes('drum-boombap.aif');
@@ -95,6 +97,24 @@ describe('loadPacks', () => {
   it('defaults to the registered profiles as known firmware', async () => {
     await goodPack();
     expect((await loadPacks(packsDir, { now: NOW })).issues).toEqual([]);
+  });
+
+  it('indexes a drum kit under its own drum engine', async () => {
+    const kit = (type: string) => {
+      const patch = readPatch(boombap);
+      return withMeta(patch, { ...patch.meta, type, name: type } as Op1Meta).raw;
+    };
+    await put('kits/pack.json', manifest('kits', ['drum/dbox.aif', 'drum/gin.aif', 'drum/kit.aif'], { firmware: ['op1/hundekraft'] }));
+    await put('kits/drum/dbox.aif', kit('dbox'));
+    await put('kits/drum/gin.aif', kit('gin'));
+    await put('kits/drum/kit.aif', boombap);
+    const { issues, index } = await loadPacks(packsDir, { now: NOW });
+    expect(issues).toEqual([]);
+    expect(index.packs[0]?.patches.map((p) => [p.kind, p.engine])).toEqual([
+      ['drum', 'dbox'],
+      ['drum', 'gin'],
+      ['drum', 'drum'],
+    ]);
   });
 
   it('accepts op1/hundekraft as a registered firmware', async () => {
