@@ -1,6 +1,7 @@
-import { useCallback, useRef, useState, type KeyboardEvent } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import type { PluginIndexEntry } from '@co-op/shared/plugins';
 import { Feedback } from './ui/Feedback';
+import { CopyToMods } from './ui/CopyToMods';
 import { Inspector } from './ui/Inspector';
 import { Library } from './ui/Library';
 import { Op1FunTab } from './ui/Op1Fun';
@@ -26,13 +27,15 @@ export function App() {
   const device = useDevice();
   // The op1.fun account, shared by the op1.fun tab and the Library's upload action.
   const op1fun = useOp1Fun();
-  const { setInstalledPlugins } = device;
+
   // hundekraft plugins install over USB MIDI; the inventory the OP-1 reports afterwards is shared.
-  const pluginActions = useCallback(
-    (plugin: PluginIndexEntry) =>
-      plugin.firmware === 'op1/hundekraft' ? <InstallOverUsb plugin={plugin} onInstalled={setInstalledPlugins} /> : null,
-    [setInstalledPlugins],
-  );
+  // opus plugins are copied into mods/ on the open drive.
+  const pluginActions = (plugin: PluginIndexEntry) =>
+    plugin.firmware === 'op1/hundekraft' ? (
+      <InstallOverUsb plugin={plugin} onInstalled={device.setInstalledPlugins} />
+    ) : (
+      <CopyToMods plugin={plugin} device={device} />
+    );
   const buttons = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
 
   function openLibrary(): void {

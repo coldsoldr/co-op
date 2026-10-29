@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { listOpusPlugins } from './mods';
+import { PluginExistsError, copyOpusPlugin, findOpusPluginFile, listOpusPlugins } from './mods';
 import { MemoryStore } from '../store/memory-store';
+import { StagedStore } from './changeset';
+import { OperationError } from './operations';
 
 const OPMD = [0x4f, 0x50, 0x4d, 0x44];
 const bytes = (...values: number[]): Uint8Array => Uint8Array.from(values);
@@ -77,5 +79,64 @@ describe('listOpusPlugins details', () => {
     expect(await listOpusPlugins(store)).toMatchObject({
       leftovers: ['mods/.co-op-old-b.opmod', 'mods/dx/.co-op-tmp-bank.syx'],
     });
+  });
+});
+
+describe('copyOpusPlugin', () => {
+  const plugin = bytes(...OPMD, 9, 9);
+
+  it('writes the plugin into mods/, creating the folder', async () => {
+    const store = new MemoryStore({ 'synth/user/a.aif': bytes(1) });
+    expect(await copyOpusPlugin(store, 'dx.opmod', plugin)).toBe('mods/dx.opmod');
+    expect(await store.read('mods/dx.opmod')).toEqual(plugin);
+    expect((await store.list('mods')).map((e) => e.name)).toEqual(['dx.opmod']);
+  });
+
+  it('uses the mods folder as the drive spells it', async () => {
+    const store = new MemoryStore({ 'MODS/a.opmod': bytes(...OPMD) });
+    expect(await copyOpusPlugin(store, 'dx.opmod', plugin)).toBe('MODS/dx.opmod');
+  });
+
+  it('refuses to replace a file of the same name in any case unless asked', async () => {
+    const store = new MemoryStore({ 'mods/DX.opmod': bytes(...OPMD, 1) });
+    const refused = copyOpusPlugin(store, 'dx.opmod', plugin);
+    await expect(refused).rejects.toBeInstanceOf(PluginExistsError);
+    await expect(refused).rejects.toMatchObject({ path: 'mods/DX.opmod', message: 'mods/DX.opmod already exists' });
+    expect(await store.read('mods/DX.opmod')).toEqual(bytes(...OPMD, 1));
+
+    expect(await copyOpusPlugin(store, 'dx.opmod', plugin, { overwrite: true })).toBe('mods/DX.opmod');
+    expect(await store.read('mods/DX.opmod')).toEqual(plugin);
+    expect((await store.list('mods')).map((e) => e.name)).toEqual(['DX.opmod']);
+  });
+
+  it('refuses a file that is not an opus plugin or a name that is not an .opmod file', async () => {
+    const store = new MemoryStore({});
+    await expect(copyOpusPlugin(store, 'dx.opmod', bytes(1, 2, 3, 4))).rejects.toThrow('dx.opmod does not start with OPMD');
+    await expect(copyOpusPlugin(store, '../dx.opmod', plugin)).rejects.toBeInstanceOf(OperationError);
+    await expect(copyOpusPlugin(store, 'dx.knl', plugin)).rejects.toBeInstanceOf(OperationError);
+    await expect(copyOpusPlugin(store, '.dx.opmod', plugin)).rejects.toBeInstanceOf(OperationError);
+    expect(await store.exists('mods')).toBe(false);
+  });
+
+  it('refuses a folder of that name', async () => {
+    const store = new MemoryStore({ 'mods/dx.opmod/inner': bytes(1) });
+    await expect(copyOpusPlugin(store, 'dx.opmod', plugin, { overwrite: true })).rejects.toThrow('mods/dx.opmod is a folder');
+  });
+
+  it('collects the write as a staged change on a read-only source', async () => {
+    const base = new MemoryStore({ 'mods/a.opmod': bytes(...OPMD) }, { write: false });
+    const staged = new StagedStore(base);
+    await copyOpusPlugin(staged, 'dx.opmod', plugin);
+    expect(staged.changes()).toEqual([{ op: 'write', path: 'mods/dx.opmod', bytes: plugin }]);
+    expect(await base.exists('mods/dx.opmod')).toBe(false);
+  });
+});
+
+describe('findOpusPluginFile', () => {
+  it('finds a file in mods/ by name ignoring case', async () => {
+    const store = new MemoryStore({ 'Mods/DX.opmod': bytes(...OPMD) });
+    expect(await findOpusPluginFile(store, 'dx.opmod')).toBe('Mods/DX.opmod');
+    expect(await findOpusPluginFile(store, 'other.opmod')).toBeNull();
+    expect(await findOpusPluginFile(new MemoryStore({}), 'dx.opmod')).toBeNull();
   });
 });
