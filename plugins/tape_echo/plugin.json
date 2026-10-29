@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "tape_echo",
+  "name": "tape echo",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "coldsoldr",
+  "version": "0.2",
+  "description": "Three-head tape delay with tempo lock, hold and self-oscillation.",
+  "license": "GPL-3.0-or-later",
+  "file": "tape_echo.knl",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/coldsoldr/te-op1-cfw",
+  "requires": "hundekraft 3.0.3",
+  "credits": "Wow and flutter model from Mutable Instruments Beads by Émilie Gillet (MIT)",
+  "tags": ["effect", "delay", "tape"]
+}

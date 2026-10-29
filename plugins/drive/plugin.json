@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "id": "drive",
+  "name": "drive",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "coldsoldr",
+  "version": "0.2",
+  "description": "Valve-style overdrive with tone and bias, oversampled and auto-levelled.",
+  "license": "GPL-3.0-or-later",
+  "file": "drive.knl",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/coldsoldr/te-op1-cfw",
+  "requires": "hundekraft 3.0.3",
+  "tags": ["effect", "distortion", "overdrive"]
+}

@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "freq_shift",
+  "name": "freq shift",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "coldsoldr",
+  "version": "0.2",
+  "description": "Bode frequency shifter and ring modulator, with barber-pole feedback and stereo spread.",
+  "license": "GPL-3.0-or-later",
+  "file": "freq_shift.knl",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/coldsoldr/te-op1-cfw",
+  "requires": "hundekraft 3.0.3",
+  "credits": "Port of Mutable Instruments Warps (frequency shifter and ring modulator) by Émilie Gillet (MIT)",
+  "tags": ["effect", "mutable-instruments", "frequency-shifter", "ring-mod"]
+}

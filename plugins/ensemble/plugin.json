@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "id": "ensemble",
+  "name": "ensemble",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "coldsoldr",
+  "version": "0.2",
+  "description": "Chorus to string-machine ensemble: one to three swept copies of the signal per side.",
+  "license": "GPL-3.0-or-later",
+  "file": "ensemble.knl",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/coldsoldr/te-op1-cfw",
+  "requires": "hundekraft 3.0.3",
+  "tags": ["effect", "chorus", "modulation"]
+}

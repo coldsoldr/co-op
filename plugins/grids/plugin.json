@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "grids",
+  "name": "grids",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "Mutable Instruments Grids as a drum sequencer: a map of drum grooves with fills, chaos, accents and a Euclidean mode, and a print into the OP-1's pattern sequencer.",
+  "license": "GPL-3.0-or-later",
+  "file": "grids.knl",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/coldsoldr/te-op1-cfw",
+  "requires": "hundekraft 3.0.3",
+  "credits": "Port of Mutable Instruments Grids by Émilie Gillet (GPL-3.0)",
+  "tags": ["sequencer", "mutable-instruments", "drums"]
+}

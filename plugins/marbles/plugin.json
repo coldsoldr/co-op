@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "marbles",
+  "name": "marbles",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "Mutable Instruments Marbles as a sequencer: random rhythms and melodies with memory (deja vu), quantized to a scale or drawn from the keys you hold.",
+  "license": "GPL-3.0-or-later",
+  "file": "marbles.knl",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/coldsoldr/te-op1-cfw",
+  "requires": "hundekraft 3.0.3",
+  "credits": "Port of Mutable Instruments Marbles by Émilie Gillet (MIT)",
+  "tags": ["sequencer", "mutable-instruments", "generative"]
+}

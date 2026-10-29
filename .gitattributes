@@ -2,3 +2,6 @@
 *.aif binary
 *.aiff binary
 *.png binary
+*.knl binary
+*.op1p binary
+*.opmod binary
