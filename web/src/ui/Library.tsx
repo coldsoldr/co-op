@@ -21,6 +21,7 @@ import { saveBlob, zipBlob } from './download';
 import { compatView, dateStamp, formatSize, groupByFolder, kindMismatchText, rootOf } from './format';
 import { OpusPlugins } from './OpusPlugins';
 import { TraitsPopover } from './TraitsPopover';
+import { UsbCheck } from './UsbCheck';
 import { PatchActions } from './PatchActions';
 import { UploadDialog, uploadUnavailable } from './Op1FunUpload';
 import type { Op1Fun } from './useOp1Fun';
@@ -43,14 +44,23 @@ const folderInputProps = { webkitdirectory: '', directory: '' } as InputHTMLAttr
  * is hidden; playback stops then. `op1fun` is the op1.fun account, for the Upload action.
  */
 export function Library({ device, active = true, op1fun }: { device: Device; active?: boolean; op1fun: Op1Fun }) {
+  const [usbCheck, setUsbCheck] = useState(false);
+  const openUsbCheck = useCallback(() => setUsbCheck(true), []);
   return (
     <section aria-labelledby="library-heading">
       <h2 id="library-heading">Device library</h2>
       {device.source ? (
-        <Connected key={device.source.key} device={device} active={active} op1fun={op1fun} />
+        <Connected
+          key={device.source.key}
+          device={device}
+          active={active}
+          op1fun={op1fun}
+          onCheckUsb={openUsbCheck}
+        />
       ) : (
-        <ConnectPanel device={device} />
+        <ConnectPanel device={device} onCheckUsb={openUsbCheck} />
       )}
+      {usbCheck && <UsbCheck device={device} onClose={() => setUsbCheck(false)} />}
       {device.error && (
         <p role="alert" className="error">
           {device.error}
@@ -72,7 +82,7 @@ export function Library({ device, active = true, op1fun }: { device: Device; act
   );
 }
 
-function ConnectPanel({ device }: { device: Device }) {
+function ConnectPanel({ device, onCheckUsb }: { device: Device; onCheckUsb: () => void }) {
   const [dragging, setDragging] = useState(false);
   const [readingDrop, setReadingDrop] = useState(false);
   const blocked = device.busy || readingDrop;
@@ -133,6 +143,12 @@ function ConnectPanel({ device }: { device: Device }) {
           <input type="file" multiple onChange={onPick} disabled={blocked} {...folderInputProps} />
         </label>
       </div>
+      <p>
+        To see which firmware and plugins the OP-1 runs, plug it in normally (not in disk mode) and{' '}
+        <button type="button" onClick={onCheckUsb}>
+          Check over USB
+        </button>
+      </p>
       {readingDrop && <p role="status">Reading dropped folder…</p>}
       {device.loading && <p role="status">Opening…</p>}
     </div>
@@ -154,7 +170,17 @@ const COLUMNS: ReadonlyArray<{ key: SortKey; label: string }> = [
   { key: 'compat', label: 'Compatibility' },
 ];
 
-function Connected({ device, active, op1fun }: { device: Device; active: boolean; op1fun: Op1Fun }) {
+function Connected({
+  device,
+  active,
+  op1fun,
+  onCheckUsb,
+}: {
+  device: Device;
+  active: boolean;
+  op1fun: Op1Fun;
+  onCheckUsb: () => void;
+}) {
   const source = device.source;
   const [playing, setPlaying] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -287,6 +313,9 @@ function Connected({ device, active, op1fun }: { device: Device; active: boolean
           </button>{' '}
           <button type="button" onClick={requestDisconnect} disabled={device.busy}>
             Disconnect
+          </button>{' '}
+          <button type="button" onClick={onCheckUsb}>
+            Check over USB
           </button>
         </p>
         <p>

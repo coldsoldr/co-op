@@ -9,6 +9,7 @@ import {
   type RankedProfile,
 } from '../core/profiles/registry';
 import type { SoundTraits } from '../core/codec/sound-traits';
+import type { Inventory } from '../core/usbmidi/inventory';
 import { DEFAULT_CONCURRENCY, loadAllPatches, loadLibrary } from '../core/library/library';
 import { StagedStore, countChanges } from '../core/library/changeset';
 import { recoverDrive } from '../core/library/recover';
@@ -101,6 +102,12 @@ export interface Device {
   fail(message: string): void;
   setProfile(id: string): Promise<void>;
   /**
+   * What the last USB check read from the OP-1 (its plugin inventory), or null before a check, after a
+   * check that found none, or on a build without the inventory. Kept in memory only.
+   */
+  installedPlugins: Inventory | null;
+  setInstalledPlugins(inventory: Inventory | null): void;
+  /**
    * Queues an operation, runs it against the source, then reloads, re-reading `touched` paths and
    * any whose size changed. Errors are rethrown for the caller to show.
    */
@@ -186,6 +193,7 @@ export function useDevice(): Device {
   /** revision when the changes were last downloaded; null when never downloaded. */
   const [downloadedRevision, setDownloadedRevision] = useState<number | null>(null);
   const [remembered, setRemembered] = useState<FileSystemDirectoryHandle | null>(null);
+  const [installedPlugins, setInstalledPlugins] = useState<Inventory | null>(null);
   const [fsAccess] = useState(isFsAccessSupported);
   const [pending, setPending] = useState(0);
   const [mutating, setMutating] = useState(0);
@@ -505,6 +513,8 @@ export function useDevice(): Device {
     openInput,
     fail,
     setProfile,
+    installedPlugins,
+    setInstalledPlugins,
     run,
     exclusive,
     refresh,
