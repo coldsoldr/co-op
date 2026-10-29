@@ -19,7 +19,6 @@ import { BackupPanel } from './BackupPanel';
 import { ConfirmDialog } from './Dialog';
 import { saveBlob, zipBlob } from './download';
 import { compatView, dateStamp, formatSize, groupByFolder, kindMismatchText, rootOf, traitDetails } from './format';
-import type { DeviceProfile } from '../core/profiles/types';
 import type { SoundTraits } from '../core/codec/sound-traits';
 import { PatchActions } from './PatchActions';
 import { UploadDialog, uploadUnavailable } from './Op1FunUpload';
@@ -272,7 +271,6 @@ function Connected({ device, active, op1fun }: { device: Device; active: boolean
       onUpload={setUploading}
       uploadUnavailable={uploadWhy}
       uploadNoteId={uploadNoteId}
-      profile={device.profile}
       selected={selected.has(row.path)}
       onSelect={toggleSelected}
     />
@@ -508,7 +506,6 @@ interface RowProps {
   onUpload: (entry: LibraryRow) => void;
   uploadUnavailable: string | null;
   uploadNoteId: string;
-  profile: DeviceProfile;
   selected: boolean;
   onSelect: (path: string, on: boolean) => void;
 }
@@ -524,7 +521,6 @@ const Row = memo(function Row({
   onUpload,
   uploadUnavailable,
   uploadNoteId,
-  profile,
   selected,
   onSelect,
 }: RowProps) {
@@ -574,7 +570,6 @@ const Row = memo(function Row({
           onUpload={onUpload}
           uploadUnavailable={uploadUnavailable}
           uploadNoteId={uploadNoteId}
-          profile={profile}
         />
       </td>
     </tr>

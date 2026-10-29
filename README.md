@@ -49,8 +49,8 @@ disk mode (shift + COM, then DISK):
   effects or Gin kits (it never switches by itself). Each badge has a
   details popover with the patch's engine, effect, LFO and plugin. The
   stock profile is strict: sounds from custom firmware can stop a stock
-  OP-1 at boot, so installing, restoring, copying or moving such a patch
-  onto a stock drive asks first, naming each patch and the reason.
+  OP-1 at boot, so installing or restoring such a patch onto a stock
+  drive asks first, naming each patch and the reason.
 - **Inspector tab.** Drop a single `.aif` to see how co-op reads it and
   how the open drive's profile (or one you pick) judges it.
 - **Feedback.** The Feedback button in the header sends a bug report, idea,

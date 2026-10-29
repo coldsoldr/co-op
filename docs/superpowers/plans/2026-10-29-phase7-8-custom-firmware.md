@@ -20,7 +20,8 @@ Status: done (2026-10-29). Deviations from the tasks below, decided during revie
 fifth knob or effect value with otherwise stock names only warns on stock and does not sniff as
 hundekraft; `dbox_data` alone is not a Gin trait; `opusMark` is separate from `engineSelector`;
 sounds with an `opus` member never sniff as hundekraft; pack and op1.fun installs download before
-the write guard asks, so nothing is written until the user confirms.
+the write guard asks, so nothing is written until the user confirms; copy and move within the drive
+are not guarded, because the file is already on the device.
 
 ### Task 1 (done): stock name lists from the firmware
 

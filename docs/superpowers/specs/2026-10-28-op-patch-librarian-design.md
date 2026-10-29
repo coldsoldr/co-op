@@ -183,12 +183,14 @@ soften findings. The codec reads `drum`, `dbox` (stock DBox) and `gin`
   is installed now. A profile chosen by hand is never second-guessed.
   Every patch shown anywhere carries a compatibility badge for the active
   profile, with a details popover listing its traits.
-- Writes are guarded. Pack installs, op1.fun installs, restores and copy
-  or move first check the active profile's compatibility; any
+- Writes that bring patches onto the device are guarded. Pack installs,
+  op1.fun installs and restores first check the active profile's
+  compatibility; any
   `unsupported` patch needs an explicit confirm in a shared dialog that
   names each patch and reason (and, on stock, the boot risk). Cancel is
   the default. Files that do not parse as patches are left to the
-  writers' own checks.
+  writers' own checks. Copy and move within the drive do not ask: the
+  file is already on the device.
 
 ### 5.3 Device store
 
