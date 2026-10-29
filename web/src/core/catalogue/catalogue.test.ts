@@ -357,7 +357,7 @@ describe('compatibilityWarning', () => {
   it('names the pack, its firmware and the device when it is not', () => {
     const warning = compatibilityWarning(pack({ firmware: ['op1/hundekraft'] }), 'op1/stock');
     expect(warning).toBe(
-      'Test Tones is made for op1/hundekraft, not OP-1 (stock firmware). Its patches may not load or may sound different.',
+      'Test Tones is made for OP-1 (hundekraft), not OP-1 (stock firmware). Its patches may not load or may sound different.',
     );
   });
 

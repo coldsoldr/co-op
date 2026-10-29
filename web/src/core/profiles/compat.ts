@@ -8,6 +8,10 @@ export type { ProfileSupports };
 export interface Finding {
   level: 'warn' | 'unsupported';
   reason: string;
+  /** Set on findings from the supported-name check: which saved name was not supported. */
+  subject?: 'engine' | 'fx' | 'lfo';
+  /** With `subject`: the saved name that was not supported. */
+  name?: string;
 }
 
 /**
@@ -25,15 +29,15 @@ export interface TraitCompatibilityOptions {
 /** One finding per saved name that `supports` does not list. A missing name is fine. */
 export function nameFindings(traits: SoundTraits, supports: ProfileSupports): Finding[] {
   const findings: Finding[] = [];
-  const check = (label: string, name: string | null, known: readonly string[]) => {
+  const check = (subject: NonNullable<Finding['subject']>, label: string, name: string | null, known: readonly string[]) => {
     if (name !== null && !known.includes(name)) {
-      findings.push({ level: 'unsupported', reason: `${label} "${name}" is not part of this firmware` });
+      findings.push({ level: 'unsupported', reason: `${label} "${name}" is not part of this firmware`, subject, name });
     }
   };
-  if (traits.kind === 'drum') check('drum engine', traits.engine, supports.drumEngines);
-  else check('engine', traits.engine, supports.synthEngines);
-  check('effect', traits.fx, supports.fx);
-  check('LFO', traits.lfo, supports.lfo);
+  if (traits.kind === 'drum') check('engine', 'drum engine', traits.engine, supports.drumEngines);
+  else check('engine', 'engine', traits.engine, supports.synthEngines);
+  check('fx', 'effect', traits.fx, supports.fx);
+  check('lfo', 'LFO', traits.lfo, supports.lfo);
   return findings;
 }
 

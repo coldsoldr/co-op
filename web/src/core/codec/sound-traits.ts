@@ -46,7 +46,8 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null;
 }
 
-function inOp1rRange(value: unknown): value is number {
+/** True for an op1r-family selector word (hundekraft and op1r engines and effects). */
+export function isOp1rSelector(value: unknown): value is number {
   return typeof value === 'number' && value >= OP1R_SELECTOR_MIN && value <= OP1R_SELECTOR_MAX;
 }
 
@@ -79,8 +80,8 @@ export function soundTraits(meta: Op1Meta | null): SoundTraits | null {
     engine: typeof meta['type'] === 'string' ? meta['type'] : '',
     fx: nonEmptyString(meta['fx_type']),
     lfo: nonEmptyString(meta['lfo_type']),
-    engineSelector: inOp1rRange(knob4) || opusMark ? (knob4 as number) : null,
-    fxSelector: inOp1rRange(fx4) ? fx4 : null,
+    engineSelector: isOp1rSelector(knob4) || opusMark ? (knob4 as number) : null,
+    fxSelector: isOp1rSelector(fx4) ? fx4 : null,
     hasGin: meta['gin_state'] !== undefined || meta['dbox_data'] !== undefined,
     hasOpus: opus !== null,
     opusPlugin: opus ? opusPluginOf(opus) : null,

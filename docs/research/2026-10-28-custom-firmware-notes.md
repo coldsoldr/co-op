@@ -61,6 +61,10 @@ name. Stock knob values run 0..32767, so 0x5300..0x53FF (21248..21503) is
 also a legal stock value: the selector test can flag a genuine stock
 sound whose fifth knob happens to sit in that band.
 
+With the profiles in place, all 152 presets are `ok` on `op1/hundekraft`;
+on `op1/stock` 140 are `unsupported` (hundekraft-only traits) and the 12
+`iter` presets with stock effects and LFOs are `ok`. None is unknown.
+
 ## hundekraft 3.0.3
 
 - Browser-built firmware for the original OP-1 on R246, running the

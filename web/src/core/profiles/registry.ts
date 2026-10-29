@@ -1,9 +1,13 @@
 import type { DeviceProfile, DetectResult } from './types';
 import type { DirectoryListing } from '../store/listing';
 import { op1Stock } from './op1-stock';
+import { op1Hundekraft } from './op1-hundekraft';
 
-/** Every supported profile. Later firmware profiles are appended here. */
-export const profiles: readonly DeviceProfile[] = [op1Stock];
+/**
+ * Every supported profile. Order matters: detection ties keep this order, and the first is the
+ * default when nothing is recognised. Later firmware profiles are appended here.
+ */
+export const profiles: readonly DeviceProfile[] = [op1Stock, op1Hundekraft];
 
 export function getProfile(id: string): DeviceProfile | undefined {
   return profiles.find((p) => p.id === id);

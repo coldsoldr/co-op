@@ -97,6 +97,14 @@ describe('loadPacks', () => {
     expect((await loadPacks(packsDir, { now: NOW })).issues).toEqual([]);
   });
 
+  it('accepts op1/hundekraft as a registered firmware', async () => {
+    await put('hk/pack.json', manifest('hk', ['synth/cluster.aif'], { firmware: ['op1/stock', 'op1/hundekraft'] }));
+    await put('hk/synth/cluster.aif', cluster);
+    const { issues, index } = await loadPacks(packsDir, { now: NOW });
+    expect(issues).toEqual([]);
+    expect(index.packs[0]?.firmware).toEqual(['op1/stock', 'op1/hundekraft']);
+  });
+
   it('returns an empty index when there is no packs folder', async () => {
     const { issues, index } = await loadPacks(join(root, 'missing'), { now: NOW });
     expect(issues).toEqual([]);

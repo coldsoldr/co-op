@@ -1,6 +1,6 @@
 import type { DeviceProfile, DetectResult, ProfileSupports } from './types';
 import type { DirectoryListing } from '../store/listing';
-import { OP1R_SELECTOR_MAX, OP1R_SELECTOR_MIN } from '../codec/sound-traits';
+import { isOp1rSelector } from '../codec/sound-traits';
 import { traitCompatibility, type TraitRule } from './compat';
 
 /** Synth engine names as they appear in the op-1 JSON `type` field on stock firmware. */
@@ -38,24 +38,29 @@ export const FULL_MATCH = 0.9;
 export const PARTIAL_MATCH = 0.5;
 
 /** Stock OP-1 disk mode: these three top-level folders are always present. */
-const SIGNATURE_FOLDERS: readonly string[] = ['synth', 'drum', 'tape'];
+export const SIGNATURE_FOLDERS: readonly string[] = ['synth', 'drum', 'tape'];
 
 /**
  * Builds a detector that looks only at top-level folder names, case-insensitively.
- * All folders present: FULL_MATCH. One missing: PARTIAL_MATCH. Fewer: 0.
+ * All folders present: `full`. One missing: `partial`. Fewer: 0. Profiles that share a disk
+ * layout pass lower confidences so the more common firmware wins ties on folders alone.
  */
-export function folderDetect(signatureFolders: readonly string[]): DeviceProfile['detect'] {
+export function folderDetect(
+  signatureFolders: readonly string[],
+  full = FULL_MATCH,
+  partial = PARTIAL_MATCH,
+): DeviceProfile['detect'] {
   return async (root: DirectoryListing): Promise<DetectResult> => {
     const entries = await root.list('');
     const dirs = new Set(entries.filter((e) => e.kind === 'dir').map((e) => e.name.toLowerCase()));
     const found = signatureFolders.filter((name) => dirs.has(name));
     const missing = signatureFolders.filter((name) => !dirs.has(name));
     if (missing.length === 0) {
-      return { confidence: FULL_MATCH, reason: `found ${listNames(found)} folders` };
+      return { confidence: full, reason: `found ${listNames(found)} folders` };
     }
     if (missing.length === 1 && found.length >= 2) {
       return {
-        confidence: PARTIAL_MATCH,
+        confidence: partial,
         reason: `found ${listNames(found)} folders but not ${missing.join(', ')}`,
       };
     }
@@ -84,8 +89,6 @@ export const STOCK_SUPPORTS: ProfileSupports = {
 export const STOCK_BOOT_RISK = 'may stop a stock OP-1 at boot';
 
 const hex = (value: number): string => `0x${value.toString(16)}`;
-const isOp1rSelector = (value: number | null): value is number =>
-  value !== null && value >= OP1R_SELECTOR_MIN && value <= OP1R_SELECTOR_MAX;
 
 /**
  * Stock is strict: besides unknown names, an opus member or an op1r selector word marks a sound
