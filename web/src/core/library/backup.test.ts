@@ -14,6 +14,7 @@ import {
 import { MemoryStore } from '../store/memory-store';
 import { StoreError } from '../store/store';
 import { op1Stock } from '../profiles/op1-stock';
+import { op1Opus } from '../profiles/op1-opus';
 import { fixtureBytes } from '../../../test/fixture-bytes';
 import { expectSameBytes, expectSameFiles } from '../../../test/same-bytes';
 import { nonCanonical } from '../../../test/non-canonical';
@@ -306,5 +307,44 @@ describe('diffBackup and applyRestore', () => {
     expect(Object.keys(files)).toEqual(['drum/user/808.aif', 'drum/user/real.aif']);
     expectSameBytes(files['drum/user/808.aif'], prettyDrum, 'non-canonical drum');
     expectSameBytes(files['drum/user/real.aif'], realDrum, 'real drum');
+  });
+});
+
+describe('backups of an opus drive', () => {
+  const opusDrive = (): MemoryStore =>
+    new MemoryStore(
+      { ...driveFiles(), 'mods/a.opmod': b(0x4f, 0x50, 0x4d, 0x44), 'mods/dx/bank.syx': b(0xf0) },
+      { label: 'OP-1' },
+    );
+
+  it('includes the mods folder for the opus profile, never tape', async () => {
+    const zip = await bytesOf(await createBackup(opusDrive(), op1Opus, { now }));
+    expect(manifestOf(unzipSync(zip)).files.map((f) => f.path)).toEqual([
+      ...backedUp.slice(0, 2),
+      'mods/a.opmod',
+      'mods/dx/bank.syx',
+      ...backedUp.slice(2),
+    ]);
+  });
+
+  it('leaves mods out for the stock profile', async () => {
+    const zip = await bytesOf(await createBackup(opusDrive(), op1Stock, { now }));
+    expect(manifestOf(unzipSync(zip)).files.map((f) => f.path)).toEqual(backedUp);
+    await expect(createBackup(opusDrive(), op1Stock, { now, paths: ['mods/a.opmod'] })).rejects.toThrow(BackupError);
+  });
+
+  it('reads, diffs and restores mods files of an opus backup', async () => {
+    const store = opusDrive();
+    const backup = await readBackup(await bytesOf(await createBackup(store, op1Opus, { now })));
+    await store.remove('mods/a.opmod');
+    const diff = await diffBackup(store, backup);
+    expect(diff.entries.find((e) => e.path === 'mods/a.opmod')?.status).toBe('new');
+    await applyRestore(store, backup, ['mods/a.opmod']);
+    expectSameBytes(await store.read('mods/a.opmod'), b(0x4f, 0x50, 0x4d, 0x44));
+  });
+
+  it('rejects mods files in a backup made with the stock profile', async () => {
+    await expect(readBackup(handMade({ 'mods/a.opmod': b(1) }))).rejects.toThrow(/outside/);
+    expect([...(await readBackup(handMade({ 'mods/a.opmod': b(1) }, 'op1/opus'))).files.keys()]).toEqual(['mods/a.opmod']);
   });
 });

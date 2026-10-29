@@ -50,7 +50,7 @@ export interface CreateBackupOptions {
   onProgress?: (done: number, total: number) => void;
   /** The backup time, for createdAt and zip entry times. Defaults to the current time. */
   now?: () => Date;
-  /** Back up only these files; each must be a backed-up file under the patch roots. */
+  /** Back up only these files; each must be a backed-up file under the backed-up folders. */
   paths?: readonly string[];
 }
 
@@ -98,6 +98,11 @@ async function filesUnder(store: DeviceStore, roots: readonly string[]): Promise
   return [...new Set(out)].sort(byCodePoint);
 }
 
+/** The folders a profile's backups hold: its patch roots plus any opted-in other roots (opus: mods). */
+function backupRoots(profile: DeviceProfile): string[] {
+  return [...profile.layout.patchRoots.map((r) => r.path), ...(profile.layout.backupOtherRoots ?? [])];
+}
+
 /** Collects a streaming Zip's output; resolves once the archive is finished. */
 function collectZip(): { zip: Zip; done: Promise<Uint8Array[]> } {
   const chunks: Uint8Array[] = [];
@@ -124,7 +129,8 @@ function addStored(zip: Zip, path: string, bytes: Uint8Array, mtime: Date): void
 }
 
 /**
- * Zips every file under the profile's patch roots (all files, not only patches, so nothing there
+ * Zips every file under the profile's patch roots and opted-in other roots such as opus's mods
+ * folder (all files, not only patches, so nothing there
  * is lost; dot files skipped), or only `options.paths`, with their bytes untouched, plus a manifest
  * of sizes and SHA-256s. Files are streamed into the archive one at a time, hashed as they are
  * read, and stored uncompressed; every entry is stamped with `now()`, so the zip is deterministic
@@ -136,12 +142,12 @@ export async function createBackup(
   options: CreateBackupOptions = {},
 ): Promise<Blob> {
   const createdAt = (options.now ?? (() => new Date()))();
-  let paths = await filesUnder(store, profile.layout.patchRoots.map((r) => r.path));
+  let paths = await filesUnder(store, backupRoots(profile));
   if (options.paths) {
     const available = new Set(paths);
     const unknown = options.paths.filter((p) => !available.has(p));
     if (unknown.length > 0) {
-      throw new BackupError(`cannot back up ${unknown.join(', ')}: not a file under the patch roots`);
+      throw new BackupError(`cannot back up ${unknown.join(', ')}: not a file under the backed-up folders`);
     }
     paths = [...new Set(options.paths)].sort(byCodePoint);
   }
@@ -173,12 +179,12 @@ function isSafePath(path: string): boolean {
 }
 
 /**
- * The folders a backup may hold and that diffBackup compares: the profile's patch roots, or, for a
+ * The folders a backup may hold and that diffBackup compares: the profile's backup roots, or, for a
  * profile this build does not know, the top-level folders of the backed-up paths.
  */
 function coveredRoots(manifest: BackupManifest): string[] {
   const profile = getProfile(manifest.profile);
-  if (profile) return profile.layout.patchRoots.map((r) => r.path);
+  if (profile) return backupRoots(profile);
   return [...new Set(manifest.files.filter((f) => splitPath(f.path).length > 1).map((f) => splitPath(f.path)[0] as string))];
 }
 
