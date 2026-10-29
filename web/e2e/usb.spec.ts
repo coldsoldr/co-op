@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -135,11 +135,12 @@ test('lists the plugins of a hundekraft OP-1 and remembers the profile for the n
   await expect(page.getByText('remembered from last time')).toBeVisible();
 });
 
-test('switches the open drive to the hundekraft profile', async ({ page }) => {
+test('switches a dropped copy of the drive to the hundekraft profile at once', async ({ page }) => {
   await stubOp1(page, { answer: true });
   await page.goto('./');
   await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
   await expect(page.getByLabel('Profile')).toHaveValue('op1/stock');
+  await expect(page.getByText('Read-only source')).toBeVisible();
 
   await page.getByRole('button', { name: 'Check over USB' }).click();
   const dialog = panel(page);
@@ -149,6 +150,44 @@ test('switches the open drive to the hundekraft profile', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(page.getByLabel('Profile')).toHaveValue('op1/hundekraft');
   await expect(page.getByText('chosen by hand')).toBeVisible();
+});
+
+test('leaves a connected drive alone and starts it on the hundekraft profile when it is opened again', async ({
+  page,
+}) => {
+  await stubOp1(page, { answer: true });
+  await page.goto('./');
+  // The browser's origin-private file system stands in for the drive behind the folder picker.
+  const cluster = readFileSync(join(fixtures, 'synth-cluster.aif')).toString('base64');
+  await page.evaluate(async (base64) => {
+    const root = await navigator.storage.getDirectory();
+    for (const name of ['synth', 'drum', 'tape']) await root.removeEntry(name, { recursive: true }).catch(() => {});
+    await root.getDirectoryHandle('tape', { create: true });
+    await root.getDirectoryHandle('drum', { create: true }).then((d) => d.getDirectoryHandle('user', { create: true }));
+    const user = await (await root.getDirectoryHandle('synth', { create: true })).getDirectoryHandle('user', { create: true });
+    const writable = await (await user.getFileHandle('cluster.aif', { create: true })).createWritable();
+    await writable.write(Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)));
+    await writable.close();
+    Object.defineProperty(window, 'showDirectoryPicker', { value: async () => root, configurable: true });
+  }, cluster);
+  await page.getByRole('button', { name: 'Connect OP-1' }).click();
+  await expect(page.locator('tbody tr[data-path]')).toHaveCount(1);
+  await expect(page.getByLabel('Profile')).toHaveValue('op1/stock');
+
+  await page.getByRole('button', { name: 'Check over USB' }).click();
+  const dialog = panel(page);
+  await dialog.getByRole('button', { name: 'Check', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Use OP-1 (hundekraft)' }).click();
+  await expect(dialog).toContainText('The drive starts on OP-1 (hundekraft) when you open it again.');
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  // The drive is not reloaded (on a real OP-1 it is gone while out of disk mode).
+  await expect(page.getByLabel('Profile')).toHaveValue('op1/stock');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+  await page.getByRole('button', { name: 'Connect OP-1' }).click();
+  await expect(page.getByLabel('Profile')).toHaveValue('op1/hundekraft');
+  await expect(page.getByText('remembered from last time')).toBeVisible();
 });
 
 test('explains an OP-1 that does not answer', async ({ page }) => {

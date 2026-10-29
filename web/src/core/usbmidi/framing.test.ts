@@ -102,6 +102,15 @@ describe('SysexAssembler', () => {
     expect(assembler.push(Uint8Array.from([0xf0, 0x00, 0x20, ...a]))).toEqual([a]);
     expect(assembler.push(Uint8Array.from([0xf0, 0x00, 0x90, 60, 0xf7]))).toEqual([]);
   });
+
+  it('keeps a message of exactly MAX_MESSAGE bytes and drops a longer one', () => {
+    const exact = Uint8Array.from([...HEADER, ...new Array<number>(MAX_MESSAGE - HEADER.length - 1).fill(1), 0xf7]);
+    const assembler = new SysexAssembler();
+    expect(assembler.push(exact)).toEqual([exact]);
+    const long = Uint8Array.from([...HEADER, ...new Array<number>(MAX_MESSAGE).fill(1), 0xf7]);
+    const after = reply(1, 1, [0]);
+    expect(assembler.push(Uint8Array.from([...long, ...after]))).toEqual([after]);
+  });
 });
 
 describe('helpers', () => {

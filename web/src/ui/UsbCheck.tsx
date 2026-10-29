@@ -51,7 +51,9 @@ export function UsbCheck({ device, onClose, timeoutMs }: { device: Device; onClo
       });
       try {
         const result = await checkDevice(port, { signal: current.signal, ...(timeoutMs ? { timeoutMs } : {}) });
-        if (current.signal.aborted) return;
+        // An abort after the last reply (a disconnect, say) goes through the catch below, so the
+        // panel never stays on "Checking".
+        current.signal.throwIfAborted();
         setInstalledPlugins(result.kind === 'kennel' ? result.inventory : null);
         setState({ step: 'done', result });
       } finally {
@@ -66,11 +68,15 @@ export function UsbCheck({ device, onClose, timeoutMs }: { device: Device; onClo
   }
 
   function chooseHundekraft(): void {
-    if (device.source) {
+    rememberProfile(HUNDEKRAFT);
+    if (device.source?.staged) {
+      // A dropped copy is read from memory, so it can switch now. setProfile remembers it again.
       void device.setProfile(HUNDEKRAFT);
       setChosen(`The library now uses ${hundekraftLabel}.`);
+    } else if (device.source) {
+      // A connected drive is gone while the OP-1 is out of disk mode; reloading it now would fail.
+      setChosen(`The drive starts on ${hundekraftLabel} when you open it again.`);
     } else {
-      rememberProfile(HUNDEKRAFT);
       setChosen(`The next drive you open starts on ${hundekraftLabel}.`);
     }
   }

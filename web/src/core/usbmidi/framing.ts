@@ -135,8 +135,9 @@ export class SysexAssembler {
         if (b === SYSEX_END) {
           done.push(Uint8Array.from(this.buffer));
           this.buffer = null;
-        } else if (b & 0x80) {
-          // Any other status byte ends a SysEx without completing it.
+        } else if (b & 0x80 || this.buffer.length >= MAX_MESSAGE) {
+          // Any other status byte ends a SysEx without completing it. Nothing longer than
+          // MAX_MESSAGE is ours, so a SysEx that grows past it is dropped rather than buffered.
           this.buffer = null;
         }
       }

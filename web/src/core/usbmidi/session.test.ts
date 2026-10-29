@@ -201,4 +201,9 @@ describe('readOff', () => {
     expect(device.requests.map((r) => r.payload[1])).toEqual([0, 64, 128]);
     expect(await session.readOff('boot')).toEqual([]);
   });
+
+  it('drops spaces and a trailing line end around ids', async () => {
+    const session = createSession(new FakeOp1({ off: 'drive, tape_echo,\n' }), fast);
+    expect(await session.readOff('stored')).toEqual(['drive', 'tape_echo']);
+  });
 });

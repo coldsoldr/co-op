@@ -220,7 +220,10 @@ export function createSession(port: MidiPort, options: SessionOptions = {}): Ses
         },
         'the switched-off list',
       );
-      return text.split(',').filter((id) => id !== '');
+      return text
+        .split(',')
+        .map((id) => id.trim())
+        .filter((id) => id !== '');
     },
   };
 }
