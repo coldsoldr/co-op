@@ -9,10 +9,13 @@ import {
 } from './types';
 
 export const OP1FUN_API = 'https://api.op1.fun/v1';
-/** The only host that ever receives the X-User-* headers directly from the browser. */
-const API_HOST = 'api.op1.fun';
+/** The only origin that ever receives the X-User-* headers directly from the browser. */
+const API_ORIGIN = 'https://api.op1.fun';
 /** The pack download endpoint is slow (60 s upstream timeout), so allow a little more. */
 export const PACK_ZIP_TIMEOUT_MS = 65000;
+/** Patch files and previews; matches the Worker proxy's cap. */
+export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+export const FILE_TIMEOUT_MS = 60000;
 const UNEXPECTED = 'unexpected response';
 const WORKER_NEEDED =
   'could not download the file directly from op1.fun (the browser blocked it); the co-op Worker is needed to fetch it';
@@ -93,8 +96,13 @@ export function mapPatch(value: unknown): Op1FunPatch {
     fileUrl: str(links.file),
     previewUrl: str(links.preview),
     selfUrl: str(links.self),
-    userId: relationId(r, 'user'),
+    userId: owner(r, attributes),
   };
+}
+
+/** The owner's username: attributes["user-id"] (or user_id), else the user relationship id. */
+function owner(r: Json, attributes: Json): string {
+  return str(attributes['user-id'] ?? attributes.user_id) || relationId(r, 'user');
 }
 
 export function mapPack(value: unknown): Op1FunPack {
@@ -107,6 +115,7 @@ export function mapPack(value: unknown): Op1FunPack {
     public: attributes.public === true,
     patchIds: relationIds(r, 'patches'),
     downloadUrl: str(obj(r.links).download),
+    userId: owner(r, attributes),
   };
 }
 
@@ -136,12 +145,55 @@ function trimSlash(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
-function hostOf(url: string): string {
+function originOf(url: string): string {
   try {
-    return new URL(url).hostname.toLowerCase();
+    return new URL(url).origin;
   } catch {
     return '';
   }
+}
+
+function pathSegment(value: string, what: 'username' | 'id'): string {
+  if (value === '' || value === '.' || value === '..') throw new Op1FunError(`invalid ${what}`);
+  return encodeURIComponent(value);
+}
+
+/**
+ * Reads at most MAX_FILE_BYTES of the body: a larger Content-Length is refused up front, and a
+ * body without one is counted as it streams and cancelled once it passes the cap.
+ */
+async function readCapped(response: Response): Promise<Uint8Array> {
+  const declared = Number(response.headers.get('Content-Length'));
+  if (Number.isFinite(declared) && declared > MAX_FILE_BYTES) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Op1FunError('file is too large');
+  }
+  if (!response.body) return new Uint8Array(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > MAX_FILE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new Op1FunError('file is too large');
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error instanceof Op1FunError) throw error;
+    throw new Op1FunError('the download was interrupted', { cause: error });
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -163,11 +215,13 @@ async function errorDetail(response: Response): Promise<string> {
   }
 }
 
-async function failure(response: Response, what: string): Promise<Op1FunError> {
+async function failure(response: Response, what: string, secret: string): Promise<Op1FunError> {
   if (response.status === 401) {
     return new Op1FunAuthError('op1.fun rejected the email or token');
   }
-  const detail = await errorDetail(response);
+  // Never echo the token, even if the upstream message contains it.
+  const raw = await errorDetail(response);
+  const detail = secret ? raw.split(secret).join('[token]') : raw;
   return new Op1FunError(`${what} failed: HTTP ${response.status}${detail ? ` (${detail})` : ''}`);
 }
 
@@ -195,9 +249,10 @@ export class Op1FunClient {
 
   private async api(path: string, what: string, signal?: AbortSignal): Promise<unknown> {
     const url = `${this.base}${path}`;
-    const init: RequestInit = {};
-    // Credentials go only to api.op1.fun; a different base (tests, mocks) gets none.
-    if (hostOf(url) === API_HOST) init.headers = this.authHeaders();
+    // Refuse redirects so the credentials can never be replayed to another URL.
+    const init: RequestInit = { redirect: 'error' };
+    // Credentials go only to https://api.op1.fun; a different base (tests, mocks) gets none.
+    if (originOf(url) === API_ORIGIN) init.headers = this.authHeaders();
     if (signal) init.signal = signal;
     let response: Response;
     try {
@@ -208,12 +263,12 @@ export class Op1FunClient {
         cause: error,
       });
     }
-    if (!response.ok) throw await failure(response, what);
+    if (!response.ok) throw await failure(response, what, this.creds.token);
     return readJson(response);
   }
 
   private userPath(username: string): string {
-    return `/users/${encodeURIComponent(username)}`;
+    return `/users/${pathSegment(username, 'username')}`;
   }
 
   async getUser(username: string): Promise<Op1FunUser> {
@@ -225,7 +280,7 @@ export class Op1FunClient {
   }
 
   async getPatch(username: string, patchId: string): Promise<Op1FunPatch> {
-    const path = `${this.userPath(username)}/patches/${encodeURIComponent(patchId)}`;
+    const path = `${this.userPath(username)}/patches/${pathSegment(patchId, 'id')}`;
     return mapPatch(single(await this.api(path, 'load the patch')));
   }
 
@@ -235,7 +290,7 @@ export class Op1FunClient {
 
   /** The pack and its included patches, in the pack's order where it gives one. */
   async getPack(username: string, packId: string): Promise<{ pack: Op1FunPack; patches: Op1FunPatch[] }> {
-    const body = await this.api(`${this.userPath(username)}/packs/${encodeURIComponent(packId)}`, 'load the pack');
+    const body = await this.api(`${this.userPath(username)}/packs/${pathSegment(packId, 'id')}`, 'load the pack');
     const pack = mapPack(single(body));
     const included = isObject(body) && Array.isArray(body.included) ? body.included : [];
     const patches = included.filter((entry) => obj(entry).type === 'patches').map(mapPatch);
@@ -247,7 +302,7 @@ export class Op1FunClient {
 
   /** Asks op1.fun to build the pack zip and returns its URL. Slow: allows 65 s. */
   async requestPackZip(username: string, packId: string): Promise<string> {
-    const path = `${this.userPath(username)}/packs/${encodeURIComponent(packId)}/download`;
+    const path = `${this.userPath(username)}/packs/${pathSegment(packId, 'id')}/download`;
     const body = await this.api(path, 'prepare the pack download', this.timeoutSignal(PACK_ZIP_TIMEOUT_MS));
     if (!isObject(body)) throw unexpected();
     const data = obj(body.data);
@@ -259,30 +314,36 @@ export class Op1FunClient {
   /**
    * Downloads a patch file or preview. Never sends credentials. Tries the link directly; when the
    * browser blocks that (a TypeError: network or CORS) and a Worker is configured, retries through
-   * the Worker's file proxy. HTTP errors are reported as they are, without a retry.
+   * the Worker's file proxy. HTTP errors, timeouts and other failures are reported without a retry.
+   * Each attempt has a 60 s timeout and a MAX_FILE_BYTES cap.
    */
   async fetchFile(url: string): Promise<Uint8Array> {
     let response: Response;
     try {
-      response = await this.fetchImpl(url);
+      response = await this.fetchImpl(url, { signal: this.timeoutSignal(FILE_TIMEOUT_MS) });
     } catch (error) {
-      if (!(error instanceof TypeError)) throw error;
-      if (!this.workerUrl) throw new Op1FunError(WORKER_NEEDED, { cause: error });
-      return this.fetchViaWorker(url);
+      if (error instanceof TypeError) {
+        if (!this.workerUrl) throw new Op1FunError(WORKER_NEEDED, { cause: error });
+        return this.fetchViaWorker(url);
+      }
+      const timedOut = error instanceof Error && error.name === 'TimeoutError';
+      throw new Op1FunError(timedOut ? 'the download took too long' : 'the download failed', { cause: error });
     }
     if (!response.ok) throw new Op1FunError(`download failed: HTTP ${response.status}`);
-    return new Uint8Array(await response.arrayBuffer());
+    return readCapped(response);
   }
 
   private async fetchViaWorker(url: string): Promise<Uint8Array> {
     let response: Response;
     try {
-      response = await this.fetchImpl(`${this.workerUrl}/op1fun/file?url=${encodeURIComponent(url)}`);
+      response = await this.fetchImpl(`${this.workerUrl}/op1fun/file?url=${encodeURIComponent(url)}`, {
+        signal: this.timeoutSignal(FILE_TIMEOUT_MS),
+      });
     } catch (error) {
       throw new Op1FunError(`${WORKER_NEEDED}, but the co-op Worker could not be reached`, { cause: error });
     }
     if (!response.ok) throw new Op1FunError(`the co-op Worker could not fetch the file: HTTP ${response.status}`);
-    return new Uint8Array(await response.arrayBuffer());
+    return readCapped(response);
   }
 
   /** Uploads a patch through the co-op Worker (op1.fun does not allow cross-origin POST). */
@@ -306,11 +367,12 @@ export class Op1FunClient {
         method: 'POST',
         headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        redirect: 'error',
       });
     } catch (error) {
       throw new Op1FunError('could not reach the co-op Worker to upload', { cause: error });
     }
-    if (!response.ok) throw await failure(response, 'upload');
+    if (!response.ok) throw await failure(response, 'upload', this.creds.token);
     const body = await readJson(response);
     if (!isObject(body)) throw unexpected();
     // The create response wraps the patch in an array; accept a bare object too.

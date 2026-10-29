@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Op1FunClient, toBase64 } from './client';
+import { MAX_FILE_BYTES, Op1FunClient, mapPack, mapPatch, toBase64 } from './client';
 import { Op1FunAuthError, Op1FunError, type Op1FunCredentials } from './types';
 import { fixtureBytes } from '../../../test/fixture-bytes';
 
@@ -47,9 +47,9 @@ const patchResource = {
     license: 'CC BY',
     public: true,
     'patch-type': 'drum',
+    'user-id': 'alice',
   },
   links: { self: 'https://op1.fun/users/alice/patches/42', file: S3_FILE, preview: 'https://op1fun.s3.amazonaws.com/patches/kick.mp3' },
-  relationships: { user: { data: { id: '7', type: 'users' } } },
 };
 
 describe('Op1FunClient API reads', () => {
@@ -74,6 +74,42 @@ describe('Op1FunClient API reads', () => {
     const headers = headersOf(f.calls[0]);
     expect(headers.get('X-User-Email')).toBe('me@example.com');
     expect(headers.get('X-User-Token')).toBe('secret-token');
+    expect(f.calls[0]?.init?.redirect).toBe('error');
+  });
+
+  it('maps a refused redirect (TypeError) to Op1FunError', async () => {
+    const f = fakeFetch(() => {
+      throw new TypeError('fetch failed: unexpected redirect');
+    });
+    await expect(new Op1FunClient(creds, { fetch: f.fetch }).listPatches('alice')).rejects.toBeInstanceOf(Op1FunError);
+  });
+
+  it.each(['', '.', '..'])('rejects the username %j without a request', async (username) => {
+    const f = fakeFetch(() => json({ data: [] }));
+    const client = new Op1FunClient(creds, { fetch: f.fetch });
+    await expect(client.getUser(username)).rejects.toThrow(new Op1FunError('invalid username'));
+    await expect(client.listPatches(username)).rejects.toThrow(new Op1FunError('invalid username'));
+    await expect(client.listPacks(username)).rejects.toThrow(new Op1FunError('invalid username'));
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it.each(['', '.', '..'])('rejects the id %j without a request', async (badId) => {
+    const f = fakeFetch(() => json({ data: {} }));
+    const client = new Op1FunClient(creds, { fetch: f.fetch });
+    await expect(client.getPatch('alice', badId)).rejects.toThrow(new Op1FunError('invalid id'));
+    await expect(client.getPack('alice', badId)).rejects.toThrow(new Op1FunError('invalid id'));
+    await expect(client.requestPackZip('alice', badId)).rejects.toThrow(new Op1FunError('invalid id'));
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it.each([
+    ['https://api.op1.fun:8443/v1', 'a different port'],
+    ['http://api.op1.fun/v1', 'plain http'],
+    ['https://api.op1.fun.evil.com/v1', 'a lookalike host'],
+  ])('never attaches credentials to %s (%s)', async (base) => {
+    const f = fakeFetch(() => json({ data: { id: '7', type: 'users' } }));
+    await new Op1FunClient(creds, { fetch: f.fetch, base }).getUser('alice');
+    expect(hasCredentialHeaders(f.calls[0])).toBe(false);
   });
 
   it('encodes the username and id in the path', async () => {
@@ -103,7 +139,7 @@ describe('Op1FunClient API reads', () => {
         fileUrl: S3_FILE,
         previewUrl: 'https://op1fun.s3.amazonaws.com/patches/kick.mp3',
         selfUrl: 'https://op1.fun/users/alice/patches/42',
-        userId: '7',
+        userId: 'alice',
       },
       {
         id: '43',
@@ -135,7 +171,7 @@ describe('Op1FunClient API reads', () => {
           {
             id: '9',
             type: 'packs',
-            attributes: { name: 'Drums', description: 'some drums', public: true },
+            attributes: { name: 'Drums', description: 'some drums', public: true, 'user-id': 'alice' },
             links: { download: `${API}/users/alice/packs/9/download` },
             relationships: { patches: { data: [{ id: '42', type: 'patches' }] } },
           },
@@ -153,8 +189,9 @@ describe('Op1FunClient API reads', () => {
         public: true,
         patchIds: ['42'],
         downloadUrl: `${API}/users/alice/packs/9/download`,
+        userId: 'alice',
       },
-      { id: '10', name: '', description: '', public: false, patchIds: [], downloadUrl: '' },
+      { id: '10', name: '', description: '', public: false, patchIds: [], downloadUrl: '', userId: '' },
     ]);
   });
 
@@ -314,12 +351,20 @@ describe('Op1FunClient.fetchFile', () => {
     expect(f.calls).toHaveLength(1);
   });
 
-  it('does not fall back on errors other than TypeError', async () => {
+  it('does not fall back on errors other than TypeError, and wraps them', async () => {
     const f = fakeFetch(() => {
       throw new DOMException('aborted', 'AbortError');
     });
-    await expect(new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).fetchFile(S3_FILE)).rejects.toThrow();
+    await expect(
+      new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).fetchFile(S3_FILE),
+    ).rejects.toBeInstanceOf(Op1FunError);
     expect(f.calls).toHaveLength(1);
+  });
+
+  it('follows redirects for file links', async () => {
+    const f = fakeFetch(() => new Response(bytes));
+    await new Op1FunClient(creds, { fetch: f.fetch }).fetchFile(S3_FILE);
+    expect(f.calls[0]?.init?.redirect).not.toBe('error');
   });
 
   it('says the Worker is needed when the direct fetch fails and no Worker is configured', async () => {
@@ -377,6 +422,7 @@ describe('Op1FunClient.uploadPatch', () => {
     expect(headers.get('X-User-Email')).toBe('me@example.com');
     expect(headers.get('X-User-Token')).toBe('secret-token');
     expect(headers.get('Content-Type')).toBe('application/json');
+    expect(call?.init?.redirect).toBe('error');
     const body = JSON.parse(String(call?.init?.body)) as {
       data: { type: string; attributes: Record<string, unknown> };
     };
@@ -439,5 +485,189 @@ describe('toBase64', () => {
     const drum = fixtureBytes('real/drum.aif');
     expect(drum.length).toBeGreaterThan(32768);
     expect(new Uint8Array(Buffer.from(toBase64(drum), 'base64'))).toEqual(drum);
+  });
+});
+
+describe('review fixes', () => {
+  it.each([
+    ['data.url', { data: { url: 'https://s3.amazonaws.com/p.zip' } }],
+    ['data.attributes.url', { data: { attributes: { url: 'https://s3.amazonaws.com/p.zip' } } }],
+  ])('requestPackZip reads %s', async (_label, body) => {
+    const f = fakeFetch(() => json(body));
+    expect(await new Op1FunClient(creds, { fetch: f.fetch }).requestPackZip('alice', '9')).toBe(
+      'https://s3.amazonaws.com/p.zip',
+    );
+  });
+
+  it.each([
+    ['patch_type', { patch_type: 'synth' }],
+    ['patchType', { patchType: 'synth' }],
+  ])('mapPatch reads the %s spelling', (_label, attributes) => {
+    expect(mapPatch({ id: '1', attributes }).patchType).toBe('synth');
+  });
+
+  it('mapPatch reads user_id and falls back to the user relationship', () => {
+    expect(mapPatch({ id: '1', attributes: { user_id: 'bob' } }).userId).toBe('bob');
+    expect(mapPatch({ id: '1', relationships: { user: { data: { id: '7' } } } }).userId).toBe('7');
+    expect(mapPack({ id: '1', relationships: { user: { data: { id: '7' } } } }).userId).toBe('7');
+  });
+
+  it.each([null, undefined, 'x', 3, [], [{ id: '1' }]])('mappers reject %j directly', (value) => {
+    expect(() => mapPatch(value)).toThrow(new Op1FunError('unexpected response'));
+    expect(() => mapPack(value)).toThrow(new Op1FunError('unexpected response'));
+  });
+
+  it('fetchFile rejects a Content-Length over the cap without reading the body', async () => {
+    let pulled = 0;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled++;
+        controller.enqueue(new Uint8Array(1024));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const f = fakeFetch(
+      () => new Response(stream, { headers: { 'Content-Length': String(MAX_FILE_BYTES + 1) } }),
+    );
+    await expect(new Op1FunClient(creds, { fetch: f.fetch }).fetchFile(S3_FILE)).rejects.toThrow(
+      new Op1FunError('file is too large'),
+    );
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThanOrEqual(1);
+  });
+
+  function endless(): { stream: ReadableStream<Uint8Array>; state: { sent: number; cancelled: boolean } } {
+    const chunk = new Uint8Array(1024 * 1024);
+    const state = { sent: 0, cancelled: false };
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        state.sent += chunk.length;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        state.cancelled = true;
+      },
+    });
+    return { stream, state };
+  }
+
+  it('fetchFile counts a body without Content-Length and cancels it past the cap', async () => {
+    const { stream, state } = endless();
+    const f = fakeFetch(() => new Response(stream));
+    await expect(new Op1FunClient(creds, { fetch: f.fetch }).fetchFile(S3_FILE)).rejects.toThrow(
+      new Op1FunError('file is too large'),
+    );
+    expect(state.cancelled).toBe(true);
+    expect(state.sent).toBeLessThan(MAX_FILE_BYTES + 4 * 1024 * 1024);
+  });
+
+  it('the Worker fallback enforces the cap too', async () => {
+    const { stream, state } = endless();
+    const f = fakeFetch((url) => {
+      if (url === S3_FILE) throw new TypeError('Failed to fetch');
+      return new Response(stream);
+    });
+    await expect(
+      new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).fetchFile(S3_FILE),
+    ).rejects.toThrow(new Op1FunError('file is too large'));
+    expect(state.cancelled).toBe(true);
+  });
+
+  it('the Worker fallback rejects a Content-Length over the cap', async () => {
+    const f = fakeFetch((url) => {
+      if (url === S3_FILE) throw new TypeError('Failed to fetch');
+      return new Response('x', { headers: { 'Content-Length': String(MAX_FILE_BYTES + 1) } });
+    });
+    await expect(
+      new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).fetchFile(S3_FILE),
+    ).rejects.toThrow(new Op1FunError('file is too large'));
+  });
+
+  it('fetchFile accepts a file exactly at the cap', async () => {
+    const data = new Uint8Array(MAX_FILE_BYTES);
+    const f = fakeFetch(() => new Response(data));
+    expect((await new Op1FunClient(creds, { fetch: f.fetch }).fetchFile(S3_FILE)).length).toBe(MAX_FILE_BYTES);
+  });
+
+  it('fetchFile wraps a body read error in Op1FunError', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(new TypeError('connection reset'));
+      },
+    });
+    const f = fakeFetch(() => new Response(stream));
+    await expect(
+      new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).fetchFile(S3_FILE),
+    ).rejects.toBeInstanceOf(Op1FunError);
+    expect(f.calls).toHaveLength(1);
+  });
+
+  it('fetchFile passes a 60 s timeout signal to the direct and Worker fetches', async () => {
+    const requested: number[] = [];
+    const signal = new AbortController().signal;
+    const f = fakeFetch((url) => {
+      if (url === S3_FILE) throw new TypeError('Failed to fetch');
+      return new Response(new Uint8Array([1]));
+    });
+    const client = new Op1FunClient(creds, {
+      fetch: f.fetch,
+      workerUrl: WORKER,
+      timeoutSignal: (ms) => {
+        requested.push(ms);
+        return signal;
+      },
+    });
+    await client.fetchFile(S3_FILE);
+    expect(requested).toEqual([60000, 60000]);
+    expect(f.calls.map((c) => c.init?.signal)).toEqual([signal, signal]);
+  });
+
+  it('fetchFile maps a timeout to Op1FunError without falling back', async () => {
+    const f = fakeFetch(() => {
+      throw new DOMException('The operation timed out.', 'TimeoutError');
+    });
+    await expect(
+      new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).fetchFile(S3_FILE),
+    ).rejects.toBeInstanceOf(Op1FunError);
+    expect(f.calls).toHaveLength(1);
+  });
+
+  it('no error message ever contains the token', async () => {
+    const leaky = (status: number): Response =>
+      json({ errors: [{ detail: 'bad token secret-token for me@example.com' }] }, status);
+    const upload = { name: 'n', description: '', license: '', public: false, bytes: new Uint8Array([1]) };
+    const scenarios: Array<[Handler, (c: Op1FunClient) => Promise<unknown>]> = [
+      [() => leaky(401), (c) => c.getUser('alice')],
+      [() => leaky(403), (c) => c.getUser('alice')],
+      [() => leaky(422), (c) => c.uploadPatch(upload)],
+      [() => leaky(500), (c) => c.listPacks('alice')],
+      [
+        () => {
+          throw new TypeError('secret-token');
+        },
+        (c) => c.getUser('alice'),
+      ],
+      [() => json({ data: 'secret-token' }), (c) => c.getPatch('alice', '1')],
+      [
+        () => {
+          throw new TypeError('x');
+        },
+        (c) => c.fetchFile(S3_FILE),
+      ],
+      [() => new Response('secret-token', { status: 500 }), (c) => c.fetchFile(S3_FILE)],
+    ];
+    for (const [handler, run] of scenarios) {
+      const f = fakeFetch(handler);
+      const client = new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER });
+      const error = await run(client).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(Op1FunError);
+      expect((error as Error).message).not.toContain('secret-token');
+    }
   });
 });

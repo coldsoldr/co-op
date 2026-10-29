@@ -19,6 +19,7 @@ export interface Op1FunPatch {
   previewUrl: string;
   /** The patch page on op1.fun (links.self), or ''. */
   selfUrl: string;
+  /** The owner's username (attributes["user-id"]), or ''. */
   userId: string;
 }
 
@@ -29,6 +30,8 @@ export interface Op1FunPack {
   public: boolean;
   patchIds: string[];
   downloadUrl: string;
+  /** The owner's username (attributes["user-id"]), or ''. */
+  userId: string;
 }
 
 export interface Op1FunUser {
