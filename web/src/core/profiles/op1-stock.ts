@@ -1,7 +1,7 @@
-import type { DeviceProfile, DetectResult, Compat } from './types';
+import type { DeviceProfile, DetectResult, ProfileSupports } from './types';
 import type { DirectoryListing } from '../store/listing';
-import type { Patch } from '../codec/patch';
-import { isSynthMeta } from '../codec/op1-meta';
+import { OP1R_SELECTOR_MAX, OP1R_SELECTOR_MIN } from '../codec/sound-traits';
+import { traitCompatibility, type TraitRule } from './compat';
 
 /** Synth engine names as they appear in the op-1 JSON `type` field on stock firmware. */
 export const STOCK_SYNTH_ENGINES: readonly string[] = [
@@ -72,25 +72,38 @@ function listNames(names: readonly string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
+/** What stock R246 loads. */
+export const STOCK_SUPPORTS: ProfileSupports = {
+  synthEngines: STOCK_SYNTH_ENGINES,
+  drumEngines: STOCK_DRUM_ENGINES,
+  fx: STOCK_FX_TYPES,
+  lfo: STOCK_LFO_TYPES,
+};
+
+/** Why a stock-unsafe patch matters: stock R246 is not forgiving about custom-firmware sounds. */
+export const STOCK_BOOT_RISK = 'may stop a stock OP-1 at boot';
+
+const hex = (value: number): string => `0x${value.toString(16)}`;
+const isOp1rSelector = (value: number | null): value is number =>
+  value !== null && value >= OP1R_SELECTOR_MIN && value <= OP1R_SELECTOR_MAX;
+
 /**
- * Builds a compatibility check that accepts drum patches and synth patches
- * whose engine is in `engines`, warns on any other synth engine, and marks
- * files without usable op-1 metadata unsupported.
+ * Stock is strict: besides unknown names, an opus member or an op1r selector word marks a sound
+ * saved on custom firmware, and all of them are unsupported. Selector words are legal stock knob
+ * values too, so a stock sound whose fifth knob sits in 0x5300..0x53ff is flagged as well; the
+ * cost is an extra confirm, the alternative a device that may not boot.
  */
-export function engineCompatibility(engines: readonly string[]): DeviceProfile['compatibility'] {
-  return (patch: Patch): Compat => {
-    if (!patch.meta) {
-      return { level: 'unsupported', reason: 'file has no op-1 metadata' };
-    }
-    if (patch.kind === 'unknown') {
-      return { level: 'unsupported', reason: 'op-1 metadata is of an unrecognised kind' };
-    }
-    if (patch.kind === 'synth' && isSynthMeta(patch.meta) && !engines.includes(patch.meta.type)) {
-      return { level: 'warn', reason: `engine "${patch.meta.type}" is not part of this firmware` };
-    }
-    return { level: 'ok' };
-  };
-}
+export const stockRule: TraitRule = (traits, findings) => {
+  const all = [...findings];
+  if (traits.hasOpus) all.push({ level: 'unsupported', reason: 'saved on opus firmware (has an opus member)' });
+  if (isOp1rSelector(traits.engineSelector)) {
+    all.push({ level: 'unsupported', reason: `knobs[4] ${hex(traits.engineSelector)} is a custom-firmware engine selector` });
+  }
+  if (isOp1rSelector(traits.fxSelector)) {
+    all.push({ level: 'unsupported', reason: `fx_params[4] ${hex(traits.fxSelector)} is a custom-firmware effect selector` });
+  }
+  return all;
+};
 
 export const op1Stock: DeviceProfile = {
   id: 'op1/stock',
@@ -109,5 +122,6 @@ export const op1Stock: DeviceProfile = {
     { kind: 'drum', extensions: ['.aif', '.aiff'] },
   ],
   detect: folderDetect(SIGNATURE_FOLDERS),
-  compatibility: engineCompatibility(STOCK_SYNTH_ENGINES),
+  supports: STOCK_SUPPORTS,
+  compatibility: traitCompatibility(STOCK_SUPPORTS, { rule: stockRule, unsupportedNote: STOCK_BOOT_RISK }),
 };

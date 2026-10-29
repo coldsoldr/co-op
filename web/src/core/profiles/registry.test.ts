@@ -13,6 +13,7 @@ function fakeProfile(id: string, detect: () => Promise<DetectResult>): DevicePro
     layout: { patchRoots: [], otherRoots: [] },
     patchKinds: [],
     detect,
+    supports: { synthEngines: [], drumEngines: [], fx: [], lfo: [] },
     compatibility: () => ({ level: 'ok' }),
   };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   op1Stock,
@@ -10,12 +10,11 @@ import {
   FULL_MATCH,
   PARTIAL_MATCH,
   folderDetect,
-  engineCompatibility,
 } from './op1-stock';
 import { MemoryListing } from '../store/memory-listing';
 import { readPatch, withMeta } from '../codec/patch';
 import type { Op1Meta } from '../codec/op1-meta';
-import { SYNTH_META } from '../../../test/fixtures/meta';
+import { SYNTH_META, DRUM_META } from '../../../test/fixtures/meta';
 
 const fixture = (name: string) =>
   readPatch(new Uint8Array(readFileSync(fileURLToPath(new URL(`../../../test/fixtures/${name}`, import.meta.url)))));
@@ -27,6 +26,12 @@ const FIRMWARE_TABLE = fileURLToPath(
 
 /** Every committed fixture with op-1 metadata, real device files included. */
 const META_FIXTURES = ['real/synth.aif', 'real/drum.aif', 'synth-cluster.aif', 'synth-sampler-sowt.aif', 'drum-boombap.aif'];
+
+/** The committed test-tones pack, which declares op1/stock. */
+const TEST_TONES_DIR = fileURLToPath(new URL('../../../../packs/test-tones', import.meta.url));
+const TEST_TONES = ['synth', 'drum'].flatMap((kind) =>
+  readdirSync(`${TEST_TONES_DIR}/${kind}`).map((name) => `${kind}/${name}`),
+);
 
 describe('stock name lists', () => {
   it('lists the stock effects, LFOs and drum engines', () => {
@@ -111,11 +116,53 @@ describe('op1/stock compatibility', () => {
     expect(op1Stock.compatibility(fixture('drum-boombap.aif'))).toEqual({ level: 'ok' });
   });
 
-  it('warns on an engine stock firmware does not have', () => {
-    const patch = withMeta(fixture('synth-cluster.aif'), { ...SYNTH_META, type: 'wavetable' });
+  it.each(META_FIXTURES)('accepts %s', (name) => {
+    expect(op1Stock.compatibility(fixture(name))).toEqual({ level: 'ok' });
+  });
+
+  it.each(TEST_TONES)('accepts the test-tones pack patch %s', (file) => {
+    const patch = readPatch(new Uint8Array(readFileSync(`${TEST_TONES_DIR}/${file}`)));
+    expect(op1Stock.compatibility(patch)).toEqual({ level: 'ok' });
+  });
+
+  it.each([
+    ['engine', { type: 'wavetable' }, /engine "wavetable"/],
+    ['effect', { fx_type: 'tape' }, /effect "tape"/],
+    ['effect with spaces', { fx_type: 'in a room' }, /effect "in a room"/],
+    ['LFO', { lfo_type: 'quad' }, /LFO "quad"/],
+    ['opus member', { opus: { plugin: 'opus.dx' } }, /opus/],
+    ['engine selector', { knobs: [0, 0, 0, 0, 0x5301, 0, 0, 0] }, /knobs\[4\] 0x5301/],
+    ['effect selector', { fx_params: [0, 0, 0, 0, 0x5300, 0, 0, 0] }, /fx_params\[4\] 0x5300/],
+  ])('marks a non-stock %s unsupported because it may stop the OP-1 at boot', (_what, change, reason) => {
+    const patch = withMeta(fixture('synth-cluster.aif'), { ...SYNTH_META, ...change } as Op1Meta);
     const compat = op1Stock.compatibility(patch);
-    expect(compat.level).toBe('warn');
-    expect(compat.reason).toMatch(/wavetable/);
+    expect(compat.level).toBe('unsupported');
+    expect(compat.reason).toMatch(reason);
+    expect(compat.reason).toMatch(/may stop a stock OP-1 at boot/);
+  });
+
+  it('names every problem in one reason', () => {
+    const patch = withMeta(fixture('synth-cluster.aif'), { ...SYNTH_META, type: 'supersaw', fx_type: 'tape' });
+    expect(op1Stock.compatibility(patch).reason).toBe(
+      'engine "supersaw" is not part of this firmware; effect "tape" is not part of this firmware; may stop a stock OP-1 at boot',
+    );
+  });
+
+  it('accepts a DBox kit but not a hundekraft Gin kit', () => {
+    const kit = fixture('drum-boombap.aif');
+    expect(op1Stock.compatibility(withMeta(kit, { ...DRUM_META, type: 'dbox' } as Op1Meta)).level).toBe('ok');
+    const gin = op1Stock.compatibility(withMeta(kit, { ...DRUM_META, type: 'gin', gin_state: 'x' } as Op1Meta));
+    expect(gin.level).toBe('unsupported');
+    expect(gin.reason).toMatch(/drum engine "gin"/);
+  });
+
+  it('declares the stock lists as what it supports', () => {
+    expect(op1Stock.supports).toEqual({
+      synthEngines: STOCK_SYNTH_ENGINES,
+      drumEngines: STOCK_DRUM_ENGINES,
+      fx: STOCK_FX_TYPES,
+      lfo: STOCK_LFO_TYPES,
+    });
   });
 
   it('marks files without op-1 metadata unsupported', () => {
@@ -150,23 +197,6 @@ describe('op1/stock compatibility', () => {
       'string',
       'voltage',
     ]);
-  });
-});
-
-describe('engineCompatibility factory', () => {
-  it('accepts whatever engines it is given', () => {
-    const compat = engineCompatibility(['cluster', 'wavetable']);
-    const wavetable = withMeta(fixture('synth-cluster.aif'), { ...SYNTH_META, type: 'wavetable' });
-    expect(compat(wavetable)).toEqual({ level: 'ok' });
-    expect(compat(fixture('synth-cluster.aif'))).toEqual({ level: 'ok' });
-    expect(compat(fixture('drum-boombap.aif'))).toEqual({ level: 'ok' });
-  });
-
-  it('still warns on engines outside its list', () => {
-    const compat = engineCompatibility(['cluster']);
-    const sampler = withMeta(fixture('synth-cluster.aif'), { ...SYNTH_META, type: 'sampler' });
-    expect(compat(sampler).level).toBe('warn');
-    expect(compat(sampler).reason).toMatch(/sampler/);
   });
 });
 
