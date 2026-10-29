@@ -21,7 +21,7 @@ describe('test-tones pack', () => {
 
   it('spaces the drum slices evenly inside the audio', () => {
     const drum = readPatch(files['drum/tone-drum.aif'] as Uint8Array);
-    if (!isDrumMeta(drum.meta)) throw new Error('not a drum patch');
+    if (!isDrumMeta(drum.meta) || drum.meta.type !== 'drum') throw new Error('not a sample kit');
     const { start, end } = drum.meta;
     expect(start).toHaveLength(24);
     const step = (start[1] as number) - (start[0] as number);
