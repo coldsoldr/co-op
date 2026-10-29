@@ -169,6 +169,26 @@ function originOf(url: string): string {
   }
 }
 
+const PROFILE_LINK = /^(?:https?:\/\/)?(?:www\.)?op1\.fun\/users\/([^/?#]+)/i;
+
+/**
+ * The slug op1.fun addresses a user by: lower case ("ByronJZA" is /users/byronjza, and the
+ * mixed-case path is a 404). A pasted profile link gives its slug.
+ */
+export function userSlug(input: string): string {
+  const trimmed = input.trim();
+  const raw = PROFILE_LINK.exec(trimmed)?.[1];
+  let name = trimmed;
+  if (raw !== undefined) {
+    try {
+      name = decodeURIComponent(raw);
+    } catch {
+      name = raw;
+    }
+  }
+  return name.toLowerCase();
+}
+
 function pathSegment(value: string, what: 'username' | 'id'): string {
   if (value === '' || value === '.' || value === '..') throw new Op1FunError(`invalid ${what}`);
   return encodeURIComponent(value);
@@ -284,7 +304,7 @@ export class Op1FunClient {
   }
 
   private userPath(username: string): string {
-    return `/users/${pathSegment(username, 'username')}`;
+    return `/users/${pathSegment(userSlug(username), 'username')}`;
   }
 
   async getUser(username: string): Promise<Op1FunUser> {

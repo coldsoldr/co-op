@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_DESCRIPTION, MAX_FILE_BYTES, MAX_UPLOAD_BYTES, Op1FunClient, UPLOAD_TIMEOUT_MS, mapPack, mapPatch, toBase64 } from './client';
+import { MAX_DESCRIPTION, MAX_FILE_BYTES, MAX_UPLOAD_BYTES, Op1FunClient, UPLOAD_TIMEOUT_MS, mapPack, mapPatch, toBase64, userSlug } from './client';
 import { Op1FunAuthError, Op1FunError, type Op1FunCredentials } from './types';
 import { fixtureBytes } from '../../../test/fixture-bytes';
 
@@ -116,6 +116,19 @@ describe('Op1FunClient API reads', () => {
     const f = fakeFetch(() => json({ data: patchResource }));
     await new Op1FunClient(creds, { fetch: f.fetch }).getPatch('a b/c', '4 2');
     expect(f.calls[0]?.url).toBe(`${API}/users/a%20b%2Fc/patches/4%202`);
+  });
+
+  it('sends the lower-case slug op1.fun uses, from a name or a pasted profile link', async () => {
+    const f = fakeFetch(() => json({ data: { id: '7', type: 'users' } }));
+    await new Op1FunClient(creds, { fetch: f.fetch }).getUser(' ByronJZA ');
+    await new Op1FunClient(creds, { fetch: f.fetch }).getUser('https://op1.fun/users/ByronJZA/patches?page=2');
+    expect(f.calls.map((c) => c.url)).toEqual([`${API}/users/byronjza`, `${API}/users/byronjza`]);
+  });
+
+  it('userSlug keeps other text and survives a broken escape in a link', () => {
+    expect(userSlug('DustMason')).toBe('dustmason');
+    expect(userSlug('www.op1.fun/users/Some%20One')).toBe('some one');
+    expect(userSlug('op1.fun/users/bad%E0')).toBe('bad%e0');
   });
 
   it('getUser tolerates missing attributes and relationships', async () => {

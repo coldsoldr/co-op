@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import type { Op1FunClient } from '../core/op1fun/client';
+import { userSlug, type Op1FunClient } from '../core/op1fun/client';
 import { filterOp1FunPacks, filterOp1FunPatches } from '../core/op1fun/filter';
 import { installOp1FunPatches, type FailedPatch, type InstalledPatch } from '../core/op1fun/install';
 import type { Op1FunPack, Op1FunPatch } from '../core/op1fun/types';
@@ -107,7 +107,7 @@ function Account({ op1fun }: { op1fun: Op1Fun }) {
     setStatus({ ok: true, message: 'Forgotten: the email and token are cleared from this page and this browser.' });
   }
 
-  const profileUrl = username.trim() ? `${OP1FUN_SITE}/users/${encodeURIComponent(username.trim())}` : OP1FUN_SITE;
+  const profileUrl = username.trim() ? `${OP1FUN_SITE}/users/${encodeURIComponent(userSlug(username))}` : OP1FUN_SITE;
 
   return (
     <form className="panel op1fun-account" onSubmit={onSave} aria-labelledby="op1fun-account-heading">
