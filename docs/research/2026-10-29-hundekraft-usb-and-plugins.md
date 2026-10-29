@@ -136,3 +136,38 @@ shifter port Mutable Instruments code, MIT, by Emilie Gillet).
 
 Only known facts: magic `OPMD` in the first four bytes, copied into `mods/` on the
 disk-mode drive, loaded in file-name order (see the custom firmware notes).
+
+## As built (phases 9-12, 2026-10-29)
+
+co-op implements the USB check (`web/src/core/usbmidi/`, `web/src/ui/UsbCheck.tsx`),
+installs over USB (`install.ts`, `PluginInstall.tsx`) and the file checks
+(`shared/src/plugins.ts`) from the facts above. Everything is tested against a fake OP-1
+written from these notes (`web/test/fake-op1.ts`, and the Web MIDI stub in
+`web/e2e/op1-stub.ts`), not against the device. What rests on assumptions not yet seen on
+hardware:
+
+- **The USB check has never been run against a real OP-1.** HELLO, the capabilities byte,
+  LIST paging, OFF_GET and the inventory text are all as the source documents them.
+- **The port name.** Matching `/op-?1/i` (and skipping names with "Field") is from the
+  workshop and the class-compliant name; the first real check is the first time it is
+  seen.
+- **Windows and Chrome.** On the owner's Windows 11 21H2 machine Chrome did not list the
+  OP-1's MIDI port while Vivaldi did. The likely cause is WinMM allowing one client per
+  MIDI port, with another program (or another browser) holding it. Not confirmed. When no
+  OP-1 port turns up, co-op now lists the ports the browser sees and explains this.
+- **Install over USB has never been tried on a device.** BEGIN, DATA, END, COMMIT and the
+  T1/T2 prompt follow the docs and `du_fw.c`. Reading that source during the build showed
+  that the OP-1 keeps its COMMIT prompt up after the host leaves, and once T1 is pressed
+  the prompt takes no more keys (T2 included) and stays up through ABORT; the next COMMIT
+  from any host is then applied at once, without a new T1 (`f_key`, `du_prompt_key`;
+  ABORT resets neither). co-op therefore keeps its install dialog open from just before
+  the first COMMIT until T1, T2 or silence. A resent BEGIN answering "state" is read as
+  opened, as the device and workshop document; untested.
+- **The `.knl` extension table offset** (header byte 140) is read as relative to the start
+  of the file, not the header. The format doc does not say; the ten seed files parse that
+  way (author "BJ", versions 0.1 to 0.3), which is the only confirmation.
+- **opus `.opmod`** is checked for the `OPMD` magic and a 2 MiB limit only. Nothing else of
+  the format is known, so a broken opus plugin with the right magic passes.
+- **The `presets` field.** Whether R246's user synth preset count includes files added in
+  disk mode, or only presets saved on the device, is unknown. co-op only displays it
+  ("reported by the OP-1") and draws no conclusion from it.

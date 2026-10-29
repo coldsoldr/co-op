@@ -14,9 +14,12 @@
 
 ## Phase 9: remember the firmware choice
 
-Status: pending.
+Status: done (2026-10-29). Deviations from the task below, decided during build and review:
 
-### Task 1: remembered profile
+- Besides the dropdown and the suggestion's Switch button, phase 10's "Use OP-1 (hundekraft)" stores the profile (there is no separate "Use this profile" button). Folder detection never stores anything.
+- The override note reads "<detection reason> (you chose <label> last time)", for example "found mods folder with opus plugins (you chose OP-1 (hundekraft) last time)".
+
+### Task 1 (done): remembered profile
 
 - New `web/src/ui/remembered-profile.ts`: `loadRememberedProfile(): string | null` and `rememberProfile(id: string | null)` over `localStorage` key `co-op.profile` (JSON `{ id, at }`). Unknown ids (not in the registry) read as null. All access in try/catch.
 - `useDevice.setProfile` (the Library dropdown and the suggestion's Switch button) remembers the chosen id. Choosing in the dropdown is the only way a value gets stored (plus phase 10's "Use this profile").
@@ -27,9 +30,15 @@ Status: pending.
 
 ## Phase 10: USB MIDI check (read only)
 
-Status: pending.
+Status: done (2026-10-29). Deviations from the tasks below, decided during build and review:
 
-### Task 2: protocol core
+- The panel does not check on open: it explains disk mode first and the check starts with its Check button (Check again afterwards), so the OP-1 can be taken out of disk mode before anything is asked.
+- "Use OP-1 (hundekraft)" always remembers the profile but switches the open library at once only for a dropped, read-only copy (read from memory). A connected drive is gone while the OP-1 is out of disk mode, so reloading it would fail; the panel says the drive starts on hundekraft when it is opened again, or that the next drive opened does.
+- Port matching skips names containing "Field" (an OP-1 Field matches `/op-?1/i` but has no kennel protocol). When no OP-1 port turns up, the message lists the ports the browser does see and explains that on Windows one program at a time can hold a MIDI port.
+- The SysEx assembler drops a message that grows past 96 bytes instead of buffering it; an abort that lands after the last reply (a disconnect) no longer leaves the panel on "Checking"; switched-off ids are trimmed.
+- The port is closed after each check. The zlib CRC-32 lives in `shared` (phase 11 moved it there for the validator).
+
+### Task 2 (done): protocol core
 
 `web/src/core/usbmidi/` (pure, no browser APIs; a port is `{ send(bytes: Uint8Array): void; onSysex(cb: (bytes: Uint8Array) => void): void; close(): void }`):
 
@@ -38,7 +47,7 @@ Status: pending.
 - `inventory.ts`: `parseInventory(text)` -> `{ core: { start, len, crc } | null, presets: { count, cap } | null, records: InventoryRecord[] }` per the research notes (unknown header fields ignored; first line must be `kennel-inventory 1`). `savedNameOf(id)` (`_` -> space, `drumplus` -> `drum+`).
 - Tests: a fake device in `web/test/` that implements the device side from the research notes (HELLO with and without the caps byte, LIST paging, offset past end, silence, lost replies, realtime bytes inside SysEx, a reply split across callbacks), plus parse tests with hand-written inventory text.
 
-### Task 3: Web MIDI port and the check
+### Task 3 (done): Web MIDI port and the check
 
 - `web/src/ui/webmidi.ts`: `openOp1Port(signal)` using `navigator.requestMIDIAccess({ sysex: true })`, picks the input and output whose names match `/op-?1/i` and are not disconnected, sets `onmidimessage` before opening both ports (early replies are queued), returns the port plus `watch(cb)` for statechange. Clear errors: no Web MIDI (name the browsers), permission refused, no OP-1 port (hint: plug it in normally, not in disk mode; disk mode has no MIDI).
 - `web/src/core/usbmidi/check.ts`: `checkDevice(port)` -> one of: `{ kind: 'kennel', hello, inventory, off }`; `{ kind: 'silent' }` (port there, no HELLO answer: stock, op1r, hundekraft 2.7 or older, or busy restarting). Pure, tested with the fake device.
@@ -50,9 +59,15 @@ Status: pending.
 
 ## Phase 11: plugin library
 
-Status: pending.
+Status: done (2026-10-29). Deviations from the tasks below, decided during build and review:
 
-### Task 4: plugin format and validation (shared)
+- The `.knl` check also checks the header's screen SVG size (header byte 132) against the file and the reserved SVG fields (bytes 128 and 136, 0 and 0xFFFFFFFF). The extension table offset is read as relative to the file start, not the header; the ten seed files parse that way. `.opmod` checks only the `OPMD` magic and the 2 MiB limit, since nothing more of the format is known. An `.op1p` binary is held to op1r's 512 KiB and the whole file to 1 MiB, co-op's own limit with room for the SVG.
+- `shared/src/plugins.ts` imports its siblings through the package name so Node can load it from the Vite config; the build reads an empty index when `plugins/` is absent.
+- Seed credits follow the owner's README rather than the task text: Grids is credited "(GPL-3.0)", not MIT; tape_echo is credited for the wow and flutter model from Mutable Instruments Beads (MIT); freq_shift names Warps. Versions come from each file's extension table. The files' author "BJ" differs from plugin.json's "coldsoldr", which the validator reports as a warning. `.knl`, `.op1p` and `.opmod` are marked binary in `.gitattributes`.
+- The manual renderer is a custom safe subset (headings, paragraphs, hard breaks, emphasis, inline and fenced code, nested lists, GFM tables, block quotes, rules, links, images, autolinks, escapes); raw HTML, reference links, setext headings, indented code and footnotes show as text, and nesting deeper than 8 is shown as text. Links go to http(s) or the plugin folder only.
+- The Plugins tab gets its install buttons through a `renderActions` hook from `App`, so the tab itself has no device code. A safety note sits beside Download for hundekraft plugins.
+
+### Task 4 (done): plugin format and validation (shared)
 
 `shared/src/plugins.ts` (pure, like `packs.ts`):
 
@@ -67,24 +82,24 @@ Status: pending.
 - `PluginIndex` (format 1): per plugin the manifest fields plus `sizeBytes`, `sha256`, `savedName` (from the file header for hundekraft; plugin.json for opus), header `author`/`version` when present, `generatedAt`.
 - Tests with hand-built byte arrays for every rule (including a CRC computed in the test).
 
-### Task 5: build, CI, dev server
+### Task 5 (done): build, CI, dev server
 
 - `web/scripts/plugins-lib.ts` + CLI `web/scripts/plugins.ts` (`validate`, `build <outDir>`), following `packs-lib.ts`/`packs.ts`: read `../plugins`, validate, copy into `dist/plugins/`, write `dist/plugins/index.json`; `PLUGINS_NOW` fixes `generatedAt`. Dev middleware serving `/co-op/plugins/...` in `vite.config.ts`. `web/package.json`: `plugins:validate`, and `build` runs both builders. CI runs `plugins:validate`; extend the mixed-PR warning to `plugins/`.
 - Tests mirror the packs-lib tests.
 
-### Task 6: seed the ten plugins
+### Task 6 (done): seed the ten plugins
 
 - Fetch the ten `.knl` files and `screens/<id>_dark.png` from `coldsoldr/te-op1-cfw` branch `hk-plugins` (`gh api` or raw.githubusercontent.com; write into the repo, check sizes match the research notes). One folder each: `plugins/<id>/<id>.knl`, `screenshot.png`, `manual.md`, `plugin.json`.
 - `manual.md` per plugin: split from the branch's README (that plugin's section, its controls table and "On screen"), plus a short "Before you start" (original OP-1, hundekraft 3.0.3, install routes) and the shared "How the controls work" rules where they apply. Keep the owner's wording; follow `docs/plugin-manual-prompt.md` (task 7) for structure.
 - `plugin.json`: license `GPL-3.0-or-later`, source `https://github.com/coldsoldr/te-op1-cfw`, author `coldsoldr`, requires `hundekraft 3.0.3`, kind from the header, credits on rings, marbles, grids, freq_shift: "Port of Mutable Instruments <module> by Emilie Gillet (MIT)". Validator must pass.
 
-### Task 7: docs and templates
+### Task 7 (done): docs and templates
 
 - `docs/contributing-plugins.md`: what a plugin folder holds, the checks, the risk statement (a plugin runs as firmware code; maintainers merge only from authors they trust or with source they have looked at; a source link is strongly encouraged), how users install (USB from co-op, the hundekraft workshop, opus `mods/`), how to update (bump version, replace file).
 - `docs/plugin-manual-prompt.md`: a copy-paste prompt for the author's coding agent. It asks the agent to read the plugin's source and produce `manual.md` with fixed sections: title and one-line summary; screenshot line; what it is (one paragraph, plain words); requirements; a controls table `Encoder | Main page | Press, then turn` for blue, green, white, orange; second pages and Shift behaviour; "On screen"; tips and CPU notes; what is saved with a sound; credits and licence. Style rules: short sentences, British spelling, no marketing words, name the OP-1 encoders by colour, units and ranges where known, never invent behaviour not in the source. Include a filled-in example (bitcrusher, from the seed manual).
 - `.github/PULL_REQUEST_TEMPLATE.md`: a plugin checklist next to the pack one. Issue template `plugin-request.yml` if packs has one (it does: `pack-request.yml`). README: plugin library section.
 
-### Task 8: Plugins tab
+### Task 8 (done): Plugins tab
 
 - `web/src/core/plugins/catalogue.ts`: fetch `plugins/index.json`, filter by firmware, kind, tag, text; fetch plugin bytes and verify sha256 and size.
 - `web/src/ui/Plugins.tsx`: a tab next to Packs. Cards with screenshot (lazy, alt text), name, kind, author, version, licence, requires, description, source link. "Read the manual": render `manual.md` with a small safe Markdown renderer written here (headings, paragraphs, lists, tables, code, links with http(s) only, images only from the same plugin folder; no raw HTML). Actions per plugin: Download (always); for hundekraft "Install over USB" (enabled in phase 12; until then hidden); for opus "Copy to mods/" when an opus drive is open (phase 12).
@@ -95,9 +110,20 @@ Status: pending.
 
 ## Phase 12: plugin installs and requirements
 
-Status: pending.
+Status: done (2026-10-29). Deviations from the tasks below, decided during build and review:
 
-### Task 9: install over USB (hundekraft)
+- The install dialog cannot be closed (no button, Escape ignored) from just before the first COMMIT until T1, T2 or silence; focus moves to the instruction, which says to press T2 on the OP-1 to cancel. Once T1 is pressed the OP-1 keeps its prompt up, takes no more keys and applies the next COMMIT from any host at once, without a new T1 (ABORT resets neither), so a dialog closed while the prompt was up could leave exactly that behind.
+- The install refuses any file with the same id in `plugins/` or `content/` (`.knl` or `.op1p`), or a `knl`/`op1p` record of that name, in any state (loaded, failed, off, skipped); built-ins do not count. HELLO must report both the inventory and the plugin capability. The file's saved name must give the id in its path.
+- No cleanup ABORT after a failed transfer: the ABORT before BEGIN clears the staging area for the next try, and nothing staged applies without COMMIT and T1.
+- A resent BEGIN answering "state" counts as opened (its first try opened the file and lost the reply, as the device and workshop document); a resent END answering "state" fails safely, since it cannot tell whether the file was staged. Never DELETE, OFF_SET or RESTART.
+- Silence on COMMIT after the prompt counts as the restart after T1 ("unconfirmed"); after the ports return the check is retried every 2 s for up to 60 s while the OP-1 boots. The UI installs one plugin per dialog; `installPlugins` takes a list.
+- Copy to mods/ asks before replacing a file of the same name in any case (FAT ignores case) and keeps the drive's spelling. Without an opus drive open the button says what is needed.
+- The plugin index loads with the page (not only when the Plugins tab opens), because compatibility needs it; the library is judged again when the index or the USB check changes what is known.
+- `requiredPlugins` leaves out names the active firmware has built in. Only a synth sound's engine counts as an engine plugin; effects count for any sound.
+- On hundekraft a library plugin engine or effect is a warning, `needs plugin "<id>"`, not unsupported, and ok once the last USB check shows it loaded. opus has no plugin context: its own "needs plugin <id>" warnings stand.
+- The plugin prompt's default focus is Cancel, like the other install guards. An install waits at most 5 s for the plugin index and skips the prompt without it. Known to be there: loaded in the last USB check (hundekraft, in memory only) or a valid `.opmod` of that name in `mods/` (opus).
+
+### Task 9 (done): install over USB (hundekraft)
 
 - `web/src/core/usbmidi/install.ts`: `installPlugins(port, files, events)` for `plugins/<id>.knl|.op1p` only (the client refuses any other path), following the notes: HELLO must report the plugin capability; the file must pass the task 4 checks again in the browser; ABORT, then for each file BEGIN (size, CRC, path) -> DATA in 72-byte pieces, one in flight, handling status 5 by resending from the reported count -> END; then COMMIT, polling while it answers 9 and telling the UI to "press T1 on the OP-1 to install and restart, T2 to cancel"; status 2 after the prompt means cancelled. Timeouts: 10 s control steps, 3 s data, as in the notes.
 - Refuse before sending anything: a plugin whose id is already installed (inventory record with that path or name), with the message to remove it first in the hundekraft workshop because replacing in place can hang the restart; no inventory (older core) -> point to the workshop.
@@ -105,11 +131,11 @@ Status: pending.
 - Confirm dialog before sending (default Cancel): names the files, says a plugin runs as firmware code, that the OP-1 restarts, and that if it fails to start, switching it off and on starts it without plugin files.
 - Tests against the fake device extended with the device side of BEGIN/DATA/END/COMMIT/ABORT (wait key, cancel, gap, lost replies, path refusals).
 
-### Task 10: opus copy to mods/
+### Task 10 (done): opus copy to mods/
 
 - From the Plugins tab with an opus drive open: write `mods/<file>.opmod` through the existing store and `writeAtomic` (drop-store collects it into the changes zip as other writes do). Refuse overwriting an existing file of the same name without a confirm. Refresh the Installed opus plugins list afterwards. Note in the UI that opus loads plugins in file-name order.
 
-### Task 11: patches that need a plugin
+### Task 11 (done): patches that need a plugin
 
 - `web/src/core/plugins/requirements.ts`: `requiredPlugins(traits, index, firmwareId)` -> the library plugins whose `savedName` matches the patch's engine (synth), effect (`fx_type`) or opus plugin id, for the active firmware. `installedNames(inventory)` -> saved names of loaded records.
 - Compatibility: the hundekraft profile's finding for an engine or effect that is a library plugin says `needs plugin "<id>"` (warn) instead of the generic message; when the USB check shows it loaded, it is ok. Keep profiles pure: pass the library and installed names in through a small context the UI supplies (for example a `withPlugins(profile, context)` wrapper), and keep the existing profile tests green.
@@ -117,5 +143,7 @@ Status: pending.
 - e2e: installing a pack patch whose engine is a seed plugin (add a small test pack or reuse test fixtures in the e2e harness, not in `packs/`) on the hundekraft profile shows the prompt.
 
 ### Task 12: docs, review, deploy
+
+Spec, research notes and plan statuses: done. README, the final review and the deploy are separate steps.
 
 Spec: new sections for remembered profile, USB check, plugin library and installs; decisions table rows. README "What exists today". Research notes "As built". Plan statuses. Final review over phases 9 to 12; push; watch ci, pages and worker.

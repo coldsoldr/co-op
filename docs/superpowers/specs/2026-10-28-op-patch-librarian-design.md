@@ -51,6 +51,15 @@ Non-goals for v1
 | Firmware detection | Folder detection on open; a content sniff over loaded patches may only suggest a switch, never switch, because sounds prove where they were made, not what is installed |
 | Compatibility | Judged from sound traits against each profile's supported names; stock is strict (custom-firmware sounds may stop it at boot), hundekraft and opus warn about missing plugins |
 | Write guards | Pack and op1.fun installs and restores confirm before writing patches the active profile marks unsupported; copy and move within the drive do not ask |
+| Remembered firmware | The profile last chosen by hand is stored in `localStorage` and wins on the next open, unless folder detection proves another (0.97 or more, opus by its mods folder) |
+| USB check | Read only, over Web MIDI SysEx with hundekraft 3.x's kennel protocol; started by a button, never on open, because disk mode and MIDI are exclusive |
+| Plugin library | In the repo under `plugins/`, one folder per plugin with the file, `manual.md` and a screenshot, submitted by pull request like packs; the index is built at deploy |
+| Plugin licences | SPDX ids from a fixed list of open licences plus `LicenseRef-Freeware`; a source link is optional but encouraged, since a plugin runs as firmware code |
+| hundekraft plugin installs | Over USB MIDI from co-op (only `plugins/<id>.knl` or `.op1p`, never DELETE, OFF_SET or RESTART), or by download for the hundekraft workshop; a plugin whose id is already installed is refused (remove it in the workshop first) |
+| opus plugin installs | Copied into `mods/` through the drive store and `writeAtomic`, asking before replacing a file of the same name |
+| Plugin requirements | Matched by saved name against the library for the active firmware, built-in names left out; on hundekraft a library engine or effect warns `needs plugin "<id>"` and is ok once the USB check shows it loaded |
+| Plugin prompt | Pack, op1.fun and restore installs ask after the write guard when patches need plugins not known to be there; Cancel is the default; skipped without the plugin index |
+| Manual rendering | A small Markdown parser written for safety: React elements only, raw HTML kept as text, links to http(s) or the plugin folder, images from the plugin folder |
 | Reference firmware repos | `vendor/hundekraft`, `vendor/opus`, gitignored |
 | Web stack | Vite, React, TypeScript |
 
@@ -61,13 +70,15 @@ web/        Vite + React + TypeScript app, built to static files for Pages
 worker/     Cloudflare Worker: feedback endpoint and op1.fun upload proxy
 shared/     Types and validators used by web, worker and CI
 packs/      Community packs, one folder each (index.json is generated at build time)
+plugins/    Community firmware plugins, one folder each (index.json is generated at build time)
 docs/       Specs, contributor guide, pack submission guide
 vendor/     Gitignored reference clones of hundekraft and opus
 .github/    Actions workflows, issue templates, PR template
 ```
 
 The repo is a pnpm workspace with `web`, `worker` and `shared` as packages.
-`shared` holds the pack manifest schema and the feedback payload schema.
+`shared` holds the pack manifest schema, the plugin manifest schema and
+file checks, and the feedback payload schema.
 
 ## 5. Web app architecture
 
@@ -87,12 +98,16 @@ web/src/
                compatibility from traits, write-guard check
     catalogue/ pack index client and installs
     op1fun/    op1.fun client and installs
+    usbmidi/   kennel SysEx framing, session, inventory parser, the USB check and
+               plugin installs (pure: a port is send, onSysex and close)
+    plugins/   plugin index client, the safe manual Markdown parser, plugin requirements
     feedback/  feedback client
     util.ts    small shared helpers
 ```
 
 `core/` is pure TypeScript with no React and no direct browser globals
-except inside the store adapters. It is unit tested with Vitest against
+except inside the store adapters. Web MIDI is opened in `ui/webmidi.ts`
+and handed to `core/usbmidi` as a plain port. It is unit tested with Vitest against
 fixture files.
 
 ### 5.1 Patch model and codec
@@ -154,6 +169,7 @@ interface DeviceProfile {
     lfo: readonly string[];
   };
   compatibility(patch: Patch): Compat;          // ok | warn | unsupported, from traits
+  pluginCompatibility?(context: PluginContext): DeviceProfile["compatibility"]; // see 5.6
 }
 ```
 
@@ -208,6 +224,20 @@ soften findings. The codec reads `drum`, `dbox` (stock DBox) and `gin`
   is installed now. A profile chosen by hand is never second-guessed.
   Every patch shown anywhere carries a compatibility badge for the active
   profile, with a details popover listing its traits.
+- The profile is remembered (phase 9). A hundekraft drive looks exactly
+  like a stock one in disk mode, so without this the choice would have to
+  be made again every visit. Choosing a profile by hand (the Library
+  dropdown, the suggestion's Switch button, or "Use OP-1 (hundekraft)" in
+  the USB check) stores it in `localStorage` under `co-op.profile` as
+  `{ id, at }`; detection never stores anything, and an id no longer in
+  the registry reads as nothing. The next connect or drop starts on the
+  remembered profile, with "remembered from last time" as the detection
+  line, unless folder detection finds a different profile at 0.97 or more
+  (today only opus by its mods folder, the one folder fact that proves the
+  firmware); then the line gives the detection reason and adds "(you chose
+  <label> last time)". The content sniff still runs against the remembered
+  profile. Every storage access is in try/catch: without storage the
+  choice holds for the page only.
 - Writes that bring patches onto the device are guarded. Pack installs,
   op1.fun installs and restores first check the active profile's
   compatibility; any
@@ -330,6 +360,156 @@ Feedback
   line by line, never inside a fence the user could close; lone surrogates
   are rejected.
 
+Plugins
+
+- The Plugins tab, after Packs, lists the plugin library (section 6.1):
+  cards with the screenshot (lazy, with alt text), name, kind, author,
+  version, licence, requirements, description, credits and source link,
+  filtered by kind, firmware, tag and text. "Read the manual" renders
+  `manual.md` in the tab. Every plugin has Download, which checks the file
+  against the index's size and SHA-256 first; hundekraft plugins carry a
+  safety note beside it (a plugin runs as firmware code). The tab takes its
+  install buttons from `App` (Install over USB for hundekraft, Copy to
+  mods/ for opus, section 5.6), so it holds no device code itself.
+- Manuals are rendered by a small Markdown parser written for safety, not
+  completeness (`core/plugins/markdown.ts`). It turns the text into plain
+  data that the UI renders as React elements, so nothing in a manual
+  reaches the page as HTML. Supported: ATX headings, paragraphs, hard
+  breaks, emphasis and strong, inline and fenced code, nested lists, GFM
+  tables, block quotes, rules, links, images, autolinks and backslash
+  escapes. Raw HTML, reference links, setext headings, indented code and
+  footnotes are shown as text, as is anything nested deeper than eight
+  levels. Links go only to http(s) (opened in a new tab) or into the
+  plugin's own folder; images come only from that folder.
+
+### 5.5 USB MIDI check
+
+Disk mode cannot tell hundekraft from stock, but hundekraft 3.x answers a
+SysEx protocol (kennel) on the OP-1's USB MIDI port. "Check over USB" in
+the Library header, with or without a drive open, opens a panel that asks
+it. The protocol is recorded in
+`docs/research/2026-10-29-hundekraft-usb-and-plugins.md`; co-op's
+implementation is its own (the hundekraft sources are GPL and only facts
+are taken from them).
+
+- Disk mode and MIDI are exclusive on the OP-1, so the panel first says
+  to eject the drive and leave disk mode, and checks only when Check is
+  pressed (then Check again). Nothing on the OP-1 changes.
+- `ui/webmidi.ts` asks for `navigator.requestMIDIAccess({ sysex: true })`
+  and picks the connected input and output whose names match `/op-?1/i`
+  and do not contain "Field" (an OP-1 Field has no kennel protocol). The
+  message handler is set before the ports open. Errors name what is wrong:
+  no Web MIDI (with the browsers that have it), permission refused, or no
+  OP-1 port, in which case it lists the ports the browser does see and
+  explains that on Windows one program at a time can hold a MIDI port. The
+  port is closed after each check, and a disconnect during the read is
+  reported.
+- `core/usbmidi` is pure. `framing.ts` packs and unpacks the 7-bit
+  payload, refuses any message over 96 bytes (a longer SysEx stops the
+  stock OP-1's MIDI input until it restarts), reassembles SysEx across
+  callbacks skipping realtime bytes, and drops a message that grows past
+  96 bytes. `session.ts` keeps one message in flight with a fresh 14-bit
+  seq per try, ignores stale replies, and retries (3 s, 5 tries by
+  default). `check.ts` sends HELLO, pages LIST (64 bytes at a time) and
+  both OFF_GET lists, and returns either `kennel` (version, capabilities,
+  inventory, switched-off ids) or `silent` (the port is there but HELLO
+  gets no answer).
+- The panel shows the firmware ("hundekraft 3.x (kennel protocol <n>)"),
+  the plugin table (name, kind, source, version, author, state and
+  reason), the switched-off list and, when the core reports it, "Synth
+  presets: <count> of <cap> (reported by the OP-1)", which co-op only
+  displays. A silent port gets the explanation: TE's firmware, op1r,
+  hundekraft 2.7 or older, or busy restarting.
+- "Use OP-1 (hundekraft)" always remembers the profile, but switches the
+  open library at once only for a dropped, read-only copy, which lives in
+  memory. A connected drive is gone while the OP-1 is out of disk mode, so
+  the panel says it starts on hundekraft when it is opened again (or that
+  the next drive does).
+- The last inventory is kept in `useDevice` as `installedPlugins`, in
+  memory only, for plugin requirements (5.6).
+
+### 5.6 Plugin installs and requirements
+
+Install over USB (hundekraft)
+
+- `core/usbmidi/install.ts` sends only `plugins/<id>.knl` or
+  `plugins/<id>.op1p` and never sends DELETE, OFF_SET or RESTART: removing
+  a plugin is left to the hundekraft workshop. Every refusal is checked
+  before the first write: the path; the file checks of section 6.1 again
+  on the downloaded bytes, with the saved name giving the id in the path;
+  HELLO reporting both the inventory and the plugin-file capabilities; and
+  no file of the same id in `plugins/` or `content/`, or plugin record of
+  that name, in any state (built-ins do not count). Replacing a plugin in
+  place can hang the OP-1's restart, so the message says to remove it in
+  the workshop first.
+- Then ABORT (clearing the staging area), and per file BEGIN (size, CRC-32,
+  path), DATA in 72-byte pieces with one in flight (a gap or a lost reply
+  carries on from the OP-1's count), END, and COMMIT, polled while the
+  OP-1 answers "wait key". Control steps time out after 10 s and data
+  after 3 s, 5 tries each. A resent BEGIN answering "state" counts as
+  opened (its first try opened the file and lost the reply); a resent END
+  answering "state" fails, since it cannot tell whether the file was
+  staged. A failed transfer sends no cleanup ABORT: nothing staged applies
+  without COMMIT and T1, and the next install starts with ABORT.
+- The dialog confirms first (Cancel focused): it names the file, says a
+  plugin runs as firmware code, that the OP-1 asks for T1 and restarts,
+  and that an OP-1 that does not start is switched off and on to start
+  without plugin files. Then it shows progress and "Press T1 on the OP-1
+  to install and restart, or T2 to cancel".
+- From just before the first COMMIT until T1, T2 or silence the dialog
+  cannot be closed (no button, Escape ignored); focus moves to the
+  instruction. Once T1 is pressed the OP-1 keeps its prompt up, takes no
+  more keys and applies the next COMMIT from any host at once, so a host
+  that left during the prompt could leave a later COMMIT to apply without
+  a new T1.
+- T2 means nothing was installed. Silence after the prompt (or the ports
+  going away) is taken as the restart after T1. The dialog waits for the
+  OP-1's ports to return, checks again (retrying for up to 60 s while it
+  boots), updates `installedPlugins` and shows the plugin's state: loaded,
+  failed, off, skipped (the last boot did not reach the tape screen) or
+  missing.
+
+Copy to mods/ (opus)
+
+- With an opus drive open, "Copy to mods/" downloads and checks the
+  plugin against the index and writes `mods/<file>.opmod` with
+  `writeAtomic` as one queued operation (the folder as the drive spells
+  it, created when missing). A file of the same name in any case is
+  replaced only after a confirm, keeping the drive's spelling. On a
+  dropped drive the write is collected into the changes zip like any
+  other. The reload refreshes the Installed opus plugins list. The panel
+  notes that opus loads `mods/` in file-name order; without an opus drive
+  the button says what is needed.
+
+Patches that need a plugin
+
+- The plugin index loads with the page, not only with the Plugins tab,
+  because compatibility uses it; the library is judged again when the
+  index or the USB check changes what is known.
+- `requiredPlugins(traits, index, firmwareId)` returns the library
+  plugins for the active firmware whose saved name (from the `.knl` or
+  `.op1p` header, or `plugin.json` for opus) is a synth sound's engine,
+  the effect, or the `opus` member's plugin or effects. Names the firmware
+  has built in are left out. `installedNames(inventory)` gives the saved
+  names of records the USB check found loaded.
+- Profiles stay pure: `withPlugins(profile, context)` hands
+  `pluginCompatibility` the library (saved name to id) and the loaded
+  names. On hundekraft a library engine or effect is then a warning,
+  `needs plugin "<id>"`, instead of the generic finding, and ok once
+  loaded; the other findings are unchanged. Profiles without
+  `pluginCompatibility` (stock, opus, whose own "needs plugin <id>"
+  warnings stand) or a missing index leave the profile as it is. Rows,
+  write guards and the Inspector all use the wrapped profile, and the
+  traits popover names the plugins a row needs.
+- Pack, op1.fun and restore installs, after the write guard and before
+  writing, collect the plugins the patches need that are not known to be
+  there (loaded in the last USB check for hundekraft; a valid `.opmod` of
+  that name in `mods/` for opus) and ask "This patch needs the plugin
+  <name>. Install it?" with Install over USB (hundekraft), Copy to mods/
+  (opus) or Download for each, then Continue without or Cancel (the
+  default, like the other install guards). An install waits at most 5 s
+  for the plugin index and skips the prompt without it.
+
 ## 6. Community packs
 
 ```
@@ -378,6 +558,89 @@ against its SHA-256 before playing or installing it.
 The contributor guide (`docs/contributing-packs.md`) walks through forking,
 adding a folder (with git or in the GitHub web UI), validating and opening
 the pull request. The pull request template asks for licence confirmation.
+
+### 6.1 Plugin library
+
+Firmware plugins are shared the same way as packs: a folder per plugin in
+the repo, submitted by pull request, validated in CI and indexed by the
+Pages build.
+
+```
+plugins/
+  <id>/
+    plugin.json
+    <id>.knl | <id>.op1p | <name>.opmod
+    manual.md
+    screenshot.png
+```
+
+Nothing else may be in the folder (OS noise is ignored as in packs), and
+the folder name equals the id.
+
+`plugin.json` format 1: `format` (1), `id`, `name` (display), `firmware`
+(`op1/hundekraft` or `op1/opus`), `kind` (`synth`, `fx` or `feature`),
+`author`, `version` (free text, at most 20), `description` (at most 500),
+`license`, `file`, `screenshot` (`.png`), `manual` (`manual.md`), and
+optionally `source` (an https URL), `requires` (free text such as
+"hundekraft 3.0.3", at most 60), `credits` (at most 200), `tags` (the
+packs rule) and, for opus, `savedName` (the `opus.<id>` name sounds save,
+used for requirements). `license` is an SPDX id from `GPL-3.0-or-later`,
+`GPL-3.0-only`, `GPL-2.0-or-later`, `MIT`, `BSD-3-Clause`, `Apache-2.0`,
+`MPL-2.0`, or `LicenseRef-Freeware` for closed plugins that are free to
+use. Ids: hundekraft `[a-z0-9_-]{1,15}` (the file is `<id>.knl` or
+`<id>.op1p`), opus `[a-z0-9_.-]{1,40}`.
+
+Validation (the pure functions in `shared/src/plugins.ts`, run by
+`web/scripts/plugins.ts`; layouts in
+`docs/research/2026-10-29-hundekraft-usb-and-plugins.md`):
+
+- `.knl`: the optional screen SVG, its NUL and zero padding; the 144-byte
+  header (magic `KNPL`, format 1, header size, file size equal to the
+  length, CRC-32 over the file with its own 4 bytes as zero, API 1, kind 1
+  to 3 matching `plugin.json`, legacy order at most 31, saved name of 1 to
+  15 printable ASCII characters giving the id with spaces as `_`, the SVG
+  size and reserved SVG fields); size a multiple of 4 and at most 512 KiB;
+  the SVG boot hazard (a number with five or more decimals hangs R246's
+  boot); and the optional extension table, whose offset is read from the
+  file start. Its author and version are returned, and a mismatch with
+  `plugin.json` is a warning, not an error.
+- `.op1p`: the trailer and binary rules, kind 0 synth or 1 effect, the id
+  rule, and the SVG hazard on any SVG prefix. The binary is at most
+  512 KiB (op1r's limit) and the whole file at most 1 MiB (co-op's own
+  limit, with room for the SVG).
+- `.opmod`: the `OPMD` magic and at most 2 MiB, for `op1/opus` only;
+  nothing more of the format is known.
+- The screenshot is a PNG of 64 to 2048 pixels each way and at most 1 MiB;
+  `manual.md` is non-empty UTF-8 of at most 64 KiB; `plugin.json` at most
+  64 KiB.
+
+`index.json` is not committed. The Pages build validates the plugins
+again, copies each plugin's four files into `web/dist/plugins/<id>/` and
+writes `web/dist/plugins/index.json` (format 1: the manifest fields plus
+`sizeBytes`, `sha256`, `savedName` and the header's author and version
+when present, and `generatedAt`, fixed by `PLUGINS_NOW` in tests). An
+absent `plugins/` folder gives an empty index. The dev server serves
+`/co-op/plugins/` the same way. The app fetches the index with
+`cache: 'no-cache'` and checks every plugin file against its size and
+SHA-256, retrying a mismatch once without the cache, before saving or
+installing it.
+
+The library is seeded with ten hundekraft plugins by the owner (rings,
+bitcrusher, drive, tape drive, wavefolder, freq shift, ensemble, tape
+echo, marbles, grids) from `coldsoldr/te-op1-cfw` branch `hk-plugins`,
+GPL-3.0-or-later with that repo as the source link; credits follow the
+owner's README (Mutable Instruments ports by Émilie Gillet: Rings,
+Marbles and Warps under MIT, Grids under GPL-3.0, and tape echo's wow and
+flutter from Beads under MIT).
+
+A plugin runs as firmware code, so maintainers merge only from authors
+they trust or with source they have looked at. `docs/contributing-plugins.md`
+covers the folder, the checks, that risk, installing and updating;
+`docs/plugin-manual-prompt.md` is a prompt authors give their coding agent
+so every manual has the same sections (summary, requirements, the
+encoder table by colour, second pages and Shift, on screen, tips, what is
+saved with a sound, credits and licence). The pull request template has a
+plugin checklist and there is a plugin request issue form.
 
 ## 7. Worker
 
@@ -469,11 +732,12 @@ direct.
   without them. Checkout does not persist credentials. Without the
   Cloudflare secrets the deploy is skipped with a notice and the job passes.
 - `ci.yml`: typecheck, lint, unit tests (web, shared and worker), pack
-  validation, build and the Playwright smoke test on every PR and push.
-  On pull requests it also warns when a PR changes files under `packs/`
-  and elsewhere (diffing the merge commit against its first parent, with
-  two commits of history). There is no separate packs workflow: packs are validated in
-  `ci.yml` and indexed by the Pages build.
+  and plugin validation, build and the Playwright smoke test on every PR
+  and push. On pull requests it also warns when a PR changes files under
+  `packs/` or `plugins/` and elsewhere, or under both (diffing the merge
+  commit against its first parent, with two commits of history). There is
+  no separate packs or plugins workflow: both are validated in `ci.yml`
+  and indexed by the Pages build, which runs both builders.
 
 The owner supplies a Cloudflare account, a Turnstile widget and the GitHub
 fine-grained token (`docs/deploying-the-worker.md`). Until the Worker is
@@ -502,12 +766,23 @@ install and upload show as unavailable rather than failing.
 - Playwright: mount a fixture folder through drag-and-drop, browse, preview,
   stage a change, download the zip; packs and op1.fun installs (op1.fun and
   the Worker mocked with page.route); firmware suggestion, write guard and
-  opus plugin listing. Feedback is covered only in its GitHub-issue fallback:
+  opus plugin listing; the remembered profile; the Plugins tab, manuals
+  and downloads; the USB check and plugin installs against a Web MIDI stub
+  of a hundekraft OP-1 (`web/e2e/op1-stub.ts`); copy to `mods/`; and the
+  plugin prompt on a pack install. Feedback is covered only in its GitHub-issue fallback:
   the Worker-mode form (Turnstile and the feedback endpoint) is unit-tested
   only, because the e2e build has no Turnstile site key.
 - Vendor data: tests that read `vendor/` (the hundekraft factory presets and
   firmware name table) skip when it is absent, as in CI. `CO_OP_PRESETS_ZIP`
   and `CO_OP_FIRMWARE_TABLE` point them at other copies.
+- USB MIDI: the protocol core, check and installs are tested against a
+  fake OP-1 in `web/test/fake-op1.ts`, written from the research notes
+  (HELLO with and without capabilities, LIST paging, silence, lost
+  replies, realtime bytes inside SysEx, split replies, the T1/T2 prompt
+  that ignores keys after T1, gaps and path refusals). Neither has been
+  checked against a real OP-1 (section 12).
+- Plugin files: the validator is tested with hand-built byte arrays for
+  every rule, including a CRC computed in the test; the seed files pass.
 - Fixtures: a small set of real stock patches contributed under a permissive
   license, checked into `web/test/fixtures`.
 
@@ -524,6 +799,16 @@ install and upload show as unavailable rather than failing.
    write guards.
 8. opus profile from `vendor/opus`: mods-folder detection, plugin needs
    as warnings, the installed plugins list and `mods/` in backups.
+9. Remembered firmware: the profile chosen by hand is stored and wins on
+   the next open unless folder detection proves another.
+10. Read-only USB MIDI check of a hundekraft 3.x OP-1: kennel framing and
+    session, the inventory, the check panel and "Use OP-1 (hundekraft)".
+11. Plugin library: format and validation in `shared`, build, CI and dev
+    server, the ten seed plugins, contributor docs and the manual prompt,
+    and the Plugins tab with the safe manual renderer.
+12. Plugin installs and requirements: install over USB for hundekraft,
+    copy to `mods/` for opus, `needs plugin` findings and the plugin prompt
+    on pack, op1.fun and restore installs.
 
 Each phase is independently shippable and ends with a deploy.
 
@@ -534,6 +819,9 @@ Each phase is independently shippable and ends with a deploy.
   the owner's real device files and the firmware notes, but no mounted
   drive has been walked end to end, so per-folder patch limits are not
   enforced.
+- Still open: the USB check and plugin installs have not been tried on a
+  real OP-1. The assumptions this rests on are listed under "As built" in
+  `docs/research/2026-10-29-hundekraft-usb-and-plugins.md`.
 - Decide the pack size limit for `packs/` once the first real packs are in,
   and whether Git LFS is needed.
 - Settled: op1.fun's API docs put files, previews and pack zips in the
