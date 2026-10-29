@@ -218,6 +218,8 @@ export async function installPatches(
  */
 export function compatibilityWarning(pack: PackIndexEntry, profileId: string): string | null {
   if (pack.firmware.includes(profileId)) return null;
+  // Every OP-1 firmware we know loads stock sounds.
+  if (pack.firmware.includes('op1/stock') && getProfile(profileId)?.device === 'op1') return null;
   const label = (id: string): string => getProfile(id)?.label ?? id;
   return `${pack.name} is made for ${pack.firmware.map(label).join(', ')}, not ${label(profileId)}. Its patches may not load or may sound different.`;
 }

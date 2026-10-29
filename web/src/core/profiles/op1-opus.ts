@@ -51,12 +51,15 @@ const BRIDGE = 'needs the opus bridge plugin';
 const stockFolders = folderDetect(SIGNATURE_FOLDERS);
 
 /**
- * mods/ with a .opmod file: OPUS_MODS_MATCH. mods/ without: OPUS_EMPTY_MODS_MATCH. Otherwise the
- * stock folder rule capped at OPUS_FOLDER_CAP. Names only; plugin bytes are checked when listed.
+ * mods/ beside at least one stock signature folder (synth, drum or tape): OPUS_MODS_MATCH with a
+ * .opmod file in it, OPUS_EMPTY_MODS_MATCH without. Otherwise the stock folder rule capped at
+ * OPUS_FOLDER_CAP. Names only; plugin bytes are checked when the Library lists them.
  */
 async function detect(root: DirectoryListing): Promise<DetectResult> {
-  const mods = (await root.list('')).find((e) => e.kind === 'dir' && e.name.toLowerCase() === MODS_FOLDER);
-  if (mods) {
+  const dirs = (await root.list('')).filter((e) => e.kind === 'dir');
+  const mods = dirs.find((e) => e.name.toLowerCase() === MODS_FOLDER);
+  const opFolder = dirs.some((e) => SIGNATURE_FOLDERS.includes(e.name.toLowerCase()));
+  if (mods && opFolder) {
     const plugins = (await root.list(mods.name)).filter(
       (e) => e.kind === 'file' && e.name.toLowerCase().endsWith(OPUS_PLUGIN_EXTENSION),
     );
@@ -81,7 +84,8 @@ function bridgeable(finding: Finding, traits: SoundTraits): boolean {
 
 /**
  * opus keeps every sound and names the plugin a missing engine or effect needs, so plugin needs
- * are warnings: the opus member's plugin and effect slots, and hundekraft names or op1r selectors,
+ * are warnings: the opus member's plugin (or an engine mark naming none), effect slots holding
+ * effects opus does not ship, and hundekraft names or op1r selectors,
  * which load through the opus bridge plugin. Names no known firmware uses stay unsupported.
  */
 export const opusRule: TraitRule = (traits, findings) => {
@@ -91,8 +95,11 @@ export const opusRule: TraitRule = (traits, findings) => {
     if (bridgeable(finding, traits)) bridge = true;
     else all.push(finding);
   }
-  const plugins = [...new Set([traits.opusPlugin, ...traits.opusEffects].filter((p): p is string => p !== null))];
-  for (const plugin of plugins) all.push({ level: 'warn', reason: `needs plugin ${plugin}` });
+  if (traits.opusPlugin !== null) all.push({ level: 'warn', reason: `needs plugin ${traits.opusPlugin}` });
+  else if (traits.opusMark !== null) all.push({ level: 'warn', reason: 'needs an opus plugin' });
+  for (const effect of new Set(traits.opusEffects)) {
+    if (!OPUS_SUPPORTS.fx.includes(effect)) all.push({ level: 'warn', reason: `needs the effect ${effect}` });
+  }
   if (bridge) all.push({ level: 'warn', reason: BRIDGE });
   return all;
 };

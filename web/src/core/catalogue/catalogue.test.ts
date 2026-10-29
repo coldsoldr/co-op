@@ -361,6 +361,12 @@ describe('compatibilityWarning', () => {
     );
   });
 
+  it('is null for stock packs on hundekraft and opus, which load stock sounds', () => {
+    expect(compatibilityWarning(pack(), 'op1/hundekraft')).toBeNull();
+    expect(compatibilityWarning(pack(), 'op1/opus')).toBeNull();
+    expect(compatibilityWarning(pack({ firmware: ['op1/hundekraft'] }), 'op1/opus')).not.toBeNull();
+  });
+
   it('uses profile labels where they are known', () => {
     expect(compatibilityWarning(pack(), 'op1/other')).toBe(
       'Test Tones is made for OP-1 (stock firmware), not op1/other. Its patches may not load or may sound different.',

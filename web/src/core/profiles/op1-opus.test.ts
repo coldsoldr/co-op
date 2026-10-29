@@ -65,6 +65,15 @@ describe('op1/opus detection', () => {
     expect((await op1Opus.detect(new MemoryListing({ Music: {} }))).confidence).toBe(0);
   });
 
+  it('needs a stock signature folder beside mods', async () => {
+    expect((await op1Opus.detect(new MemoryListing({ mods: { 'a.opmod': 'file' } }))).confidence).toBe(0);
+    expect((await op1Opus.detect(new MemoryListing({ Music: {}, mods: { 'a.opmod': 'file' } }))).confidence).toBe(0);
+    expect((await op1Opus.detect(new MemoryListing({ synth: {}, mods: { 'a.opmod': 'file' } }))).confidence).toBe(
+      OPUS_MODS_MATCH,
+    );
+    expect((await op1Opus.detect(new MemoryListing({ TAPE: {}, mods: {} }))).confidence).toBe(0.6);
+  });
+
   it('treats a mods file, not folder, as no mods folder', async () => {
     expect((await op1Opus.detect(new MemoryListing({ ...STOCK_DRIVE, mods: 'file' }))).confidence).toBe(0.5);
   });
@@ -83,9 +92,16 @@ describe('op1/opus compatibility', () => {
     expect(compat).toEqual({ level: 'warn', reason: 'needs plugin opus.dx' });
   });
 
-  it('warns that opus effect slots need their plugins', () => {
-    const compat = op1Opus.compatibility(synth({ opus: { fx2_type: 'opus.chorus', fx2_active: 1 } }));
-    expect(compat).toEqual({ level: 'warn', reason: 'needs plugin opus.chorus' });
+  it('warns that an effect slot needs an effect opus does not ship, and not for one it supports', () => {
+    const compat = op1Opus.compatibility(synth({ opus: { fx2_type: 'opus.flanger', fx2_active: 1 } }));
+    expect(compat).toEqual({ level: 'warn', reason: 'needs the effect opus.flanger' });
+    expect(op1Opus.compatibility(synth({ opus: { fx2_type: 'opus.chorus' } }))).toEqual({ level: 'ok' });
+    expect(op1Opus.compatibility(synth({ opus: { fx2_type: 'delay' } }))).toEqual({ level: 'ok' });
+  });
+
+  it('warns that an engine mark without a named plugin needs an opus plugin', () => {
+    const compat = op1Opus.compatibility(synth({ type: 'iter', knobs: fifth(0x120), opus: { data: [1, 2] } }));
+    expect(compat).toEqual({ level: 'warn', reason: 'needs an opus plugin' });
   });
 
   it('warns that hundekraft sounds need the opus bridge plugin', () => {
