@@ -1,5 +1,6 @@
 import { dirname } from '../core/store/store';
 import type { LibraryRow } from './rows';
+import type { SoundTraits } from '../core/codec/sound-traits';
 
 /** The local calendar date as YYYY-MM-DD, for download file names. */
 export function dateStamp(date: Date): string {
@@ -60,4 +61,19 @@ export function compatView(row: LibraryRow): CompatView {
 export function kindMismatchText(row: LibraryRow): string | null {
   if (!row.kindMismatch || !row.info) return null;
   return `in ${row.kind} folder, but metadata says ${row.info.kind}`;
+}
+
+/** Label and value pairs explaining a patch's compatibility badge; missing traits are left out. */
+export function traitDetails(traits: SoundTraits): Array<[string, string]> {
+  const hex = (value: number): string => `0x${value.toString(16)}`;
+  const lines: Array<[string, string]> = [['Engine', traits.engine || 'none']];
+  if (traits.fx) lines.push(['Effect', traits.fx]);
+  if (traits.lfo) lines.push(['LFO', traits.lfo]);
+  if (traits.engineSelector !== null) lines.push(['Engine selector', hex(traits.engineSelector)]);
+  if (traits.opusMark !== null) lines.push(['opus engine mark', hex(traits.opusMark)]);
+  if (traits.fxSelector !== null) lines.push(['Effect selector', hex(traits.fxSelector)]);
+  if (traits.hasGin) lines.push(['Gin kit', 'yes']);
+  if (traits.hasOpus) lines.push(['Plugin', traits.opusPlugin ?? 'unknown (opus sound)']);
+  if (traits.opusEffects.length > 0) lines.push(['opus effects', traits.opusEffects.join(', ')]);
+  return lines;
 }

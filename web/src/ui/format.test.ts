@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { compatView, dateStamp, formatSize, groupByFolder, kindMismatchText, rootOf } from './format';
+import { compatView, dateStamp, formatSize, groupByFolder, kindMismatchText, rootOf, traitDetails } from './format';
+import { soundTraits } from '../core/codec/sound-traits';
+import { SYNTH_META } from '../../test/fixtures/meta';
 import {
   displayName,
   filterRows,
@@ -33,6 +35,7 @@ const info = (name: string, kind: PatchInfo['kind'] = 'synth'): PatchInfo => ({
   kind,
   hasMeta: true,
   canonical: true,
+  traits: null,
 });
 
 const row = (path: string, extra: Partial<LibraryRow> = {}): LibraryRow => ({ ...toRow(entry(path)), ...extra });
@@ -90,9 +93,9 @@ describe('format helpers', () => {
 
 describe('toRow', () => {
   it('keeps only the patch details the table needs, not its bytes', () => {
-    const patch = { name: 'pad', kind: 'synth', meta: {}, op1Canonical: false, raw: new Uint8Array(9) } as unknown as Patch;
+    const patch = { name: 'pad', kind: 'synth', meta: SYNTH_META, op1Canonical: false, raw: new Uint8Array(9) } as unknown as Patch;
     const r = toRow(entry('synth/user/a.aif', { patch }));
-    expect(r.info).toEqual({ name: 'pad', kind: 'synth', hasMeta: true, canonical: false });
+    expect(r.info).toEqual({ name: 'pad', kind: 'synth', hasMeta: true, canonical: false, traits: soundTraits(SYNTH_META) });
     expect('patch' in r).toBe(false);
   });
 });
@@ -141,5 +144,28 @@ describe('filterRows and sortRows', () => {
     expect(files('name', 'ascending')).toEqual(['c.aif', 'a.aif', 'b.aif']);
     expect(files('kind', 'ascending')).toEqual(['a.aif', 'b.aif', 'c.aif']);
     expect(files('compat', 'ascending')).toEqual(['a.aif', 'b.aif', 'c.aif']);
+  });
+});
+
+describe('traitDetails', () => {
+  it('lists engine, effect, LFO and selectors for a synth', () => {
+    const traits = soundTraits({ ...SYNTH_META, type: 'supersaw', knobs: [0, 0, 0, 0, 0x5301, 0, 0, 0] })!;
+    expect(traitDetails(traits)).toEqual([
+      ['Engine', 'supersaw'],
+      ['Effect', 'nitro'],
+      ['LFO', 'value'],
+      ['Engine selector', '0x5301'],
+    ]);
+  });
+
+  it('names the opus plugin and effects and a Gin kit', () => {
+    const opus = soundTraits({ ...SYNTH_META, type: 'iter', opus: { plugin: 'opus.dx', fx2_type: 'opus.chorus' } })!;
+    expect(traitDetails(opus)).toContainEqual(['Plugin', 'opus.dx']);
+    expect(traitDetails(opus)).toContainEqual(['opus effects', 'opus.chorus']);
+    const gin = soundTraits({ ...SYNTH_META, fx_type: '', lfo_type: '', type: 'gin', gin_state: 'x' } as never)!;
+    expect(traitDetails(gin)).toEqual([
+      ['Engine', 'gin'],
+      ['Gin kit', 'yes'],
+    ]);
   });
 });

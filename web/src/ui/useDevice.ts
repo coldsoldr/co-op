@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DeviceProfile } from '../core/profiles/types';
-import { detectProfiles, getProfile, profiles, runDetectors } from '../core/profiles/registry';
+import {
+  detectProfiles,
+  getProfile,
+  profiles,
+  runDetectors,
+  suggestProfile,
+  type RankedProfile,
+} from '../core/profiles/registry';
+import type { SoundTraits } from '../core/codec/sound-traits';
 import { DEFAULT_CONCURRENCY, loadAllPatches, loadLibrary } from '../core/library/library';
 import { StagedStore, countChanges } from '../core/library/changeset';
 import { recoverStranded } from '../core/store/atomic';
@@ -43,6 +51,13 @@ export interface Device {
   profile: DeviceProfile;
   /** Why this profile was chosen. */
   detection: string;
+  /**
+   * A profile whose content sniff beats the active profile's folder detection, once every patch is
+   * read; null when there is none, after a dismissal, or when the profile was chosen by hand.
+   */
+  suggestion: RankedProfile | null;
+  /** Hides the suggestion for the open source. */
+  dismissSuggestion(): void;
   rows: LibraryRow[];
   /** Folder names under each patch root, keyed by root path ('synth'). */
   folders: Record<string, string[]>;
@@ -119,17 +134,25 @@ async function recover(store: DeviceStore, profile: DeviceProfile): Promise<stri
   return restored;
 }
 
-async function detect(store: DeviceStore): Promise<{ profile: DeviceProfile; detection: string }> {
+async function detect(store: DeviceStore): Promise<{ profile: DeviceProfile; detection: string; confidence: number }> {
   const [best] = await detectProfiles(store);
-  if (best) return { profile: best.profile, detection: `detected: ${best.result.reason}` };
+  if (best) return { profile: best.profile, detection: `detected: ${best.result.reason}`, confidence: best.result.confidence };
   const reasons = (await runDetectors(store)).map((r) => r.result.reason).join('; ');
-  return { profile: defaultProfile, detection: `not recognised (${reasons}); assuming ${defaultProfile.label}` };
+  return {
+    profile: defaultProfile,
+    detection: `not recognised (${reasons}); assuming ${defaultProfile.label}`,
+    confidence: 0,
+  };
 }
 
 export function useDevice(): Device {
   const [source, setSourceState] = useState<DeviceSource | null>(null);
   const [profile, setProfileState] = useState<DeviceProfile>(defaultProfile);
   const [detection, setDetection] = useState('');
+  /** The active profile's folder-detection confidence; Infinity once a profile is chosen by hand. */
+  const [detectionConfidence, setDetectionConfidence] = useState(0);
+  /** Source keys whose suggestion was dismissed. Kept in memory only. */
+  const [dismissed, setDismissed] = useState<ReadonlySet<number>>(() => new Set());
   const [rows, setRowsState] = useState<LibraryRow[]>([]);
   const [folders, setFolders] = useState<Record<string, string[]>>({});
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -279,6 +302,7 @@ export function useDevice(): Device {
         setRows([]);
         setProfileBoth(found.profile);
         setDetection(found.detection);
+        setDetectionConfidence(found.confidence);
         setRecovered(restored);
         setSource(next);
         await load(next, found.profile, null);
@@ -361,6 +385,8 @@ export function useDevice(): Device {
         if (!next) return;
         setProfileBoth(next);
         setDetection('chosen by hand');
+        // A choice made by hand is never second-guessed.
+        setDetectionConfidence(Number.POSITIVE_INFINITY);
         const current = sourceRef.current;
         if (current) await load(current, next, null);
       }),
@@ -417,10 +443,24 @@ export function useDevice(): Device {
 
   const markDownloaded = useCallback(() => setDownloadedRevision(revision), [revision]);
 
+  const settled = source !== null && !loading && progress === null;
+  const suggestion = useMemo(() => {
+    if (!settled || !source || dismissed.has(source.key)) return null;
+    const traits = rows.map((row) => row.info?.traits).filter((t): t is SoundTraits => t != null);
+    return suggestProfile(traits, profile, detectionConfidence);
+  }, [settled, source, dismissed, rows, profile, detectionConfidence]);
+
+  const dismissSuggestion = useCallback(() => {
+    const key = sourceRef.current?.key;
+    if (key !== undefined) setDismissed((prev) => new Set(prev).add(key));
+  }, []);
+
   return {
     source,
     profile,
     detection,
+    suggestion,
+    dismissSuggestion,
     rows,
     folders,
     progress,

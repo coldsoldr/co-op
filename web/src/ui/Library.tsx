@@ -18,7 +18,9 @@ import { playPcm } from './audio';
 import { BackupPanel } from './BackupPanel';
 import { ConfirmDialog } from './Dialog';
 import { saveBlob, zipBlob } from './download';
-import { compatView, dateStamp, formatSize, groupByFolder, kindMismatchText, rootOf } from './format';
+import { compatView, dateStamp, formatSize, groupByFolder, kindMismatchText, rootOf, traitDetails } from './format';
+import type { DeviceProfile } from '../core/profiles/types';
+import type { SoundTraits } from '../core/codec/sound-traits';
 import { PatchActions } from './PatchActions';
 import { UploadDialog, uploadUnavailable } from './Op1FunUpload';
 import type { Op1Fun } from './useOp1Fun';
@@ -270,6 +272,7 @@ function Connected({ device, active, op1fun }: { device: Device; active: boolean
       onUpload={setUploading}
       uploadUnavailable={uploadWhy}
       uploadNoteId={uploadNoteId}
+      profile={device.profile}
       selected={selected.has(row.path)}
       onSelect={toggleSelected}
     />
@@ -306,6 +309,28 @@ function Connected({ device, active, op1fun }: { device: Device; active: boolean
           <span className="muted">{device.detection}</span>
         </p>
       </div>
+
+      {device.suggestion && (
+        <div className="notice suggestion" role="status">
+          <p>
+            {device.suggestion.result.reason}. Switch profile?
+          </p>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => void device.setProfile(device.suggestion?.profile.id ?? device.profile.id)}
+            disabled={device.busy}
+          >
+            Switch to {device.suggestion.profile.label}
+          </button>{' '}
+          <button type="button" onClick={device.dismissSuggestion}>
+            Keep {device.profile.label}
+          </button>
+          <p className="muted">
+            Patch contents show where sounds were made, not which firmware the OP-1 runs now.
+          </p>
+        </div>
+      )}
 
       {staged && (
         <div className="notice readonly-notice" role="note">
@@ -483,6 +508,7 @@ interface RowProps {
   onUpload: (entry: LibraryRow) => void;
   uploadUnavailable: string | null;
   uploadNoteId: string;
+  profile: DeviceProfile;
   selected: boolean;
   onSelect: (path: string, on: boolean) => void;
 }
@@ -498,6 +524,7 @@ const Row = memo(function Row({
   onUpload,
   uploadUnavailable,
   uploadNoteId,
+  profile,
   selected,
   onSelect,
 }: RowProps) {
@@ -533,6 +560,7 @@ const Row = memo(function Row({
       <td className="size">{formatSize(row.sizeBytes)}</td>
       <td className="compat">
         <CompatBadge row={row} />
+        {row.info?.traits && <TraitsPopover row={row} traits={row.info.traits} />}
       </td>
       <td>
         <PatchActions
@@ -546,6 +574,7 @@ const Row = memo(function Row({
           onUpload={onUpload}
           uploadUnavailable={uploadUnavailable}
           uploadNoteId={uploadNoteId}
+          profile={profile}
         />
       </td>
     </tr>
@@ -567,5 +596,22 @@ function CompatBadge({ row }: { row: LibraryRow }) {
       {view.label}
       {view.detail && ` (${view.detail})`}
     </span>
+  );
+}
+
+/** The traits behind a row's badge: engine, effect, LFO, selectors and plugin. */
+function TraitsPopover({ row, traits }: { row: LibraryRow; traits: SoundTraits }) {
+  return (
+    <details className="traits">
+      <summary aria-label={`Sound details of ${row.fileName}`}>details</summary>
+      <dl>
+        {traitDetails(traits).map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   );
 }

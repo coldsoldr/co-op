@@ -9,7 +9,9 @@ import {
   setPatchName,
 } from '../core/library/operations';
 import { joinPath, type DeviceStore } from '../core/store/store';
+import type { DeviceProfile } from '../core/profiles/types';
 import { ConfirmDialog, Dialog } from './Dialog';
+import { useConfirmUnsupported } from './ConfirmUnsupported';
 import { folderOf, rootOf } from './format';
 import type { LibraryRow } from './rows';
 import type { Operation } from './useDevice';
@@ -37,6 +39,8 @@ interface PatchActionsProps {
   uploadUnavailable: string | null;
   /** The id of an element holding uploadUnavailable, for aria-describedby. */
   uploadNoteId: string;
+  /** The active profile; copying or moving a patch it marks unsupported asks first. */
+  profile: DeviceProfile;
 }
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -53,8 +57,10 @@ export const PatchActions = memo(function PatchActions({
   onUpload,
   uploadUnavailable,
   uploadNoteId,
+  profile,
 }: PatchActionsProps) {
   const [mode, setMode] = useState<Mode | null>(null);
+  const { confirmUnsupported, dialog } = useConfirmUnsupported();
   const [error, setError] = useState<string | null>(null);
   const file = entry.fileName;
   const canName = entry.info?.hasMeta === true;
@@ -67,6 +73,15 @@ export const PatchActions = memo(function PatchActions({
     } catch (e) {
       setError(messageOf(e));
     }
+  }
+
+  /** Runs a copy or move after the write guard, which asks first when the patch is unsupported. */
+  async function guarded(op: (store: DeviceStore) => Promise<unknown>): Promise<void> {
+    setMode(null);
+    const compat = entry.compat;
+    const risky = compat?.level === 'unsupported' ? [{ path: entry.path, reason: compat.reason ?? 'unsupported' }] : [];
+    if (!(await confirmUnsupported(risky, profile))) return;
+    await perform(op);
   }
 
   function play(): void {
@@ -160,7 +175,7 @@ export const PatchActions = memo(function PatchActions({
           submitLabel={mode === 'move' ? 'Move' : 'Copy'}
           onCancel={close}
           onSubmit={(target) =>
-            perform(async (store) => {
+            void guarded(async (store) => {
               const root = rootOf(entry);
               const folder = target.isNew ? await ensureFolder(store, root, target.name) : joinPath(root, target.name);
               return mode === 'move' ? movePatch(store, entry.path, folder) : copyPatch(store, entry.path, folder);
@@ -182,6 +197,7 @@ export const PatchActions = memo(function PatchActions({
           onConfirm={() => void perform((store) => deletePatch(store, entry.path))}
         />
       )}
+      {dialog}
     </div>
   );
 });

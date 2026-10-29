@@ -5,6 +5,8 @@ import { installOp1FunPatches, type FailedPatch, type InstalledPatch } from '../
 import type { Op1FunPack, Op1FunPatch } from '../core/op1fun/types';
 import { installUnavailable, makeClient, op1FunMessage, type Op1Fun } from './useOp1Fun';
 import type { Device, Progress } from './useDevice';
+import { findUnsupported } from '../core/profiles/guard';
+import { useConfirmUnsupported } from './ConfirmUnsupported';
 
 export const OP1FUN_SITE = 'https://op1.fun';
 
@@ -212,6 +214,7 @@ function Browse({ client, initialUsername, workerUrl, onUsername, device, onOpen
   const [working, setWorking] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const { confirmUnsupported, dialog } = useConfirmUnsupported();
   const noticeId = useId();
   const workerNoteId = useId();
   /** Bumped by every load, so a slow answer for an earlier username is dropped. */
@@ -253,20 +256,50 @@ function Browse({ client, initialUsername, workerUrl, onUsername, device, onOpen
 
   async function install(list: readonly Op1FunPatch[]): Promise<void> {
     const key = device.source?.key;
-    const profileId = device.profile.id;
+    const profile = device.profile;
+    const profileId = profile.id;
     setWorking(true);
     setOutcome(null);
     setProgress({ done: 0, total: list.length });
     let result: Outcome = { installed: [], failed: [], error: null };
+    let cancelled = false;
     try {
-      // Downloads and writes run as one queued action, as on the Packs tab.
+      // Download first, so the write guard can judge the patches before anything is written. A
+      // failed download is kept and rethrown by the install below, which records it per patch.
+      const fetched = new Map<string, Uint8Array | Error>();
+      for (const [index, patch] of list.entries()) {
+        if (patch.fileUrl && !fetched.has(patch.fileUrl)) {
+          try {
+            fetched.set(patch.fileUrl, await client.fetchFile(patch.fileUrl));
+          } catch (e) {
+            fetched.set(patch.fileUrl, e instanceof Error ? e : new Error(String(e)));
+          }
+        }
+        setProgress({ done: index + 1, total: list.length });
+      }
+      const risky = findUnsupported(
+        list.flatMap((patch) => {
+          const bytes = patch.fileUrl ? fetched.get(patch.fileUrl) : undefined;
+          return bytes instanceof Uint8Array ? [{ path: patch.name || `op1.fun patch ${patch.id}`, bytes }] : [];
+        }),
+        profile,
+      );
+      if (!(await confirmUnsupported(risky, profile))) {
+        cancelled = true;
+        return;
+      }
+      setProgress({ done: 0, total: list.length });
       await device.run(async (store, source) => {
         if (source.key !== key) throw new Error('the drive changed; install again');
         const done = await installOp1FunPatches(
           store,
           profileId,
           list,
-          (url) => client.fetchFile(url),
+          async (url) => {
+            const got = fetched.get(url);
+            if (got instanceof Error) throw got;
+            return got ?? client.fetchFile(url);
+          },
           (count, total) => setProgress({ done: count, total }),
         );
         result = { ...done, error: null };
@@ -274,7 +307,7 @@ function Browse({ client, initialUsername, workerUrl, onUsername, device, onOpen
     } catch (e) {
       result = { ...result, error: op1FunMessage(e) };
     } finally {
-      setOutcome(result);
+      if (!cancelled) setOutcome(result);
       setProgress(null);
       setWorking(false);
     }
@@ -309,6 +342,7 @@ function Browse({ client, initialUsername, workerUrl, onUsername, device, onOpen
         </p>
       )}
       {outcome && <InstallOutcome outcome={outcome} staged={staged} />}
+      {dialog}
     </>
   );
 

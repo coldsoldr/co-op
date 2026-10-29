@@ -210,6 +210,31 @@ table.library th.name {
   clip-path: none;
   white-space: normal;
 }
+/* The sound details behind a compatibility badge. */
+.traits {
+  margin-top: 4px;
+  font-size: 0.85em;
+}
+.traits summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.traits dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 4px 0 0;
+}
+.traits dl div {
+  display: contents;
+}
+.traits dt {
+  color: var(--muted);
+}
+.traits dd {
+  margin: 0;
+  font-family: ui-monospace, monospace;
+}
 .tag.changed {
   color: var(--warn);
 }

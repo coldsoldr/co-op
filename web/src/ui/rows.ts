@@ -1,5 +1,6 @@
 import type { PatchKind } from '../core/codec/op1-meta';
 import type { LibraryEntry } from '../core/library/library';
+import { soundTraits, type SoundTraits } from '../core/codec/sound-traits';
 
 /** What the table needs from a parsed patch; the bytes are not kept. */
 export interface PatchInfo {
@@ -10,6 +11,8 @@ export interface PatchInfo {
   hasMeta: boolean;
   /** False when the metadata is laid out differently from how co-op would write it. */
   canonical: boolean;
+  /** Firmware-relevant traits, for content detection and the details popover; null without metadata. */
+  traits: SoundTraits | null;
 }
 
 /** A library entry as the UI holds it: the parsed patch is reduced to PatchInfo. */
@@ -23,7 +26,13 @@ export function toRow(entry: LibraryEntry): LibraryRow {
   return {
     ...rest,
     info: patch
-      ? { name: patch.name, kind: patch.kind, hasMeta: patch.meta !== null, canonical: patch.op1Canonical }
+      ? {
+          name: patch.name,
+          kind: patch.kind,
+          hasMeta: patch.meta !== null,
+          canonical: patch.op1Canonical,
+          traits: soundTraits(patch.meta),
+        }
       : null,
   };
 }

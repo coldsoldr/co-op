@@ -13,6 +13,8 @@ import {
 import { decodePcm, readPatch } from '../core/codec/patch';
 import { getProfile, profiles } from '../core/profiles/registry';
 import { joinPath } from '../core/store/store';
+import { findUnsupported } from '../core/profiles/guard';
+import { useConfirmUnsupported } from './ConfirmUnsupported';
 import { playPcm } from './audio';
 import { formatSize } from './format';
 import type { Device } from './useDevice';
@@ -265,6 +267,7 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
   const [targets, setTargets] = useState<Partial<Record<PackKind, string>>>({});
   const [working, setWorking] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const { confirmUnsupported, dialog } = useConfirmUnsupported();
   const [playing, setPlaying] = useState<string | null>(null);
   const [playError, setPlayError] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -328,20 +331,26 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
 
   async function install(files: readonly string[]): Promise<void> {
     const key = device.source?.key;
-    const profileId = device.profile.id;
+    const profile = device.profile;
+    const profileId = profile.id;
     const chosen = Object.fromEntries(kinds.map((kind) => [kind, targetFor(kind)])) as Record<PackKind, string>;
     const entries = pack.patches.filter((p) => files.includes(p.file));
     setWorking(true);
     setOutcome(null);
     let installed: string[] = [];
     try {
-      // Downloads and writes run as one queued action, so device.busy covers both and no other
-      // change (or a second install) can start in between.
+      // Download first, so the write guard can judge the patches before anything is written.
+      // `working` blocks a second install meanwhile; the write itself is one queued action.
+      const downloads = await Promise.all(
+        entries.map(async (p) => ({ file: p.file, bytes: await fetchPatchBytes(base(), pack.slug, p.file, p.sha256) })),
+      );
+      const risky = findUnsupported(
+        downloads.map((d) => ({ path: d.file, bytes: d.bytes })),
+        profile,
+      );
+      if (!(await confirmUnsupported(risky, profile))) return;
       await device.run(async (store, source) => {
         if (source.key !== key) throw new CatalogueError('the drive changed; install again');
-        const downloads = await Promise.all(
-          entries.map(async (p) => ({ file: p.file, bytes: await fetchPatchBytes(base(), pack.slug, p.file, p.sha256) })),
-        );
         installed = (await installPatches(store, profileId, pack.slug, downloads, (kind) => chosen[kind])).installed;
       });
       const where = staged ? ' Download them from the Library tab to copy them onto the OP-1.' : '';
@@ -506,6 +515,7 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
           </p>
         )}
         {working && <p role="status">Installing…</p>}
+        {dialog}
         {outcome && (
           <div role={outcome.ok ? 'status' : 'alert'} className={outcome.ok ? 'notice' : 'error'}>
             <p>{outcome.message}</p>

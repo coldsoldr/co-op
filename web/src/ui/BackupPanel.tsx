@@ -11,6 +11,8 @@ import {
 } from '../core/library/backup';
 import type { DeviceStore } from '../core/store/store';
 import { ConfirmDialog } from './Dialog';
+import { findUnsupported } from '../core/profiles/guard';
+import { useConfirmUnsupported } from './ConfirmUnsupported';
 import { saveBlob } from './download';
 import { dateStamp } from './format';
 import type { Operation, Progress } from './useDevice';
@@ -66,6 +68,7 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
   const [restoreProgress, setRestoreProgress] = useState<Progress | null>(null);
   const [confirming, setConfirming] = useState<string[] | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const { confirmUnsupported, dialog } = useConfirmUnsupported();
 
   async function download(paths?: readonly string[]): Promise<void> {
     setBackupError(null);
@@ -122,7 +125,15 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
     try {
       const diff = await exclusive(() => diffBackup(store, pending.backup));
       setPending({ ...pending, diff });
-      const { overwrites } = plan(diff, pending.selected);
+      const { paths, overwrites } = plan(diff, pending.selected);
+      const risky = findUnsupported(
+        paths.flatMap((path) => {
+          const bytes = pending.backup.files.get(path);
+          return bytes ? [{ path, bytes }] : [];
+        }),
+        profile,
+      );
+      if (!(await confirmUnsupported(risky, profile))) return;
       if (overwrites.length > 0) setConfirming(overwrites);
       else await apply([]);
     } catch (e) {
@@ -310,6 +321,7 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
           onConfirm={() => void apply(confirming)}
         />
       )}
+      {dialog}
     </section>
   );
 }

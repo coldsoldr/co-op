@@ -83,7 +83,7 @@ export function App() {
           <Op1FunTab op1fun={op1fun} device={device} active={tab === 'op1fun'} onOpenLibrary={openLibrary} />
         </div>
         <div role="tabpanel" id="panel-inspector" aria-labelledby="tab-inspector" hidden={tab !== 'inspector'}>
-          <Inspector active={tab === 'inspector'} />
+          <Inspector active={tab === 'inspector'} device={device} />
         </div>
       </main>
       <footer>
