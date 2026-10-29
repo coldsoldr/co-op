@@ -14,11 +14,20 @@ export interface Op1Fun {
   client: Op1FunClient | null;
   /** The co-op Worker URL, or ''. */
   workerUrl: string;
+  /** Bumped by every save and forget, so views keyed on it start over with the new account. */
+  version: number;
   /** Saves for this page and, with `remember`, in this browser. False when the browser refused to remember. */
   save(creds: Op1FunCredentials & { username: string }, remember: boolean): boolean;
   /** Records the username last browsed, keeping the Remember choice. */
   setUsername(username: string): void;
   forget(): void;
+}
+
+/** Why installing from op1.fun is not possible, or null when it is. */
+export function installUnavailable(workerUrl: string): string | null {
+  return workerUrl
+    ? null
+    : "Installing from op1.fun needs the co-op Worker: op1.fun's file host does not let the browser download patches directly, and this build of co-op has no Worker.";
 }
 
 export function makeClient(creds: Op1FunCredentials): Op1FunClient {
@@ -27,10 +36,12 @@ export function makeClient(creds: Op1FunCredentials): Op1FunClient {
 
 export function useOp1Fun(): Op1Fun {
   const [creds, setCreds] = useState<SavedCredentials | null>(() => loadCredentials());
+  const [version, setVersion] = useState(0);
 
   const save = useCallback((next: Op1FunCredentials & { username: string }, remember: boolean): boolean => {
     const stored = saveCredentials(next, remember);
     setCreds(loadCredentials());
+    setVersion((n) => n + 1);
     return stored;
   }, []);
 
@@ -46,6 +57,7 @@ export function useOp1Fun(): Op1Fun {
   const forget = useCallback(() => {
     clearCredentials();
     setCreds(null);
+    setVersion((n) => n + 1);
   }, []);
 
   const email = creds?.email;
@@ -55,7 +67,7 @@ export function useOp1Fun(): Op1Fun {
     [email, token],
   );
 
-  return { creds, client, workerUrl: WORKER_URL, save, setUsername, forget };
+  return { creds, client, workerUrl: WORKER_URL, version, save, setUsername, forget };
 }
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));

@@ -12,7 +12,10 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'pnpm build && pnpm preview --port 4173 --strictPort',
+    // Built into dist-e2e, never dist, because this build has the test-only Worker URL below and
+    // must not be deployed by hand. (Before this, a local e2e run left such a build in web/dist.)
+    command:
+      'pnpm exec vite build --outDir dist-e2e && pnpm exec tsx scripts/packs.ts build dist-e2e && pnpm exec vite preview --outDir dist-e2e --port 4173 --strictPort',
     url: 'http://localhost:4173/co-op/',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

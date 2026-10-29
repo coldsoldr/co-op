@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_FILE_BYTES, MAX_UPLOAD_BYTES, Op1FunClient, mapPack, mapPatch, toBase64 } from './client';
+import { MAX_DESCRIPTION, MAX_FILE_BYTES, MAX_UPLOAD_BYTES, Op1FunClient, UPLOAD_TIMEOUT_MS, mapPack, mapPatch, toBase64 } from './client';
 import { Op1FunAuthError, Op1FunError, type Op1FunCredentials } from './types';
 import { fixtureBytes } from '../../../test/fixture-bytes';
 
@@ -449,6 +449,43 @@ describe('Op1FunClient.uploadPatch', () => {
     expect(f.calls).toHaveLength(0);
   });
 
+  it('refuses a description over 2000 characters', async () => {
+    expect(MAX_DESCRIPTION).toBe(2000);
+    const f = fakeFetch(() => json({}));
+    const client = new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER });
+    await expect(client.uploadPatch({ ...input, description: 'x'.repeat(2001) })).rejects.toThrow(
+      new Op1FunError('the description is longer than 2000 characters'),
+    );
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it('gives the upload a 65 s timeout', async () => {
+    const asked: number[] = [];
+    const controller = new AbortController();
+    const f = fakeFetch(() => json({ data: [{ ...patchResource, id: '99' }] }, 201));
+    const client = new Op1FunClient(creds, {
+      fetch: f.fetch,
+      workerUrl: WORKER,
+      timeoutSignal: (ms) => {
+        asked.push(ms);
+        return controller.signal;
+      },
+    });
+    await client.uploadPatch(input);
+    expect(UPLOAD_TIMEOUT_MS).toBe(65000);
+    expect(asked).toEqual([65000]);
+    expect(f.calls[0]?.init?.signal).toBe(controller.signal);
+  });
+
+  it('reports an upload timeout', async () => {
+    const f = fakeFetch(() => {
+      throw new DOMException('timed out', 'TimeoutError');
+    });
+    await expect(
+      new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).uploadPatch(input),
+    ).rejects.toThrow(new Op1FunError('the upload took too long'));
+  });
+
   it('accepts a create response with a single object', async () => {
     const f = fakeFetch(() => json({ data: { ...patchResource, id: '100' } }, 201));
     const patch = await new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).uploadPatch(input);
@@ -679,5 +716,20 @@ describe('review fixes', () => {
       expect(error).toBeInstanceOf(Op1FunError);
       expect((error as Error).message).not.toContain('secret-token');
     }
+  });
+});
+
+describe('link mapping', () => {
+  it('keeps only https: links', () => {
+    const links = (value: string) => ({ self: value, file: value, preview: value, download: value });
+    for (const bad of ['javascript:alert(1)', 'http://op1fun.s3.amazonaws.com/a.aif', 'data:audio/x-aiff;base64,AA', '/relative.aif', 'not a url']) {
+      const patch = mapPatch({ ...patchResource, links: links(bad) });
+      expect([patch.fileUrl, patch.previewUrl, patch.selfUrl], bad).toEqual(['', '', '']);
+      expect(mapPack({ id: '9', type: 'packs', links: links(bad) }).downloadUrl, bad).toBe('');
+    }
+    const good = 'https://op1fun.s3.amazonaws.com/a.aif';
+    const patch = mapPatch({ ...patchResource, links: links(good) });
+    expect([patch.fileUrl, patch.previewUrl, patch.selfUrl]).toEqual([good, good, good]);
+    expect(mapPack({ id: '9', type: 'packs', links: links(good) }).downloadUrl).toBe(good);
   });
 });

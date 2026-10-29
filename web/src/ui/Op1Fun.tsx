@@ -3,7 +3,7 @@ import type { Op1FunClient } from '../core/op1fun/client';
 import { filterOp1FunPacks, filterOp1FunPatches } from '../core/op1fun/filter';
 import { installOp1FunPatches, type FailedPatch, type InstalledPatch } from '../core/op1fun/install';
 import type { Op1FunPack, Op1FunPatch } from '../core/op1fun/types';
-import { makeClient, op1FunMessage, type Op1Fun } from './useOp1Fun';
+import { installUnavailable, makeClient, op1FunMessage, type Op1Fun } from './useOp1Fun';
 import type { Device, Progress } from './useDevice';
 
 export const OP1FUN_SITE = 'https://op1.fun';
@@ -31,7 +31,8 @@ export function Op1FunTab({ op1fun, device, active, onOpenLibrary }: Op1FunTabPr
       <Account op1fun={op1fun} />
       {client && creds ? (
         <Browse
-          key={`${creds.email} ${creds.token}`}
+          key={op1fun.version}
+          workerUrl={op1fun.workerUrl}
           client={client}
           initialUsername={creds.username}
           onUsername={op1fun.setUsername}
@@ -120,7 +121,7 @@ function Account({ op1fun }: { op1fun: Op1Fun }) {
       <p>
         <label>
           Email{' '}
-          <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input type="email" autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
       </p>
       <p>
@@ -128,7 +129,10 @@ function Account({ op1fun }: { op1fun: Op1Fun }) {
           API token{' '}
           <input
             type={showToken ? 'text' : 'password'}
-            autoComplete="off"
+            // Keep password managers from offering to save the token.
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-1p-ignore="true"
             spellCheck={false}
             value={token}
             onChange={(e) => setToken(e.target.value)}
@@ -187,13 +191,15 @@ interface Outcome {
 interface BrowseProps {
   client: Op1FunClient;
   initialUsername: string;
+  /** The co-op Worker URL, or ''; installs need it. */
+  workerUrl: string;
   onUsername: (username: string) => void;
   device: Device;
   onOpenLibrary: () => void;
 }
 
 /** Lists a user's patches and packs, previews them and installs them onto the open drive. */
-function Browse({ client, initialUsername, onUsername, device, onOpenLibrary }: BrowseProps) {
+function Browse({ client, initialUsername, workerUrl, onUsername, device, onOpenLibrary }: BrowseProps) {
   const [username, setUsername] = useState(initialUsername);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [patches, setPatches] = useState<Op1FunPatch[] | null>(null);
@@ -207,6 +213,7 @@ function Browse({ client, initialUsername, onUsername, device, onOpenLibrary }: 
   const [progress, setProgress] = useState<Progress | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const noticeId = useId();
+  const workerNoteId = useId();
   /** Bumped by every load, so a slow answer for an earlier username is dropped. */
   const loadToken = useRef(0);
 
@@ -275,7 +282,9 @@ function Browse({ client, initialUsername, onUsername, device, onOpenLibrary }: 
 
   const connected = device.source !== null;
   const staged = device.source?.staged != null;
-  const blocked = !connected || device.busy || working;
+  const noWorker = installUnavailable(workerUrl);
+  const blocked = noWorker !== null || !connected || device.busy || working;
+  const describedBy = noWorker !== null ? workerNoteId : connected ? undefined : noticeId;
 
   const installPanel = (
     <>
@@ -303,11 +312,16 @@ function Browse({ client, initialUsername, onUsername, device, onOpenLibrary }: 
     </>
   );
 
-  const rowProps = { blocked, describedBy: connected ? undefined : noticeId, onInstall: (p: Op1FunPatch) => void install([p]) };
+  const rowProps = { blocked, describedBy, onInstall: (p: Op1FunPatch) => void install([p]) };
 
   return (
     <div className="op1fun-browse">
       <h3>Browse op1.fun</h3>
+      {noWorker !== null && (
+        <p id={workerNoteId} className="warning">
+          {noWorker}
+        </p>
+      )}
       <form className="toolbar" onSubmit={(e) => void load(e)}>
         <label>
           Username{' '}

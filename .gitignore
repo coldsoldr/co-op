@@ -5,6 +5,7 @@ vendor/*
 # Dependencies and build output
 node_modules/
 dist/
+dist-e2e/
 .wrangler/
 coverage/
 playwright-report/

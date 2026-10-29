@@ -5,7 +5,7 @@ import playwright from 'eslint-plugin-playwright';
 import globals from 'globals';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', 'vendor/**'] },
+  { ignores: ['**/dist/**', '**/dist-e2e/**', '**/node_modules/**', 'vendor/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

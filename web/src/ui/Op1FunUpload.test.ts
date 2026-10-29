@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { uploadUnavailable } from './Op1FunUpload';
-import { makeClient, type Op1Fun } from './useOp1Fun';
+import { installUnavailable, makeClient, type Op1Fun } from './useOp1Fun';
 
 const op1fun = (overrides: Partial<Op1Fun>): Op1Fun => ({
   creds: null,
   client: null,
   workerUrl: '',
+  version: 0,
   save: () => true,
   setUsername: () => undefined,
   forget: () => undefined,
@@ -19,5 +20,12 @@ describe('uploadUnavailable', () => {
     expect(uploadUnavailable(op1fun({ client }))).toMatch(/needs the co-op Worker/);
     expect(uploadUnavailable(op1fun({ workerUrl: 'https://w.example' }))).toMatch(/Save your op1.fun email and token/);
     expect(uploadUnavailable(op1fun({ workerUrl: 'https://w.example', client }))).toBeNull();
+  });
+});
+
+describe('installUnavailable', () => {
+  it('needs the Worker, since op1.fun files cannot be fetched by the browser', () => {
+    expect(installUnavailable('')).toMatch(/needs the co-op Worker/);
+    expect(installUnavailable('https://w.example')).toBeNull();
   });
 });

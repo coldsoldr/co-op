@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { MAX_DESCRIPTION } from '../core/op1fun/client';
 import { OP1FUN_LICENSES, type Op1FunPatch } from '../core/op1fun/types';
 import { Dialog } from './Dialog';
 import { op1FunMessage, type Op1Fun } from './useOp1Fun';
@@ -77,7 +78,7 @@ export function UploadDialog({ entry, op1fun, read, onClose }: UploadDialogProps
           </label>
           <label>
             Description
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} maxLength={MAX_DESCRIPTION} />
           </label>
           <label>
             Licence

@@ -148,28 +148,47 @@ const packBody = {
   included: [patchResource('2', 'Cluster Pad', 'synth', 'cluster.aif'), patchResource('3', 'Gone', 'synth', 'missing.aif')],
 };
 
-/** Serves fixture AIFFs for the S3 file links; any other file is a 404. */
-async function mockFiles(page: Page): Promise<void> {
+const WORKER = 'https://worker.e2e.test';
+
+/**
+ * Like op1.fun's real bucket (no CORS headers), the S3 mock cannot be read by the page, so the direct
+ * download fails and the app retries through the Worker's file proxy, which serves the fixture AIFFs
+ * (any other file is a 502, as the Worker answers an upstream 404). Returns the proxied URLs.
+ */
+async function mockFiles(page: Page): Promise<string[]> {
   const files: Record<string, Buffer> = {
     'boombap.aif': readFileSync(join(fixtures, 'drum-boombap.aif')),
     'cluster.aif': readFileSync(join(fixtures, 'synth-cluster.aif')),
   };
+  const proxied: string[] = [];
   await page.route(`${S3}/**`, async (route) => {
-    const name = new URL(route.request().url()).pathname.split('/').pop() ?? '';
-    const body = files[name];
     // File links never get the op1.fun credentials.
     expect(route.request().headers()['x-user-token']).toBeUndefined();
-    if (!body) {
-      await route.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: 'missing' });
-      return;
-    }
-    await route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'audio/aiff' }, body });
+    // The real bucket answers without CORS headers, which the browser reports to fetch as a
+    // TypeError. A fulfilled route is not CORS-checked here, so fail the request the same way.
+    await route.abort('failed');
   });
+  await page.route(
+    (url) => url.origin === WORKER && url.pathname === '/op1fun/file',
+    async (route) => {
+      expect(route.request().headers()['x-user-token']).toBeUndefined();
+      const target = new URL(route.request().url()).searchParams.get('url') ?? '';
+      proxied.push(target);
+      const body = target.startsWith(`${S3}/`) ? files[target.slice(S3.length + 1)] : undefined;
+      const cors = { 'access-control-allow-origin': 'http://localhost:4173' };
+      if (!body) {
+        await route.fulfill({ status: 502, headers: { ...cors, 'content-type': 'application/json' }, body: '{"errors":["op1.fun answered HTTP 404"]}' });
+        return;
+      }
+      await route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'audio/x-aiff' }, body });
+    },
+  );
+  return proxied;
 }
 
-async function signIn(page: Page): Promise<void> {
+async function signIn(page: Page): Promise<string[]> {
   await mockApi(page, { '/users/alice': userBody, '/users/alice/patches': patchesBody, '/users/alice/packs': packsBody, '/users/alice/packs/9': packBody });
-  await mockFiles(page);
+  const proxied = await mockFiles(page);
   await page.goto('./');
   await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
   await expect(page.locator('tbody tr[data-path]')).toHaveCount(1);
@@ -177,10 +196,11 @@ async function signIn(page: Page): Promise<void> {
   await fillAccount(page);
   await page.getByRole('form', { name: 'op1.fun account' }).getByRole('button', { name: 'Save' }).click();
   await page.getByRole('button', { name: 'Load' }).click();
+  return proxied;
 }
 
 test('browses op1.fun patches and installs one into a dropped drive', async ({ page }) => {
-  await signIn(page);
+  const proxied = await signIn(page);
   const table = page.getByRole('table', { name: "alice's patches" });
   await expect(table.getByRole('row')).toHaveCount(3);
   await expect(table).toContainText('Boom Kit');
@@ -193,6 +213,7 @@ test('browses op1.fun patches and installs one into a dropped drive', async ({ p
 
   await table.getByRole('button', { name: 'Install Boom Kit' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Installed 1 patch.' })).toContainText('drum/op1fun/Boom Kit.aif');
+  expect(proxied).toEqual([`${S3}/boombap.aif`]);
 
   await page.getByRole('tab', { name: 'Library' }).click();
   await expect(page.getByRole('button', { name: 'Download changes (1)' })).toBeEnabled();
@@ -207,7 +228,7 @@ test('installs an op1.fun pack patch by patch and reports a failed file', async 
   await expect(table.getByRole('row')).toHaveCount(3);
   await page.getByRole('button', { name: 'Install all (2)' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Installed 1 patch.' })).toContainText('synth/op1fun/Cluster Pad.aif');
-  await expect(page.getByRole('alert')).toContainText('Gone: download failed: HTTP 404');
+  await expect(page.getByRole('alert')).toContainText('Gone: the co-op Worker could not fetch the file: HTTP 502');
 
   await page.getByRole('tab', { name: 'Library' }).click();
   await expect(page.getByRole('button', { name: 'Download changes (1)' })).toBeEnabled();
@@ -215,7 +236,7 @@ test('installs an op1.fun pack patch by patch and reports a failed file', async 
 
 test('uploads a library patch to op1.fun through the Worker as raw bytes', async ({ page }) => {
   const posts: { headers: Record<string, string>; body: unknown }[] = [];
-  await page.route('https://worker.e2e.test/**', async (route) => {
+  await page.route(`${WORKER}/**`, async (route) => {
     const request = route.request();
     expect(new URL(request.url()).pathname).toBe('/op1fun/patches');
     posts.push({ headers: request.headers(), body: request.postDataJSON() });

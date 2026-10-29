@@ -338,6 +338,12 @@ function Connected({ device, active, op1fun }: { device: Device; active: boolean
         </div>
       )}
 
+      {uploadWhy && device.rows.length > 0 && (
+        <p id={uploadNoteId} className="muted">
+          Upload: {uploadWhy}
+        </p>
+      )}
+
       {device.progress && (
         <p role="status">
           Reading patches: {device.progress.done} of {device.progress.total}
@@ -438,11 +444,6 @@ function Connected({ device, active, op1fun }: { device: Device; active: boolean
         run={device.run}
       />
 
-      {uploadWhy && (
-        <span id={uploadNoteId} hidden>
-          {uploadWhy}
-        </span>
-      )}
       {uploading && (
         <UploadDialog
           entry={uploading}

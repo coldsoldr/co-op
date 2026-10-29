@@ -16,8 +16,12 @@ export const PACK_ZIP_TIMEOUT_MS = 65000;
 /** Patch files and previews; matches the Worker proxy's cap. */
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const FILE_TIMEOUT_MS = 60000;
-/** The largest patch uploaded: its base64 JSON stays under the Worker's 12 MB body cap. */
+/** The largest patch uploaded: its base64 (12 MiB) plus the JSON stays under the Worker's 13 MiB cap. */
 export const MAX_UPLOAD_BYTES = 9 * 1024 * 1024;
+/** The longest upload description, so the body stays under the Worker's cap. */
+export const MAX_DESCRIPTION = 2000;
+/** Uploads go through the Worker, which waits up to 60 s for op1.fun. */
+export const UPLOAD_TIMEOUT_MS = 65000;
 const UNEXPECTED = 'unexpected response';
 const WORKER_NEEDED =
   'could not download the file directly from op1.fun (the browser blocked it); the co-op Worker is needed to fetch it';
@@ -46,6 +50,16 @@ function str(value: unknown): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   return '';
+}
+
+/** The value if it is an absolute https: URL, else ''. Other schemes (javascript:, data:, http:) are dropped. */
+function httpsUrl(value: unknown): string {
+  const raw = str(value);
+  try {
+    return raw !== '' && new URL(raw).protocol === 'https:' ? raw : '';
+  } catch {
+    return '';
+  }
 }
 
 function id(value: unknown): string {
@@ -95,9 +109,9 @@ export function mapPatch(value: unknown): Op1FunPatch {
     license: str(attributes.license),
     public: attributes.public === true,
     patchType: str(attributes['patch-type'] ?? attributes.patch_type ?? attributes.patchType),
-    fileUrl: str(links.file),
-    previewUrl: str(links.preview),
-    selfUrl: str(links.self),
+    fileUrl: httpsUrl(links.file),
+    previewUrl: httpsUrl(links.preview),
+    selfUrl: httpsUrl(links.self),
     userId: owner(r, attributes),
   };
 }
@@ -116,7 +130,7 @@ export function mapPack(value: unknown): Op1FunPack {
     description: str(attributes.description),
     public: attributes.public === true,
     patchIds: relationIds(r, 'patches'),
-    downloadUrl: str(obj(r.links).download),
+    downloadUrl: httpsUrl(obj(r.links).download),
     userId: owner(r, attributes),
   };
 }
@@ -352,6 +366,9 @@ export class Op1FunClient {
   async uploadPatch(upload: Op1FunUpload): Promise<Op1FunPatch> {
     if (!this.workerUrl) throw new Op1FunError('uploads need the co-op Worker');
     if (upload.bytes.length > MAX_UPLOAD_BYTES) throw new Op1FunError('the patch is too large to upload (over 9 MB)');
+    if (upload.description.length > MAX_DESCRIPTION) {
+      throw new Op1FunError(`the description is longer than ${MAX_DESCRIPTION} characters`);
+    }
     const payload = {
       data: {
         type: 'patches',
@@ -371,9 +388,13 @@ export class Op1FunClient {
         headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         redirect: 'error',
+        signal: this.timeoutSignal(UPLOAD_TIMEOUT_MS),
       });
     } catch (error) {
-      throw new Op1FunError('could not reach the co-op Worker to upload', { cause: error });
+      const timedOut = error instanceof Error && error.name === 'TimeoutError';
+      throw new Op1FunError(timedOut ? 'the upload took too long' : 'could not reach the co-op Worker to upload', {
+        cause: error,
+      });
     }
     if (!response.ok) throw await failure(response, 'upload', this.creds.token);
     const body = await readJson(response);
