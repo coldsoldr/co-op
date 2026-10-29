@@ -22,9 +22,11 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm --filter @co-op/web packs:validate
+      - run: pnpm --filter @co-op/web plugins:validate
       - run: pnpm build
 
-  # Pack contributions are reviewed separately from code, so a PR that mixes them gets a warning.
+  # Pack and plugin contributions are reviewed separately from code and from each other, so a PR
+  # that mixes them gets a warning.
   pack-scope:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -40,10 +42,17 @@ jobs:
       - run: |
           changed=$(git diff --name-only HEAD^1 HEAD)
           packs=$(printf '%s\n' "$changed" | grep -c '^packs/' || true)
-          other=$(printf '%s\n' "$changed" | grep -v '^packs/' | grep -c . || true)
-          echo "files changed under packs/: $packs, elsewhere: $other"
+          plugins=$(printf '%s\n' "$changed" | grep -c '^plugins/' || true)
+          other=$(printf '%s\n' "$changed" | grep -v -e '^packs/' -e '^plugins/' | grep -c . || true)
+          echo "files changed under packs/: $packs, under plugins/: $plugins, elsewhere: $other"
           if [ "$packs" -gt 0 ] && [ "$other" -gt 0 ]; then
             echo "::warning title=Mixed pack and code changes::This PR changes $packs file(s) under packs/ and $other elsewhere. Please send pack contributions in their own PR."
+          fi
+          if [ "$plugins" -gt 0 ] && [ "$other" -gt 0 ]; then
+            echo "::warning title=Mixed plugin and code changes::This PR changes $plugins file(s) under plugins/ and $other elsewhere. Please send plugin contributions in their own PR."
+          fi
+          if [ "$packs" -gt 0 ] && [ "$plugins" -gt 0 ]; then
+            echo "::warning title=Mixed pack and plugin changes::This PR changes $packs file(s) under packs/ and $plugins under plugins/. Please send packs and plugins in separate PRs."
           fi
 
   e2e:

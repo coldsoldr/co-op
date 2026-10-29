@@ -5,8 +5,10 @@
  * system; callers pass in a file listing and a reader, so this module runs the same in the CLI,
  * the dev server and the browser (which checks a plugin again before installing it).
  */
-import { crc32 } from './crc32';
-import { TAG, isIgnoredFile, isWindowsReservedName, overLimit } from './packs';
+// Self-references, not './crc32': Vite loads its config with Node, which needs the .ts the
+// package exports map adds (vite.config.ts imports plugins-lib, which pulls this module in).
+import { crc32 } from '@co-op/shared/crc32';
+import { TAG, isIgnoredFile, isWindowsReservedName, overLimit } from '@co-op/shared/packs';
 
 export const PLUGIN_FORMAT = 1;
 export const PLUGIN_INDEX_FORMAT = 1;

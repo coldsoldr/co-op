@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsx scripts/packs.ts build dist",
+    "build": "vite build && tsx scripts/packs.ts build dist && tsx scripts/plugins.ts build dist",
     "packs:validate": "tsx scripts/packs.ts validate",
+    "plugins:validate": "tsx scripts/plugins.ts validate",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

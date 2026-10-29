@@ -88,6 +88,7 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm build
 pnpm --filter @co-op/web exec playwright install chromium   # once
 pnpm --filter @co-op/web e2e      # Playwright smoke test against the production build
 pnpm --filter @co-op/web packs:validate   # check every pack in packs/
+pnpm --filter @co-op/web plugins:validate # check every plugin in plugins/
 pnpm --filter @co-op/worker exec wrangler deploy --dry-run --outdir dist   # bundle the Worker without deploying
 ```
 

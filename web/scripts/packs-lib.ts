@@ -47,8 +47,8 @@ const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 
 
 const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
 
-interface Listing {
-  /** Regular files, by '/'-separated path relative to the pack folder. */
+export interface Listing {
+  /** Regular files, by '/'-separated path relative to the pack or plugin folder. */
   files: { path: string; size: number }[];
   /** Links and other entries that are neither a regular file nor a folder. */
   odd: { path: string; message: string }[];
@@ -56,9 +56,10 @@ interface Listing {
 
 /**
  * Every regular file below `dir` with its size, never following a link: a link (or a device,
- * socket or pipe) is listed in `odd` instead, so a pack can never pull in a file from elsewhere.
+ * socket or pipe) is listed in `odd` instead, so a pack or plugin can never pull in a file from
+ * elsewhere. Also used by plugins-lib.
  */
-async function listFiles(dir: string, prefix = '', out: Listing = { files: [], odd: [] }): Promise<Listing> {
+export async function listFiles(dir: string, prefix = '', out: Listing = { files: [], odd: [] }): Promise<Listing> {
   const entries = await readdir(dir, { withFileTypes: true });
   for (const entry of entries.sort((a, b) => byCodePoint(a.name, b.name))) {
     const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
@@ -74,22 +75,22 @@ async function listFiles(dir: string, prefix = '', out: Listing = { files: [], o
   return out;
 }
 
-/** The entries of `packsDir`, sorted: pack folders, and links (reported, never followed). */
-async function packFolders(packsDir: string): Promise<{ folders: string[]; links: string[] }> {
+/** The entries of `dir`, sorted: folders (one per pack or plugin), and links (reported, never followed). */
+export async function subfolders(dir: string): Promise<{ folders: string[]; links: string[] }> {
   let entries: Dirent[];
   try {
-    entries = await readdir(packsDir, { withFileTypes: true });
+    entries = await readdir(dir, { withFileTypes: true });
   } catch (error) {
     if (isMissing(error)) return { folders: [], links: [] };
     throw error;
   }
   const names = (keep: (e: Dirent) => boolean) => entries.filter(keep).map((e) => e.name).sort(byCodePoint);
-  // Loose files (a README about packs) are ignored.
+  // Loose files (a README about packs or plugins) are ignored.
   return { folders: names((e) => e.isDirectory()), links: names((e) => e.isSymbolicLink()) };
 }
 
 /** Notepad and some other Windows editors start UTF-8 files with a byte order mark, which JSON.parse rejects. */
-const stripBom = (text: string): string => (text.startsWith('\uFEFF') ? text.slice(1) : text);
+export const stripBom = (text: string): string => (text.startsWith('\uFEFF') ? text.slice(1) : text);
 
 /** Reads a patch file for the validator and the index. */
 function describePatch(bytes: Uint8Array): ParsedPackPatch {
@@ -180,7 +181,7 @@ export async function loadPacks(packsDir: string, options: LoadOptions = {}): Pr
   const firmware = options.firmware ?? profiles.map((p) => p.id);
   const issues: PackIssue[] = [];
   const packs: PackIndexEntry[] = [];
-  const { folders, links } = await packFolders(packsDir);
+  const { folders, links } = await subfolders(packsDir);
   for (const link of links) issues.push({ pack: link, message: 'is a link; add the real folder instead' });
   for (const folder of folders) {
     const result = await loadPack(packsDir, folder, firmware);
@@ -233,7 +234,7 @@ export async function buildPacks(packsDir: string, outDir: string, options: Load
   return result;
 }
 
-async function exists(path: string): Promise<boolean> {
+export async function exists(path: string): Promise<boolean> {
   try {
     await lstat(path);
     return true;
