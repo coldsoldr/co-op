@@ -136,8 +136,8 @@ describe('op1.fun routes', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('refuses bodies over 12 MB by declared length and while streaming', async () => {
-      expect(MAX_UPLOAD_BYTES).toBe(12 * 1024 * 1024);
+    it('refuses bodies over 13 MiB by declared length and while streaming', async () => {
+      expect(MAX_UPLOAD_BYTES).toBe(13 * 1024 * 1024);
       const declared = await call(post('{}', { ...creds, 'Content-Length': String(MAX_UPLOAD_BYTES + 1) }));
       expect(declared.status).toBe(413);
       expectCors(declared);
@@ -152,7 +152,7 @@ describe('op1.fun routes', () => {
       const res = await call(req);
       expect(res.status).toBe(413);
       expect(state.cancelled).toBe(true);
-      expect(state.pulled).toBeLessThanOrEqual(15);
+      expect(state.pulled).toBeLessThanOrEqual(16);
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -181,7 +181,7 @@ describe('op1.fun routes', () => {
   });
 
   describe('GET /op1fun/file', () => {
-    it('streams an allowed file with its Content-Type and no credentials or redirects', async () => {
+    it('streams an allowed file as an attachment, with no credentials or redirects', async () => {
       fetchMock.mockResolvedValue(
         new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Type': 'audio/aiff', 'Set-Cookie': 'x=1' } }),
       );
@@ -190,6 +190,9 @@ describe('op1.fun routes', () => {
       expectCors(res);
       expect(res.headers.get('Content-Type')).toBe('audio/aiff');
       expect(res.headers.get('Set-Cookie')).toBeNull();
+      expect(res.headers.get('Content-Disposition')).toBe('attachment');
+      expect(res.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+      expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
       expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
       const [url, init] = fetchMock.mock.calls[0]!;
       expect(url).toBe(S3);
@@ -201,9 +204,11 @@ describe('op1.fun routes', () => {
       const ok = [
         S3,
         'https://op1fun.s3.us-east-1.amazonaws.com/a/b.AIFF',
+        'https://OP1FUN.S3.AMAZONAWS.COM/a/b.Aif',
+        'https://s3.amazonaws.com/op1fun/patches/kick.aif',
+        'https://s3.eu-west-1.amazonaws.com/op1fun/previews/kick.mp3',
         'https://op1.fun/files/preview.mp3',
-        'https://www.op1.fun/files/pack.zip',
-        'https://bucket.s3.amazonaws.com/pack.ZIP?X-Amz-Signature=abc',
+        'https://www.op1.fun/files/kick.aiff?X-Amz-Signature=abc',
       ];
       for (const url of ok) {
         fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([1]), { status: 200 }));
@@ -213,10 +218,37 @@ describe('op1.fun routes', () => {
       }
     });
 
+    it('passes only audio Content-Types and labels anything else as octet-stream', async () => {
+      const cases: [string | null, string][] = [
+        ['audio/x-aiff', 'audio/x-aiff'],
+        ['Audio/AIFF; charset=binary', 'audio/aiff'],
+        ['audio/mpeg', 'audio/mpeg'],
+        ['text/html', 'application/octet-stream'],
+        ['image/svg+xml', 'application/octet-stream'],
+        [null, 'application/octet-stream'],
+      ];
+      for (const [upstream, expected] of cases) {
+        const headers: Record<string, string> = upstream === null ? {} : { 'Content-Type': upstream };
+        fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([1]), { status: 200, headers }));
+        const res = await call(getFile(S3));
+        expect(res.headers.get('Content-Type'), String(upstream)).toBe(expected);
+      }
+    });
+
     it('rejects other hosts, schemes, paths and malformed urls with 400', async () => {
       const bad = [
         'https://evil.com/kick.aif',
         'https://amazonaws.com.evil.com/kick.aif',
+        'https://bucket.s3.amazonaws.com/kick.aif',
+        'https://op1fun-evil.s3.amazonaws.com/kick.aif',
+        'https://evilop1fun.s3.amazonaws.com/kick.aif',
+        'https://op1fun.s3.amazonaws.com.evil.com/kick.aif',
+        'https://ec2.amazonaws.com/kick.aif',
+        'https://s3.amazonaws.com/other/kick.aif',
+        'https://s3.amazonaws.com/op1funny/kick.aif',
+        'https://s3.amazonaws.com/kick.aif',
+        'https://op1fun.s3.amazonaws.com/pack.zip',
+        'https://op1.fun/pack.zip',
         'https://amazonaws.com/kick.aif',
         'https://evilamazonaws.com/kick.aif',
         'https://op1.fun.evil.com/kick.aif',
