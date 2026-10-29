@@ -212,3 +212,58 @@ test('installs an op1.fun pack patch by patch and reports a failed file', async 
   await page.getByRole('tab', { name: 'Library' }).click();
   await expect(page.getByRole('button', { name: 'Download changes (1)' })).toBeEnabled();
 });
+
+test('uploads a library patch to op1.fun through the Worker as raw bytes', async ({ page }) => {
+  const posts: { headers: Record<string, string>; body: unknown }[] = [];
+  await page.route('https://worker.e2e.test/**', async (route) => {
+    const request = route.request();
+    expect(new URL(request.url()).pathname).toBe('/op1fun/patches');
+    posts.push({ headers: request.headers(), body: request.postDataJSON() });
+    await route.fulfill({
+      status: 201,
+      headers: CORS,
+      body: JSON.stringify({
+        data: [{ id: '77', type: 'patches', attributes: { name: 'My Cluster' }, links: { self: 'https://op1.fun/users/alice/patches/77' } }],
+      }),
+    });
+  });
+  await mockApi(page, {});
+  await page.goto('./');
+  await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
+  const row = page.locator('tr[data-path="synth/user/cluster.aif"]');
+  const upload = row.getByRole('button', { name: 'Upload cluster.aif to op1.fun' });
+  await expect(upload).toBeDisabled();
+  await expect(upload).toHaveAccessibleDescription(/Save your op1.fun email and token on the op1.fun tab/);
+
+  await page.getByRole('tab', { name: 'op1.fun' }).click();
+  await fillAccount(page);
+  await page.getByRole('form', { name: 'op1.fun account' }).getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('tab', { name: 'Library' }).click();
+  await expect(upload).toBeEnabled();
+  await upload.click();
+
+  const dialog = page.getByRole('dialog', { name: 'Upload cluster.aif to op1.fun' });
+  await dialog.getByLabel('Name').fill('My Cluster');
+  await dialog.getByLabel('Description').fill('a test');
+  await dialog.getByLabel('Licence').selectOption('CC BY-SA');
+  await dialog.getByLabel('Public').uncheck();
+  await dialog.getByRole('button', { name: 'Upload' }).click();
+  await expect(dialog.getByRole('link', { name: 'Open My Cluster on op1.fun' })).toHaveAttribute(
+    'href',
+    'https://op1.fun/users/alice/patches/77',
+  );
+
+  expect(posts).toHaveLength(1);
+  const sent = posts[0]!;
+  expect(sent.headers['x-user-email']).toBe('me@example.com');
+  expect(sent.headers['x-user-token']).toBe('secret-token');
+  const raw = readFileSync(join(fixtures, 'synth-cluster.aif')).toString('base64');
+  expect(sent.body).toEqual({
+    data: {
+      type: 'patches',
+      attributes: { name: 'My Cluster', public: false, description: 'a test', license: 'CC BY-SA', file: `data:audio/x-aiff;base64,${raw}` },
+    },
+  });
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).toBeHidden();
+});

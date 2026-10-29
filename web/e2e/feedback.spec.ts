@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// The CI build has no VITE_WORKER_URL, so the dialog offers the prefilled GitHub issue instead.
+// The e2e build has no Turnstile site key, so the dialog offers the prefilled GitHub issue instead.
 test('feedback falls back to a prefilled GitHub issue', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('button', { name: 'Feedback' }).click();

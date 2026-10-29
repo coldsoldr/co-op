@@ -31,6 +31,12 @@ interface PatchActionsProps {
   busy: boolean;
   /** True when changes are staged for download rather than written to the drive. */
   staged: boolean;
+  /** Opens the op1.fun upload dialog for an entry. */
+  onUpload: (entry: LibraryRow) => void;
+  /** Why uploading is unavailable (shown as the button's description), or null. */
+  uploadUnavailable: string | null;
+  /** The id of an element holding uploadUnavailable, for aria-describedby. */
+  uploadNoteId: string;
 }
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -44,6 +50,9 @@ export const PatchActions = memo(function PatchActions({
   run,
   staged,
   busy,
+  onUpload,
+  uploadUnavailable,
+  uploadNoteId,
 }: PatchActionsProps) {
   const [mode, setMode] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +104,16 @@ export const PatchActions = memo(function PatchActions({
       </button>
       <button type="button" onClick={() => setMode('copy')} disabled={busy} aria-label={`Copy ${file} to a folder`}>
         Copy
+      </button>
+      <button
+        type="button"
+        onClick={() => onUpload(entry)}
+        disabled={uploadUnavailable !== null}
+        aria-label={`Upload ${file} to op1.fun`}
+        aria-describedby={uploadUnavailable !== null ? uploadNoteId : undefined}
+        title={uploadUnavailable ?? undefined}
+      >
+        Upload
       </button>
       <button
         type="button"

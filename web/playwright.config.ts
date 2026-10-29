@@ -16,5 +16,8 @@ export default defineConfig({
     url: 'http://localhost:4173/co-op/',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // A Worker URL that only exists inside the tests: op1fun.spec.ts answers it with page.route.
+    // There is no Turnstile site key, so feedback still falls back to the GitHub issue link.
+    env: { VITE_WORKER_URL: 'https://worker.e2e.test' },
   },
 });

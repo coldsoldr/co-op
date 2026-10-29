@@ -16,6 +16,8 @@ export const PACK_ZIP_TIMEOUT_MS = 65000;
 /** Patch files and previews; matches the Worker proxy's cap. */
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const FILE_TIMEOUT_MS = 60000;
+/** The largest patch uploaded: its base64 JSON stays under the Worker's 12 MB body cap. */
+export const MAX_UPLOAD_BYTES = 9 * 1024 * 1024;
 const UNEXPECTED = 'unexpected response';
 const WORKER_NEEDED =
   'could not download the file directly from op1.fun (the browser blocked it); the co-op Worker is needed to fetch it';
@@ -349,6 +351,7 @@ export class Op1FunClient {
   /** Uploads a patch through the co-op Worker (op1.fun does not allow cross-origin POST). */
   async uploadPatch(upload: Op1FunUpload): Promise<Op1FunPatch> {
     if (!this.workerUrl) throw new Op1FunError('uploads need the co-op Worker');
+    if (upload.bytes.length > MAX_UPLOAD_BYTES) throw new Op1FunError('the patch is too large to upload (over 9 MB)');
     const payload = {
       data: {
         type: 'patches',

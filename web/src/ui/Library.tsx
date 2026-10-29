@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type ChangeEvent,
@@ -19,6 +20,8 @@ import { ConfirmDialog } from './Dialog';
 import { saveBlob, zipBlob } from './download';
 import { compatView, dateStamp, formatSize, groupByFolder, kindMismatchText, rootOf } from './format';
 import { PatchActions } from './PatchActions';
+import { UploadDialog, uploadUnavailable } from './Op1FunUpload';
+import type { Op1Fun } from './useOp1Fun';
 import {
   displayName,
   filterRows,
@@ -36,14 +39,14 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 
 /**
  * `device` is the connection shared with the other tabs. `active` is false while the Library tab
- * is hidden; playback stops then.
+ * is hidden; playback stops then. `op1fun` is the op1.fun account, for the Upload action.
  */
-export function Library({ device, active = true }: { device: Device; active?: boolean }) {
+export function Library({ device, active = true, op1fun }: { device: Device; active?: boolean; op1fun: Op1Fun }) {
   return (
     <section aria-labelledby="library-heading">
       <h2 id="library-heading">Device library</h2>
       {device.source ? (
-        <Connected key={device.source.key} device={device} active={active} />
+        <Connected key={device.source.key} device={device} active={active} op1fun={op1fun} />
       ) : (
         <ConnectPanel device={device} />
       )}
@@ -150,7 +153,7 @@ const COLUMNS: ReadonlyArray<{ key: SortKey; label: string }> = [
   { key: 'compat', label: 'Compatibility' },
 ];
 
-function Connected({ device, active }: { device: Device; active: boolean }) {
+function Connected({ device, active, op1fun }: { device: Device; active: boolean; op1fun: Op1Fun }) {
   const source = device.source;
   const [playing, setPlaying] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -163,6 +166,9 @@ function Connected({ device, active }: { device: Device; active: boolean }) {
   const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'ascending' });
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [uploading, setUploading] = useState<LibraryRow | null>(null);
+  const uploadNoteId = useId();
+  const uploadWhy = uploadUnavailable(op1fun);
   const store = source?.store ?? null;
 
   useEffect(() => {
@@ -261,6 +267,9 @@ function Connected({ device, active }: { device: Device; active: boolean }) {
       run={device.run}
       staged={staged !== null}
       busy={device.busy}
+      onUpload={setUploading}
+      uploadUnavailable={uploadWhy}
+      uploadNoteId={uploadNoteId}
       selected={selected.has(row.path)}
       onSelect={toggleSelected}
     />
@@ -429,6 +438,20 @@ function Connected({ device, active }: { device: Device; active: boolean }) {
         run={device.run}
       />
 
+      {uploadWhy && (
+        <span id={uploadNoteId} hidden>
+          {uploadWhy}
+        </span>
+      )}
+      {uploading && (
+        <UploadDialog
+          entry={uploading}
+          op1fun={op1fun}
+          read={(path) => device.exclusive(() => source.store.read(path))}
+          onClose={() => setUploading(null)}
+        />
+      )}
+
       {confirmDisconnect && (
         <ConfirmDialog
           title="Discard staged changes?"
@@ -456,11 +479,27 @@ interface RowProps {
   run: (op: Operation, touched?: readonly string[]) => Promise<void>;
   staged: boolean;
   busy: boolean;
+  onUpload: (entry: LibraryRow) => void;
+  uploadUnavailable: string | null;
+  uploadNoteId: string;
   selected: boolean;
   onSelect: (path: string, on: boolean) => void;
 }
 
-const Row = memo(function Row({ row, folders, playing, onTogglePlay, run, staged, busy, selected, onSelect }: RowProps) {
+const Row = memo(function Row({
+  row,
+  folders,
+  playing,
+  onTogglePlay,
+  run,
+  staged,
+  busy,
+  onUpload,
+  uploadUnavailable,
+  uploadNoteId,
+  selected,
+  onSelect,
+}: RowProps) {
   const mismatch = kindMismatchText(row);
   const nonStandard = row.info !== null && !row.info.canonical;
   return (
@@ -503,6 +542,9 @@ const Row = memo(function Row({ row, folders, playing, onTogglePlay, run, staged
           run={run}
           staged={staged}
           busy={busy}
+          onUpload={onUpload}
+          uploadUnavailable={uploadUnavailable}
+          uploadNoteId={uploadNoteId}
         />
       </td>
     </tr>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_FILE_BYTES, Op1FunClient, mapPack, mapPatch, toBase64 } from './client';
+import { MAX_FILE_BYTES, MAX_UPLOAD_BYTES, Op1FunClient, mapPack, mapPatch, toBase64 } from './client';
 import { Op1FunAuthError, Op1FunError, type Op1FunCredentials } from './types';
 import { fixtureBytes } from '../../../test/fixture-bytes';
 
@@ -437,6 +437,16 @@ describe('Op1FunClient.uploadPatch', () => {
     const prefix = 'data:audio/x-aiff;base64,';
     expect(file.startsWith(prefix)).toBe(true);
     expect(new Uint8Array(Buffer.from(file.slice(prefix.length), 'base64'))).toEqual(drum);
+  });
+
+  it('refuses files over 9 MB before sending, so the Worker never has to', async () => {
+    expect(MAX_UPLOAD_BYTES).toBe(9 * 1024 * 1024);
+    const f = fakeFetch(() => json({}));
+    const big = { ...input, bytes: new Uint8Array(MAX_UPLOAD_BYTES + 1) };
+    await expect(new Op1FunClient(creds, { fetch: f.fetch, workerUrl: WORKER }).uploadPatch(big)).rejects.toThrow(
+      new Op1FunError('the patch is too large to upload (over 9 MB)'),
+    );
+    expect(f.calls).toHaveLength(0);
   });
 
   it('accepts a create response with a single object', async () => {
