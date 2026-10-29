@@ -60,18 +60,24 @@ Spec sections 5.2 and 11 updated (sniff phase, supports block, write guards); re
 
 ## Phase 8: opus
 
-### Task 7: opus profile
+Status: done (2026-10-29). Deviations: the opus sniff is 0.96, not 0.9, so a stock-looking drive of
+opus sounds (0.9 by folders) gets the suggestion and a drive mixing hundekraft and opus sounds is
+offered opus, which hosts both; hundekraft names and op1r selectors warn "needs the opus bridge
+plugin" rather than being unsupported; opus effect slots warn "needs plugin <id>" too; backups take
+`mods/` through a new `DriveLayout.backupOtherRoots` instead of an opt-in flag on `createBackup`.
+
+### Task 7 (done): opus profile
 
 - `op1-opus.ts`: `id 'op1/opus'`, label "OP-1 (opus)". Layout: stock patch roots, `otherRoots` adds `mods`. Folder detection: `mods/` containing at least one `.opmod` file -> 0.97 with reason "found mods folder with opus plugins"; `mods/` without `.opmod` -> 0.6; otherwise fall back to the stock folder rule capped at 0.5 (an opus drive without mods is indistinguishable from stock).
 - `supports`: stock lists plus opus effect names saved in `fx_type` (bitcrush, chorus, plate, filter, and any `opus.*` names seen), synth engines stock plus `iter` (opus engines save as iter + mark). Compatibility: an `opus` member naming a plugin -> `ok` with reason "needs plugin <id>" shown as info (warn level if we cannot know whether the plugin is installed: use `warn` with that reason); op1r selector traits -> warn "needs the opus bridge plugin".
 - `sniff`: 0.9 when a loaded patch has an `opus` member.
 - Registry order: stock, hundekraft, opus.
 
-### Task 8: mods listing
+### Task 8 (done): mods listing
 
 - Library shows, for an opus profile, a read-only "Installed opus plugins" section listing `mods/*.opmod` file names and sizes (no parsing beyond checking the first four bytes are `OPMD`, flagging files that are not). Backups include `mods/` when the active profile is opus (extend `createBackup` with profile `otherRoots` opt-in for `mods`; tape and album stay excluded).
 - Tests with MemoryStore; e2e: a dropped drive with `mods/x.opmod` (bytes `OPMD....`) is detected as opus and lists the plugin.
 
-### Task 9: docs, final review, deploy
+### Task 9 (done): docs, final review, deploy
 
 Spec sections 5.2, 11 and the decisions table updated; README "What exists today" covers all eight phases; research notes updated; plan marked done; push; watch ci and pages.

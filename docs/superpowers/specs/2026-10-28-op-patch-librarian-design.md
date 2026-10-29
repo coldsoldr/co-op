@@ -47,7 +47,10 @@ Non-goals for v1
 | Feedback | In-app form; Worker opens a labelled GitHub Issue |
 | Device access | File System Access API on Chromium, drag-and-drop fallback elsewhere |
 | op1.fun | Browse directly from the browser (API reads allow CORS); patch files through the Worker file proxy (op1.fun's S3 bucket sends no CORS headers); upload via the Worker (the API refuses cross-origin POST); credentials in memory unless the user ticks Remember |
-| Firmware model | `DeviceProfile` registry; stock OP-1 is the base profile |
+| Firmware model | `DeviceProfile` registry in order stock, hundekraft, opus; stock is the base profile |
+| Firmware detection | Folder detection on open; a content sniff over loaded patches may only suggest a switch, never switch, because sounds prove where they were made, not what is installed |
+| Compatibility | Judged from sound traits against each profile's supported names; stock is strict (custom-firmware sounds may stop it at boot), hundekraft and opus warn about missing plugins |
+| Write guards | Pack and op1.fun installs and restores confirm before writing patches the active profile marks unsupported; copy and move within the drive do not ask |
 | Reference firmware repos | `vendor/hundekraft`, `vendor/opus`, gitignored |
 | Web stack | Vite, React, TypeScript |
 
@@ -174,7 +177,22 @@ soften findings. The codec reads `drum`, `dbox` (stock DBox) and `gin`
   stock Iter, an unknown effect with a selector as the stock filter), and
   an opus sound needs the opus bridge. Its sniff returns 0.95 when a loaded
   patch uses a hundekraft-only name or a Gin kit.
-- `op1/opus` (phase 8) is read from `vendor/opus` in its own phase.
+- `op1/opus` (phase 8) keeps the stock patch roots and adds `mods` to
+  `otherRoots` and `backupOtherRoots` (`DriveLayout.backupOtherRoots`
+  lists the other roots backups include; only opus has one). Detection: a
+  `mods/` folder with at least one `.opmod` file is 0.97, `mods/`
+  without one 0.6, otherwise the stock folder rule capped at 0.5 (an opus
+  drive without plugins looks like stock). Detection reads names only; the
+  library's read-only "Installed opus plugins" section lists `mods/*.opmod`
+  in load order with sizes and flags files that do not start with `OPMD`.
+  It supports the stock names plus the opus starter effects in `fx_type`
+  (bitcrush, chorus, plate, filter, bare and as `opus.*`); opus engines save
+  as stock `iter`. Compatibility warns "needs plugin <id>" for the `opus`
+  member's plugin and effect slots, and "needs the opus bridge plugin" for
+  hundekraft names and op1r selectors; names no known firmware uses stay
+  unsupported. Its sniff is 0.96 when a loaded patch has an `opus` member:
+  above stock's 0.9 and hundekraft's 0.95 (opus hosts hundekraft sounds
+  through its bridge), below the mods-folder match.
 - Detection runs on every mount and picks the best folder match. After all
   patches are read, the library runs every profile's `sniff` over their
   traits; if another profile beats the active profile's folder confidence,
@@ -490,7 +508,8 @@ install and upload show as unavailable rather than failing.
 7. hundekraft profile from `vendor/hundekraft`: sound traits, strict
    stock compatibility, content sniffing with a switch suggestion, and
    write guards.
-8. opus profile from `vendor/opus`.
+8. opus profile from `vendor/opus`: mods-folder detection, plugin needs
+   as warnings, the installed plugins list and `mods/` in backups.
 
 Each phase is independently shippable and ends with a deploy.
 

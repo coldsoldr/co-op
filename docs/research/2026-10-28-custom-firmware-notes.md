@@ -141,3 +141,22 @@ on `op1/stock` 140 are `unsupported` (hundekraft-only traits) and the 12
   the engine name.
 - Writes to a stock device of a patch that is not stock-safe need an
   explicit warning, because it can stop the device at boot.
+
+## As built (phases 7 and 8, 2026-10-29)
+
+All three profiles are in `web/src/core/profiles/`. What rests on
+assumptions rather than real files, to revisit when real files turn up:
+
+- No real opus sound has been seen. The key in the `opus` member that
+  names the plugin is undocumented, so `soundTraits` tries `plugin`,
+  `engine`, `id` and `name`, then any other string that looks like an
+  `opus.<id>` plugin id.
+- opus effects in `fx_type` are accepted both bare (`bitcrush`, as the
+  docs show) and with their id (`opus.bitcrush`).
+- No real DBox or Gin kit has been seen (see the stock name lists above).
+- `quad` as a saved `lfo_type` is unconfirmed.
+- The opus bridge is assumed to host every hundekraft engine, effect,
+  Gin kit and the quad LFO; its docs only say it loads op1r-family sounds
+  (selectors 0x5301..0x53ff).
+- Detection reads only names in `mods/`; the OPMD magic is checked when
+  the Library lists plugins.
