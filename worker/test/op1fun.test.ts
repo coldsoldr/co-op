@@ -207,6 +207,8 @@ describe('op1.fun routes', () => {
         'https://OP1FUN.S3.AMAZONAWS.COM/a/b.Aif',
         'https://s3.amazonaws.com/op1fun/patches/kick.aif',
         'https://s3.eu-west-1.amazonaws.com/op1fun/previews/kick.mp3',
+        'https://op1fun.s3.ap-southeast-2.amazonaws.com/a/kick.aif',
+        'https://s3.us-gov-west-1.amazonaws.com/op1fun/kick.aif',
         'https://op1.fun/files/preview.mp3',
         'https://www.op1.fun/files/kick.aiff?X-Amz-Signature=abc',
       ];
@@ -260,6 +262,12 @@ describe('op1.fun routes', () => {
         'https://op1fun.s3.amazonaws.com/kick.html?x=.aif',
         'https://user:pass@op1fun.s3.amazonaws.com/kick.aif',
         'https://op1fun.s3.amazonaws.com:8443/kick.aif',
+        'https://op1fun.s3.evil.amazonaws.com/kick.aif',
+        'https://op1fun.s3.website.amazonaws.com/kick.aif',
+        'https://op1fun.s3.us-east.amazonaws.com/kick.aif',
+        'https://op1fun.s3.attacker-1.amazonaws.com/kick.aif',
+        'https://s3.foo-bar.amazonaws.com/op1fun/kick.aif',
+        'https://s3.e-west-1.amazonaws.com/op1fun/kick.aif',
         'not a url',
         '',
       ];

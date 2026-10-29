@@ -15,10 +15,10 @@ export const OP1FUN_TIMEOUT_MS = 60_000;
 const AIFF_DATA_URI = 'data:audio/x-aiff;base64,';
 const FILE_EXTENSIONS = ['.aif', '.aiff', '.mp3'];
 const FILE_HOSTS = ['op1.fun', 'www.op1.fun'];
-/** op1.fun's bucket, virtual-hosted style, with or without a region. */
-const BUCKET_HOST = /^op1fun\.s3(\.[a-z0-9-]+)?\.amazonaws\.com$/;
-/** S3 path style, where the bucket is the first path segment. */
-const PATH_STYLE_HOST = /^s3(\.[a-z0-9-]+)?\.amazonaws\.com$/;
+/** op1.fun's bucket, virtual-hosted style, with or without a region (us-east-1, us-gov-west-1). */
+const BUCKET_HOST = /^op1fun\.s3(\.[a-z]{2}(-[a-z]+)+-\d)?\.amazonaws\.com$/;
+/** S3 path style, where the bucket is the first path segment; same optional region. */
+const PATH_STYLE_HOST = /^s3(\.[a-z]{2}(-[a-z]+)+-\d)?\.amazonaws\.com$/;
 const BUCKET_PATH = '/op1fun/';
 /** The only Content-Types passed back; anything else becomes application/octet-stream. */
 const AUDIO_TYPES = ['audio/x-aiff', 'audio/aiff', 'audio/mpeg'];

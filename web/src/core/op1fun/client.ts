@@ -322,7 +322,8 @@ export class Op1FunClient {
     const body = await this.api(path, 'prepare the pack download', this.timeoutSignal(PACK_ZIP_TIMEOUT_MS));
     if (!isObject(body)) throw unexpected();
     const data = obj(body.data);
-    const url = str(body.url) || str(data.url) || str(obj(data.attributes).url);
+    // Only an https link is followed; anything else is treated as no link.
+    const url = httpsUrl(str(body.url) || str(data.url) || str(obj(data.attributes).url));
     if (!url) throw unexpected();
     return url;
   }

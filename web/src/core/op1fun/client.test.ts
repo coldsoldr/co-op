@@ -312,6 +312,16 @@ describe('Op1FunClient.requestPackZip', () => {
     await expect(client.requestPackZip('alice', '9')).rejects.toBeInstanceOf(Op1FunError);
   });
 
+  it.each(['http://op1fun.s3.amazonaws.com/packs/9.zip', 'javascript:alert(1)', 'not a url'])(
+    'rejects a pack link that is not https: %s',
+    async (url) => {
+      const f = fakeFetch(() => json({ url }));
+      await expect(new Op1FunClient(creds, { fetch: f.fetch }).requestPackZip('alice', '9')).rejects.toThrow(
+        new Op1FunError('unexpected response'),
+      );
+    },
+  );
+
   it('rejects a response without a url', async () => {
     const f = fakeFetch(() => json({ nope: true }));
     await expect(new Op1FunClient(creds, { fetch: f.fetch }).requestPackZip('alice', '9')).rejects.toThrow(
