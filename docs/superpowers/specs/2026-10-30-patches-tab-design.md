@@ -155,7 +155,8 @@ the plan above:
   back, or a failed check, restores it and deletes the file. The slot's sample file is never marked
   changed. A sampler patch must be 44.1 kHz; only the buffer's 6 s is sent.
 - Sampled drum kits audition the same way, through the firmware's drum load (0x01A04C48, then
-  0x01A006C0) and its 12 s buffer, at about 40 s for a full kit. dbox kits preview only.
+  0x01A006C0) and its 12 s buffer, at about 40 s for a full kit. dbox kits load the same way as settings alone, at once. Gin kits
+  are not auditioned, because their state is text of its own.
 - The Library's local folders stack as a tree, and a folder shows its own patches and those inside.
 
 ## Parked

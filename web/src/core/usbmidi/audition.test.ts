@@ -95,7 +95,7 @@ describe('encodeAuditionPatch', () => {
     const frame = encodeAuditionPatch(meta()) as Uint8Array;
     const size = (frame[0] as number) | ((frame[1] as number) << 8);
     expect(frame.length).toBe(size + 6);
-    expect([...frame.subarray(2, 6)]).toEqual([3, 2, 255, 2]);
+    expect([...frame.subarray(2, 6)]).toEqual([4, 2, 255, 2]);
     expect(new DataView(frame.buffer).getInt16(2 + 4 + 14, true)).toBe(-3);
     let sum = 0;
     for (const byte of frame.subarray(2, 2 + size)) sum += byte;
@@ -155,10 +155,31 @@ describe('drum kits', () => {
     expect(new TextDecoder().decode(frame).endsWith('dust kit\0' + new TextDecoder().decode(frame.subarray(-4)))).toBe(true);
   });
 
-  it('refuses a kit with no audio, short arrays, and a synthesised kit', () => {
+  const dbox = (over: Record<string, unknown> = {}): Op1Meta =>
+    kit({ type: 'dbox', dbox_data: new Array(24).fill(0).map((_, i) => [i, -24320, 32767, 0, 0, 0, 0, 7]), ...over });
+
+  it('sends a dbox kit as settings alone, with its rows before the names', () => {
+    const frame = encodeAuditionPatch(dbox()) as Uint8Array;
+    const view = new DataView(frame.buffer);
+    expect(frame[3]).toBe(12);
+    expect(view.getUint32(2 + 76, true)).toBe(0);
+    expect(view.getInt16(2 + 84 + 16, true)).toBe(1);
+    expect(view.getInt16(2 + 84 + 18, true)).toBe(-24320);
+    expect(new TextDecoder().decode(frame)).toContain('dbox\0delay\0tremolo\0dust kit\0');
+    expect(canAudition(dbox())).toBe(true);
+    expect(needsAudio(dbox())).toBe(false);
+  });
+
+  it('refuses a dbox kit with the wrong shape, and given audio', () => {
+    expect(encodeAuditionPatch(dbox({ dbox_data: [[1, 2]] }))).toBeNull();
+    expect(encodeAuditionPatch(dbox({ dbox_data: new Array(24).fill(new Array(8).fill(40000)) }))).toBeNull();
+    expect(encodeAuditionPatch(dbox(), Uint8Array.of(1))).toBeNull();
+  });
+
+  it('refuses a kit with no audio, short arrays, and a Gin kit', () => {
     expect(encodeAuditionPatch(kit())).toBeNull();
     expect(encodeAuditionPatch(kit({ start: [1, 2] }), Uint8Array.of(1))).toBeNull();
-    expect(canAudition(kit({ type: 'dbox' }))).toBe(false);
+    expect(canAudition(kit({ type: 'gin' }))).toBe(false);
     expect(canAudition(kit())).toBe(true);
     expect(needsAudio(kit())).toBe(true);
   });

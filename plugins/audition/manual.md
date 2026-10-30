@@ -42,7 +42,7 @@ Nothing of its own. The OP-1 shows the patch as usual, and a sampler patch shows
 - A settings-only patch loads at once. A sampler patch sends its audio, about 21 seconds for the
   full 6 seconds of sound. Clicking another patch cancels the transfer.
 - A sampled drum kit sends its audio too, about 40 seconds for the full 12 seconds of sound. A dbox
-  kit is not auditioned on the OP-1.
+  kit is settings only, so it loads at once. A Gin kit is not auditioned on the OP-1.
 - A sampler or kit slot sounds scrambled while its row fills, so wait until it finishes. It needs
   no plugin memory: your slot's audio is kept in a file of up to about 1 MB on the OP-1 until you
   put it back.

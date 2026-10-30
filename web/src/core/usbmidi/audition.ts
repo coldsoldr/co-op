@@ -2,7 +2,7 @@
  * Talks to the audition proof-of-concept plugin (te-op1-cfw, ports/knl/audition): control changes on
  * channel 16, because plugins are not given SysEx. CC 118 asks, CC 119 answers.
  */
-import { isSynthMeta, type Op1Meta, type SampleKitMeta } from '../codec/op1-meta';
+import { isSynthMeta, type DrumSynthMeta, type Op1Meta, type SampleKitMeta } from '../codec/op1-meta';
 import { pack7 } from './framing';
 import type { MidiPort } from './session';
 
@@ -82,12 +82,13 @@ export function sendAudition(port: MidiPort, request: AuditionRequest, timeoutMs
 /** Patch and speed test data: polyphonic pressure on channel 15, 14 bits a message. */
 const PRESSURE_CHANNEL_15 = 0xae;
 
-const FRAME_FORMAT = 3;
+const FRAME_FORMAT = 4;
 const WORDS = 8;
 const PADS = 24;
 const FLAG_FX = 1;
 const FLAG_LFO = 2;
 const FLAG_DRUM = 4;
+const FLAG_DBOX = 8;
 const MAX_NAME = 39;
 const MAX_PAYLOAD = 800;
 /** The synth sampler's buffer: 6 s at 44.1 kHz, after its guard samples. */
@@ -114,9 +115,11 @@ export interface AuditionAudio {
 
 const isKit = (meta: Op1Meta | null): meta is SampleKitMeta => meta?.type === 'drum';
 
-/** True for a patch that can play on the OP-1: a synth patch or a sampled kit. A synthesised kit cannot. */
+const isDbox = (meta: Op1Meta | null): meta is DrumSynthMeta => meta?.type === 'dbox';
+
+/** True for a patch that can play on the OP-1: anything but a Gin kit, whose state is text of its own. */
 export function canAudition(meta: Op1Meta | null): boolean {
-  return isSynthMeta(meta) || isKit(meta);
+  return isSynthMeta(meta) || isKit(meta) || isDbox(meta);
 }
 
 /** True for a patch whose audio has to go too. */
@@ -145,17 +148,21 @@ export function encodeAuditionPatch(meta: Op1Meta | null, audio: Uint8Array | nu
   if ((kit || sampler) !== (audio !== null)) return null;
   const baseFreq = sampler ? (meta as { base_freq?: number }).base_freq : 0;
   if (sampler && !(typeof baseFreq === 'number' && baseFreq > 0)) return null;
+  const dbox = isDbox(meta);
   const synth = isSynthMeta(meta) ? meta : null;
-  const groups = [synth?.knobs ?? new Array<number>(WORDS).fill(0), synth?.adsr ?? (meta as SampleKitMeta).dyna_env, meta.fx_params, meta.lfo_params];
+  const dynaEnv = (meta as { dyna_env?: number[] }).dyna_env ?? [];
+  const groups = [synth?.knobs ?? new Array<number>(WORDS).fill(0), synth?.adsr ?? dynaEnv, meta.fx_params, meta.lfo_params];
+  const rows = dbox ? (meta.dbox_data ?? []) : [];
+  if (dbox && !(rows.length === PADS && rows.every((row) => Array.isArray(row) && row.length === WORDS && row.every(isWord)))) return null;
   const pads = kit ? [meta.start, meta.end, meta.pitch, meta.playmode, meta.reverse, meta.volume] : [];
   if (!pads.every((a) => Array.isArray(a) && a.length === PADS && a.every((n) => Number.isInteger(n) && Math.abs(n) <= 0x7fffffff))) return null;
-  const version = kit ? meta.drum_version : synth?.synth_version;
+  const version = synth ? synth.synth_version : (meta as { drum_version?: number }).drum_version;
   const name = meta.name.replace(/[^\x20-\x7e]/g, '').slice(0, MAX_NAME) || 'audition';
   const names = [meta.type, meta.fx_type, meta.lfo_type, name];
   if (!groups.every((g) => Array.isArray(g) && g.length === WORDS && g.every(isWord)) || !names.every(validName)) return null;
   if (!Number.isInteger(meta.octave) || Math.abs(meta.octave) > 127) return null;
   if (!Number.isInteger(version) || (version as number) < 0 || (version as number) > 255) return null;
-  const flags = (meta.fx_active ? FLAG_FX : 0) | (meta.lfo_active ? FLAG_LFO : 0) | (kit ? FLAG_DRUM : 0);
+  const flags = (meta.fx_active ? FLAG_FX : 0) | (meta.lfo_active ? FLAG_LFO : 0) | (kit || dbox ? FLAG_DRUM : 0) | (dbox ? FLAG_DBOX : 0);
   const payload: number[] = [FRAME_FORMAT, flags, meta.octave & 0xff, version as number];
   for (const group of groups) for (const word of group) payload.push(word & 0xff, (word >> 8) & 0xff);
   const numbers = new DataView(new ArrayBuffer(16));
@@ -166,6 +173,7 @@ export function encodeAuditionPatch(meta: Op1Meta | null, audio: Uint8Array | nu
   for (const array of pads) {
     for (const value of array) payload.push(value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff);
   }
+  for (const row of rows) for (const word of row) payload.push(word & 0xff, (word >> 8) & 0xff);
   for (const text of names) {
     for (let i = 0; i < text.length; i++) payload.push(text.charCodeAt(i));
     payload.push(0);
