@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { freePercent, OP1_FLASH_BYTES } from '../core/library/drive-space';
-import { folderTree, type FolderNode } from '../core/library/local-library';
-import { ensureFolder, isPresetFolder, removeFolder } from '../core/library/operations';
-import { joinPath } from '../core/store/store';
+import { folderTree, inFolder, type FolderNode } from '../core/library/local-library';
+import { ensureFolder, isPresetFolder, removeFolder, removeFolderTree } from '../core/library/operations';
+import { dirname, joinPath } from '../core/store/store';
 import { formatSize } from './format';
 import type { LocalLibrary } from './useLocalLibrary';
 import type { Device } from './useDevice';
@@ -31,6 +31,8 @@ export function Folders({ device, selected, onSelect, local, localSelected, onSe
   const [draft, setDraft] = useState('');
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [addingLocal, setAddingLocal] = useState(false);
+  const [confirmingLocal, setConfirmingLocal] = useState(false);
   const staged = device.source?.staged != null;
 
   const rowsIn = (folder: string) => device.rows.filter((r) => r.path.startsWith(`${folder}/`));
@@ -57,6 +59,34 @@ export function Folders({ device, selected, onSelect, local, localSelected, onSe
       });
       setAdding(null);
       onSelect(made);
+    } catch (e) {
+      setError(messageOf(e));
+    }
+  }
+
+  async function addLocal(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    setError(null);
+    try {
+      let made = '';
+      await local.apply(async (store) => {
+        made = await ensureFolder(store, localSelected ?? '', draft.trim());
+      });
+      setAddingLocal(false);
+      setDraft('');
+      if (made) onSelectLocal(made);
+    } catch (e) {
+      setError(messageOf(e));
+    }
+  }
+
+  async function removeLocal(folder: string): Promise<void> {
+    setError(null);
+    setConfirmingLocal(false);
+    try {
+      const inside = local.patches.filter((p) => inFolder(p, folder)).map((p) => p.path);
+      await local.apply((store) => removeFolderTree(store, folder), inside);
+      onSelectLocal(dirname(folder));
     } catch (e) {
       setError(messageOf(e));
     }
@@ -185,18 +215,79 @@ export function Folders({ device, selected, onSelect, local, localSelected, onSe
         <section aria-label="local folders" className="folder-group">
           <div className="folder-group-head">
             <span className="mono">local</span>
+            <button
+              type="button"
+              className="round-hit"
+              aria-label="Add a local folder"
+              onClick={() => {
+                setDraft('');
+                setError(null);
+                setAddingLocal(true);
+              }}
+            >
+              <span className="ring">
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </span>
+            </button>
+            {localSelected && (
+              <button type="button" className="round-hit" aria-label="Remove this local folder" onClick={() => setConfirmingLocal(true)}>
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            )}
           </div>
-          {local.patches.some((p) => p.folder === '') && (
-            <div className={`folder${localSelected === '' ? ' on' : ''}`}>
-              <div className="folder-row">
-                <button type="button" className="folder-pick" aria-current={localSelected === ''} onClick={() => onSelectLocal('')}>
-                  <span>{local.folder.label}</span>
-                  <span className="mono">{local.patches.filter((p) => p.folder === '').length}</span>
+          {confirmingLocal && localSelected && (
+            <div className="folder-confirm" role="alert">
+              <p>
+                Remove {localSelected} and its {patchCount(local.patches.filter((p) => inFolder(p, localSelected)).length)} from your folder? This cannot
+                be undone.
+              </p>
+              <div>
+                <button type="button" className="solid-danger" onClick={() => void removeLocal(localSelected)}>
+                  Remove
+                </button>
+                <button type="button" className="on-ink" onClick={() => setConfirmingLocal(false)}>
+                  Keep
                 </button>
               </div>
             </div>
           )}
-          <FolderBranch nodes={folderTree(local.patches)} depth={0} selected={localSelected} onSelect={onSelectLocal} />
+          {addingLocal && (
+            <form className="folder-add" onSubmit={(e) => void addLocal(e)}>
+              <input
+                type="text"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                maxLength={MAX_FOLDER_NAME}
+                placeholder="folder name"
+                aria-label="New local folder name"
+                required
+                autoFocus
+              />
+              <button type="submit" className="round-hit filled" aria-label="Add folder">
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M5 13l4 4L19 7" />
+                </svg>
+              </button>
+              <button type="button" className="round-hit" aria-label="Cancel" onClick={() => setAddingLocal(false)}>
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </form>
+          )}
+          <div className={`folder${localSelected === '' ? ' on' : ''}`}>
+            <div className="folder-row">
+              <button type="button" className="folder-pick" aria-current={localSelected === ''} onClick={() => onSelectLocal('')}>
+                <span>{local.folder.label}</span>
+                <span className="mono">{local.patches.filter((p) => p.folder === '').length}</span>
+              </button>
+            </div>
+          </div>
+          <FolderBranch nodes={folderTree(local.patches, local.folders)} depth={0} selected={localSelected} onSelect={onSelectLocal} />
         </section>
       )}
 

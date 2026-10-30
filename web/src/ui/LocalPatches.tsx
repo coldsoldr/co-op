@@ -10,6 +10,9 @@ import { Dialog } from './Dialog';
 import { formatSize } from './format';
 import { PatchKeyboard } from './PatchKeyboard';
 import { clickedControl, transferRow } from './AuditionBar';
+import { BulkTools } from './BulkTools';
+import { LocalActions } from './LocalActions';
+import { localPlace } from './places';
 import type { Audition } from './useAudition';
 import type { LocalLibrary } from './useLocalLibrary';
 import { usePatchPreview } from './usePatchPreview';
@@ -51,7 +54,8 @@ export function LocalPatches({ device, local, folder, audition, active, confirmP
     const picked = targets[kind];
     return picked !== undefined && options.includes(picked) ? picked : (options.find((n) => n.toLowerCase() !== 'user') ?? options[0]);
   };
-  const allOn = patches.some(sendable) && patches.filter(sendable).every((p) => selected.has(p.path));
+  const allOn = patches.length > 0 && patches.every((p) => selected.has(p.path));
+  const ticked = patches.filter((p) => selected.has(p.path)).map((p) => p.path);
 
   function toggle(path: string, on: boolean): void {
     setSelected((prev) => {
@@ -63,7 +67,7 @@ export function LocalPatches({ device, local, folder, audition, active, confirmP
   }
 
   function toggleAll(on: boolean): void {
-    setSelected(on ? new Set(patches.filter(sendable).map((p) => p.path)) : new Set());
+    setSelected(on ? new Set(patches.map((p) => p.path)) : new Set());
   }
 
   async function send(event: FormEvent): Promise<void> {
@@ -110,8 +114,16 @@ export function LocalPatches({ device, local, folder, audition, active, confirmP
 
   return (
     <>
-      {device.source && (
-        <div className="plugin-buttons local-actions">
+      <BulkTools
+        place={localPlace(local)}
+        selected={ticked}
+        onClear={() => setSelected(new Set())}
+        onDone={() => {
+          setSelected(new Set());
+          preview.close();
+        }}
+      >
+        {device.source && (
           <button
             type="button"
             className="primary"
@@ -120,8 +132,8 @@ export function LocalPatches({ device, local, folder, audition, active, confirmP
           >
             Send to OP-1 ({chosen.length})
           </button>
-        </div>
-      )}
+        )}
+      </BulkTools>
       {preview.error && (
         <p role="alert" className="error">
           {preview.error}
@@ -144,22 +156,23 @@ export function LocalPatches({ device, local, folder, audition, active, confirmP
             </caption>
             <thead>
               <tr>
-                {device.source && (
-                  <th scope="col" className="select">
-                    <span className="visually-hidden">Select</span>
-                    <input
-                      type="checkbox"
-                      aria-label="Select all local patches here"
-                      checked={allOn}
-                      onChange={(e) => toggleAll(e.target.checked)}
-                    />
-                  </th>
-                )}
+                <th scope="col" className="select">
+                  <span className="visually-hidden">Select</span>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all local patches here"
+                    checked={allOn}
+                    onChange={(e) => toggleAll(e.target.checked)}
+                  />
+                </th>
                 <th scope="col">Name</th>
                 <th scope="col">Kind</th>
                 <th scope="col">Size</th>
                 <th scope="col" className="play">
                   <span className="visually-hidden">Preview</span>
+                </th>
+                <th scope="col">
+                  <span className="visually-hidden">Actions</span>
                 </th>
               </tr>
             </thead>
@@ -183,17 +196,14 @@ export function LocalPatches({ device, local, folder, audition, active, confirmP
                     if (onOp1 && !clickedControl(e.target)) start();
                   }}
                 >
-                  {device.source && (
-                    <td className="select">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${patch.path}`}
-                        checked={selected.has(patch.path)}
-                        disabled={!sendable(patch)}
-                        onChange={(e) => toggle(patch.path, e.target.checked)}
-                      />
-                    </td>
-                  )}
+                  <td className="select">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${patch.path}`}
+                      checked={selected.has(patch.path)}
+                      onChange={(e) => toggle(patch.path, e.target.checked)}
+                    />
+                  </td>
                   <th scope="row" className="name">
                     {onOp1 ? (
                       <button type="button" className="row-pick" onClick={start} aria-label={`Audition ${patch.name}`}>
@@ -222,6 +232,9 @@ export function LocalPatches({ device, local, folder, audition, active, confirmP
                         <path d={playing ? 'M6 5h12v14H6z' : 'M7 4l13 8-13 8z'} />
                       </svg>
                     </button>
+                  </td>
+                  <td>
+                    <LocalActions patch={patch} local={local} />
                   </td>
                 </tr>
                 );

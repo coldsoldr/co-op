@@ -12,6 +12,9 @@ import {
 import { messageOf } from '../core/util';
 import { PatchKeyboard } from './PatchKeyboard';
 import { AuditionBar } from './AuditionBar';
+import { BulkTools } from './BulkTools';
+import { LocalActions } from './LocalActions';
+import { localPlace } from './places';
 import { CopyOutcome } from './CopyOutcome';
 import { PatchRow } from './PatchRow';
 import { useCopyToFolder } from './useCopyToFolder';
@@ -233,6 +236,17 @@ export function PatchesTab({ local, audition, active }: { local: LocalLibrary; a
             </p>
           )}
           <CopyOutcome outcome={copier.outcome} />
+          {!copying && (
+            <BulkTools
+              place={localPlace(local)}
+              selected={chosen.map((p) => p.path)}
+              onClear={() => setSelected(new Set())}
+              onDone={() => {
+                setSelected(new Set());
+                preview.close();
+              }}
+            />
+          )}
 
           {preview.error && (
             <p role="alert" className="error">
@@ -251,22 +265,25 @@ export function PatchesTab({ local, audition, active }: { local: LocalLibrary; a
               <table className="library patches">
                 <thead>
                   <tr>
-                    {copying && (
-                      <th scope="col" className="select">
-                        <input
-                          type="checkbox"
-                          aria-label="Select all shown"
-                          checked={allOn}
-                          onChange={(e) => setSelected(new Set(e.target.checked ? shown.map((p) => p.path) : []))}
-                        />
-                      </th>
-                    )}
+                    <th scope="col" className="select">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all shown"
+                        checked={allOn}
+                        onChange={(e) => setSelected(new Set(e.target.checked ? shown.map((p) => p.path) : []))}
+                      />
+                    </th>
                     <th scope="col">Name</th>
                     <th scope="col">Kind</th>
                     <th scope="col">Size</th>
                     <th scope="col" className="play">
                       <span className="visually-hidden">Preview</span>
                     </th>
+                    {!copying && (
+                      <th scope="col">
+                        <span className="visually-hidden">Actions</span>
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -277,9 +294,8 @@ export function PatchesTab({ local, audition, active }: { local: LocalLibrary; a
                       audition={audition}
                       preview={preview}
                       load={() => bytesOf(patch)}
-                      {...(copying
-                        ? { select: { label: `Select ${patch.name}`, checked: selected.has(patch.path), onChange: (on: boolean) => toggle(patch.path, on) } }
-                        : {})}
+                      select={{ label: `Select ${patch.path}`, checked: selected.has(patch.path), onChange: (on) => toggle(patch.path, on) }}
+                      {...(copying ? {} : { actions: <LocalActions patch={patch} local={local} /> })}
                     />
                   ))}
                 </tbody>

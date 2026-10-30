@@ -61,7 +61,7 @@ Identical files are skipped, as for community copies. Files are read through the
 
 - `core/library/bulk.ts`: runs one operation over many paths and collects what worked and failed.
 - `ui/places.ts`: the OP-1 and My folder as one interface of folders and operations.
-- `ui/BulkBar.tsx`, `ui/BulkDialogs.tsx`: the shared toolbar and dialogs.
+- `ui/BulkTools.tsx`: the shared toolbar and dialogs.
 - `ui/PatchActions.tsx`: per-row actions that work with either place.
 
 ## Testing
