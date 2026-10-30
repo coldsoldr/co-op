@@ -164,10 +164,11 @@ the workshop.
    changed.
 4. Open a pull request saying what changed.
 
-Tell users in the manual or the pull request that on hundekraft a plugin is
-replaced by removing the old one first, letting the OP-1 restart, then
-installing the new one: installing a file of the same name straight over the
-old one can hang the restart.
+On hundekraft a plugin is replaced by removing the old one first, letting the
+OP-1 restart, then installing the new one: installing a file of the same name
+straight over the old one can hang the restart. co-op's Install over USB does
+this for people when it finds the plugin already there. In the workshop they
+do it by hand, so mention it in the manual or the pull request.
 
 ## Submitting it
 

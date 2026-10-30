@@ -1080,6 +1080,21 @@ dialog p.counter {
 .local-actions {
   margin-top: 12px;
 }
+.plugin-compare {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.plugin-compare th,
+.plugin-compare td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.plugin-compare td {
+  font-family: var(--mono);
+  font-size: 12px;
+}
 /* A row that can load on the OP-1. Its cells go clear, so the fill shows across the whole pill. */
 table.library tbody tr.live-row {
   background: linear-gradient(to right, var(--ok-tint) var(--fill, 0%), var(--surface) var(--fill, 0%));

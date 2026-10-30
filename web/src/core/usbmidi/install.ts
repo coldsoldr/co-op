@@ -109,7 +109,7 @@ function checkFiles(files: readonly PluginFile[]): string[] {
 }
 
 /** The inventory record that means `id` is already on the OP-1, if any. Built-ins do not count. */
-function installedAs(id: string, records: readonly InventoryRecord[]): InventoryRecord | undefined {
+export function installedAs(id: string, records: readonly InventoryRecord[]): InventoryRecord | undefined {
   const paths = ['plugins', 'content'].flatMap((dir) => [`${dir}/${id}.knl`, `${dir}/${id}.op1p`]);
   return records.find(
     (r) => paths.includes(r.path) || (r.name === id && (r.source === 'knl' || r.source === 'op1p')),
