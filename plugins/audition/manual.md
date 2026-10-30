@@ -7,7 +7,7 @@ Plays patches from co-op on your OP-1, without disk mode.
 ## What it is
 
 A tool with no screen of its own. It listens for co-op over USB, loads the patch you click onto the
-current synth slot, and keeps a copy of your own sound so you can put it back. The patch is only in
+current synth or drum slot, and keeps a copy of your own sound so you can put it back. The patch is only in
 memory: the slot's saved sound does not change unless you change the sound yourself.
 
 ## Before you start
@@ -37,14 +37,15 @@ Nothing of its own. The OP-1 shows the patch as usual, and a sampler patch shows
 
 ## Tips
 
-- Plug the OP-1 in normally, not in disk mode, and press the synth key.
+- Plug the OP-1 in normally, not in disk mode, and press the synth key, or the drum key for a kit.
 - In co-op, press Connect for audition, then click a synth patch. The row fills as the patch loads.
 - A settings-only patch loads at once. A sampler patch sends its audio, about 21 seconds for the
   full 6 seconds of sound. Clicking another patch cancels the transfer.
-- Drum kits are not auditioned on the OP-1. They preview in the browser.
-- A sampler slot sounds scrambled while its row fills, so wait until it finishes. It needs no
-  plugin memory: your slot's audio is kept in a file of about 530 KB on the OP-1 until you put it
-  back.
+- A sampled drum kit sends its audio too, about 40 seconds for the full 12 seconds of sound. A dbox
+  kit is not auditioned on the OP-1.
+- A sampler or kit slot sounds scrambled while its row fills, so wait until it finishes. It needs
+  no plugin memory: your slot's audio is kept in a file of up to about 1 MB on the OP-1 until you
+  put it back.
 
 ## What is saved
 

@@ -31,6 +31,7 @@ import { UsbCheck } from './UsbCheck';
 import { AuditionBar, clickedControl, transferRow } from './AuditionBar';
 import { LocalPatches } from './LocalPatches';
 import { inFolder } from '../core/library/local-library';
+import { canAudition } from '../core/usbmidi/audition';
 import type { Audition } from './useAudition';
 import { PatchActions } from './PatchActions';
 import type { LocalLibrary } from './useLocalLibrary';
@@ -704,7 +705,7 @@ const Row = memo(function Row({
     onTogglePlay(row.path).catch((e: unknown) => setError(`cannot play: ${messageOf(e)}`));
   }
 
-  const onOp1 = audition.ready && row.kind === 'synth' && row.info !== null;
+  const onOp1 = audition.ready && row.info !== null && canAudition(row.info.meta);
   const id = `drive:${row.path}`;
   const start = (): void => void audition.play(id, displayName(row), { load: () => read(row.path), meta: row.info?.meta ?? null });
 

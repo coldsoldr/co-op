@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SynthMeta } from '../codec/op1-meta';
+import type { Op1Meta, SynthMeta } from '../codec/op1-meta';
 import { pack7, unpack7 } from './framing';
 import {
   NO_PLUGIN_REPLY,
@@ -8,6 +8,7 @@ import {
   collectReport,
   encodeAuditionPatch,
   measureSpeed,
+  needsAudio,
   parseAuditionReply,
   runSpeedTest,
   secondsToSend,
@@ -94,7 +95,7 @@ describe('encodeAuditionPatch', () => {
     const frame = encodeAuditionPatch(meta()) as Uint8Array;
     const size = (frame[0] as number) | ((frame[1] as number) << 8);
     expect(frame.length).toBe(size + 6);
-    expect([...frame.subarray(2, 6)]).toEqual([2, 2, 255, 2]);
+    expect([...frame.subarray(2, 6)]).toEqual([3, 2, 255, 2]);
     expect(new DataView(frame.buffer).getInt16(2 + 4 + 14, true)).toBe(-3);
     let sum = 0;
     for (const byte of frame.subarray(2, 2 + size)) sum += byte;
@@ -118,6 +119,52 @@ describe('encodeAuditionPatch', () => {
   it('keeps a name printable, and never leaves it empty', () => {
     const frame = encodeAuditionPatch(meta({ name: 'é' })) as Uint8Array;
     expect(new TextDecoder().decode(frame)).toContain('audition');
+  });
+});
+
+describe('drum kits', () => {
+  const kit = (over: Record<string, unknown> = {}): Op1Meta =>
+    ({
+      type: 'drum',
+      name: 'dust kit',
+      octave: 0,
+      drum_version: 2,
+      dyna_env: [0, 8192, 0, 8192, 0, 0, 0, 0],
+      fx_active: false,
+      fx_params: [8000, 8000, 8000, 8000, 8000, 8000, 8000, 8000],
+      fx_type: 'delay',
+      lfo_active: false,
+      lfo_params: [16000, 16000, 16000, 16000, 0, 0, 0, 0],
+      lfo_type: 'tremolo',
+      start: new Array(24).fill(0).map((_, i) => i * 1_000_000),
+      end: new Array(24).fill(1_300_000_000),
+      pitch: new Array(24).fill(-1),
+      playmode: new Array(24).fill(8192),
+      reverse: new Array(24).fill(8192),
+      volume: new Array(24).fill(8192),
+      ...over,
+    }) as unknown as Op1Meta;
+
+  it('lays out the pad arrays before the names', () => {
+    const frame = encodeAuditionPatch(kit(), Uint8Array.of(1, 2)) as Uint8Array;
+    const view = new DataView(frame.buffer);
+    expect(frame[3]).toBe(4);
+    expect(view.getInt32(2 + 84 + 4, true)).toBe(1_000_000);
+    expect(view.getInt32(2 + 84 + 24 * 4, true)).toBe(1_300_000_000);
+    expect(view.getInt32(2 + 84 + 2 * 24 * 4, true)).toBe(-1);
+    expect(new TextDecoder().decode(frame).endsWith('dust kit\0' + new TextDecoder().decode(frame.subarray(-4)))).toBe(true);
+  });
+
+  it('refuses a kit with no audio, short arrays, and a synthesised kit', () => {
+    expect(encodeAuditionPatch(kit())).toBeNull();
+    expect(encodeAuditionPatch(kit({ start: [1, 2] }), Uint8Array.of(1))).toBeNull();
+    expect(canAudition(kit({ type: 'dbox' }))).toBe(false);
+    expect(canAudition(kit())).toBe(true);
+    expect(needsAudio(kit())).toBe(true);
+  });
+
+  it('allows a kit its 12 s', () => {
+    expect((encodeAuditionAudio({ pcm: new Float32Array(600000), sampleRate: 44100 }, true) as Uint8Array).length).toBe(1058384);
   });
 });
 

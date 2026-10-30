@@ -21,7 +21,7 @@ export function AuditionBar({ audition }: { audition: Audition }) {
         <strong>{audition.current ? `On the OP-1: ${audition.current.name}` : audition.ready ? 'OP-1 connected' : 'Audition on your OP-1'}</strong>
         <p className="muted">
           {audition.ready
-            ? 'Click a synth patch to load it on the current slot. If you turn a knob during an audition, the OP-1 saves that sound over the slot.'
+            ? 'Click a patch to load it on the current slot, with the synth or drum key pressed to match. A kit can take about 40 seconds. If you turn a knob during an audition, the OP-1 saves that sound over the slot.'
             : 'Needs hundekraft 3.0.3 with the audition plugin, and the OP-1 plugged in normally, not in disk mode.'}
         </p>
       </div>

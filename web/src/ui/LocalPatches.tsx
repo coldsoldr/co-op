@@ -165,7 +165,7 @@ export function LocalPatches({ device, local, folder, audition, active, confirmP
             </thead>
             <tbody>
               {patches.map((patch) => {
-                const onOp1 = audition.ready && patch.kind === 'synth' && patch.error === null;
+                const onOp1 = audition.ready && (patch.kind === 'synth' || patch.engine === 'drum') && patch.error === null;
                 const id = `local:${patch.path}`;
                 const load = (): Promise<Uint8Array> => {
                   if (!local.folder) throw new Error('the folder is no longer open');

@@ -2,7 +2,7 @@
  * Talks to the audition proof-of-concept plugin (te-op1-cfw, ports/knl/audition): control changes on
  * channel 16, because plugins are not given SysEx. CC 118 asks, CC 119 answers.
  */
-import { isSynthMeta, type Op1Meta } from '../codec/op1-meta';
+import { isSynthMeta, type Op1Meta, type SampleKitMeta } from '../codec/op1-meta';
 import { pack7 } from './framing';
 import type { MidiPort } from './session';
 
@@ -24,7 +24,7 @@ export const AUDITION_REQUEST = {
 } as const;
 export type AuditionRequest = keyof typeof AUDITION_REQUEST;
 
-export type AuditionReply = 'applied' | 'put back' | 'not synth' | 'nothing to put back' | 'busy' | 'hello' | 'report' | 'bad patch' | 'no room' | 'ready' | 'other slot';
+export type AuditionReply = 'applied' | 'put back' | 'not synth' | 'nothing to put back' | 'busy' | 'hello' | 'report' | 'bad patch' | 'no room' | 'ready' | 'other slot' | 'not drum';
 
 const REPLIES: Readonly<Record<number, AuditionReply>> = {
   1: 'applied',
@@ -38,6 +38,7 @@ const REPLIES: Readonly<Record<number, AuditionReply>> = {
   9: 'no room',
   10: 'ready',
   11: 'other slot',
+  12: 'not drum',
 };
 
 /** What a reply means, for people. */
@@ -46,6 +47,7 @@ export const AUDITION_MESSAGES: Record<AuditionReply, string> = {
   applied: 'The test sound is on the current synth slot. Play the keys.',
   'put back': 'Your own sound is back in the slot.',
   'not synth': 'Press the synth key on the OP-1 first, and close any sound editor.',
+  'not drum': 'Press the drum key on the OP-1 first, and close any sound editor.',
   'nothing to put back': 'There is nothing to put back: no audition is running.',
   busy: 'The OP-1 was busy saving. Try again.',
   report: 'Speed report received.',
@@ -80,14 +82,18 @@ export function sendAudition(port: MidiPort, request: AuditionRequest, timeoutMs
 /** Patch and speed test data: polyphonic pressure on channel 15, 14 bits a message. */
 const PRESSURE_CHANNEL_15 = 0xae;
 
-const FRAME_FORMAT = 2;
+const FRAME_FORMAT = 3;
 const WORDS = 8;
+const PADS = 24;
 const FLAG_FX = 1;
 const FLAG_LFO = 2;
+const FLAG_DRUM = 4;
 const MAX_NAME = 39;
-const MAX_PAYLOAD = 400;
+const MAX_PAYLOAD = 800;
 /** The synth sampler's buffer: 6 s at 44.1 kHz, after its guard samples. */
 export const MAX_AUDIO_BYTES = (264_600 - 8) * 2;
+/** A drum kit's buffer: 12 s. */
+export const MAX_KIT_BYTES = (529_200 - 8) * 2;
 const AUDIO_RATE = 44_100;
 /** Below the measured ceiling of 18,479 messages a second, which other computers may not reach. */
 const SEND_RATE = 15_000;
@@ -106,18 +112,20 @@ export interface AuditionAudio {
   sampleRate: number;
 }
 
-/** True for a patch that can play on the OP-1: a synth patch, whose audio is only needed by a sampler. */
+const isKit = (meta: Op1Meta | null): meta is SampleKitMeta => meta?.type === 'drum';
+
+/** True for a patch that can play on the OP-1: a synth patch or a sampled kit. A synthesised kit cannot. */
 export function canAudition(meta: Op1Meta | null): boolean {
-  return isSynthMeta(meta);
+  return isSynthMeta(meta) || isKit(meta);
 }
 
 /** True for a patch whose audio has to go too. */
-export const needsAudio = (meta: Op1Meta | null): boolean => isSynthMeta(meta) && meta.type === 'sampler';
+export const needsAudio = (meta: Op1Meta | null): boolean => isKit(meta) || (isSynthMeta(meta) && meta.type === 'sampler');
 
 /** A sampler's audio as the OP-1 holds it, or null when it does not fit that form. */
-export function encodeAuditionAudio(audio: AuditionAudio): Uint8Array | null {
+export function encodeAuditionAudio(audio: AuditionAudio, kit = false): Uint8Array | null {
   if (audio.sampleRate !== AUDIO_RATE) return null;
-  const samples = Math.min(audio.pcm.length, MAX_AUDIO_BYTES / 2);
+  const samples = Math.min(audio.pcm.length, (kit ? MAX_KIT_BYTES : MAX_AUDIO_BYTES) / 2);
   const bytes = new Uint8Array(samples * 2);
   const view = new DataView(bytes.buffer);
   for (let i = 0; i < samples; i++) {
@@ -131,23 +139,33 @@ export function encodeAuditionAudio(audio: AuditionAudio): Uint8Array | null {
  * Patch fields are checked here because the OP-1's parser stops on values it does not expect.
  */
 export function encodeAuditionPatch(meta: Op1Meta | null, audio: Uint8Array | null = null): Uint8Array | null {
-  if (!isSynthMeta(meta)) return null;
-  const sampler = needsAudio(meta);
-  if (sampler !== (audio !== null)) return null;
-  if (sampler && !(typeof meta.base_freq === 'number' && meta.base_freq > 0)) return null;
-  const groups = [meta.knobs, meta.adsr, meta.fx_params, meta.lfo_params];
+  if (!canAudition(meta) || !meta) return null;
+  const kit = isKit(meta);
+  const sampler = !kit && needsAudio(meta);
+  if ((kit || sampler) !== (audio !== null)) return null;
+  const baseFreq = sampler ? (meta as { base_freq?: number }).base_freq : 0;
+  if (sampler && !(typeof baseFreq === 'number' && baseFreq > 0)) return null;
+  const synth = isSynthMeta(meta) ? meta : null;
+  const groups = [synth?.knobs ?? new Array<number>(WORDS).fill(0), synth?.adsr ?? (meta as SampleKitMeta).dyna_env, meta.fx_params, meta.lfo_params];
+  const pads = kit ? [meta.start, meta.end, meta.pitch, meta.playmode, meta.reverse, meta.volume] : [];
+  if (!pads.every((a) => Array.isArray(a) && a.length === PADS && a.every((n) => Number.isInteger(n) && Math.abs(n) <= 0x7fffffff))) return null;
+  const version = kit ? meta.drum_version : synth?.synth_version;
   const name = meta.name.replace(/[^\x20-\x7e]/g, '').slice(0, MAX_NAME) || 'audition';
   const names = [meta.type, meta.fx_type, meta.lfo_type, name];
   if (!groups.every((g) => Array.isArray(g) && g.length === WORDS && g.every(isWord)) || !names.every(validName)) return null;
   if (!Number.isInteger(meta.octave) || Math.abs(meta.octave) > 127) return null;
-  if (!Number.isInteger(meta.synth_version) || meta.synth_version < 0 || meta.synth_version > 255) return null;
-  const payload: number[] = [FRAME_FORMAT, (meta.fx_active ? FLAG_FX : 0) | (meta.lfo_active ? FLAG_LFO : 0), meta.octave & 0xff, meta.synth_version];
+  if (!Number.isInteger(version) || (version as number) < 0 || (version as number) > 255) return null;
+  const flags = (meta.fx_active ? FLAG_FX : 0) | (meta.lfo_active ? FLAG_LFO : 0) | (kit ? FLAG_DRUM : 0);
+  const payload: number[] = [FRAME_FORMAT, flags, meta.octave & 0xff, version as number];
   for (const group of groups) for (const word of group) payload.push(word & 0xff, (word >> 8) & 0xff);
   const numbers = new DataView(new ArrayBuffer(16));
-  numbers.setFloat64(0, sampler ? (meta.base_freq as number) : 0, true);
+  numbers.setFloat64(0, baseFreq as number, true);
   numbers.setUint32(8, audio?.length ?? 0, true);
   numbers.setUint32(12, audio ? sumOf(audio) : 0, true);
   payload.push(...new Uint8Array(numbers.buffer));
+  for (const array of pads) {
+    for (const value of array) payload.push(value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff);
+  }
   for (const text of names) {
     for (let i = 0; i < text.length; i++) payload.push(text.charCodeAt(i));
     payload.push(0);

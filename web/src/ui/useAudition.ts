@@ -16,7 +16,7 @@ import { messageOf } from '../core/util';
 import { openOp1Port } from './webmidi';
 
 const NOT_LOADED = 'This patch cannot be auditioned on the OP-1: its settings or audio are not in the form the plugin takes.';
-const DRIVE_GONE = 'This sampler patch is on the OP-1 drive, which cannot be read out of disk mode. Audition it from your local folder.';
+const DRIVE_GONE = 'This patch holds audio and is on the OP-1 drive, which cannot be read out of disk mode. Audition it from your local folder.';
 
 /** What the plugin needs to play a patch. */
 export interface AuditionSource {
@@ -113,7 +113,7 @@ export function useAudition(): Audition {
         try {
           const patch = readPatch(await source.load());
           meta = patch.meta;
-          if (needsAudio(meta)) audio = encodeAuditionAudio({ pcm: decodePcm(patch), sampleRate: patch.comm.sampleRate });
+          if (needsAudio(meta)) audio = encodeAuditionAudio({ pcm: decodePcm(patch), sampleRate: patch.comm.sampleRate }, meta?.type === 'drum');
         } catch (e) {
           if (!meta) throw e;
           if (needsAudio(meta)) throw new Error(DRIVE_GONE, { cause: e });

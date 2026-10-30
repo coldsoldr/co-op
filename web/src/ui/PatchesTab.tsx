@@ -24,7 +24,7 @@ const ANY_FOLDER = '/';
 type Source = 'local' | 'community';
 
 /** Worked out from the list, before a patch is read. */
-const playsOnOp1 = (patch: LocalPatch): boolean => patch.kind === 'synth' && patch.error === null;
+const playsOnOp1 = (patch: LocalPatch): boolean => (patch.kind === 'synth' || patch.engine === 'drum') && patch.error === null;
 
 
 /** Community patches and the person's own folder. It needs no OP-1: nothing has to be plugged in. */

@@ -153,8 +153,9 @@ the plan above:
   straight in the slot's sample buffer, because plugin memory is too short for a 1 MB holding
   buffer (the owner's OP-1 refused one). The slot sounds scrambled during the transfer. Put my sound
   back, or a failed check, restores it and deletes the file. The slot's sample file is never marked
-  changed. A sampler patch must be 44.1 kHz; only the buffer's 6 s is sent. Drum kits still preview
-  in the browser.
+  changed. A sampler patch must be 44.1 kHz; only the buffer's 6 s is sent.
+- Sampled drum kits audition the same way, through the firmware's drum load (0x01A04C48, then
+  0x01A006C0) and its 12 s buffer, at about 40 s for a full kit. dbox kits preview only.
 - The Library's local folders stack as a tree, and a folder shows its own patches and those inside.
 
 ## Parked
