@@ -165,7 +165,7 @@ test('plays community patches and opens a keyboard, with nothing plugged in', as
 
   await page.locator('#panel-patches').getByLabel('Kind').selectOption('drum');
   await expect(rows.first()).toBeVisible();
-  await page.getByRole('button', { name: 'My folder' }).click();
+  await page.getByRole('button', { name: 'My folder', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Choose a folder' })).toBeVisible();
 });
 

@@ -10,9 +10,11 @@ import {
   type LocalPatch,
 } from '../core/library/local-library';
 import { messageOf } from '../core/util';
-import { formatSize } from './format';
 import { PatchKeyboard } from './PatchKeyboard';
-import { AuditionBar, clickedControl, transferRow } from './AuditionBar';
+import { AuditionBar } from './AuditionBar';
+import { CopyOutcome } from './CopyOutcome';
+import { PatchRow } from './PatchRow';
+import { useCopyToFolder } from './useCopyToFolder';
 import type { Audition } from './useAudition';
 import { usePatchPreview } from './usePatchPreview';
 import type { LocalLibrary } from './useLocalLibrary';
@@ -23,10 +25,6 @@ const ANY_FOLDER = '/';
 
 type Source = 'local' | 'community';
 
-/** Worked out from the list, before a patch is read. */
-const playsOnOp1 = (patch: LocalPatch): boolean => (patch.kind === 'synth' || patch.engine === 'drum' || patch.engine === 'dbox') && patch.error === null;
-
-
 /** Community patches and the person's own folder. It needs no OP-1: nothing has to be plugged in. */
 export function PatchesTab({ local, audition, active }: { local: LocalLibrary; audition: Audition; active: boolean }) {
   const [source, setSource] = useState<Source>('local');
@@ -34,6 +32,8 @@ export function PatchesTab({ local, audition, active }: { local: LocalLibrary; a
   const [community, setCommunity] = useState<LocalPatch[] | null>(null);
   const [communityError, setCommunityError] = useState<string | null>(null);
   const preview = usePatchPreview(active);
+  const copier = useCopyToFolder(local);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
 
   const loadCommunity = useCallback(() => {
     fetchIndex(import.meta.env.BASE_URL)
@@ -49,6 +49,9 @@ export function PatchesTab({ local, audition, active }: { local: LocalLibrary; a
   const folders = useMemo(() => localFolders(patches), [patches]);
   const engines = useMemo(() => localEngines(patches), [patches]);
   const shown = filterLocal(patches, filter);
+  const copying = source === 'community';
+  const chosen = shown.filter((p) => selected.has(p.path));
+  const allOn = shown.length > 0 && chosen.length === shown.length;
 
   /** Sets one criterion; undefined clears it. */
   function set<K extends keyof LocalFilter>(key: K, value: LocalFilter[K] | undefined): void {
@@ -61,6 +64,7 @@ export function PatchesTab({ local, audition, active }: { local: LocalLibrary; a
   function pickSource(next: Source): void {
     setSource(next);
     setFilter({});
+    setSelected(new Set());
     preview.close();
   }
 
@@ -70,8 +74,16 @@ export function PatchesTab({ local, audition, active }: { local: LocalLibrary; a
     return local.folder.read(patch.path);
   }
 
-  function auditionPatch(patch: LocalPatch): void {
-    void audition.play(patch.path, patch.name, { load: () => bytesOf(patch) });
+  function toggle(path: string, on: boolean): void {
+    const next = new Set(selected);
+    if (on) next.add(path);
+    else next.delete(path);
+    setSelected(next);
+  }
+
+  async function copyChosen(): Promise<void> {
+    await copier.copy(chosen);
+    setSelected(new Set());
   }
 
   const needsFolder = source === 'local' && !local.folder;
@@ -116,7 +128,7 @@ export function PatchesTab({ local, audition, active }: { local: LocalLibrary; a
         <div className="connect">
           <p>
             Keep your patches in a folder on your computer and browse them here. Nothing needs to be plugged in, and co-op
-            only reads the folder.
+            writes to the folder only when you copy patches into it.
           </p>
           <div className="plugin-buttons">
             {local.remembered && (
@@ -213,6 +225,15 @@ export function PatchesTab({ local, audition, active }: { local: LocalLibrary; a
                 : `${shown.length} of ${patches.length} patch file(s) in ${where}`}
           </p>
 
+          {copying && (
+            <p>
+              <button type="button" className="primary" onClick={() => void copyChosen()} disabled={copier.busy || chosen.length === 0}>
+                {copier.label(chosen.length)}
+              </button>
+            </p>
+          )}
+          <CopyOutcome outcome={copier.outcome} />
+
           {preview.error && (
             <p role="alert" className="error">
               {preview.error}
@@ -230,6 +251,16 @@ export function PatchesTab({ local, audition, active }: { local: LocalLibrary; a
               <table className="library patches">
                 <thead>
                   <tr>
+                    {copying && (
+                      <th scope="col" className="select">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all shown"
+                          checked={allOn}
+                          onChange={(e) => setSelected(new Set(e.target.checked ? shown.map((p) => p.path) : []))}
+                        />
+                      </th>
+                    )}
                     <th scope="col">Name</th>
                     <th scope="col">Kind</th>
                     <th scope="col">Size</th>
@@ -239,52 +270,18 @@ export function PatchesTab({ local, audition, active }: { local: LocalLibrary; a
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.map((patch) => {
-                    const onOp1 = audition.ready && playsOnOp1(patch);
-                    const playing = preview.playing === patch.path;
-                    const noPreview = patch.preview === false;
-                    return (
-                      <tr
-                        key={patch.path}
-                        data-path={patch.path}
-                        {...(onOp1 ? transferRow(audition, patch.path) : {})}
-                        onClick={(e) => {
-                          if (onOp1 && !clickedControl(e.target)) auditionPatch(patch);
-                        }}
-                      >
-                        <th scope="row" className="name">
-                          {onOp1 ? (
-                            <button type="button" className="row-pick" onClick={() => auditionPatch(patch)} aria-label={`Audition ${patch.name}`}>
-                              {patch.name}
-                            </button>
-                          ) : (
-                            patch.name
-                          )}
-                          <code className="file">{patch.path}</code>
-                          {(patch.engine || patch.fx) && <span className="sound">{[patch.engine, patch.fx].filter(Boolean).join(' · ')}</span>}
-                          {noPreview && <span className="sound">no preview</span>}
-                          {patch.error && <span className="row-error">{patch.error}</span>}
-                        </th>
-                        <td className="kind">{patch.kind}</td>
-                        <td className="size">{patch.error ? '' : formatSize(patch.sizeBytes)}</td>
-                        <td className="play">
-                          <button
-                            type="button"
-                            className={`play-key ${patch.kind}`}
-                            disabled={noPreview || patch.error !== null}
-                            title={noPreview ? 'No preview: the OP-1 only stored its voice clip' : 'Preview in the browser'}
-                            aria-label={`${playing ? 'Stop' : 'Preview'} ${patch.name}`}
-                            aria-pressed={playing}
-                            onClick={() => void preview.toggle(patch.path, patch.name, () => bytesOf(patch))}
-                          >
-                            <svg aria-hidden="true" viewBox="0 0 24 24">
-                              <path d={playing ? 'M6 5h12v14H6z' : 'M7 4l13 8-13 8z'} />
-                            </svg>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {shown.map((patch) => (
+                    <PatchRow
+                      key={patch.path}
+                      patch={patch}
+                      audition={audition}
+                      preview={preview}
+                      load={() => bytesOf(patch)}
+                      {...(copying
+                        ? { select: { label: `Select ${patch.name}`, checked: selected.has(patch.path), onChange: (on: boolean) => toggle(patch.path, on) } }
+                        : {})}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>
