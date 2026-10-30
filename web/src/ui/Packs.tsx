@@ -10,15 +10,22 @@ import {
   installPatches,
   type PackFilter,
 } from '../core/catalogue/catalogue';
-import { decodePcm, readPatch } from '../core/codec/patch';
+import { packPatches } from '../core/library/local-library';
 import { getProfile, profiles } from '../core/profiles/registry';
 import { joinPath } from '../core/store/store';
 import { findUnsupported } from '../core/profiles/guard';
 import { useConfirmUnsupported } from './ConfirmUnsupported';
 import { usePluginPrompt } from './PluginPrompt';
-import { playPcm } from './audio';
+import { AuditionBar } from './AuditionBar';
+import { CopyOutcome } from './CopyOutcome';
 import { formatSize } from './format';
+import { PatchKeyboard } from './PatchKeyboard';
+import { PatchRow } from './PatchRow';
+import type { Audition } from './useAudition';
+import { useCopyToFolder, type CopyToFolder } from './useCopyToFolder';
 import type { Device } from './useDevice';
+import type { LocalLibrary } from './useLocalLibrary';
+import { usePatchPreview } from './usePatchPreview';
 import { messageOf } from '../core/util';
 
 /** The contributor guide, linked from "Share a pack". */
@@ -31,6 +38,8 @@ const base = (): string => import.meta.env.BASE_URL;
 interface PacksProps {
   /** The connection shared with the Library tab. */
   device: Device;
+  local: LocalLibrary;
+  audition: Audition;
   /** False while the tab is hidden: the index is not fetched yet and playback stops. */
   active: boolean;
   /** Switches to the Library tab (and focuses it), to connect a device. */
@@ -38,7 +47,8 @@ interface PacksProps {
 }
 
 /** The community pack catalogue: browse, preview and install packs published with the app. */
-export function Packs({ device, active, onOpenLibrary }: PacksProps) {
+export function Packs({ device, local, audition, active, onOpenLibrary }: PacksProps) {
+  const copier = useCopyToFolder(local);
   const [index, setIndex] = useState<PackIndex | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const requested = useRef(false);
@@ -87,6 +97,8 @@ export function Packs({ device, active, onOpenLibrary }: PacksProps) {
           key={open.slug}
           pack={open}
           device={device}
+          audition={audition}
+          copier={copier}
           active={active}
           onBack={() => {
             setReturnTo(open.slug);
@@ -96,7 +108,7 @@ export function Packs({ device, active, onOpenLibrary }: PacksProps) {
         />
       )}
       {index && !open && (
-        <PackList index={index} filter={filter} onFilter={setFilter} onOpen={setOpenSlug} returnTo={returnTo} />
+        <PackList index={index} filter={filter} onFilter={setFilter} onOpen={setOpenSlug} returnTo={returnTo} copier={copier} />
       )}
     </section>
   );
@@ -108,9 +120,10 @@ interface PackListProps {
   onFilter: (filter: PackFilter) => void;
   onOpen: (slug: string) => void;
   returnTo: string | null;
+  copier: CopyToFolder;
 }
 
-function PackList({ index, filter, onFilter, onOpen, returnTo }: PackListProps) {
+function PackList({ index, filter, onFilter, onOpen, returnTo, copier }: PackListProps) {
   const shown = filterPacks(index, filter);
   const tags = useMemo(() => [...new Set(index.packs.flatMap((p) => p.tags))].sort(), [index]);
   const firmware = useMemo(
@@ -190,16 +203,17 @@ function PackList({ index, filter, onFilter, onOpen, returnTo }: PackListProps) 
           : `${shown.length} of ${plural(index.packs.length, 'pack', 'packs')}`}
       </p>
       {shown.length === 0 && <p>No packs match these filters.</p>}
+      <CopyOutcome outcome={copier.outcome} />
       <div className="pack-grid">
         {shown.map((pack) => (
-          <PackCard key={pack.slug} pack={pack} onOpen={onOpen} focus={pack.slug === returnTo} />
+          <PackCard key={pack.slug} pack={pack} onOpen={onOpen} focus={pack.slug === returnTo} copier={copier} />
         ))}
       </div>
     </>
   );
 }
 
-function PackCard({ pack, onOpen, focus }: { pack: PackIndexEntry; onOpen: (slug: string) => void; focus: boolean }) {
+function PackCard({ pack, onOpen, focus, copier }: { pack: PackIndexEntry; onOpen: (slug: string) => void; focus: boolean; copier: CopyToFolder }) {
   const headingId = useId();
   const viewRef = useRef<HTMLButtonElement>(null);
   // Back from the detail view returns focus to the button that opened it.
@@ -224,6 +238,9 @@ function PackCard({ pack, onOpen, focus }: { pack: PackIndexEntry; onOpen: (slug
       <p>{pack.description}</p>
       <button ref={viewRef} type="button" aria-label={`View ${pack.name}`} onClick={() => onOpen(pack.slug)}>
         View
+      </button>{' '}
+      <button type="button" aria-label={`Copy ${pack.name} to My folder`} disabled={copier.busy} onClick={() => void copier.copy(packPatches(pack))}>
+        {copier.label(pack.patches.length)}
       </button>
     </article>
   );
@@ -232,6 +249,8 @@ function PackCard({ pack, onOpen, focus }: { pack: PackIndexEntry; onOpen: (slug
 interface PackDetailProps {
   pack: PackIndexEntry;
   device: Device;
+  audition: Audition;
+  copier: CopyToFolder;
   active: boolean;
   onBack: () => void;
   onOpenLibrary: () => void;
@@ -263,37 +282,21 @@ function folderOptions(device: Device, kind: PackKind, slug: string): string[] {
   return [...out.values()];
 }
 
-function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailProps) {
+function PackDetail({ pack, device, audition, copier, active, onBack, onOpenLibrary }: PackDetailProps) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [targets, setTargets] = useState<Partial<Record<PackKind, string>>>({});
   const [working, setWorking] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const { confirmUnsupported, dialog } = useConfirmUnsupported();
   const { confirmPlugins, dialog: pluginDialog } = usePluginPrompt(device);
-  const [playing, setPlaying] = useState<string | null>(null);
-  const [playError, setPlayError] = useState<string | null>(null);
-  const stopRef = useRef<(() => void) | null>(null);
-  const playingRef = useRef<string | null>(null);
-  const playToken = useRef(0);
-  const activeRef = useRef(active);
+  const preview = usePatchPreview(active);
+  const patches = useMemo(() => packPatches(pack), [pack]);
+  const notes = useMemo(() => new Map(pack.patches.map((p) => [p.file, p.notes])), [pack]);
+  const chosenPatches = patches.filter((p) => p.pack && selected.has(p.pack.file));
   const headingRef = useRef<HTMLHeadingElement>(null);
   const noticeId = useId();
 
   useEffect(() => headingRef.current?.focus(), []);
-  useEffect(() => {
-    activeRef.current = active;
-    if (!active) {
-      playToken.current++;
-      stopRef.current?.();
-    }
-  }, [active]);
-  useEffect(
-    () => () => {
-      playToken.current++;
-      stopRef.current?.();
-    },
-    [],
-  );
 
   const connected = device.source !== null;
   const staged = device.source?.staged != null;
@@ -305,31 +308,10 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
     return chosen !== undefined && options.includes(chosen) ? chosen : (options[0] as string);
   };
 
-  async function play(file: string, sha256: string): Promise<void> {
-    const token = ++playToken.current;
-    const wasPlaying = stopRef.current !== null && playingRef.current === file;
-    stopRef.current?.();
-    setPlayError(null);
-    if (wasPlaying) return;
-    try {
-      const bytes = await fetchPatchBytes(base(), pack.slug, file, sha256);
-      // A later click, hiding the tab or leaving the pack while downloading wins.
-      if (token !== playToken.current || !activeRef.current) return;
-      const patch = readPatch(bytes);
-      const stop = playPcm(decodePcm(patch), patch.comm.sampleRate, () => {
-        if (stopRef.current === stop) {
-          stopRef.current = null;
-          playingRef.current = null;
-          setPlaying(null);
-        }
-      });
-      stopRef.current = stop;
-      playingRef.current = file;
-      setPlaying(file);
-    } catch (e) {
-      if (token === playToken.current) setPlayError(`cannot play ${file}: ${messageOf(e)}`);
-    }
-  }
+  const loadOf = (patch: (typeof patches)[number]) => () => {
+    const { slug, file, sha256 } = patch.pack as NonNullable<typeof patch.pack>;
+    return fetchPatchBytes(base(), slug, file, sha256);
+  };
 
   async function install(files: readonly string[]): Promise<void> {
     const key = device.source?.key;
@@ -402,7 +384,17 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
         </p>
       )}
 
-      <table className="library pack">
+      <AuditionBar audition={audition} />
+      {preview.error && (
+        <p role="alert" className="error">
+          {preview.error}
+        </p>
+      )}
+      {preview.open && active && (
+        <PatchKeyboard name={preview.open.name} player={preview.open.player} kit={preview.open.kit} onClose={preview.close} />
+      )}
+
+      <table className="library pack patches">
         <caption>Patches in {pack.name}</caption>
         <thead>
           <tr>
@@ -410,61 +402,65 @@ function PackDetail({ pack, device, active, onBack, onOpenLibrary }: PackDetailP
               <span className="visually-hidden">Select</span>
             </th>
             <th scope="col">Name</th>
-            <th scope="col">File</th>
             <th scope="col">Kind</th>
-            <th scope="col">Engine</th>
             <th scope="col">Size</th>
-            <th scope="col">Preview</th>
+            <th scope="col" className="play">
+              <span className="visually-hidden">Preview</span>
+            </th>
           </tr>
         </thead>
         <tbody>
-          {pack.patches.map((p) => (
-            <tr key={p.file}>
-              <td className="select">
-                <input
-                  type="checkbox"
-                  aria-label={`Select ${p.file}`}
-                  checked={selected.has(p.file)}
-                  onChange={(e) => {
+          {patches.map((patch) => {
+            const file = patch.pack?.file ?? patch.path;
+            const note = notes.get(file);
+            return (
+              <PatchRow
+                key={patch.path}
+                patch={patch}
+                audition={audition}
+                preview={preview}
+                load={loadOf(patch)}
+                file={file}
+                {...(note ? { notes: note } : {})}
+                select={{
+                  label: `Select ${file}`,
+                  checked: selected.has(file),
+                  onChange: (on) => {
                     const next = new Set(selected);
-                    if (e.target.checked) next.add(p.file);
-                    else next.delete(p.file);
+                    if (on) next.add(file);
+                    else next.delete(file);
                     setSelected(next);
-                  }}
-                />
-              </td>
-              <th scope="row" className="name">
-                {p.name || p.file}
-                {p.notes && (
-                  <ul className="details">
-                    <li className="muted">{p.notes}</li>
-                  </ul>
-                )}
-              </th>
-              <td className="file">
-                <code>{p.file}</code>
-              </td>
-              <td className="kind">{p.kind}</td>
-              <td>{p.engine}</td>
-              <td className="size">{formatSize(p.sizeBytes)}</td>
-              <td>
-                <button
-                  type="button"
-                  aria-label={`${playing === p.file ? 'Stop' : 'Play'} ${p.file}`}
-                  onClick={() => void play(p.file, p.sha256)}
-                >
-                  {playing === p.file ? 'Stop' : 'Play'}
-                </button>
-              </td>
-            </tr>
-          ))}
+                  },
+                }}
+              />
+            );
+          })}
         </tbody>
       </table>
-      {playError && (
-        <p role="alert" className="error">
-          {playError}
+
+      <div className="panel">
+        <h4>Copy to My folder</h4>
+        <p>
+          <button
+            type="button"
+            aria-label="Copy selected to My folder"
+            onClick={() => void copier.copy(chosenPatches)}
+            disabled={copier.busy || chosenPatches.length === 0}
+          >
+            {copier.label(chosenPatches.length)}
+          </button>{' '}
+          <button
+            type="button"
+            aria-label="Copy all to My folder"
+            className="primary"
+            onClick={() => void copier.copy(patches)}
+            disabled={copier.busy}
+          >
+            {copier.label(patches.length)}
+          </button>
         </p>
-      )}
+        <CopyOutcome outcome={copier.outcome} />
+      </div>
 
       <div className="panel">
         <h4>Install</h4>

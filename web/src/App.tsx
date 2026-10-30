@@ -151,7 +151,7 @@ export function App() {
           <Library device={device} local={local} audition={audition} active={op1 && tab === 'library'} op1fun={op1fun} />
         </div>
         <div role="tabpanel" id="panel-packs" aria-labelledby="tab-packs" hidden={tab !== 'packs'}>
-          <Packs device={device} active={tab === 'packs'} onOpenLibrary={openLibrary} />
+          <Packs device={device} local={local} audition={audition} active={tab === 'packs'} onOpenLibrary={openLibrary} />
         </div>
         <div role="tabpanel" id="panel-patches" aria-labelledby="tab-patches" hidden={tab !== 'patches'}>
           <PatchesTab local={local} audition={audition} active={op1 && tab === 'patches'} />
