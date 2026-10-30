@@ -3,6 +3,7 @@ import { fetchIndex, fetchPatchBytes } from '../core/catalogue/catalogue';
 import { decodePcm, readPatch } from '../core/codec/patch';
 import type { PatchKind } from '../core/codec/op1-meta';
 import { hasPreview, keyPlan } from '../core/codec/preview';
+import { canAudition } from '../core/usbmidi/audition';
 import {
   communityPatches,
   filterLocal,
@@ -15,6 +16,7 @@ import { messageOf } from '../core/util';
 import { formatSize } from './format';
 import { KeyboardPlayer } from './keyboard-player';
 import { PatchKeyboard } from './PatchKeyboard';
+import { useAudition } from './useAudition';
 import type { LocalLibrary } from './useLocalLibrary';
 
 const KINDS: readonly PatchKind[] = ['synth', 'drum'];
@@ -23,6 +25,9 @@ const ANY_FOLDER = '/';
 const NO_PREVIEW = 'This patch holds no preview: the OP-1 only stored its voice clip here.';
 
 type Source = 'local' | 'community';
+
+/** Worked out from the list, before a patch is read: settings only, so it can play on the OP-1. */
+const playsOnOp1 = (patch: LocalPatch): boolean => patch.kind === 'synth' && patch.engine !== 'sampler' && patch.error === null;
 
 interface Open {
   patch: LocalPatch;
@@ -39,6 +44,7 @@ export function PatchesTab({ local, active }: { local: LocalLibrary; active: boo
   const [open, setOpen] = useState<Open | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
   const [playError, setPlayError] = useState<string | null>(null);
+  const audition = useAudition();
   const openRef = useRef<Open | null>(null);
   /** Bumped by every play click, so a read that finishes late never starts. */
   const playToken = useRef(0);
@@ -109,6 +115,10 @@ export function PatchesTab({ local, active }: { local: LocalLibrary; active: boo
       let current = openRef.current?.patch.path === patch.path ? openRef.current : null;
       if (!current) {
         const parsed = readPatch(await bytesOf(patch));
+        if (audition.ready && canAudition(parsed.meta)) {
+          if (token === playToken.current) await audition.play(patch.name, parsed.meta);
+          return;
+        }
         if (!(await hasPreview(parsed))) throw new Error(NO_PREVIEW);
         if (token !== playToken.current) return;
         closePlayer();
@@ -147,6 +157,33 @@ export function PatchesTab({ local, active }: { local: LocalLibrary; active: boo
           </div>
         )}
       </div>
+
+      <section className="audition-bar" aria-label="Audition on the OP-1">
+        <div>
+          <strong>{audition.current ? `On the OP-1: ${audition.current}` : audition.ready ? 'OP-1 connected' : 'Audition on your OP-1'}</strong>
+          <p className="muted">
+            {audition.ready
+              ? 'Synth patches now play on the OP-1, on the current slot. If you turn a knob during an audition, the OP-1 saves that sound over the slot.'
+              : 'Needs hundekraft 3.0.3 with the audition plugin, and the OP-1 plugged in normally, not in disk mode.'}
+          </p>
+        </div>
+        <div className="plugin-buttons">
+          {audition.current ? (
+            <button type="button" className="primary" onClick={() => void audition.putBack()} disabled={audition.working}>
+              Put my sound back
+            </button>
+          ) : (
+            <button type="button" onClick={() => void audition.connect()} disabled={audition.working}>
+              {audition.ready ? 'Check again' : 'Connect OP-1'}
+            </button>
+          )}
+        </div>
+        {audition.message && (
+          <p role={audition.message.failed ? 'alert' : 'status'} className={audition.message.failed ? 'error' : undefined}>
+            {audition.message.text}
+          </p>
+        )}
+      </section>
 
       <div role="group" aria-label="Patch source" className="source-switch">
         <button type="button" aria-pressed={source === 'local'} onClick={() => pickSource('local')}>
@@ -288,15 +325,17 @@ export function PatchesTab({ local, active }: { local: LocalLibrary; active: boo
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.map((patch) => (
+                  {shown.map((patch) => {
+                    const onOp1 = audition.ready && playsOnOp1(patch);
+                    return (
                     <tr key={patch.path} data-path={patch.path}>
                       <td className="play">
                         <button
                           type="button"
-                          className={`play-key ${patch.kind}`}
-                          disabled={patch.preview === false || patch.error !== null}
-                          title={patch.preview === false ? 'No preview: the OP-1 only stored its voice clip' : undefined}
-                          aria-label={`${playing === patch.path ? 'Stop' : 'Play'} ${patch.name}`}
+                          className={`play-key ${onOp1 ? 'on-op1' : patch.kind}`}
+                          disabled={(patch.preview === false && !onOp1) || patch.error !== null || (onOp1 && audition.working)}
+                          title={onOp1 ? 'Plays on the OP-1' : patch.preview === false ? 'No preview: the OP-1 only stored its voice clip' : undefined}
+                          aria-label={`${playing === patch.path ? 'Stop' : onOp1 ? 'Audition' : 'Play'} ${patch.name}`}
                           aria-pressed={playing === patch.path}
                           onClick={() => void play(patch)}
                         >
@@ -311,13 +350,15 @@ export function PatchesTab({ local, active }: { local: LocalLibrary; active: boo
                         {(patch.engine || patch.fx) && (
                           <span className="sound">{[patch.engine, patch.fx].filter(Boolean).join(' · ')}</span>
                         )}
-                        {patch.preview === false && <span className="sound">no preview</span>}
+                        {onOp1 && <span className="sound">plays on the OP-1</span>}
+                        {patch.preview === false && !onOp1 && <span className="sound">no preview</span>}
                         {patch.error && <span className="row-error">{patch.error}</span>}
                       </th>
                       <td className="kind">{patch.kind}</td>
                       <td className="size">{patch.error ? '' : formatSize(patch.sizeBytes)}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

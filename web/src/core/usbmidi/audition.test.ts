@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { NO_PLUGIN_REPLY, collectReport, measureSpeed, parseAuditionReply, runSpeedTest, secondsToSend, sendAudition } from './audition';
+import type { SynthMeta } from '../codec/op1-meta';
+import { pack7, unpack7 } from './framing';
+import {
+  NO_PLUGIN_REPLY,
+  canAudition,
+  collectReport,
+  encodeAuditionPatch,
+  measureSpeed,
+  parseAuditionReply,
+  runSpeedTest,
+  secondsToSend,
+  sendAudition,
+  sendAuditionPatch,
+} from './audition';
 import type { MidiPort } from './session';
 
 function fakePort(answer: number[][]): MidiPort & { sent: number[][] } {
@@ -58,6 +71,76 @@ function fakeCounter(keep = Infinity): MidiPort & { count: number } {
   };
   return port;
 }
+
+const meta = (over: Partial<SynthMeta> = {}): SynthMeta => ({
+  adsr: [2624, 64, 17408, 15808, 2048, 6464, 4000, 4000],
+  fx_active: false,
+  fx_params: [10536, 3968, 7776, 17408, 8000, 8000, 8000, 8000],
+  fx_type: 'phone',
+  knobs: [22927, 21615, 9151, 32767, 0, 0, 0, -3],
+  lfo_active: true,
+  lfo_params: [2560, 32767, 5952, 10080, 0, 0, 0, 0],
+  lfo_type: 'value',
+  name: 'engage',
+  octave: -1,
+  synth_version: 2,
+  type: 'voltage',
+  ...over,
+});
+
+describe('encodeAuditionPatch', () => {
+  it('lays out a frame the plugin can check', () => {
+    const frame = encodeAuditionPatch(meta()) as Uint8Array;
+    const size = (frame[0] as number) | ((frame[1] as number) << 8);
+    expect(frame.length).toBe(size + 6);
+    expect([...frame.subarray(2, 6)]).toEqual([1, 2, 255, 2]);
+    expect(new DataView(frame.buffer).getInt16(2 + 4 + 14, true)).toBe(-3);
+    let sum = 0;
+    for (const byte of frame.subarray(2, 2 + size)) sum += byte;
+    expect(new DataView(frame.buffer).getUint32(2 + size, true)).toBe(sum);
+    expect(new TextDecoder().decode(frame.subarray(2 + 68, 2 + size))).toBe('voltage\0phone\0value\0engage\0');
+  });
+
+  it('refuses a sampler, a kit and anything the OP-1 could stop on', () => {
+    expect(encodeAuditionPatch(meta({ type: 'sampler' }))).toBeNull();
+    expect(encodeAuditionPatch(null)).toBeNull();
+    expect(encodeAuditionPatch(meta({ knobs: [1, 2, 3] }))).toBeNull();
+    expect(encodeAuditionPatch(meta({ knobs: [40000, 0, 0, 0, 0, 0, 0, 0] }))).toBeNull();
+    expect(encodeAuditionPatch(meta({ type: '' }))).toBeNull();
+    expect(canAudition(meta({ type: 'sampler' }))).toBe(false);
+    expect(canAudition(meta())).toBe(true);
+  });
+
+  it('keeps a name printable, and never leaves it empty', () => {
+    const frame = encodeAuditionPatch(meta({ name: 'é' })) as Uint8Array;
+    expect(new TextDecoder().decode(frame)).toContain('audition');
+  });
+});
+
+describe('sendAuditionPatch', () => {
+  it('opens, sends the values two by two, and applies', async () => {
+    const sent: number[][] = [];
+    let listener: (bytes: Uint8Array) => void = () => undefined;
+    const port: MidiPort = {
+      send(bytes) {
+        sent.push([...bytes]);
+        if (bytes[1] === 118 && bytes[2] === 5) listener(Uint8Array.of(0xbf, 119, 1));
+      },
+      onSysex(cb) {
+        listener = cb;
+      },
+      close() {},
+    };
+    const frame = encodeAuditionPatch(meta()) as Uint8Array;
+    await expect(sendAuditionPatch(port, frame)).resolves.toBe('applied');
+    expect(sent[0]).toEqual([0xbf, 118, 4]);
+    expect(sent.at(-1)).toEqual([0xbf, 118, 5]);
+    const values = sent.slice(1, -1).flatMap((m) => [m[1] as number, m[2] as number]);
+    expect(sent.slice(1, -1).every((m) => m[0] === 0xae)).toBe(true);
+    expect(unpack7(Uint8Array.from(values)).subarray(0, frame.length)).toEqual(frame);
+    expect(pack7(frame).length % 2 === 0 ? values.length : values.length - 1).toBe(pack7(frame).length);
+  });
+});
 
 describe('speed test', () => {
   it('reads a report of seven-bit groups, low first', () => {

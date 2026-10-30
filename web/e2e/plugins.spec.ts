@@ -228,6 +228,57 @@ test('sends ticked local patches to the OP-1 from the Library', async ({ page })
   expect(sent).toEqual({ pads: ['old.aif', 'one.aif'], kits: ['kit.aif', 'two.aif'] });
 });
 
+test('auditions a synth patch on the OP-1 and puts the sound back', async ({ page }) => {
+  // A Web MIDI port that answers like the audition plugin and keeps what it was sent.
+  await page.addInitScript(() => {
+    const state = { sent: [] as number[][] };
+    (window as unknown as { midiLog: typeof state }).midiLog = state;
+    let input: { onmidimessage: ((e: { data: Uint8Array }) => void) | null } | null = null;
+    const reply = (value: number): void => input?.onmidimessage?.({ data: Uint8Array.of(0xbf, 119, value) });
+    const port = (name: string) => ({
+      name,
+      state: 'connected',
+      onmidimessage: null,
+      open: async () => undefined,
+      close: async () => undefined,
+      send(bytes: Uint8Array) {
+        state.sent.push([...bytes]);
+        if (bytes[0] === 0xbf && bytes[1] === 118) {
+          const answers: Record<number, number> = { 1: 6, 5: 1, 0: 2 };
+          const value = answers[bytes[2] as number];
+          if (value !== undefined) setTimeout(() => reply(value), 0);
+        }
+      },
+    });
+    const inPort = port('OP-1');
+    input = inPort;
+    const access = Object.assign(new EventTarget(), { inputs: new Map([['in', inPort]]), outputs: new Map([['out', port('OP-1')]]) });
+    Object.defineProperty(navigator, 'requestMIDIAccess', { value: async () => access, configurable: true });
+  });
+  await page.goto('./');
+  await page.getByRole('tab', { name: 'Patches' }).click();
+  await page.getByRole('button', { name: 'Community' }).click();
+  const rows = page.locator('#panel-patches tr[data-path]');
+  await expect(rows).toHaveCount(3);
+  await page.locator('#panel-patches').getByLabel('Kind').selectOption('synth');
+  const row = rows.first();
+  await expect(row.getByRole('button', { name: /^Play/ })).toBeVisible();
+
+  await page.locator('.audition-bar').getByRole('button', { name: 'Connect OP-1' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'The audition plugin answered.' })).toBeVisible();
+  await expect(row).toContainText('plays on the OP-1');
+
+  await row.getByRole('button', { name: /^Audition/ }).click();
+  await expect(page.locator('.audition-bar')).toContainText('On the OP-1:');
+  const sent = await page.evaluate(() => (window as unknown as { midiLog: { sent: number[][] } }).midiLog.sent);
+  expect(sent.some((m) => m[0] === 0xae)).toBe(true);
+  await expect(page.getByRole('region', { name: /^Keyboard for/ })).toBeHidden();
+
+  await page.getByRole('button', { name: 'Put my sound back' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Your own sound is back in the slot.' })).toBeVisible();
+  await expect(page.locator('.audition-bar')).toContainText('OP-1 connected');
+});
+
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();

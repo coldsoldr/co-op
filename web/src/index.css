@@ -1080,6 +1080,28 @@ dialog p.counter {
 .local-actions {
   margin-top: 12px;
 }
+.audition-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+  padding: 12px 20px;
+  border-radius: 28px;
+  background: var(--surface);
+}
+.audition-bar p {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+.audition-bar > div:first-child {
+  flex: 1 1 320px;
+}
+.play-key.on-op1 {
+  background: var(--orange);
+}
 .library-main[hidden] {
   display: none;
 }

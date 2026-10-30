@@ -1,26 +1,16 @@
 import { useState } from 'react';
 import {
+  AUDITION_MESSAGES,
   BYTES_PER_MESSAGE,
   runSpeedTest,
   secondsToSend,
   sendAudition,
-  type AuditionReply,
   type AuditionRequest,
   type SpeedResult,
   type SpeedStop,
 } from '../core/usbmidi/audition';
 import { messageOf } from '../core/util';
 import { openOp1Port } from './webmidi';
-
-const MESSAGES: Record<AuditionReply, string> = {
-  hello: 'The audition plugin answered.',
-  applied: 'The test sound is on the current synth slot. Play the keys.',
-  'put back': 'Your own sound is back in the slot.',
-  'not synth': 'Press the synth key on the OP-1 first, and close any sound editor.',
-  'nothing to put back': 'There is nothing to put back: no audition is running.',
-  busy: 'The OP-1 was busy saving. Try again.',
-  report: 'Speed report received.',
-};
 
 /** The median and largest sample patches in the test set. */
 const TYPICAL_BYTES = 462_566;
@@ -47,7 +37,7 @@ export function AuditionTest() {
     try {
       const port = await openOp1Port();
       try {
-        setResult({ text: MESSAGES[await sendAudition(port, request)], failed: false });
+        setResult({ text: AUDITION_MESSAGES[await sendAudition(port, request)], failed: false });
       } finally {
         port.close();
       }

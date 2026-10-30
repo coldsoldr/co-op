@@ -2,16 +2,18 @@
  * Talks to the audition proof-of-concept plugin (te-op1-cfw, ports/knl/audition): control changes on
  * channel 16, because plugins are not given SysEx. CC 118 asks, CC 119 answers.
  */
+import { isSynthMeta, type Op1Meta } from '../codec/op1-meta';
+import { pack7 } from './framing';
 import type { MidiPort } from './session';
 
 const CC_CHANNEL_16 = 0xbf;
 const CC_REQUEST = 118;
 const CC_REPLY = 119;
 
-export const AUDITION_REQUEST = { audition: 127, putBack: 0, hello: 1, zeroSpeed: 2, reportSpeed: 3 } as const;
+export const AUDITION_REQUEST = { audition: 127, putBack: 0, hello: 1, zeroSpeed: 2, reportSpeed: 3, begin: 4, apply: 5 } as const;
 export type AuditionRequest = keyof typeof AUDITION_REQUEST;
 
-export type AuditionReply = 'applied' | 'put back' | 'not synth' | 'nothing to put back' | 'busy' | 'hello' | 'report';
+export type AuditionReply = 'applied' | 'put back' | 'not synth' | 'nothing to put back' | 'busy' | 'hello' | 'report' | 'bad patch';
 
 const REPLIES: Readonly<Record<number, AuditionReply>> = {
   1: 'applied',
@@ -21,6 +23,19 @@ const REPLIES: Readonly<Record<number, AuditionReply>> = {
   5: 'busy',
   6: 'hello',
   7: 'report',
+  8: 'bad patch',
+};
+
+/** What a reply means, for people. */
+export const AUDITION_MESSAGES: Record<AuditionReply, string> = {
+  hello: 'The audition plugin answered.',
+  applied: 'The test sound is on the current synth slot. Play the keys.',
+  'put back': 'Your own sound is back in the slot.',
+  'not synth': 'Press the synth key on the OP-1 first, and close any sound editor.',
+  'nothing to put back': 'There is nothing to put back: no audition is running.',
+  busy: 'The OP-1 was busy saving. Try again.',
+  report: 'Speed report received.',
+  'bad patch': 'The patch did not arrive whole. Try again.',
 };
 
 export const NO_PLUGIN_REPLY = 'The OP-1 did not answer. Check that the audition plugin is installed and that the OP-1 is not in disk mode.';
@@ -45,8 +60,64 @@ export function sendAudition(port: MidiPort, request: AuditionRequest, timeoutMs
   });
 }
 
-/** Speed test data: polyphonic pressure on channel 15, 14 bits a message. */
+/** Patch and speed test data: polyphonic pressure on channel 15, 14 bits a message. */
 const PRESSURE_CHANNEL_15 = 0xae;
+
+const FRAME_FORMAT = 1;
+const WORDS = 8;
+const FLAG_FX = 1;
+const FLAG_LFO = 2;
+const MAX_NAME = 39;
+const MAX_PAYLOAD = 400;
+
+const isWord = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= -32768 && (n as number) <= 32767;
+const validName = (s: unknown): s is string => typeof s === 'string' && /^[\x20-\x7e]{1,39}$/.test(s);
+
+/** True for a patch the plugin can load: all settings and no audio, so a sampler or kit is not. */
+export function canAudition(meta: Op1Meta | null): boolean {
+  return isSynthMeta(meta) && meta.type !== 'sampler';
+}
+
+/**
+ * The frame the plugin reads (audition_frame.h in te-op1-cfw), or null for a patch it cannot take.
+ * Patch fields are checked here because the OP-1's parser stops on values it does not expect.
+ */
+export function encodeAuditionPatch(meta: Op1Meta | null): Uint8Array | null {
+  if (!canAudition(meta) || !isSynthMeta(meta)) return null;
+  const groups = [meta.knobs, meta.adsr, meta.fx_params, meta.lfo_params];
+  const name = meta.name.replace(/[^\x20-\x7e]/g, '').slice(0, MAX_NAME) || 'audition';
+  const names = [meta.type, meta.fx_type, meta.lfo_type, name];
+  if (!groups.every((g) => Array.isArray(g) && g.length === WORDS && g.every(isWord)) || !names.every(validName)) return null;
+  if (!Number.isInteger(meta.octave) || Math.abs(meta.octave) > 127) return null;
+  if (!Number.isInteger(meta.synth_version) || meta.synth_version < 0 || meta.synth_version > 255) return null;
+  const payload: number[] = [FRAME_FORMAT, (meta.fx_active ? FLAG_FX : 0) | (meta.lfo_active ? FLAG_LFO : 0), meta.octave & 0xff, meta.synth_version];
+  for (const group of groups) for (const word of group) payload.push(word & 0xff, (word >> 8) & 0xff);
+  for (const text of names) {
+    for (let i = 0; i < text.length; i++) payload.push(text.charCodeAt(i));
+    payload.push(0);
+  }
+  if (payload.length > MAX_PAYLOAD) return null;
+  const sum = payload.reduce((total, byte) => (total + byte) >>> 0, 0);
+  return Uint8Array.from([
+    payload.length & 0xff,
+    payload.length >> 8,
+    ...payload,
+    sum & 0xff,
+    (sum >>> 8) & 0xff,
+    (sum >>> 16) & 0xff,
+    sum >>> 24,
+  ]);
+}
+
+/** Sends a frame to the plugin and asks it to load it on the current slot. */
+export function sendAuditionPatch(port: MidiPort, frame: Uint8Array): Promise<AuditionReply> {
+  port.send(Uint8Array.of(CC_CHANNEL_16, CC_REQUEST, AUDITION_REQUEST.begin));
+  const values = pack7(frame);
+  for (let i = 0; i < values.length; i += 2) {
+    port.send(Uint8Array.of(PRESSURE_CHANNEL_15, values[i] as number, values[i + 1] ?? 0));
+  }
+  return sendAudition(port, 'apply');
+}
 const CC_COUNT = 20;
 const CC_SUM = 25;
 export const BYTES_PER_MESSAGE = 14 / 8;
