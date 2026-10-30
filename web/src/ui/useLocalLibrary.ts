@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { readLocalPatch, scanLocalFolder, type LocalPatch } from '../core/library/local-library';
+import { findFolders, readLocalPatch, scanLocalFolder, type LocalPatch } from '../core/library/local-library';
+import type { DeviceStore } from '../core/store/store';
 import {
   FsAccessStore,
   chooseLocalFolder,
@@ -26,6 +27,8 @@ export interface LocalLibrary {
   /** A folder from an earlier visit that needs permission again. */
   remembered: FileSystemDirectoryHandle | null;
   patches: LocalPatch[];
+  /** Every folder, including empty ones, relative to the chosen folder. */
+  folders: string[];
   progress: { done: number; total: number } | null;
   error: string | null;
   choose(): Promise<void>;
@@ -34,8 +37,10 @@ export interface LocalLibrary {
   forget(): Promise<void>;
   /** The folder with write permission, choosing or reconnecting it first. Needs a click. */
   writableFolder(): Promise<WritableFolder>;
-  /** Reads files that are new in the folder into the list. */
+  /** Brings these paths up to date: existing files are read again and missing ones dropped. */
   add(store: FsAccessStore, paths: readonly string[]): Promise<void>;
+  /** Runs a change with write permission, then updates `touched` and the paths it returned. */
+  apply(op: (store: DeviceStore) => Promise<unknown>, touched?: readonly string[]): Promise<void>;
 }
 
 /** The person's own patch folder. It needs no device, so every tab shares this one. */
@@ -44,6 +49,7 @@ export function useLocalLibrary(): LocalLibrary {
   const [folder, setFolder] = useState<FsAccessStore | null>(null);
   const [remembered, setRemembered] = useState<FileSystemDirectoryHandle | null>(null);
   const [patches, setPatches] = useState<LocalPatch[]>([]);
+  const [folders, setFolders] = useState<string[]>([]);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scan = useRef<AbortController | null>(null);
@@ -58,8 +64,10 @@ export function useLocalLibrary(): LocalLibrary {
     setProgress({ done: 0, total: 0 });
     try {
       const found = await scanLocalFolder(store, (done, total) => setProgress({ done, total }), controller.signal);
+      const nested = await findFolders(store);
       if (controller.signal.aborted) return;
       setPatches(found);
+      setFolders(nested);
     } catch (e) {
       if (!controller.signal.aborted) setError(`could not read ${store.label}: ${messageOf(e)}`);
     } finally {
@@ -111,6 +119,7 @@ export function useLocalLibrary(): LocalLibrary {
     setFolder(null);
     setRemembered(null);
     setPatches([]);
+    setFolders([]);
     setProgress(null);
     setError(null);
   }, []);
@@ -135,9 +144,27 @@ export function useLocalLibrary(): LocalLibrary {
 
   // Takes the store because writableFolder may have just opened it, after this render.
   const add = useCallback(async (store: FsAccessStore, paths: readonly string[]) => {
-    const read = await Promise.all(paths.map((path) => readLocalPatch(store, path)));
-    setPatches((prev) => [...prev, ...read]);
+    const fresh = new Set(paths);
+    const present = (await Promise.all([...fresh].map(async (path) => ((await store.exists(path)) ? [path] : [])))).flat();
+    const read = await Promise.all(present.map((path) => readLocalPatch(store, path)));
+    const nested = await findFolders(store);
+    setPatches((prev) => [...prev.filter((p) => !fresh.has(p.path)), ...read].sort((a, b) => (a.path < b.path ? -1 : 1)));
+    setFolders(nested);
   }, []);
 
-  return { supported, folder, remembered, patches, progress, error, choose, reconnect, refresh, forget, writableFolder, add };
+  const apply = useCallback(
+    async (op: (store: DeviceStore) => Promise<unknown>, touched: readonly string[] = []) => {
+      const writable = await writableFolder();
+      if ('refused' in writable) {
+        if (writable.refused === 'cancelled') return;
+        throw new Error('the browser was not allowed to write to the folder');
+      }
+      const result = await op(writable.store);
+      const returned = Array.isArray(result) ? (result as string[]) : typeof result === 'string' ? [result] : [];
+      await add(writable.store, [...touched, ...returned]);
+    },
+    [add, writableFolder],
+  );
+
+  return { supported, folder, remembered, patches, folders, progress, error, choose, reconnect, refresh, forget, writableFolder, add, apply };
 }

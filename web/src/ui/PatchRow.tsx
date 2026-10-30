@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { LocalPatch } from '../core/library/local-library';
 import { clickedControl, transferRow } from './AuditionBar';
 import { formatSize } from './format';
@@ -17,10 +18,12 @@ interface PatchRowProps {
   notes?: string;
   /** Shows a checkbox cell first. */
   select?: { label: string; checked: boolean; onChange: (on: boolean) => void };
+  /** Shows a last cell, for the row's menu. */
+  actions?: ReactNode;
 }
 
 /** One patch in a list: click to audition on the OP-1, or preview it in the browser. */
-export function PatchRow({ patch, audition, preview, load, file, notes, select }: PatchRowProps) {
+export function PatchRow({ patch, audition, preview, load, file, notes, select, actions }: PatchRowProps) {
   const onOp1 = audition.ready && playsOnOp1(patch);
   const playing = preview.playing === patch.path;
   const noPreview = patch.preview === false;
@@ -69,6 +72,7 @@ export function PatchRow({ patch, audition, preview, load, file, notes, select }
           </svg>
         </button>
       </td>
+      {actions !== undefined && <td>{actions}</td>}
     </tr>
   );
 }

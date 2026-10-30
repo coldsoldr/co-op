@@ -11,29 +11,40 @@ import {
 import { joinPath, type DeviceStore } from '../core/store/store';
 import { ConfirmDialog, Dialog } from './Dialog';
 import { folderOf, rootOf } from './format';
-import type { LibraryRow } from './rows';
-import type { Operation } from './useDevice';
 import { messageOf } from '../core/util';
 
 type Mode = 'rename' | 'name' | 'move' | 'copy' | 'delete';
 
 const NEW_FOLDER = '\u0000new';
 
+/** What the actions need of a patch, on the OP-1 or in My folder. */
+interface ActionEntry {
+  path: string;
+  fileName: string;
+  info: { name: string; hasMeta: boolean } | null;
+}
+
 interface PatchActionsProps {
-  entry: LibraryRow;
-  /** Folder names under the entry's patch root. */
+  entry: ActionEntry;
+  /** The folder `folders` are in; the entry's patch root unless given. */
+  root?: string;
+  /** The folder the entry is in; worked out from its path unless given. */
+  current?: string;
+  /** Folder names under the root. */
   folders: readonly string[];
-  run: (op: Operation, touched?: readonly string[]) => Promise<void>;
+  run: (op: (store: DeviceStore) => Promise<unknown>, touched?: readonly string[]) => Promise<void>;
   /** True while any action is queued or running; actions wait for it. */
   busy: boolean;
   /** True when changes are staged for download rather than written to the drive. */
   staged: boolean;
-  /** Opens the op1.fun upload dialog for an entry. */
-  onUpload: (entry: LibraryRow) => void;
+  /** Named in the delete warning. */
+  driveName?: string;
+  /** Opens the op1.fun upload dialog; the action is hidden without it. */
+  onUpload?: () => void;
   /** Why uploading is unavailable (shown as the button's description), or null. */
-  uploadUnavailable: string | null;
+  uploadUnavailable?: string | null;
   /** The id of an element holding uploadUnavailable, for aria-describedby. */
-  uploadNoteId: string;
+  uploadNoteId?: string;
   /** Shows a failure in the row, or clears it with null. */
   onError: (message: string | null) => void;
 }
@@ -41,12 +52,15 @@ interface PatchActionsProps {
 /** Rename, set name, move, copy, upload and delete for one library row, behind a round key. */
 export const PatchActions = memo(function PatchActions({
   entry,
+  root: givenRoot,
+  current,
   folders,
   run,
   staged,
   busy,
+  driveName = 'the OP-1 drive',
   onUpload,
-  uploadUnavailable,
+  uploadUnavailable = null,
   uploadNoteId,
   onError,
 }: PatchActionsProps) {
@@ -56,6 +70,7 @@ export const PatchActions = memo(function PatchActions({
   const menuRef = useRef<HTMLDivElement>(null);
   const file = entry.fileName;
   const canName = entry.info?.hasMeta === true;
+  const root = givenRoot ?? rootOf(entry);
 
   async function perform(op: (store: DeviceStore) => Promise<unknown>): Promise<void> {
     setMode(null);
@@ -116,19 +131,21 @@ export const PatchActions = memo(function PatchActions({
         <button type="button" onClick={() => choose('copy')} disabled={busy} aria-label={`Copy ${file} to a folder`}>
           Copy to a folder
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            menuRef.current?.hidePopover();
-            onUpload(entry);
-          }}
-          disabled={uploadUnavailable !== null}
-          aria-label={`Upload ${file} to op1.fun`}
-          aria-describedby={uploadUnavailable !== null ? uploadNoteId : undefined}
-          title={uploadUnavailable ?? undefined}
-        >
-          Upload to op1.fun
-        </button>
+        {onUpload && (
+          <button
+            type="button"
+            onClick={() => {
+              menuRef.current?.hidePopover();
+              onUpload();
+            }}
+            disabled={uploadUnavailable !== null}
+            aria-label={`Upload ${file} to op1.fun`}
+            aria-describedby={uploadUnavailable !== null ? uploadNoteId : undefined}
+            title={uploadUnavailable ?? undefined}
+          >
+            Upload to op1.fun
+          </button>
+        )}
         <button
           type="button"
           className="danger"
@@ -164,14 +181,13 @@ export const PatchActions = memo(function PatchActions({
       {(mode === 'move' || mode === 'copy') && (
         <FolderDialog
           title={`${mode === 'move' ? 'Move' : 'Copy'} ${file}`}
-          root={rootOf(entry)}
-          current={folderOf(entry)}
+          root={root}
+          current={current ?? folderOf(entry)}
           folders={folders}
           submitLabel={mode === 'move' ? 'Move' : 'Copy'}
           onCancel={close}
           onSubmit={(target) =>
             perform(async (store) => {
-              const root = rootOf(entry);
               const folder = target.isNew ? await ensureFolder(store, root, target.name) : joinPath(root, target.name);
               return mode === 'move' ? movePatch(store, entry.path, folder) : copyPatch(store, entry.path, folder);
             })
@@ -184,7 +200,7 @@ export const PatchActions = memo(function PatchActions({
           message={
             staged
               ? 'This file will be listed for deletion in the changes you download:'
-              : 'This file will be removed from the OP-1 drive. It cannot be undone unless you have a backup:'
+              : `This file will be removed from ${driveName}. It cannot be undone unless you have a backup:`
           }
           files={[entry.path]}
           confirmLabel="Delete"
@@ -268,7 +284,7 @@ function FolderDialog({ title, root, current, folders, submitLabel, onCancel, on
           <select value={choice} onChange={(e) => setChoice(e.target.value)} autoFocus>
             {folders.map((folder) => (
               <option key={folder} value={folder}>
-                {joinPath(root, folder)}
+                {joinPath(root, folder) || 'Top of the folder'}
                 {joinPath(root, folder) === current ? ' (current)' : ''}
               </option>
             ))}
@@ -277,7 +293,7 @@ function FolderDialog({ title, root, current, folders, submitLabel, onCancel, on
         </label>
         {isNew && (
           <label>
-            New folder name (in {root})
+            New folder name{root ? ` (in ${root})` : ''}
             <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} required />
           </label>
         )}
