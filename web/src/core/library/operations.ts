@@ -249,6 +249,19 @@ export async function removeFolder(store: DeviceStore, folderPath: string): Prom
   await store.removeFolder(folder);
 }
 
+/** Removes a folder in the local folder and everything inside it, including folders. */
+export async function removeFolderTree(store: DeviceStore, folderPath: string): Promise<void> {
+  assertWritable(store, folderPath);
+  const folder = joinPath(folderPath);
+  if (folder === '') throw new OperationError('the chosen folder itself cannot be removed');
+  for (const entry of await store.list(folder)) {
+    const path = joinPath(folder, entry.name);
+    if (entry.kind === 'dir') await removeFolderTree(store, path);
+    else await store.remove(path);
+  }
+  await store.removeFolder(folder);
+}
+
 /**
  * Creates `<rootPath>/<name>` (for example 'synth/pads') if missing and returns its path. A folder
  * whose name differs only in case is the same folder on the drive, so its path is returned as is;

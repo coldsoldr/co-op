@@ -57,6 +57,32 @@ export async function copyPatches<T extends CopyPatch>(
   return result;
 }
 
+/** Copies files with no known hash, such as patches on the OP-1, by the same rules as copyPatches. */
+export async function copyFiles(
+  store: DeviceStore,
+  items: readonly { path: string; read: () => Promise<Uint8Array> }[],
+  onProgress?: Progress,
+): Promise<CopyResult> {
+  const result: CopyResult = { copied: [], already: [], failed: [] };
+  let done = 0;
+  for (const item of items) {
+    try {
+      const bytes = await item.read();
+      const target = await targetFor(store, item.path, await sha256Hex(bytes));
+      if (target === null) {
+        result.already.push(item.path);
+      } else {
+        await writeAtomic(store, target, bytes);
+        result.copied.push(target);
+      }
+    } catch (error) {
+      result.failed.push({ path: item.path, message: messageOf(error) });
+    }
+    onProgress?.(++done, items.length);
+  }
+  return result;
+}
+
 /** The same copy as a zip, for browsers that cannot open a folder. Audio is stored, not compressed. */
 export async function zipPatches<T extends CopyPatch>(
   patches: readonly T[],

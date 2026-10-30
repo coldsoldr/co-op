@@ -57,6 +57,17 @@ export async function findPatchFiles(store: DeviceStore, folder = ''): Promise<s
   return found;
 }
 
+/** Every folder under `folder`, at any depth, so empty ones can be shown; dot entries are skipped. */
+export async function findFolders(store: DeviceStore, folder = ''): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await store.list(folder)) {
+    if (entry.kind !== 'dir' || entry.name.startsWith('.')) continue;
+    const path = joinPath(folder, entry.name);
+    found.push(path, ...(await findFolders(store, path)));
+  }
+  return found;
+}
+
 export async function readLocalPatch(store: DeviceStore, path: string): Promise<LocalPatch> {
   const fileName = basename(path);
   const base = { path, fileName, folder: dirname(path) };
@@ -138,10 +149,10 @@ export interface FolderNode {
   children: FolderNode[];
 }
 
-/** The folders that hold patches, stacked as a file manager shows them. */
-export function folderTree(patches: readonly LocalPatch[]): FolderNode[] {
+/** The folders, stacked as a file manager shows them: those that hold patches, and `folders`. */
+export function folderTree(patches: readonly LocalPatch[], folders: readonly string[] = []): FolderNode[] {
   const top: FolderNode[] = [];
-  for (const { folder } of patches) {
+  const walk = (folder: string, add: number): void => {
     let level = top;
     let path = '';
     for (const name of folder.split('/').filter(Boolean)) {
@@ -151,10 +162,12 @@ export function folderTree(patches: readonly LocalPatch[]): FolderNode[] {
         node = { name, path, count: 0, children: [] };
         level.push(node);
       }
-      node.count++;
+      node.count += add;
       level = node.children;
     }
-  }
+  };
+  for (const { folder } of patches) walk(folder, 1);
+  for (const folder of folders) walk(folder, 0);
   const sort = (nodes: FolderNode[]): FolderNode[] => {
     nodes.sort((a, b) => (a.name < b.name ? -1 : 1));
     for (const node of nodes) sort(node.children);
