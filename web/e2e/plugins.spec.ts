@@ -3,7 +3,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const seed = fileURLToPath(new URL('../../plugins/', import.meta.url));
-const SEED_IDS = ['bitcrusher', 'drive', 'ensemble', 'freq_shift', 'grids', 'marbles', 'rings', 'tape_drive', 'tape_echo', 'wavefolder'];
+const SEED_IDS = ['audition', 'bitcrusher', 'drive', 'ensemble', 'freq_shift', 'grids', 'marbles', 'rings', 'tape_drive', 'tape_echo', 'wavefolder'];
 const seedNames = SEED_IDS.map((id) => (JSON.parse(readFileSync(`${seed}${id}/plugin.json`, 'utf8')) as { name: string }).name);
 
 test('explains how to submit a plugin and copies the prompt', async ({ page, context }) => {
@@ -24,7 +24,7 @@ test('explains how to submit a plugin and copies the prompt', async ({ page, con
   expect(copied).not.toContain('````');
 
   await page.getByRole('button', { name: 'Back to plugins' }).click();
-  await expect(page.locator('#panel-plugins article')).toHaveCount(10);
+  await expect(page.locator('#panel-plugins article')).toHaveCount(11);
   await expect(page.getByRole('button', { name: 'Submit a plugin' })).toBeFocused();
 });
 
@@ -39,7 +39,7 @@ test('groups plugins by author, closed with several authors and open for a searc
   await page.getByRole('tab', { name: 'Plugins' }).click();
 
   const someone = page.getByRole('button', { name: /^someone else/ });
-  await expect(page.getByRole('button', { name: /^coldsoldr/ })).toContainText('9 plugins');
+  await expect(page.getByRole('button', { name: /^coldsoldr/ })).toContainText('10 plugins');
   await expect(someone).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('#panel-plugins article')).toHaveCount(0);
 
@@ -154,7 +154,7 @@ test('plays community patches and opens a keyboard, with nothing plugged in', as
   await expect(rows).toHaveCount(3);
   await expect(page.locator('#panel-patches').getByRole('status')).toHaveText('3 patch file(s) in community packs');
 
-  await rows.first().getByRole('button', { name: /^Play/ }).click();
+  await rows.first().getByRole('button', { name: /^Preview/ }).click();
   const keyboard = page.getByRole('region', { name: /^Keyboard for/ });
   await expect(keyboard).toBeVisible();
   await keyboard.getByRole('button', { name: 'Key 8' }).dispatchEvent('pointerdown');
@@ -262,28 +262,28 @@ test('auditions a synth patch on the OP-1 and puts the sound back', async ({ pag
   await expect(rows).toHaveCount(3);
   await page.locator('#panel-patches').getByLabel('Kind').selectOption('synth');
   const row = rows.first();
-  await expect(row.getByRole('button', { name: /^Play/ })).toBeVisible();
+  await expect(row.getByRole('button', { name: /^Preview/ })).toBeVisible();
+  await expect(row.getByRole('button', { name: /^Audition/ })).toBeHidden();
 
-  await page.locator('.audition-bar').getByRole('button', { name: 'Connect OP-1' }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'The audition plugin answered.' })).toBeVisible();
-  await expect(row).toContainText('plays on the OP-1');
-
-  await row.getByRole('button', { name: /^Audition/ }).click();
-  await expect(page.locator('.audition-bar')).toContainText('On the OP-1:');
+  await page.locator('#panel-patches .audition-bar').getByRole('button', { name: 'Connect for audition' }).click();
+  await expect(page.locator('#panel-patches').getByRole('status').filter({ hasText: 'The audition plugin answered.' })).toBeVisible();
+  await row.locator('.kind').click();
+  await expect(page.locator('#panel-patches .audition-bar')).toContainText('On the OP-1:');
+  await expect(row).toHaveClass(/on-op1/);
   const sent = await page.evaluate(() => (window as unknown as { midiLog: { sent: number[][] } }).midiLog.sent);
   expect(sent.some((m) => m[0] === 0xae)).toBe(true);
   await expect(page.getByRole('region', { name: /^Keyboard for/ })).toBeHidden();
 
   await page.getByRole('button', { name: 'Put my sound back' }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Your own sound is back in the slot.' })).toBeVisible();
-  await expect(page.locator('.audition-bar')).toContainText('OP-1 connected');
+  await expect(page.locator('#panel-patches').getByRole('status').filter({ hasText: 'Your own sound is back in the slot.' })).toBeVisible();
+  await expect(page.locator('#panel-patches .audition-bar')).toContainText('OP-1 connected');
 });
 
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '10 plugins' })).toBeVisible();
-  await expect(page.locator('#panel-plugins article')).toHaveCount(10);
+  await expect(page.getByRole('status').filter({ hasText: '11 plugins' })).toBeVisible();
+  await expect(page.locator('#panel-plugins article')).toHaveCount(11);
   for (const name of seedNames) await expect(page.getByRole('article', { name, exact: true })).toBeVisible();
 
   const rings = page.getByRole('article', { name: 'rings', exact: true });
@@ -303,9 +303,9 @@ test('lists the seed plugins and filters them', async ({ page }) => {
   await page.getByLabel('Kind').selectOption('synth');
   await expect(page.locator('#panel-plugins article')).toHaveCount(1);
   await expect(rings).toBeVisible();
-  await expect(page.getByRole('status').filter({ hasText: '1 of 10 plugins' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '1 of 11 plugins' })).toBeVisible();
   await page.getByLabel('Kind').selectOption('feature');
-  await expect(page.locator('#panel-plugins article')).toHaveCount(2);
+  await expect(page.locator('#panel-plugins article')).toHaveCount(3);
   await page.getByLabel('Kind').selectOption('fx');
   await expect(page.locator('#panel-plugins article')).toHaveCount(7);
   await page.getByRole('searchbox', { name: 'Search plugins' }).fill('tape');

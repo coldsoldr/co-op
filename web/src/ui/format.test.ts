@@ -36,6 +36,7 @@ const info = (name: string, kind: PatchInfo['kind'] = 'synth'): PatchInfo => ({
   hasMeta: true,
   canonical: true,
   traits: null,
+  meta: null,
 });
 
 const row = (path: string, extra: Partial<LibraryRow> = {}): LibraryRow => ({ ...toRow(entry(path)), ...extra });
@@ -95,7 +96,7 @@ describe('toRow', () => {
   it('keeps only the patch details the table needs, not its bytes', () => {
     const patch = { name: 'pad', kind: 'synth', meta: SYNTH_META, op1Canonical: false, raw: new Uint8Array(9) } as unknown as Patch;
     const r = toRow(entry('synth/user/a.aif', { patch }));
-    expect(r.info).toEqual({ name: 'pad', kind: 'synth', hasMeta: true, canonical: false, traits: soundTraits(SYNTH_META) });
+    expect(r.info).toEqual({ name: 'pad', kind: 'synth', hasMeta: true, canonical: false, traits: soundTraits(SYNTH_META), meta: SYNTH_META });
     expect('patch' in r).toBe(false);
   });
 });

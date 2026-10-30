@@ -135,11 +135,24 @@ the plan above:
 
 - **Turning a knob** follows the recommendation, and the Patches tab warns about it.
 - **New folders** when sending are made in the Library's left column, not in the send dialog.
-- **The audition plugin** is not in the plugin library yet, because its source is not published.
-  Until then it is installed by hand through the hundekraft workshop.
+- **The audition plugin** is in the plugin library, with its source in coldsoldr/te-op1-cfw.
 - **Demo videos** are an optional `video` link in `plugin.json`. No plugin has one yet.
 - **Try on my OP-1** offers Keep or Remove and points to the Patches tab. It does not bring its own
   demo patches.
+
+## Live auditioning, as changed after the first test
+
+- Clicking a row loads the patch on the OP-1 when the plugin has answered. The row fills as the
+  transfer goes, and clicking another row cancels it. The preview button sits on the right of the
+  row and always plays in the browser.
+- This works on the Patches tab and on the Library tab. With no drive open, the Library still shows
+  the local folder. Drive patches keep their settings in memory, so synth patches audition after
+  leaving disk mode. A drive sampler needs its audio, so it cannot.
+- Sampler patches audition too, which replaces "sampler patches stay in the browser" above. The
+  audio goes to a RAM buffer, is checked, and is then copied into the slot's sample buffer after a
+  RAM copy of the slot's own audio is made. The sample file is never marked changed. A sampler
+  patch must be 44.1 kHz; only the buffer's 6 s is sent. Drum kits still preview in the browser.
+- The Library's local folders stack as a tree, and a folder shows its own patches and those inside.
 
 ## Parked
 

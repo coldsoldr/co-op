@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { freePercent, OP1_FLASH_BYTES } from '../core/library/drive-space';
-import { localFolders } from '../core/library/local-library';
+import { folderTree, type FolderNode } from '../core/library/local-library';
 import { ensureFolder, isPresetFolder, removeFolder } from '../core/library/operations';
 import { joinPath } from '../core/store/store';
 import { formatSize } from './format';
@@ -76,12 +76,14 @@ export function Folders({ device, selected, onSelect, local, localSelected, onSe
   return (
     <aside className="folders" aria-label="Folders">
       <div className="eyebrow rule">02 / FOLDERS</div>
+      {device.source && (
       <button type="button" className="folder-pick all" aria-current={selected === null && localSelected === null} onClick={() => pick(null)}>
         <span>All patches</span>
         <span className="mono">{device.rows.length}</span>
       </button>
+      )}
 
-      {device.profile.layout.patchRoots.map(({ path: root }) => (
+      {device.source && device.profile.layout.patchRoots.map(({ path: root }) => (
         <section key={root} aria-label={`${root} folders`} className="folder-group">
           <div className="folder-group-head">
             <span className="mono">{root}</span>
@@ -184,19 +186,17 @@ export function Folders({ device, selected, onSelect, local, localSelected, onSe
           <div className="folder-group-head">
             <span className="mono">local</span>
           </div>
-          {localFolders(local.patches).map((name) => {
-            const on = localSelected === name;
-            return (
-              <div key={name} className={`folder${on ? ' on' : ''}`}>
-                <div className="folder-row">
-                  <button type="button" className="folder-pick" aria-current={on} onClick={() => onSelectLocal(name)}>
-                    <span>{name || local.folder?.label}</span>
-                    <span className="mono">{local.patches.filter((p) => p.folder === name).length}</span>
-                  </button>
-                </div>
+          {local.patches.some((p) => p.folder === '') && (
+            <div className={`folder${localSelected === '' ? ' on' : ''}`}>
+              <div className="folder-row">
+                <button type="button" className="folder-pick" aria-current={localSelected === ''} onClick={() => onSelectLocal('')}>
+                  <span>{local.folder.label}</span>
+                  <span className="mono">{local.patches.filter((p) => p.folder === '').length}</span>
+                </button>
               </div>
-            );
-          })}
+            </div>
+          )}
+          <FolderBranch nodes={folderTree(local.patches)} depth={0} selected={localSelected} onSelect={onSelectLocal} />
         </section>
       )}
 
@@ -208,6 +208,57 @@ export function Folders({ device, selected, onSelect, local, localSelected, onSe
       {device.usedBytes !== null && <FreeSpace usedBytes={device.usedBytes} />}
     </aside>
   );
+}
+
+/** One level of the local folders: a folder opens to show the folders inside it. */
+function FolderBranch({
+  nodes,
+  depth,
+  selected,
+  onSelect,
+}: {
+  nodes: readonly FolderNode[];
+  depth: number;
+  selected: string | null;
+  onSelect: (folder: string) => void;
+}) {
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (path: string): void =>
+    setOpened((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(path)) next.add(path);
+      return next;
+    });
+  return nodes.map((node) => {
+    const on = selected === node.path;
+    const open = opened.has(node.path);
+    return (
+      <div key={node.path}>
+        <div className={`folder${on ? ' on' : ''}`} style={{ marginLeft: depth * 16 }}>
+          <div className="folder-row">
+            {node.children.length > 0 && (
+              <button
+                type="button"
+                className="round-hit folder-open"
+                aria-expanded={open}
+                aria-label={`${open ? 'Close' : 'Open'} folder ${node.name}`}
+                onClick={() => toggle(node.path)}
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M9 6l6 6-6 6" />
+                </svg>
+              </button>
+            )}
+            <button type="button" className="folder-pick" aria-current={on} onClick={() => onSelect(node.path)}>
+              <span>{node.name}</span>
+              <span className="mono">{node.count}</span>
+            </button>
+          </div>
+        </div>
+        {open && <FolderBranch nodes={node.children} depth={depth + 1} selected={selected} onSelect={onSelect} />}
+      </div>
+    );
+  });
 }
 
 /** An estimate, and says so: see freePercent. */

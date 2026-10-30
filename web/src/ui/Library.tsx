@@ -28,7 +28,10 @@ import { OpusPlugins } from './OpusPlugins';
 import { usePluginPrompt } from './PluginPrompt';
 import { TraitsPopover, type PluginRequirements } from './TraitsPopover';
 import { UsbCheck } from './UsbCheck';
+import { AuditionBar, clickedControl, transferRow } from './AuditionBar';
 import { LocalPatches } from './LocalPatches';
+import { inFolder } from '../core/library/local-library';
+import type { Audition } from './useAudition';
 import { PatchActions } from './PatchActions';
 import type { LocalLibrary } from './useLocalLibrary';
 import { UploadDialog, uploadUnavailable } from './Op1FunUpload';
@@ -52,7 +55,19 @@ const folderInputProps = { webkitdirectory: '', directory: '' } as InputHTMLAttr
  * `device` is the connection shared with the other tabs. `active` is false while the Library tab
  * is hidden; playback stops then. `op1fun` is the op1.fun account, for the Upload action.
  */
-export function Library({ device, local, active = true, op1fun }: { device: Device; local: LocalLibrary; active?: boolean; op1fun: Op1Fun }) {
+export function Library({
+  device,
+  local,
+  audition,
+  active = true,
+  op1fun,
+}: {
+  device: Device;
+  local: LocalLibrary;
+  audition: Audition;
+  active?: boolean;
+  op1fun: Op1Fun;
+}) {
   const [usbCheck, setUsbCheck] = useState(false);
   const openUsbCheck = useCallback(() => setUsbCheck(true), []);
   return (
@@ -60,6 +75,7 @@ export function Library({ device, local, active = true, op1fun }: { device: Devi
       {device.source ? (
         <Connected
           local={local}
+          audition={audition}
           key={device.source.key}
           device={device}
           active={active}
@@ -67,7 +83,11 @@ export function Library({ device, local, active = true, op1fun }: { device: Devi
           onCheckUsb={openUsbCheck}
         />
       ) : (
-        <ConnectPanel device={device} onCheckUsb={openUsbCheck} />
+        <>
+          <ConnectPanel device={device} onCheckUsb={openUsbCheck} />
+          <AuditionBar audition={audition} />
+          {local.folder && <LiveLocal device={device} local={local} audition={audition} active={active} />}
+        </>
       )}
       {__APP_VERSION__.endsWith('-dev') && <AuditionTest />}
       {usbCheck && <UsbCheck device={device} onClose={() => setUsbCheck(false)} />}
@@ -89,6 +109,28 @@ export function Library({ device, local, active = true, op1fun }: { device: Devi
         </div>
       )}
     </section>
+  );
+}
+
+/** The local folder with no drive open: out of disk mode, patches can still be auditioned. */
+function LiveLocal({ device, local, audition, active }: { device: Device; local: LocalLibrary; audition: Audition; active: boolean }) {
+  const [place, setPlace] = useState<string | null>(null);
+  return (
+    <div className="library-layout">
+      <Folders device={device} selected={null} onSelect={() => undefined} local={local} localSelected={place} onSelectLocal={setPlace} />
+      <div className="library-main">
+        {place === null ? (
+          <p className="empty">Choose a folder on the left.</p>
+        ) : (
+          <>
+            <div className="library-bar">
+              <div className="eyebrow">03 / LOCAL · {(place || (local.folder?.label ?? '')).toUpperCase()}</div>
+            </div>
+            <LocalPatches key={place} device={device} local={local} folder={place} audition={audition} active={active} />
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -207,12 +249,14 @@ function Key({
 
 function Connected({
   local,
+  audition,
   device,
   active,
   op1fun,
   onCheckUsb,
 }: {
   local: LocalLibrary;
+  audition: Audition;
   device: Device;
   active: boolean;
   op1fun: Op1Fun;
@@ -285,6 +329,11 @@ function Connected({
     [store],
   );
 
+  const readFile = useCallback(async (path: string) => {
+    if (!store) throw new Error('the drive is not open');
+    return store.read(path);
+  }, [store]);
+
   const toggleSelected = useCallback((path: string, on: boolean) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -322,7 +371,7 @@ function Connected({
       ? place
       : null;
   // A local folder gone after a refresh or change of folder falls back to the drive.
-  const localFolder = localPlace !== null && local.patches.some((p) => p.folder === localPlace) ? localPlace : null;
+  const localFolder = localPlace !== null && local.patches.some((p) => inFolder(p, localPlace)) ? localPlace : null;
   const inView = folder === null ? device.rows : device.rows.filter((r) => folderOf(r) === folder);
   const where = folder === null ? `on ${source.store.label || 'the drive'}` : `in ${folder}`;
   const shown = filterRows(inView, query);
@@ -347,7 +396,9 @@ function Connected({
       row={row}
       folders={device.folders[rootOf(row)]}
       playing={playing === row.path}
+      audition={audition}
       onTogglePlay={togglePlay}
+      read={readFile}
       run={device.run}
       staged={staged !== null}
       busy={device.busy}
@@ -459,6 +510,8 @@ function Connected({
         </p>
       )}
 
+      <AuditionBar audition={audition} />
+
       <div className="library-layout">
         <Folders
           device={device}
@@ -476,7 +529,15 @@ function Connected({
             <div className="library-bar">
               <div className="eyebrow">03 / LOCAL · {(localFolder || (local.folder?.label ?? '')).toUpperCase()}</div>
             </div>
-            <LocalPatches key={localFolder} device={device} local={local} folder={localFolder} confirmPlugins={confirmPlugins} />
+            <LocalPatches
+              key={localFolder}
+              device={device}
+              local={local}
+              folder={localFolder}
+              audition={audition}
+              active={active}
+              confirmPlugins={confirmPlugins}
+            />
           </div>
         )}
         <div className="library-main" hidden={localFolder !== null}>
@@ -526,9 +587,6 @@ function Connected({
                           onChange={(e) => selectShown(e.target.checked)}
                         />
                       </th>
-                      <th scope="col" className="play">
-                        <span className="visually-hidden">Play</span>
-                      </th>
                       {COLUMNS.map((column) => (
                         <th key={column.key} scope="col" aria-sort={sort.key === column.key ? sort.direction : 'none'}>
                           <button type="button" className="sort" onClick={() => sortBy(column.key)}>
@@ -539,6 +597,9 @@ function Connected({
                           </button>
                         </th>
                       ))}
+                      <th scope="col" className="play">
+                        <span className="visually-hidden">Preview</span>
+                      </th>
                       <th scope="col">
                         <span className="visually-hidden">Actions</span>
                       </th>
@@ -602,7 +663,9 @@ interface RowProps {
   row: LibraryRow;
   folders: readonly string[] | undefined;
   playing: boolean;
+  audition: Audition;
   onTogglePlay: (path: string) => Promise<void>;
+  read: (path: string) => Promise<Uint8Array>;
   run: (op: Operation, touched?: readonly string[]) => Promise<void>;
   staged: boolean;
   busy: boolean;
@@ -618,7 +681,9 @@ const Row = memo(function Row({
   row,
   folders,
   playing,
+  audition,
   onTogglePlay,
+  read,
   run,
   staged,
   busy,
@@ -639,8 +704,18 @@ const Row = memo(function Row({
     onTogglePlay(row.path).catch((e: unknown) => setError(`cannot play: ${messageOf(e)}`));
   }
 
+  const onOp1 = audition.ready && row.kind === 'synth' && row.info !== null;
+  const id = `drive:${row.path}`;
+  const start = (): void => void audition.play(id, displayName(row), { load: () => read(row.path), meta: row.info?.meta ?? null });
+
   return (
-    <tr data-path={row.path}>
+    <tr
+      data-path={row.path}
+      {...(onOp1 ? transferRow(audition, id) : {})}
+      onClick={(e) => {
+        if (onOp1 && !clickedControl(e.target)) start();
+      }}
+    >
       <td className="select">
         <input
           type="checkbox"
@@ -649,22 +724,14 @@ const Row = memo(function Row({
           onChange={(e) => onSelect(row.path, e.target.checked)}
         />
       </td>
-      <td className="play">
-        <button
-          type="button"
-          className={`play-key ${row.kind}`}
-          onClick={play}
-          disabled={!row.info}
-          aria-label={`${playing ? 'Stop' : 'Play'} ${row.fileName}`}
-          aria-pressed={playing}
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24">
-            <path d={playing ? 'M6 5h12v14H6z' : 'M7 4l13 8-13 8z'} />
-          </svg>
-        </button>
-      </td>
       <th scope="row" className="name">
-        {displayName(row)}
+        {onOp1 ? (
+          <button type="button" className="row-pick" onClick={start} aria-label={`Audition ${row.fileName}`}>
+            {displayName(row)}
+          </button>
+        ) : (
+          displayName(row)
+        )}
         <code className="file">{row.fileName}</code>
         {sound && <span className="sound">{sound}</span>}
         {error && (
@@ -688,6 +755,21 @@ const Row = memo(function Row({
       <td className="compat">
         <CompatBadge row={row} />
         {row.info?.traits && <TraitsPopover row={row} traits={row.info.traits} plugins={plugins} />}
+      </td>
+      <td className="play">
+        <button
+          type="button"
+          className={`play-key ${row.kind}`}
+          onClick={play}
+          disabled={!row.info}
+          title="Preview in the browser"
+          aria-label={`${playing ? 'Stop' : 'Play'} ${row.fileName}`}
+          aria-pressed={playing}
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d={playing ? 'M6 5h12v14H6z' : 'M7 4l13 8-13 8z'} />
+          </svg>
+        </button>
       </td>
       <td className="more-cell">
         <PatchActions

@@ -12,7 +12,7 @@ const row = (path: string, compat: Compat | null, traits: SoundTraits | null, re
   error: null,
   compat,
   kindMismatch: false,
-  info: read ? { name: path, kind: 'synth', hasMeta: traits !== null, canonical: true, traits } : null,
+  info: read ? { name: path, kind: 'synth', hasMeta: traits !== null, canonical: true, traits, meta: null } : null,
 });
 
 const traits = { kind: 'synth', engine: 'rings' } as SoundTraits;

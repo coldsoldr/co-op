@@ -148,7 +148,7 @@ test('refuses a plugin that is already installed, before sending anything', asyn
 test('offers USB install on hundekraft plugin cards and manuals', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
-  await expect(page.getByRole('button', { name: /over USB$/ })).toHaveCount(10);
+  await expect(page.getByRole('button', { name: /over USB$/ })).toHaveCount(11);
   await page.getByRole('button', { name: 'Read the manual of rings' }).click();
   await expect(page.getByRole('button', { name: 'Install rings.knl over USB' })).toBeVisible();
 });

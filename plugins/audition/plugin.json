@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "audition",
+  "name": "audition",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "coldsoldr",
+  "version": "0.4",
+  "description": "Plays synth and sampler patches from co-op on the current slot, out of disk mode, and puts your own sound back.",
+  "license": "GPL-3.0-or-later",
+  "file": "audition.knl",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/coldsoldr/te-op1-cfw/tree/dev/ports/knl/audition",
+  "requires": "hundekraft 3.0.3",
+  "tags": [
+    "tool",
+    "audition"
+  ]
+}

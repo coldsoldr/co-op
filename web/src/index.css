@@ -1080,6 +1080,40 @@ dialog p.counter {
 .local-actions {
   margin-top: 12px;
 }
+/* A row that can load on the OP-1. Its cells go clear, so the fill shows across the whole pill. */
+table.library tbody tr.live-row {
+  background: linear-gradient(to right, var(--ok-tint) var(--fill, 0%), var(--surface) var(--fill, 0%));
+  clip-path: inset(0 round 28px);
+  cursor: pointer;
+}
+table.library tbody tr.live-row > th,
+table.library tbody tr.live-row > td {
+  background: none;
+}
+table.library tbody tr.live-row.on-op1 {
+  background: var(--ok-tint);
+}
+.row-pick {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+}
+.folder-open {
+  flex: 0 0 32px;
+  width: 32px;
+}
+.folder-open svg {
+  transition: transform 0.15s;
+}
+.folder-open[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
 .audition-bar {
   display: flex;
   flex-wrap: wrap;

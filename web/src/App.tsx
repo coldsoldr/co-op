@@ -13,6 +13,7 @@ import { PatchesTab } from './ui/PatchesTab';
 import { InstallOverUsb, TryOnOp1 } from './ui/PluginInstall';
 import { Plugins } from './ui/Plugins';
 import { useDevice } from './ui/useDevice';
+import { useAudition } from './ui/useAudition';
 import { useLocalLibrary } from './ui/useLocalLibrary';
 import { useTheme } from './ui/theme';
 import { useOp1Fun } from './ui/useOp1Fun';
@@ -33,6 +34,7 @@ export function App() {
   // One connection for every tab, so the Packs tab installs onto the drive the Library shows.
   const device = useDevice();
   const local = useLocalLibrary();
+  const audition = useAudition();
   const { theme, toggle } = useTheme();
   const { device: siteDevice, choose } = useSiteDevice();
   const op1 = siteDevice === 'op1';
@@ -130,13 +132,13 @@ export function App() {
         </header>
         {/* Every panel stays mounted so the connected drive and inspected file survive a tab switch. */}
         <div role="tabpanel" id="panel-library" aria-labelledby="tab-library" hidden={tab !== 'library'}>
-          <Library device={device} local={local} active={op1 && tab === 'library'} op1fun={op1fun} />
+          <Library device={device} local={local} audition={audition} active={op1 && tab === 'library'} op1fun={op1fun} />
         </div>
         <div role="tabpanel" id="panel-packs" aria-labelledby="tab-packs" hidden={tab !== 'packs'}>
           <Packs device={device} active={tab === 'packs'} onOpenLibrary={openLibrary} />
         </div>
         <div role="tabpanel" id="panel-patches" aria-labelledby="tab-patches" hidden={tab !== 'patches'}>
-          <PatchesTab local={local} active={op1 && tab === 'patches'} />
+          <PatchesTab local={local} audition={audition} active={op1 && tab === 'patches'} />
         </div>
         <div role="tabpanel" id="panel-plugins" aria-labelledby="tab-plugins" hidden={tab !== 'plugins'}>
           <Plugins active={tab === 'plugins'} renderActions={pluginActions} />

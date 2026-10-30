@@ -1,4 +1,4 @@
-import type { PatchKind } from '../core/codec/op1-meta';
+import type { Op1Meta, PatchKind } from '../core/codec/op1-meta';
 import type { LibraryEntry } from '../core/library/library';
 import { soundTraits, type SoundTraits } from '../core/codec/sound-traits';
 import type { TraitsCompatibility } from '../core/profiles/types';
@@ -14,6 +14,8 @@ export interface PatchInfo {
   canonical: boolean;
   /** Firmware-relevant traits, for content detection and the details popover; null without metadata. */
   traits: SoundTraits | null;
+  /** The settings, so a synth patch can be auditioned after the drive has gone. */
+  meta: Op1Meta | null;
 }
 
 /** A library entry as the UI holds it: the parsed patch is reduced to PatchInfo. */
@@ -33,6 +35,7 @@ export function toRow(entry: LibraryEntry): LibraryRow {
           hasMeta: patch.meta !== null,
           canonical: patch.op1Canonical,
           traits: soundTraits(patch.meta),
+          meta: patch.meta,
         }
       : null,
   };

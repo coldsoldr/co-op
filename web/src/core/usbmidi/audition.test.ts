@@ -4,6 +4,7 @@ import { pack7, unpack7 } from './framing';
 import {
   NO_PLUGIN_REPLY,
   canAudition,
+  encodeAuditionAudio,
   collectReport,
   encodeAuditionPatch,
   measureSpeed,
@@ -93,27 +94,86 @@ describe('encodeAuditionPatch', () => {
     const frame = encodeAuditionPatch(meta()) as Uint8Array;
     const size = (frame[0] as number) | ((frame[1] as number) << 8);
     expect(frame.length).toBe(size + 6);
-    expect([...frame.subarray(2, 6)]).toEqual([1, 2, 255, 2]);
+    expect([...frame.subarray(2, 6)]).toEqual([2, 2, 255, 2]);
     expect(new DataView(frame.buffer).getInt16(2 + 4 + 14, true)).toBe(-3);
     let sum = 0;
     for (const byte of frame.subarray(2, 2 + size)) sum += byte;
     expect(new DataView(frame.buffer).getUint32(2 + size, true)).toBe(sum);
-    expect(new TextDecoder().decode(frame.subarray(2 + 68, 2 + size))).toBe('voltage\0phone\0value\0engage\0');
+    expect(new TextDecoder().decode(frame.subarray(2 + 84, 2 + size))).toBe('voltage\0phone\0value\0engage\0');
   });
 
-  it('refuses a sampler, a kit and anything the OP-1 could stop on', () => {
-    expect(encodeAuditionPatch(meta({ type: 'sampler' }))).toBeNull();
+  it('refuses a sampler without audio, a kit and anything the OP-1 could stop on', () => {
+    expect(encodeAuditionPatch(meta({ type: 'sampler', base_freq: 440 }))).toBeNull();
+    expect(encodeAuditionPatch(meta({ type: 'sampler' }), Uint8Array.of(1, 2))).toBeNull();
+    expect(encodeAuditionPatch(meta(), Uint8Array.of(1, 2))).toBeNull();
     expect(encodeAuditionPatch(null)).toBeNull();
     expect(encodeAuditionPatch(meta({ knobs: [1, 2, 3] }))).toBeNull();
     expect(encodeAuditionPatch(meta({ knobs: [40000, 0, 0, 0, 0, 0, 0, 0] }))).toBeNull();
     expect(encodeAuditionPatch(meta({ type: '' }))).toBeNull();
-    expect(canAudition(meta({ type: 'sampler' }))).toBe(false);
+    expect(canAudition(meta({ type: 'sampler' }))).toBe(true);
+    expect(canAudition(null)).toBe(false);
     expect(canAudition(meta())).toBe(true);
   });
 
   it('keeps a name printable, and never leaves it empty', () => {
     const frame = encodeAuditionPatch(meta({ name: 'é' })) as Uint8Array;
     expect(new TextDecoder().decode(frame)).toContain('audition');
+  });
+});
+
+describe('sampler audio', () => {
+  it('holds it as 16-bit little-endian samples at 44.1 kHz, and no more than the buffer', () => {
+    expect([...(encodeAuditionAudio({ pcm: Float32Array.of(0, 1, -1), sampleRate: 44100 }) as Uint8Array)]).toEqual([0, 0, 255, 127, 1, 128]);
+    expect(encodeAuditionAudio({ pcm: Float32Array.of(0), sampleRate: 22050 })).toBeNull();
+    expect((encodeAuditionAudio({ pcm: new Float32Array(300000), sampleRate: 44100 }) as Uint8Array).length).toBe(529184);
+  });
+
+  it('puts its length, sum and root in the frame', () => {
+    const frame = encodeAuditionPatch(meta({ type: 'sampler', base_freq: 246.5 }), Uint8Array.of(1, 2, 3)) as Uint8Array;
+    const view = new DataView(frame.buffer);
+    expect(view.getFloat64(2 + 68, true)).toBe(246.5);
+    expect(view.getUint32(2 + 76, true)).toBe(3);
+    expect(view.getUint32(2 + 80, true)).toBe(6);
+  });
+
+  const samplerPort = (sent: number[][]): MidiPort => {
+    let listener: (bytes: Uint8Array) => void = () => undefined;
+    return {
+      send(bytes) {
+        sent.push([...bytes]);
+        const answers: Record<number, number> = { 6: 10, 7: 1 };
+        const value = bytes[1] === 118 ? answers[bytes[2] as number] : undefined;
+        if (value !== undefined) listener(Uint8Array.of(0xbf, 119, value));
+      },
+      onSysex(cb) {
+        listener = cb;
+      },
+      close() {},
+    };
+  };
+
+  it('sends frame, audio and apply in order, reporting progress', async () => {
+    const sent: number[][] = [];
+    const audio = new Uint8Array(1400).fill(200);
+    const frame = encodeAuditionPatch(meta({ type: 'sampler', base_freq: 440 }), audio) as Uint8Array;
+    const seen: number[] = [];
+    await expect(sendAuditionPatch(samplerPort(sent), frame, audio, { rate: 1e7, onProgress: (f) => seen.push(f) })).resolves.toBe('applied');
+    const controls = sent.filter((m) => m[1] === 118 && m[0] === 0xbf).map((m) => m[2]);
+    expect(controls).toEqual([4, 6, 7]);
+    expect(seen.at(-1)).toBe(1);
+    const take = sent.findIndex((m) => m[0] === 0xbf && m[2] === 6);
+    const values = sent.slice(take + 1, -1).flatMap((m) => [m[1] as number, m[2] as number]);
+    expect(unpack7(Uint8Array.from(values)).subarray(0, 1400)).toEqual(audio);
+  });
+
+  it('cancels when aborted, and tells the plugin', async () => {
+    const sent: number[][] = [];
+    const audio = new Uint8Array(4000);
+    const frame = encodeAuditionPatch(meta({ type: 'sampler', base_freq: 440 }), audio) as Uint8Array;
+    const controller = new AbortController();
+    controller.abort(new Error('replaced'));
+    await expect(sendAuditionPatch(samplerPort(sent), frame, audio, { signal: controller.signal })).rejects.toThrow('replaced');
+    expect(sent.at(-1)).toEqual([0xbf, 118, 8]);
   });
 });
 

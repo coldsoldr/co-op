@@ -1,9 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchIndex, fetchPatchBytes } from '../core/catalogue/catalogue';
-import { decodePcm, readPatch } from '../core/codec/patch';
 import type { PatchKind } from '../core/codec/op1-meta';
-import { hasPreview, keyPlan } from '../core/codec/preview';
-import { canAudition } from '../core/usbmidi/audition';
 import {
   communityPatches,
   filterLocal,
@@ -14,40 +11,29 @@ import {
 } from '../core/library/local-library';
 import { messageOf } from '../core/util';
 import { formatSize } from './format';
-import { KeyboardPlayer } from './keyboard-player';
 import { PatchKeyboard } from './PatchKeyboard';
-import { useAudition } from './useAudition';
+import { AuditionBar, clickedControl, transferRow } from './AuditionBar';
+import type { Audition } from './useAudition';
+import { usePatchPreview } from './usePatchPreview';
 import type { LocalLibrary } from './useLocalLibrary';
 
 const KINDS: readonly PatchKind[] = ['synth', 'drum'];
 /** A path can never be this, so it stands for no folder filter. */
 const ANY_FOLDER = '/';
-const NO_PREVIEW = 'This patch holds no preview: the OP-1 only stored its voice clip here.';
 
 type Source = 'local' | 'community';
 
-/** Worked out from the list, before a patch is read: settings only, so it can play on the OP-1. */
-const playsOnOp1 = (patch: LocalPatch): boolean => patch.kind === 'synth' && patch.engine !== 'sampler' && patch.error === null;
+/** Worked out from the list, before a patch is read. */
+const playsOnOp1 = (patch: LocalPatch): boolean => patch.kind === 'synth' && patch.error === null;
 
-interface Open {
-  patch: LocalPatch;
-  player: KeyboardPlayer;
-  kit: boolean;
-}
 
 /** Community patches and the person's own folder. It needs no OP-1: nothing has to be plugged in. */
-export function PatchesTab({ local, active }: { local: LocalLibrary; active: boolean }) {
+export function PatchesTab({ local, audition, active }: { local: LocalLibrary; audition: Audition; active: boolean }) {
   const [source, setSource] = useState<Source>('local');
   const [filter, setFilter] = useState<LocalFilter>({});
   const [community, setCommunity] = useState<LocalPatch[] | null>(null);
   const [communityError, setCommunityError] = useState<string | null>(null);
-  const [open, setOpen] = useState<Open | null>(null);
-  const [playing, setPlaying] = useState<string | null>(null);
-  const [playError, setPlayError] = useState<string | null>(null);
-  const audition = useAudition();
-  const openRef = useRef<Open | null>(null);
-  /** Bumped by every play click, so a read that finishes late never starts. */
-  const playToken = useRef(0);
+  const preview = usePatchPreview(active);
 
   const loadCommunity = useCallback(() => {
     fetchIndex(import.meta.env.BASE_URL)
@@ -58,26 +44,6 @@ export function PatchesTab({ local, active }: { local: LocalLibrary; active: boo
   useEffect(() => {
     if (active && source === 'community' && community === null) loadCommunity();
   }, [active, community, loadCommunity, source]);
-
-  const closePlayer = useCallback(() => {
-    playToken.current++;
-    openRef.current?.player.stopWhole();
-    openRef.current?.player.close();
-    openRef.current = null;
-    setOpen(null);
-    setPlaying(null);
-  }, []);
-
-  // Hiding the tab only stops the sound: the keyboard is not shown and the patch stays open.
-  useEffect(() => {
-    if (!active) openRef.current?.player.stopWhole();
-  }, [active]);
-  useEffect(
-    () => () => {
-      openRef.current?.player.close();
-    },
-    [],
-  );
 
   const patches = useMemo(() => (source === 'local' ? local.patches : (community ?? [])), [community, local.patches, source]);
   const folders = useMemo(() => localFolders(patches), [patches]);
@@ -95,7 +61,7 @@ export function PatchesTab({ local, active }: { local: LocalLibrary; active: boo
   function pickSource(next: Source): void {
     setSource(next);
     setFilter({});
-    closePlayer();
+    preview.close();
   }
 
   async function bytesOf(patch: LocalPatch): Promise<Uint8Array> {
@@ -104,35 +70,8 @@ export function PatchesTab({ local, active }: { local: LocalLibrary; active: boo
     return local.folder.read(patch.path);
   }
 
-  async function play(patch: LocalPatch): Promise<void> {
-    const wasPlaying = playing === patch.path;
-    const token = ++playToken.current;
-    setPlayError(null);
-    openRef.current?.player.stopWhole();
-    setPlaying(null);
-    if (wasPlaying) return;
-    try {
-      let current = openRef.current?.patch.path === patch.path ? openRef.current : null;
-      if (!current) {
-        const parsed = readPatch(await bytesOf(patch));
-        if (audition.ready && canAudition(parsed.meta)) {
-          if (token === playToken.current) await audition.play(patch.name, parsed.meta);
-          return;
-        }
-        if (!(await hasPreview(parsed))) throw new Error(NO_PREVIEW);
-        if (token !== playToken.current) return;
-        closePlayer();
-        const player = new KeyboardPlayer(decodePcm(parsed), parsed.comm.sampleRate, keyPlan(parsed));
-        current = { patch, player, kit: parsed.meta?.type === 'drum' };
-        playToken.current = token;
-        openRef.current = current;
-        setOpen(current);
-      }
-      setPlaying(patch.path);
-      current.player.playWhole(() => setPlaying((now) => (now === patch.path ? null : now)));
-    } catch (e) {
-      if (token === playToken.current) setPlayError(`${patch.name}: ${messageOf(e)}`);
-    }
+  function auditionPatch(patch: LocalPatch): void {
+    void audition.play(patch.path, patch.name, { load: () => bytesOf(patch) });
   }
 
   const needsFolder = source === 'local' && !local.folder;
@@ -158,32 +97,7 @@ export function PatchesTab({ local, active }: { local: LocalLibrary; active: boo
         )}
       </div>
 
-      <section className="audition-bar" aria-label="Audition on the OP-1">
-        <div>
-          <strong>{audition.current ? `On the OP-1: ${audition.current}` : audition.ready ? 'OP-1 connected' : 'Audition on your OP-1'}</strong>
-          <p className="muted">
-            {audition.ready
-              ? 'Synth patches now play on the OP-1, on the current slot. If you turn a knob during an audition, the OP-1 saves that sound over the slot.'
-              : 'Needs hundekraft 3.0.3 with the audition plugin, and the OP-1 plugged in normally, not in disk mode.'}
-          </p>
-        </div>
-        <div className="plugin-buttons">
-          {audition.current ? (
-            <button type="button" className="primary" onClick={() => void audition.putBack()} disabled={audition.working}>
-              Put my sound back
-            </button>
-          ) : (
-            <button type="button" onClick={() => void audition.connect()} disabled={audition.working}>
-              {audition.ready ? 'Check again' : 'Connect OP-1'}
-            </button>
-          )}
-        </div>
-        {audition.message && (
-          <p role={audition.message.failed ? 'alert' : 'status'} className={audition.message.failed ? 'error' : undefined}>
-            {audition.message.text}
-          </p>
-        )}
-      </section>
+      <AuditionBar audition={audition} />
 
       <div role="group" aria-label="Patch source" className="source-switch">
         <button type="button" aria-pressed={source === 'local'} onClick={() => pickSource('local')}>
@@ -299,14 +213,14 @@ export function PatchesTab({ local, active }: { local: LocalLibrary; active: boo
                 : `${shown.length} of ${patches.length} patch file(s) in ${where}`}
           </p>
 
-          {playError && (
+          {preview.error && (
             <p role="alert" className="error">
-              {playError}
+              {preview.error}
             </p>
           )}
 
-          {open && active && (
-            <PatchKeyboard name={open.patch.name} player={open.player} kit={open.kit} onClose={closePlayer} />
+          {preview.open && active && (
+            <PatchKeyboard name={preview.open.name} player={preview.open.player} kit={preview.open.kit} onClose={preview.close} />
           )}
 
           {!(source === 'local' && local.progress) && patches.length === 0 && <p className="empty">No patches found here.</p>}
@@ -316,47 +230,59 @@ export function PatchesTab({ local, active }: { local: LocalLibrary; active: boo
               <table className="library patches">
                 <thead>
                   <tr>
-                    <th scope="col" className="play">
-                      <span className="visually-hidden">Play</span>
-                    </th>
                     <th scope="col">Name</th>
                     <th scope="col">Kind</th>
                     <th scope="col">Size</th>
+                    <th scope="col" className="play">
+                      <span className="visually-hidden">Preview</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {shown.map((patch) => {
                     const onOp1 = audition.ready && playsOnOp1(patch);
+                    const playing = preview.playing === patch.path;
+                    const noPreview = patch.preview === false;
                     return (
-                    <tr key={patch.path} data-path={patch.path}>
-                      <td className="play">
-                        <button
-                          type="button"
-                          className={`play-key ${onOp1 ? 'on-op1' : patch.kind}`}
-                          disabled={(patch.preview === false && !onOp1) || patch.error !== null || (onOp1 && audition.working)}
-                          title={onOp1 ? 'Plays on the OP-1' : patch.preview === false ? 'No preview: the OP-1 only stored its voice clip' : undefined}
-                          aria-label={`${playing === patch.path ? 'Stop' : onOp1 ? 'Audition' : 'Play'} ${patch.name}`}
-                          aria-pressed={playing === patch.path}
-                          onClick={() => void play(patch)}
-                        >
-                          <svg aria-hidden="true" viewBox="0 0 24 24">
-                            <path d={playing === patch.path ? 'M6 5h12v14H6z' : 'M7 4l13 8-13 8z'} />
-                          </svg>
-                        </button>
-                      </td>
-                      <th scope="row" className="name">
-                        {patch.name}
-                        <code className="file">{patch.path}</code>
-                        {(patch.engine || patch.fx) && (
-                          <span className="sound">{[patch.engine, patch.fx].filter(Boolean).join(' · ')}</span>
-                        )}
-                        {onOp1 && <span className="sound">plays on the OP-1</span>}
-                        {patch.preview === false && !onOp1 && <span className="sound">no preview</span>}
-                        {patch.error && <span className="row-error">{patch.error}</span>}
-                      </th>
-                      <td className="kind">{patch.kind}</td>
-                      <td className="size">{patch.error ? '' : formatSize(patch.sizeBytes)}</td>
-                    </tr>
+                      <tr
+                        key={patch.path}
+                        data-path={patch.path}
+                        {...(onOp1 ? transferRow(audition, patch.path) : {})}
+                        onClick={(e) => {
+                          if (onOp1 && !clickedControl(e.target)) auditionPatch(patch);
+                        }}
+                      >
+                        <th scope="row" className="name">
+                          {onOp1 ? (
+                            <button type="button" className="row-pick" onClick={() => auditionPatch(patch)} aria-label={`Audition ${patch.name}`}>
+                              {patch.name}
+                            </button>
+                          ) : (
+                            patch.name
+                          )}
+                          <code className="file">{patch.path}</code>
+                          {(patch.engine || patch.fx) && <span className="sound">{[patch.engine, patch.fx].filter(Boolean).join(' · ')}</span>}
+                          {noPreview && <span className="sound">no preview</span>}
+                          {patch.error && <span className="row-error">{patch.error}</span>}
+                        </th>
+                        <td className="kind">{patch.kind}</td>
+                        <td className="size">{patch.error ? '' : formatSize(patch.sizeBytes)}</td>
+                        <td className="play">
+                          <button
+                            type="button"
+                            className={`play-key ${patch.kind}`}
+                            disabled={noPreview || patch.error !== null}
+                            title={noPreview ? 'No preview: the OP-1 only stored its voice clip' : 'Preview in the browser'}
+                            aria-label={`${playing ? 'Stop' : 'Preview'} ${patch.name}`}
+                            aria-pressed={playing}
+                            onClick={() => void preview.toggle(patch.path, patch.name, () => bytesOf(patch))}
+                          >
+                            <svg aria-hidden="true" viewBox="0 0 24 24">
+                              <path d={playing ? 'M6 5h12v14H6z' : 'M7 4l13 8-13 8z'} />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>

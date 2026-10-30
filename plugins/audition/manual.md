@@ -1,0 +1,57 @@
+# audition
+
+Plays patches from co-op on your OP-1, without disk mode.
+
+![audition screen](screenshot.png)
+
+## What it is
+
+A tool with no screen of its own. It listens for co-op over USB, loads the patch you click onto the
+current synth slot, and keeps a copy of your own sound so you can put it back. The patch is only in
+memory: the slot's saved sound does not change unless you change the sound yourself.
+
+## Before you start
+
+- **An original OP-1** (the 2011 model).
+- **hundekraft 3.0.3** on it, from the
+  [hundekraft workshop](https://hundekraft.github.io/op1-workshop/).
+- Install it from co-op's Plugins tab over USB, or with the hundekraft workshop. The OP-1 asks you
+  to press T1, then restarts.
+- A plugin runs as firmware code: back up your tape and sounds first. If the OP-1 ever fails to
+  start after you add a plugin, switch it off and on again: it starts once without plugin files.
+
+## Controls
+
+| Encoder | Main page | Press, then turn |
+|---|---|---|
+| blue | | |
+| green | | |
+| white | | |
+| orange | | |
+
+It uses no encoders or keys. Everything is done from co-op.
+
+## On screen
+
+Nothing of its own. The OP-1 shows the patch as usual, and a sampler patch shows its waveform.
+
+## Tips
+
+- Plug the OP-1 in normally, not in disk mode, and press the synth key.
+- In co-op, press Connect for audition, then click a synth patch. The row fills as the patch loads.
+- A settings-only patch loads at once. A sampler patch sends its audio, about 21 seconds for the
+  full 6 seconds of sound. Clicking another patch cancels the transfer.
+- Drum kits are not auditioned on the OP-1. They preview in the browser.
+- It needs about 1 MB of memory for sampler patches, taken the first time you load one.
+
+## What is saved
+
+Nothing, by the plugin. Turning a knob during an audition lets the OP-1 save that sound over the
+slot. A sampler's audio is not saved even then, so after a restart such a slot holds the new
+settings with its old audio. Use Put my sound back before you edit.
+
+## Credits and licence
+
+- By coldsoldr, built on hundekraft's kennel plugin SDK.
+- Licence: GPL-3.0-or-later, with the OP-1 firmware permission of the SDK.
+  Source: https://github.com/coldsoldr/te-op1-cfw/tree/dev/ports/knl/audition

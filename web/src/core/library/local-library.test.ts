@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryStore } from '../store/memory-store';
 import { fixtureBytes } from '../../../test/fixture-bytes';
-import { communityPatches, filterLocal, findPatchFiles, localEngines, localFolders, scanLocalFolder, type LocalPatch } from './local-library';
+import { communityPatches, filterLocal, findPatchFiles, folderTree, inFolder, localEngines, localFolders, scanLocalFolder, type LocalPatch } from './local-library';
 
 const synth = fixtureBytes('synth-cluster.aif');
 const drum = fixtureBytes('drum-boombap.aif');
@@ -48,6 +48,23 @@ describe('scanLocalFolder', () => {
     const controller = new AbortController();
     controller.abort(new Error('replaced'));
     await expect(scanLocalFolder(new MemoryStore({ 'a.aif': synth }), undefined, controller.signal)).rejects.toThrow('replaced');
+  });
+});
+
+describe('folderTree', () => {
+  const at = (folder: string): LocalPatch => ({ path: '', fileName: '', folder, name: '', kind: 'synth', engine: null, fx: null, sizeBytes: 0, error: null, preview: null });
+
+  it('stacks folders, counting what is inside each', () => {
+    const tree = folderTree([at('drum/user'), at('drum/gl1tch'), at('drum/gl1tch'), at('synth/pads/soft'), at('')]);
+    expect(tree.map((n) => [n.name, n.count])).toEqual([['drum', 3], ['synth', 1]]);
+    expect(tree[0]?.children.map((n) => [n.path, n.count])).toEqual([['drum/gl1tch', 2], ['drum/user', 1]]);
+    expect(tree[1]?.children[0]?.children[0]?.path).toBe('synth/pads/soft');
+  });
+
+  it('counts a folder as holding what its folders hold, but not a like-named neighbour', () => {
+    expect(inFolder(at('drum/user'), 'drum')).toBe(true);
+    expect(inFolder(at('drums/user'), 'drum')).toBe(false);
+    expect(inFolder(at('drum/user'), '')).toBe(false);
   });
 });
 

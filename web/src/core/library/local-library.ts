@@ -121,11 +121,50 @@ export function localFolders(patches: readonly LocalPatch[]): string[] {
   return [...new Set(patches.map((p) => p.folder))].sort();
 }
 
+/** True when a patch is in `folder` or a folder inside it; '' is the chosen folder's own patches. */
+export function inFolder(patch: Pick<LocalPatch, 'folder'>, folder: string): boolean {
+  return patch.folder === folder || (folder !== '' && patch.folder.startsWith(`${folder}/`));
+}
+
+export interface FolderNode {
+  name: string;
+  /** Relative to the chosen folder. */
+  path: string;
+  /** Patches here and in every folder inside it. */
+  count: number;
+  children: FolderNode[];
+}
+
+/** The folders that hold patches, stacked as a file manager shows them. */
+export function folderTree(patches: readonly LocalPatch[]): FolderNode[] {
+  const top: FolderNode[] = [];
+  for (const { folder } of patches) {
+    let level = top;
+    let path = '';
+    for (const name of folder.split('/').filter(Boolean)) {
+      path = joinPath(path, name);
+      let node = level.find((n) => n.name === name);
+      if (!node) {
+        node = { name, path, count: 0, children: [] };
+        level.push(node);
+      }
+      node.count++;
+      level = node.children;
+    }
+  }
+  const sort = (nodes: FolderNode[]): FolderNode[] => {
+    nodes.sort((a, b) => (a.name < b.name ? -1 : 1));
+    for (const node of nodes) sort(node.children);
+    return nodes;
+  };
+  return sort(top);
+}
+
 /** The patches that match every given criterion, in the order given. */
 export function filterLocal(patches: readonly LocalPatch[], filter: LocalFilter): LocalPatch[] {
   const words = (filter.text ?? '').toLowerCase().split(/\s+/).filter(Boolean);
   return patches.filter((patch) => {
-    if (filter.folder !== undefined && patch.folder !== filter.folder) return false;
+    if (filter.folder !== undefined && !inFolder(patch, filter.folder)) return false;
     if (filter.kind !== undefined && patch.kind !== filter.kind) return false;
     if (filter.engine !== undefined && patch.engine !== filter.engine) return false;
     const haystack = [patch.name, patch.fileName, patch.folder, patch.engine ?? '', patch.fx ?? ''].join(' ').toLowerCase();
