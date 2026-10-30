@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { freePercent, OP1_FLASH_BYTES } from '../core/library/drive-space';
+import { localFolders } from '../core/library/local-library';
 import { ensureFolder, isPresetFolder, removeFolder } from '../core/library/operations';
 import { joinPath } from '../core/store/store';
 import { formatSize } from './format';
+import type { LocalLibrary } from './useLocalLibrary';
 import type { Device } from './useDevice';
 import { messageOf } from '../core/util';
 
@@ -16,10 +18,15 @@ interface FoldersProps {
   /** The folder shown, for example 'synth/pads'; null for all patches. */
   selected: string | null;
   onSelect: (folder: string | null) => void;
+  /** The person's own patch folder; its group shows once it is open. */
+  local: LocalLibrary;
+  /** The local folder shown, relative to the local folder; null when a drive folder is. */
+  localSelected: string | null;
+  onSelectLocal: (folder: string) => void;
 }
 
 /** The left column of the library: the patch folders, adding and removing them, and free space. */
-export function Folders({ device, selected, onSelect }: FoldersProps) {
+export function Folders({ device, selected, onSelect, local, localSelected, onSelectLocal }: FoldersProps) {
   const [adding, setAdding] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -69,7 +76,7 @@ export function Folders({ device, selected, onSelect }: FoldersProps) {
   return (
     <aside className="folders" aria-label="Folders">
       <div className="eyebrow rule">02 / FOLDERS</div>
-      <button type="button" className="folder-pick all" aria-current={selected === null} onClick={() => pick(null)}>
+      <button type="button" className="folder-pick all" aria-current={selected === null && localSelected === null} onClick={() => pick(null)}>
         <span>All patches</span>
         <span className="mono">{device.rows.length}</span>
       </button>
@@ -96,7 +103,7 @@ export function Folders({ device, selected, onSelect }: FoldersProps) {
           {(device.folders[root] ?? []).map((name) => {
             const folder = joinPath(root, name);
             const count = rowsIn(folder).length;
-            const on = selected === folder;
+            const on = selected === folder && localSelected === null;
             return (
               <div key={folder} className={`folder${on ? ' on' : ''}`}>
                 <div className="folder-row">
@@ -171,6 +178,27 @@ export function Folders({ device, selected, onSelect }: FoldersProps) {
           )}
         </section>
       ))}
+
+      {local.folder && (
+        <section aria-label="local folders" className="folder-group">
+          <div className="folder-group-head">
+            <span className="mono">local</span>
+          </div>
+          {localFolders(local.patches).map((name) => {
+            const on = localSelected === name;
+            return (
+              <div key={name} className={`folder${on ? ' on' : ''}`}>
+                <div className="folder-row">
+                  <button type="button" className="folder-pick" aria-current={on} onClick={() => onSelectLocal(name)}>
+                    <span>{name || local.folder?.label}</span>
+                    <span className="mono">{local.patches.filter((p) => p.folder === name).length}</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      )}
 
       {error && (
         <p role="alert" className="error">

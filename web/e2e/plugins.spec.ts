@@ -169,6 +169,65 @@ test('plays community patches and opens a keyboard, with nothing plugged in', as
   await expect(page.getByRole('button', { name: 'Choose a folder' })).toBeVisible();
 });
 
+test('sends ticked local patches to the OP-1 from the Library', async ({ page }) => {
+  const fixtures = fileURLToPath(new URL('../test/fixtures/', import.meta.url));
+  const files = {
+    'drive/synth/user/keep.aif': readFileSync(`${fixtures}synth-cluster.aif`).toString('base64'),
+    'drive/synth/pads/old.aif': readFileSync(`${fixtures}synth-cluster.aif`).toString('base64'),
+    'drive/drum/kits/kit.aif': readFileSync(`${fixtures}drum-boombap.aif`).toString('base64'),
+    'mine/pads/one.aif': readFileSync(`${fixtures}synth-cluster.aif`).toString('base64'),
+    'mine/pads/two.aif': readFileSync(`${fixtures}drum-boombap.aif`).toString('base64'),
+  };
+  await page.goto('./');
+  await page.evaluate(async (entries) => {
+    const opfs = await navigator.storage.getDirectory();
+    for (const name of ['drive', 'mine']) await opfs.removeEntry(name, { recursive: true }).catch(() => {});
+    for (const [path, base64] of Object.entries(entries)) {
+      const parts = path.split('/');
+      const name = parts.pop() as string;
+      let dir = opfs;
+      for (const part of parts) dir = await dir.getDirectoryHandle(part, { create: true });
+      const writable = await (await dir.getFileHandle(name, { create: true })).createWritable();
+      await writable.write(Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)));
+      await writable.close();
+    }
+    await (await opfs.getDirectoryHandle('drive')).getDirectoryHandle('tape', { create: true });
+    const picks = [await opfs.getDirectoryHandle('mine'), await opfs.getDirectoryHandle('drive')];
+    Object.defineProperty(window, 'showDirectoryPicker', { value: async () => picks.shift(), configurable: true });
+  }, files);
+
+  await page.getByRole('tab', { name: 'Patches' }).click();
+  await page.getByRole('button', { name: 'Choose a folder' }).click();
+  await expect(page.locator('#panel-patches tr[data-path]')).toHaveCount(2);
+  await page.getByRole('tab', { name: 'Library' }).click();
+  await page.getByRole('button', { name: 'Connect OP-1' }).click();
+
+  const folders = page.getByRole('complementary', { name: 'Folders' });
+  await folders.getByRole('region', { name: 'local folders' }).getByRole('button', { name: /^pads/ }).click();
+  const send = page.getByRole('button', { name: 'Send to OP-1 (2)' });
+  await expect(page.getByRole('button', { name: 'Send to OP-1 (0)' })).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'Select all local patches here' }).check();
+  await send.click();
+  const dialog = page.getByRole('dialog', { name: 'Send 2 patches to the OP-1' });
+  await expect(dialog.getByLabel('synth patches go to')).toHaveValue('pads');
+  await expect(dialog.getByLabel('drum patches go to')).toHaveValue('kits');
+  await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Sent 2 patches to the OP-1.' })).toBeVisible();
+
+  const sent = await page.evaluate(async () => {
+    const drive = await (await navigator.storage.getDirectory()).getDirectoryHandle('drive');
+    const names = async (dir: FileSystemDirectoryHandle): Promise<string[]> => {
+      const out: string[] = [];
+      for await (const name of (dir as unknown as { keys(): AsyncIterable<string> }).keys()) out.push(name);
+      return out.sort();
+    };
+    const synth = await drive.getDirectoryHandle('synth');
+    const drum = await drive.getDirectoryHandle('drum');
+    return { pads: await names(await synth.getDirectoryHandle('pads')), kits: await names(await drum.getDirectoryHandle('kits')) };
+  });
+  expect(sent).toEqual({ pads: ['old.aif', 'one.aif'], kits: ['kit.aif', 'two.aif'] });
+});
+
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();

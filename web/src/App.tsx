@@ -127,7 +127,7 @@ export function App() {
         </header>
         {/* Every panel stays mounted so the connected drive and inspected file survive a tab switch. */}
         <div role="tabpanel" id="panel-library" aria-labelledby="tab-library" hidden={tab !== 'library'}>
-          <Library device={device} active={op1 && tab === 'library'} op1fun={op1fun} />
+          <Library device={device} local={local} active={op1 && tab === 'library'} op1fun={op1fun} />
         </div>
         <div role="tabpanel" id="panel-packs" aria-labelledby="tab-packs" hidden={tab !== 'packs'}>
           <Packs device={device} active={tab === 'packs'} onOpenLibrary={openLibrary} />

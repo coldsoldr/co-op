@@ -28,7 +28,9 @@ import { OpusPlugins } from './OpusPlugins';
 import { usePluginPrompt } from './PluginPrompt';
 import { TraitsPopover, type PluginRequirements } from './TraitsPopover';
 import { UsbCheck } from './UsbCheck';
+import { LocalPatches } from './LocalPatches';
 import { PatchActions } from './PatchActions';
+import type { LocalLibrary } from './useLocalLibrary';
 import { UploadDialog, uploadUnavailable } from './Op1FunUpload';
 import type { Op1Fun } from './useOp1Fun';
 import {
@@ -50,13 +52,14 @@ const folderInputProps = { webkitdirectory: '', directory: '' } as InputHTMLAttr
  * `device` is the connection shared with the other tabs. `active` is false while the Library tab
  * is hidden; playback stops then. `op1fun` is the op1.fun account, for the Upload action.
  */
-export function Library({ device, active = true, op1fun }: { device: Device; active?: boolean; op1fun: Op1Fun }) {
+export function Library({ device, local, active = true, op1fun }: { device: Device; local: LocalLibrary; active?: boolean; op1fun: Op1Fun }) {
   const [usbCheck, setUsbCheck] = useState(false);
   const openUsbCheck = useCallback(() => setUsbCheck(true), []);
   return (
     <section aria-labelledby="library-heading">
       {device.source ? (
         <Connected
+          local={local}
           key={device.source.key}
           device={device}
           active={active}
@@ -203,11 +206,13 @@ function Key({
 }
 
 function Connected({
+  local,
   device,
   active,
   op1fun,
   onCheckUsb,
 }: {
+  local: LocalLibrary;
   device: Device;
   active: boolean;
   op1fun: Op1Fun;
@@ -222,6 +227,8 @@ function Connected({
   const activeRef = useRef(active);
   /** The folder chosen in the left column; null shows every patch. */
   const [place, setPlace] = useState<string | null>(null);
+  /** The local folder chosen in the left column, which replaces the drive's list. */
+  const [localPlace, setLocalPlace] = useState<string | null>(null);
   const backup = useRef<BackupControls>(null);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'ascending' });
@@ -314,6 +321,8 @@ function Connected({
     place !== null && Object.entries(device.folders).some(([root, names]) => names.some((n) => joinPath(root, n) === place))
       ? place
       : null;
+  // A local folder gone after a refresh or change of folder falls back to the drive.
+  const localFolder = localPlace !== null && local.patches.some((p) => p.folder === localPlace) ? localPlace : null;
   const inView = folder === null ? device.rows : device.rows.filter((r) => folderOf(r) === folder);
   const where = folder === null ? `on ${source.store.label || 'the drive'}` : `in ${folder}`;
   const shown = filterRows(inView, query);
@@ -451,8 +460,26 @@ function Connected({
       )}
 
       <div className="library-layout">
-        <Folders device={device} selected={folder} onSelect={setPlace} />
-        <div className="library-main">
+        <Folders
+          device={device}
+          selected={folder}
+          onSelect={(next) => {
+            setLocalPlace(null);
+            setPlace(next);
+          }}
+          local={local}
+          localSelected={localFolder}
+          onSelectLocal={setLocalPlace}
+        />
+        {localFolder !== null && (
+          <div className="library-main">
+            <div className="library-bar">
+              <div className="eyebrow">03 / LOCAL · {(localFolder || (local.folder?.label ?? '')).toUpperCase()}</div>
+            </div>
+            <LocalPatches key={localFolder} device={device} local={local} folder={localFolder} confirmPlugins={confirmPlugins} />
+          </div>
+        )}
+        <div className="library-main" hidden={localFolder !== null}>
           <div className="library-bar">
             <div className="eyebrow">03 / {(folder ?? 'all patches').replace('/', ' · ').toUpperCase()}</div>
             <label className="search">

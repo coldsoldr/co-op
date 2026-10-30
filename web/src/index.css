@@ -1077,6 +1077,12 @@ dialog p.counter {
 .author-group h3 [aria-expanded='true'] svg {
   transform: rotate(180deg);
 }
+.local-actions {
+  margin-top: 12px;
+}
+.library-main[hidden] {
+  display: none;
+}
 .source-switch {
   display: inline-flex;
   gap: 4px;
