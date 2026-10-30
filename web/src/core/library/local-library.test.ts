@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryStore } from '../store/memory-store';
 import { fixtureBytes } from '../../../test/fixture-bytes';
-import { filterLocal, findPatchFiles, localFolders, scanLocalFolder, type LocalPatch } from './local-library';
+import { communityPatches, filterLocal, findPatchFiles, localEngines, localFolders, scanLocalFolder, type LocalPatch } from './local-library';
 
 const synth = fixtureBytes('synth-cluster.aif');
 const drum = fixtureBytes('drum-boombap.aif');
@@ -51,6 +51,17 @@ describe('scanLocalFolder', () => {
   });
 });
 
+describe('communityPatches', () => {
+  it('lists the patches of every pack as one list, each knowing where to download from', () => {
+    const entry = { file: 'synth/a.aif', kind: 'synth' as const, name: 'a tone', engine: 'fm', sizeBytes: 9, sha256: 'ab' };
+    const pack = { slug: 'tones', name: 'Tones', author: 'x', description: 'y', license: 'CC0-1.0' as const, firmware: [], tags: [], sizeBytes: 9, hasReadme: false };
+    const patches = communityPatches({ format: 1, generatedAt: 'now', packs: [{ ...pack, patches: [entry] }] });
+    expect(patches).toEqual([
+      expect.objectContaining({ path: 'tones/synth/a.aif', folder: 'Tones', name: 'a tone', engine: 'fm', preview: null, pack: { slug: 'tones', file: 'synth/a.aif', sha256: 'ab' } }),
+    ]);
+  });
+});
+
 describe('filtering', () => {
   const patch = (over: Partial<LocalPatch>): LocalPatch => ({
     path: 'a.aif',
@@ -62,6 +73,7 @@ describe('filtering', () => {
     fx: null,
     sizeBytes: 1,
     error: null,
+    preview: true,
     ...over,
   });
   const list = [
@@ -82,5 +94,10 @@ describe('filtering', () => {
 
   it('lists each folder once', () => {
     expect(localFolders(list)).toEqual(['', 'kits', 'pads']);
+  });
+
+  it('filters by engine and lists the engines', () => {
+    expect(filterLocal(list, { engine: 'fm' }).map((p) => p.name)).toEqual(['glass harp']);
+    expect(localEngines(list)).toEqual(['fm']);
   });
 });

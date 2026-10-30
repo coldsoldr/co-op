@@ -12,6 +12,7 @@ import {
   type ReactNode,
 } from 'react';
 import { decodePcm, readPatch } from '../core/codec/patch';
+import { hasPreview } from '../core/codec/preview';
 import { exportChangeSet } from '../core/library/changeset';
 import { filesFromDataTransfer } from '../core/store/drop-store';
 import { profiles } from '../core/profiles/registry';
@@ -260,6 +261,7 @@ function Connected({
       if (wasPlaying || !store) return;
       // Patches are not kept in memory; read the file again to play it.
       const patch = readPatch(await store.read(path));
+      if (!(await hasPreview(patch))) throw new Error('no preview: the OP-1 only stored its voice clip here');
       // A later click (or hiding the tab) while the file was being read wins.
       if (token !== playToken.current || !activeRef.current) return;
       const stop = playPcm(decodePcm(patch), patch.comm.sampleRate, () => {

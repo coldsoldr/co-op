@@ -1,4 +1,6 @@
+import type { PackIndex } from '@co-op/shared/packs';
 import { readPatch } from '../codec/patch';
+import { hasPreview } from '../codec/preview';
 import type { PatchKind } from '../codec/op1-meta';
 import { soundTraits } from '../codec/sound-traits';
 import { dirname, joinPath, basename, type DeviceStore } from '../store/store';
@@ -6,12 +8,12 @@ import { messageOf } from '../util';
 import { DEFAULT_CONCURRENCY, mapPool } from './library';
 import { PATCH_EXTENSIONS } from './operations';
 
-/** One patch in the person's own folder on their computer. */
+/** One patch to browse: in the person's own folder on their computer, or in a community pack. */
 export interface LocalPatch {
   /** Relative to the chosen folder. */
   path: string;
   fileName: string;
-  /** The folder it is in, relative to the chosen folder; '' for the chosen folder itself. */
+  /** The folder it is in, relative to the chosen folder, or its pack; '' for the chosen folder itself. */
   folder: string;
   /** The name in its metadata, or the file name without its extension. */
   name: string;
@@ -22,6 +24,10 @@ export interface LocalPatch {
   sizeBytes: number;
   /** Why it could not be read; such a file stays listed. */
   error: string | null;
+  /** Whether its audio is worth playing; null until the audio has been looked at. */
+  preview: boolean | null;
+  /** Where a community patch is downloaded from. */
+  pack?: { slug: string; file: string; sha256: string };
 }
 
 export interface LocalFilter {
@@ -29,6 +35,7 @@ export interface LocalFilter {
   text?: string;
   folder?: string;
   kind?: PatchKind;
+  engine?: string;
 }
 
 const isPatchFile = (name: string): boolean => {
@@ -65,9 +72,10 @@ async function readLocalPatch(store: DeviceStore, path: string): Promise<LocalPa
       fx: traits?.fx || null,
       sizeBytes: bytes.length,
       error: null,
+      preview: await hasPreview(patch),
     };
   } catch (error) {
-    return { ...base, name: stem(fileName), kind: 'unknown', engine: null, fx: null, sizeBytes: 0, error: messageOf(error) };
+    return { ...base, name: stem(fileName), kind: 'unknown', engine: null, fx: null, sizeBytes: 0, error: messageOf(error), preview: false };
   }
 }
 
@@ -84,6 +92,30 @@ export async function scanLocalFolder(
   return mapPool(paths, DEFAULT_CONCURRENCY, (path) => readLocalPatch(store, path), onProgress, signal);
 }
 
+/** Every patch of every community pack, as one flat list. */
+export function communityPatches(index: PackIndex): LocalPatch[] {
+  return index.packs.flatMap((pack) =>
+    pack.patches.map((patch) => ({
+      path: `${pack.slug}/${patch.file}`,
+      fileName: basename(patch.file),
+      folder: pack.name,
+      name: patch.name || stem(basename(patch.file)),
+      kind: patch.kind,
+      engine: patch.engine,
+      fx: null,
+      sizeBytes: patch.sizeBytes,
+      error: null,
+      preview: null,
+      pack: { slug: pack.slug, file: patch.file, sha256: patch.sha256 },
+    })),
+  );
+}
+
+/** The engines named by these patches, in code-point order. */
+export function localEngines(patches: readonly LocalPatch[]): string[] {
+  return [...new Set(patches.flatMap((p) => (p.engine ? [p.engine] : [])))].sort();
+}
+
 /** The folders that hold patches, in code-point order. */
 export function localFolders(patches: readonly LocalPatch[]): string[] {
   return [...new Set(patches.map((p) => p.folder))].sort();
@@ -95,6 +127,7 @@ export function filterLocal(patches: readonly LocalPatch[], filter: LocalFilter)
   return patches.filter((patch) => {
     if (filter.folder !== undefined && patch.folder !== filter.folder) return false;
     if (filter.kind !== undefined && patch.kind !== filter.kind) return false;
+    if (filter.engine !== undefined && patch.engine !== filter.engine) return false;
     const haystack = [patch.name, patch.fileName, patch.folder, patch.engine ?? '', patch.fx ?? ''].join(' ').toLowerCase();
     return words.every((word) => haystack.includes(word));
   });

@@ -146,6 +146,29 @@ test('browses a local folder with nothing plugged in, and remembers it', async (
   await expect(page.locator('#panel-patches tr[data-path]')).toHaveCount(0);
 });
 
+test('plays community patches and opens a keyboard, with nothing plugged in', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('tab', { name: 'Patches' }).click();
+  await page.getByRole('button', { name: 'Community' }).click();
+  const rows = page.locator('#panel-patches tr[data-path]');
+  await expect(rows).toHaveCount(3);
+  await expect(page.locator('#panel-patches').getByRole('status')).toHaveText('3 patch file(s) in community packs');
+
+  await rows.first().getByRole('button', { name: /^Play/ }).click();
+  const keyboard = page.getByRole('region', { name: /^Keyboard for/ });
+  await expect(keyboard).toBeVisible();
+  await keyboard.getByRole('button', { name: 'Key 8' }).dispatchEvent('pointerdown');
+  await keyboard.getByRole('button', { name: 'Key 8' }).dispatchEvent('pointerup');
+  await page.keyboard.press('a');
+  await keyboard.getByRole('button', { name: 'Close keyboard' }).click();
+  await expect(keyboard).toBeHidden();
+
+  await page.locator('#panel-patches').getByLabel('Kind').selectOption('drum');
+  await expect(rows.first()).toBeVisible();
+  await page.getByRole('button', { name: 'My folder' }).click();
+  await expect(page.getByRole('button', { name: 'Choose a folder' })).toBeVisible();
+});
+
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();

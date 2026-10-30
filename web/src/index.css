@@ -1077,6 +1077,56 @@ dialog p.counter {
 .author-group h3 [aria-expanded='true'] svg {
   transform: rotate(180deg);
 }
+.source-switch {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 4px;
+  border-radius: 26px;
+  background: var(--surface-2);
+}
+.source-switch button {
+  border: 0;
+}
+.source-switch button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--bg);
+}
+.patch-keyboard {
+  margin: 12px 0;
+  padding: 16px 20px 20px;
+  border-radius: 28px;
+  background: var(--surface);
+}
+.patch-keyboard-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+.keys-row {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  touch-action: none;
+}
+.piano-key {
+  flex: 1 0 28px;
+  min-height: 72px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.piano-key.sharp {
+  background: var(--ink);
+}
+.piano-key:active {
+  background: var(--orange);
+}
 .prompt {
   max-height: 420px;
   white-space: pre-wrap;

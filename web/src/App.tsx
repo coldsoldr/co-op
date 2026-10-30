@@ -133,7 +133,7 @@ export function App() {
           <Packs device={device} active={tab === 'packs'} onOpenLibrary={openLibrary} />
         </div>
         <div role="tabpanel" id="panel-patches" aria-labelledby="tab-patches" hidden={tab !== 'patches'}>
-          <PatchesTab local={local} />
+          <PatchesTab local={local} active={op1 && tab === 'patches'} />
         </div>
         <div role="tabpanel" id="panel-plugins" aria-labelledby="tab-plugins" hidden={tab !== 'plugins'}>
           <Plugins active={tab === 'plugins'} renderActions={pluginActions} />
