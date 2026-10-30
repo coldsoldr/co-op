@@ -9,15 +9,18 @@ import { Library } from './ui/Library';
 import { Op1FunTab } from './ui/Op1Fun';
 import { OpXy } from './ui/OpXy';
 import { Packs } from './ui/Packs';
+import { PatchesTab } from './ui/PatchesTab';
 import { InstallOverUsb } from './ui/PluginInstall';
 import { Plugins } from './ui/Plugins';
 import { useDevice } from './ui/useDevice';
+import { useLocalLibrary } from './ui/useLocalLibrary';
 import { useTheme } from './ui/theme';
 import { useOp1Fun } from './ui/useOp1Fun';
 
 const TABS = [
   { id: 'library', label: 'Library' },
   { id: 'packs', label: 'Packs' },
+  { id: 'patches', label: 'Patches' },
   { id: 'plugins', label: 'Plugins' },
   { id: 'op1fun', label: 'op1.fun' },
   { id: 'inspector', label: 'Inspector' },
@@ -29,6 +32,7 @@ export function App() {
   const [tab, setTab] = useState<TabId>('library');
   // One connection for every tab, so the Packs tab installs onto the drive the Library shows.
   const device = useDevice();
+  const local = useLocalLibrary();
   const { theme, toggle } = useTheme();
   const { device: siteDevice, choose } = useSiteDevice();
   const op1 = siteDevice === 'op1';
@@ -127,6 +131,9 @@ export function App() {
         </div>
         <div role="tabpanel" id="panel-packs" aria-labelledby="tab-packs" hidden={tab !== 'packs'}>
           <Packs device={device} active={tab === 'packs'} onOpenLibrary={openLibrary} />
+        </div>
+        <div role="tabpanel" id="panel-patches" aria-labelledby="tab-patches" hidden={tab !== 'patches'}>
+          <PatchesTab local={local} />
         </div>
         <div role="tabpanel" id="panel-plugins" aria-labelledby="tab-plugins" hidden={tab !== 'plugins'}>
           <Plugins active={tab === 'plugins'} renderActions={pluginActions} />

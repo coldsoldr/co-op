@@ -239,11 +239,34 @@ export async function connectDevice(): Promise<FsAccessStore | null> {
   }
 }
 
-/** True when the handle may be read and written, asking the user if needed. Needs a user gesture to ask. */
-export async function ensurePermission(handle: FileSystemDirectoryHandle): Promise<boolean> {
+/** Asks the user to pick a folder of their own patches, for reading. Resolves null when cancelled. */
+export async function chooseLocalFolder(): Promise<FsAccessStore | null> {
+  const showDirectoryPicker = directoryPicker();
+  if (!showDirectoryPicker) throw new StoreError('this browser cannot open folders');
   try {
-    if ((await handle.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
-    return (await handle.requestPermission({ mode: 'readwrite' })) === 'granted';
+    return new FsAccessStore(await showDirectoryPicker({ id: 'local', mode: 'read' }));
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return null;
+    throw error;
+  }
+}
+
+type FolderAccess = 'read' | 'readwrite';
+
+/** True when the handle already has this access, without asking. */
+export async function hasPermission(handle: FileSystemDirectoryHandle, mode: FolderAccess): Promise<boolean> {
+  try {
+    return (await handle.queryPermission({ mode })) === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+/** True when the handle has this access, asking the user if needed. Needs a user gesture to ask. */
+export async function ensurePermission(handle: FileSystemDirectoryHandle, mode: FolderAccess = 'readwrite'): Promise<boolean> {
+  try {
+    if (await hasPermission(handle, mode)) return true;
+    return (await handle.requestPermission({ mode })) === 'granted';
   } catch {
     return false;
   }
@@ -274,7 +297,7 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 /** Saves the picked folder so the next visit can reconnect. Failures are ignored. */
-export async function rememberHandle(handle: FileSystemDirectoryHandle): Promise<void> {
+export async function rememberHandle(handle: FileSystemDirectoryHandle, key = DB_KEY): Promise<void> {
   try {
     const db = await openDb();
     try {
@@ -284,7 +307,7 @@ export async function rememberHandle(handle: FileSystemDirectoryHandle): Promise
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
-        tx.objectStore(DB_STORE).put(handle, DB_KEY);
+        tx.objectStore(DB_STORE).put(handle, key);
       });
     } finally {
       db.close();
@@ -294,13 +317,27 @@ export async function rememberHandle(handle: FileSystemDirectoryHandle): Promise
   }
 }
 
+/** Drops a folder saved by rememberHandle. Failures are ignored, like rememberHandle's. */
+export async function forgetHandle(key = DB_KEY): Promise<void> {
+  try {
+    const db = await openDb();
+    try {
+      await request(db.transaction(DB_STORE, 'readwrite').objectStore(DB_STORE).delete(key));
+    } finally {
+      db.close();
+    }
+  } catch {
+    // Nothing to do: it would be offered again on the next visit.
+  }
+}
+
 /** The folder saved by rememberHandle, or null when there is none or storage fails. */
-export async function restoreHandle(): Promise<FileSystemDirectoryHandle | null> {
+export async function restoreHandle(key = DB_KEY): Promise<FileSystemDirectoryHandle | null> {
   try {
     const db = await openDb();
     let value: unknown;
     try {
-      value = await request(db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get(DB_KEY));
+      value = await request(db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get(key));
     } finally {
       db.close();
     }

@@ -96,6 +96,56 @@ test('chooses a device from the logo, remembers it and keeps the OP-1 page', asy
   await expect(page.getByRole('heading', { name: 'Connect OP–XY' })).toBeHidden();
 });
 
+test('browses a local folder with nothing plugged in, and remembers it', async ({ page }) => {
+  const fixtures = fileURLToPath(new URL('../test/fixtures/', import.meta.url));
+  const files = {
+    'my patches/pads/glass.aif': readFileSync(`${fixtures}synth-cluster.aif`).toString('base64'),
+    'my patches/kits/boom.aif': readFileSync(`${fixtures}drum-boombap.aif`).toString('base64'),
+    'my patches/notes.txt': 'bm90ZXM=',
+  };
+  await page.goto('./');
+  await page.evaluate(async (entries) => {
+    const opfs = await navigator.storage.getDirectory();
+    await opfs.removeEntry('my patches', { recursive: true }).catch(() => {});
+    for (const [path, base64] of Object.entries(entries)) {
+      const parts = path.split('/');
+      const name = parts.pop() as string;
+      let dir = opfs;
+      for (const part of parts) dir = await dir.getDirectoryHandle(part, { create: true });
+      const writable = await (await dir.getFileHandle(name, { create: true })).createWritable();
+      await writable.write(Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)));
+      await writable.close();
+    }
+    const folder = await opfs.getDirectoryHandle('my patches');
+    Object.defineProperty(window, 'showDirectoryPicker', { value: async () => folder, configurable: true });
+  }, files);
+
+  await page.getByRole('tab', { name: 'Patches' }).click();
+  await page.getByRole('button', { name: 'Choose a folder' }).click();
+  const rows = page.locator('#panel-patches tr[data-path]');
+  await expect(rows).toHaveCount(2);
+  await expect(page.locator('#panel-patches').getByRole('status')).toHaveText('2 patch file(s) in my patches');
+  await expect(page.locator('tr[data-path="pads/glass.aif"] .sound')).toContainText('cluster');
+
+  await page.getByRole('searchbox', { name: 'Search patches' }).fill('cluster');
+  await expect(rows).toHaveCount(1);
+  await page.getByRole('searchbox', { name: 'Search patches' }).fill('');
+  await page.locator('#panel-patches').getByLabel('Kind').selectOption('drum');
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toHaveAttribute('data-path', 'kits/boom.aif');
+
+  await page.reload();
+  await page.getByRole('tab', { name: 'Patches' }).click();
+  await expect(page.locator('#panel-patches tr[data-path]')).toHaveCount(2);
+
+  await page.getByRole('button', { name: 'Forget folder' }).click();
+  await expect(page.getByRole('button', { name: 'Choose a folder' })).toBeVisible();
+  await page.reload();
+  await page.getByRole('tab', { name: 'Patches' }).click();
+  await expect(page.getByRole('button', { name: 'Choose a folder' })).toBeVisible();
+  await expect(page.locator('#panel-patches tr[data-path]')).toHaveCount(0);
+});
+
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();

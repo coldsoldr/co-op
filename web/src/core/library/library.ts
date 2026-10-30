@@ -26,7 +26,7 @@ export const DEFAULT_CONCURRENCY = 4;
  * further item is started and the pool rejects with the signal's reason; calls already in flight
  * finish on their own.
  */
-async function mapPool<T, R>(
+export async function mapPool<T, R>(
   items: readonly T[],
   concurrency: number,
   fn: (item: T) => Promise<R>,
