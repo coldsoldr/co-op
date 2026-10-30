@@ -143,6 +143,22 @@ The OP-1 has 512 MB of flash, counted in binary units (`synth_sdk/file/file.c` i
 3.0.3 source). hundekraft's FILE screen walks the storage on the device; nothing on USB
 reports free space, so co-op estimates it from the files the drive shows.
 
+## Live audition: proof of concept (2026-10-30)
+
+Confirmed by the owner on a real OP-1 running hundekraft 3.0.3, out of disk mode, from the
+dev site in Vivaldi. The plugin is `ports/knl/audition` in coldsoldr/te-op1-cfw (GPL-3.0).
+
+- A browser reached a kennel feature plugin over USB MIDI and got its replies. Plugins do
+  not receive SysEx (`midi_raw` carries channel messages and real time only), so the test
+  used CC 118 on channel 16 to ask and CC 119 to answer.
+- The plugin replaced the current synth slot's whole sound, engine included, from a JSON
+  object it built: stop voices, `PATCH_SET` (0x01A052DC), `op1_sound_apply`, refresh the
+  screen. This is a preset drop without its save job.
+- The slot's own sound came back from a copy of its JSON, and the slot still held it after
+  switching the OP-1 off and on. So `PATCH_SET` alone does not save.
+- Not tested: sending a whole patch over MIDI. The test sound was built into the plugin.
+  Turning a knob during an audition is expected to let the stock code save the test sound.
+
 ## As built (phases 9-12, 2026-10-29)
 
 co-op implements the USB check (`web/src/core/usbmidi/`, `web/src/ui/UsbCheck.tsx`),
