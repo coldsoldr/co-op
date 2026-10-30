@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "name": "gl1tch",
+  "slug": "gl1tch",
+  "author": "ByronJZA",
+  "description": "Glitchy drum kits: breaks and modular effects.",
+  "license": "CC-BY-SA-4.0",
+  "firmware": ["op1/stock"],
+  "tags": ["drum", "glitch", "breaks", "fx"],
+  "patches": [
+    { "file": "drum/breaks-17763.aif" },
+    { "file": "drum/modular-fx-17765.aif" }
+  ]
+}
