@@ -35,6 +35,7 @@ export type PluginKind = (typeof PLUGIN_KINDS)[number];
 
 export const MAX_NAME = 60;
 export const MAX_AUTHOR = 60;
+export const MAX_VIDEO_URL = 300;
 export const MAX_VERSION = 20;
 export const MAX_DESCRIPTION = 500;
 export const MAX_REQUIRES = 60;
@@ -88,6 +89,8 @@ export interface PluginManifest {
   /** Free text such as "hundekraft 3.0.3". */
   requires?: string;
   credits?: string;
+  /** An https:// link to an .mp4 of the plugin with its real sound. */
+  video?: string;
   tags: string[];
   /** opus only: the `opus.<id>` plugin id that sounds made with it store. */
   savedName?: string;
@@ -126,7 +129,7 @@ export interface PluginIssue {
 
 const MANIFEST_FIELDS = new Set([
   'format', 'id', 'name', 'firmware', 'kind', 'author', 'version', 'description', 'license',
-  'file', 'screenshot', 'manual', 'source', 'requires', 'credits', 'tags', 'savedName',
+  'file', 'screenshot', 'manual', 'source', 'requires', 'credits', 'video', 'tags', 'savedName',
 ]);
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -216,6 +219,8 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
   }
   const requires = optionalText('requires', MAX_REQUIRES);
   const credits = optionalText('credits', MAX_CREDITS);
+  const video = optionalText('video', MAX_VIDEO_URL);
+  if (video !== undefined && !/^https:\/\/\S+\.mp4$/.test(video)) fail('video must be an https:// link to an .mp4 file');
 
   let tags: unknown[] = [];
   if (json.tags !== undefined) {
@@ -262,6 +267,7 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
       ...(source === undefined ? {} : { source: source as string }),
       ...(requires === undefined ? {} : { requires }),
       ...(credits === undefined ? {} : { credits }),
+      ...(video === undefined ? {} : { video }),
       tags: tags as string[],
       ...(savedName === undefined ? {} : { savedName: savedName as string }),
     },

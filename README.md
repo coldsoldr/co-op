@@ -34,6 +34,12 @@ disk mode (shift + COM, then DISK):
   download on a read-only copy. Every download is checked against its
   SHA-256. Anyone can add a pack by pull request; see
   [docs/contributing-packs.md](docs/contributing-packs.md).
+- **Patches tab.** Browse community patches and a folder on your computer,
+  with nothing plugged in. Sampler and drum patches play in the browser with
+  a 24-key keyboard. With the audition plugin on hundekraft 3.0.3, synth
+  patches play on the OP-1 itself, without disk mode, and Put my sound back
+  restores the slot. The Library lists the same folder under **local**, where
+  ticked patches go to the OP-1 with Send to OP-1.
 - **op1.fun tab.** Enter your op1.fun email and API token (kept for the
   page only unless you tick "Remember on this device"), load any user's
   patches and packs, filter them, preview the MP3, and install a patch or

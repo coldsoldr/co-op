@@ -6,6 +6,7 @@ import {
   NO_PLUGIN_CAPABILITY,
   WORKSHOP_URL,
   installPlugins,
+  removePlugin,
   type InstallOptions,
   type PluginFile,
 } from './install';
@@ -39,6 +40,29 @@ function expectNoWrites(op1: FakeOp1): void {
 function expectOnlyAllowedWrites(op1: FakeOp1): void {
   expect(op1.requests.every((r) => [1, 2, 3, 4, 5, 6, 7, 8].includes(r.cmd))).toBe(true);
 }
+
+describe('removePlugin', () => {
+  const on = inventoryOf(record('synth', 'rings', 'knl', 'plugins/rings.knl', '0.1', 'coldsoldr', '9', 'abcd', 'loaded', '', ''));
+
+  it('removes the file after T1 and restarts', async () => {
+    const op1 = device({ inventory: on });
+    await expect(removePlugin(op1, 'plugins/rings.knl', { pollMs: 0 })).resolves.toBe('accepted');
+    expect(op1.removed).toEqual(['plugins/rings.knl']);
+  });
+
+  it('removes nothing on T2', async () => {
+    const op1 = device({ inventory: on, press: 'T2' });
+    await expect(removePlugin(op1, 'plugins/rings.knl', { pollMs: 0 })).rejects.toThrow('Nothing was removed.');
+    expect(op1.removed).toBeNull();
+    expect(op1.deletes).toEqual([]);
+  });
+
+  it('refuses anything but a plugin file, and a plugin that is not there', async () => {
+    await expect(removePlugin(device({ inventory: on }), 'OP1_vdk.ldr')).rejects.toThrow('only removes plugin files');
+    await expect(removePlugin(device({ inventory: on }), 'plugins/te-boot.ldr')).rejects.toThrow('only removes plugin files');
+    await expect(removePlugin(device({ inventory: EMPTY }), 'plugins/rings.knl')).rejects.toThrow('is not on the OP-1');
+  });
+});
 
 describe('installPlugins', () => {
   it('stages a file, waits for T1 and reports the OP-1 accepted it', async () => {

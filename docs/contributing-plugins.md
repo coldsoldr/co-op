@@ -97,6 +97,7 @@ For opus the id is 1 to 40 lower-case letters, digits, `_`, `.` or `-`, and
 | `source` | Optional but strongly encouraged: an `https://` link to the source, at most 200 characters. |
 | `requires` | Optional, up to 60 characters, such as `hundekraft 3.0.3`. |
 | `credits` | Optional, up to 200 characters: whose code or algorithms it ports, with their licence. |
+| `video` | Optional: an `https://` link to an `.mp4` of the plugin with its real sound, at most 300 characters. Shown on its card. |
 | `tags` | Optional, up to 8 tags of 1 to 20 lower-case letters, digits or hyphens. |
 | `savedName` | opus only: `opus.<id>`. |
 

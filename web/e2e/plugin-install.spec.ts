@@ -23,6 +23,36 @@ async function openInstall(page: Page) {
   return page.getByRole('dialog', { name: 'Install ensemble over USB' });
 }
 
+test('tries a plugin: installs it, then takes it off again after T1', async ({ page }) => {
+  await stubOp1(page, {
+    inventory: inventoryOf(DELAY),
+    inventoryAfterRestart: inventoryOf(DELAY, ENSEMBLE('loaded')),
+    inventoryAfterRemove: inventoryOf(DELAY),
+  });
+  await page.goto('./');
+  await page.getByRole('tab', { name: 'Plugins' }).click();
+  const card = page.getByRole('article', { name: 'ensemble', exact: true });
+  await card.getByRole('button', { name: 'Try ensemble on my OP-1' }).click();
+  const install = page.getByRole('dialog', { name: 'Install ensemble over USB' });
+  await install.getByRole('button', { name: 'Install ensemble.knl' }).click();
+  await expect(install.getByRole('status')).toContainText('Press T1');
+  await page.evaluate(() => window.op1Stub.press('T1'));
+  await expect(install.locator('[data-state="loaded"]')).toBeVisible();
+  await install.getByRole('button', { name: 'Close' }).click();
+
+  await expect(card.getByRole('status')).toContainText('ensemble is on your OP-1');
+  await card.getByRole('button', { name: 'Remove ensemble' }).click();
+  const remove = page.getByRole('dialog', { name: 'Remove ensemble' });
+  await remove.getByRole('button', { name: 'Remove ensemble' }).click();
+  await expect(remove.getByRole('status')).toContainText('Press T1 on the OP-1 to remove it');
+  await page.evaluate(() => window.op1Stub.press('T1'));
+  await expect(remove.getByRole('status')).toHaveText('ensemble is off the OP-1.');
+  expect(await page.evaluate(() => window.op1Stub.removed)).toEqual(['plugins/ensemble.knl']);
+  await remove.getByRole('button', { name: 'Close' }).click();
+  await expect(card.getByRole('button', { name: 'Try ensemble on my OP-1' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Keep ensemble' })).toBeHidden();
+});
+
 test('installs a seed plugin over USB: confirm, progress, T1, restart and the check after it', async ({ page }) => {
   await stubOp1(page, {
     inventory: inventoryOf(DELAY),

@@ -252,6 +252,9 @@ function PluginFacts({ plugin }: { plugin: PluginIndexEntry }) {
       </p>
       {plugin.requires && <p>Needs {plugin.requires}.</p>}
       <p>{plugin.description}</p>
+      {plugin.video && (
+        <video className="plugin-screenshot" controls preload="none" src={plugin.video} aria-label={`Demo of ${plugin.name}`} />
+      )}
       {plugin.credits && <p className="muted">{plugin.credits}</p>}
       {plugin.source && (
         <p>

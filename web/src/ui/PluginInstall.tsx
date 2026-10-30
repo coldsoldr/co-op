@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { PluginIndexEntry } from '@co-op/shared/plugins';
 import { fetchPluginBytes } from '../core/plugins/catalogue';
 import { checkDevice, type CheckResult } from '../core/usbmidi/check';
-import { CancelledOnOp1Error, WORKSHOP_URL, installPlugins, type PluginFile } from '../core/usbmidi/install';
+import { CancelledOnOp1Error, WORKSHOP_URL, installPlugins, removePlugin, type PluginFile } from '../core/usbmidi/install';
 import type { Inventory, InventoryRecord } from '../core/usbmidi/inventory';
 import { messageOf, sleep } from '../core/util';
 import { Dialog } from './Dialog';
@@ -69,6 +69,172 @@ export function InstallOverUsb({ plugin, onInstalled }: { plugin: PluginIndexEnt
       </button>
       {open && <PluginInstall plugin={plugin} onInstalled={onInstalled} onClose={() => setOpen(false)} />}
     </>
+  );
+}
+
+/**
+ * "Try on my OP-1": the install, then a choice to keep the plugin or take it off again. A plugin
+ * only loads when the OP-1 starts, so both ways mean a restart.
+ */
+export function TryOnOp1({ plugin, onInstalled }: { plugin: PluginIndexEntry; onInstalled: (inventory: Inventory | null) => void }) {
+  const [step, setStep] = useState<'idle' | 'installing' | 'trying' | 'removing'>('idle');
+  const tried = useRef(false);
+  return (
+    <>
+      <button type="button" onClick={() => setStep('installing')} aria-label={`Try ${plugin.name} on my OP-1`}>
+        Try on my OP-1
+      </button>
+      {step === 'installing' && (
+        <PluginInstall
+          plugin={plugin}
+          onInstalled={(inventory) => {
+            tried.current = true;
+            onInstalled(inventory);
+          }}
+          onClose={() => setStep(tried.current ? 'trying' : 'idle')}
+        />
+      )}
+      {step === 'trying' && (
+        <div className="notice" role="status">
+          <p>
+            {plugin.name} is on your OP-1. Try it there, or audition patches from the Patches tab. Then keep it or take it off.
+          </p>
+          <div className="plugin-buttons">
+            <button
+              type="button"
+              onClick={() => {
+                tried.current = false;
+                setStep('idle');
+              }}
+            >
+              Keep {plugin.name}
+            </button>
+            <button type="button" className="danger" onClick={() => setStep('removing')}>
+              Remove {plugin.name}
+            </button>
+          </div>
+        </div>
+      )}
+      {step === 'removing' && (
+        <PluginRemove
+          plugin={plugin}
+          onRemoved={onInstalled}
+          onClose={(removed) => {
+            tried.current = !removed;
+            setStep(removed ? 'idle' : 'trying');
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+type RemoveStep =
+  | { step: 'confirm' }
+  | { step: 'working' }
+  | { step: 'prompt' }
+  | { step: 'restarting' }
+  | { step: 'done' }
+  | { step: 'failed'; message: string };
+
+/** Takes one plugin off the OP-1. Like the install, it cannot be closed while the OP-1 is asking. */
+function PluginRemove({
+  plugin,
+  onRemoved,
+  onClose,
+}: {
+  plugin: PluginIndexEntry;
+  onRemoved: (inventory: Inventory | null) => void;
+  onClose: (removed: boolean) => void;
+}) {
+  const [state, setState] = useState<RemoveStep>({ step: 'confirm' });
+  const controller = useRef<AbortController | null>(null);
+  const path = `plugins/${plugin.file}`;
+  useEffect(() => () => controller.current?.abort(new Error(CLOSED)), []);
+
+  async function remove(): Promise<void> {
+    const current = new AbortController();
+    controller.current = current;
+    const { signal } = current;
+    try {
+      setState({ step: 'working' });
+      const port = await openOp1Port(signal);
+      let prompted = false;
+      const transfer = new AbortController();
+      const unwatch = port.watch((connected) => {
+        if (!connected) transfer.abort(new Error(prompted ? RESTARTED : 'The OP-1 was disconnected. Nothing was removed.'));
+      });
+      try {
+        await removePlugin(port, path, {
+          signal: AbortSignal.any([signal, transfer.signal]),
+          onPrompt: () => {
+            prompted = true;
+            setState({ step: 'prompt' });
+          },
+        });
+      } catch (e) {
+        if (signal.aborted || messageOf(transfer.signal.reason) !== RESTARTED) {
+          throw transfer.signal.aborted ? transfer.signal.reason : e;
+        }
+      } finally {
+        unwatch();
+        port.close();
+      }
+      setState({ step: 'restarting' });
+      await waitForOp1Restart(signal);
+      const result = await recheck(signal);
+      onRemoved(result.inventory);
+      if (result.inventory?.records.some((r) => r.path === path)) throw new Error(`${plugin.name} is still on the OP-1 after the restart.`);
+      setState({ step: 'done' });
+    } catch (e) {
+      if (controller.current !== current || messageOf(signal.reason) === CLOSED) return;
+      setState({ step: 'failed', message: e instanceof CancelledOnOp1Error ? e.message : signal.aborted ? messageOf(signal.reason) : messageOf(e) });
+    }
+  }
+
+  const prompting = state.step === 'prompt';
+  const done = state.step === 'done';
+  return (
+    <Dialog
+      title={`Remove ${plugin.name}`}
+      onClose={() => {
+        if (!prompting) onClose(done);
+      }}
+    >
+      <div className="usb-check">
+        {state.step === 'confirm' && (
+          <p>
+            This removes <code>{path}</code> from the OP-1. It asks you to press T1, then restarts. Sounds that use {plugin.name} stay
+            on the OP-1, and need it again to play as they did.
+          </p>
+        )}
+        {state.step === 'working' && <p role="status">Connecting to the OP-1…</p>}
+        {prompting && (
+          <p role="status">
+            <strong>Press T1 on the OP-1 to remove it and restart, or T2 to cancel.</strong>
+          </p>
+        )}
+        {state.step === 'restarting' && <p role="status">The OP-1 is restarting. This can take a minute; keep it plugged in.</p>}
+        {done && <p role="status">{plugin.name} is off the OP-1.</p>}
+        {state.step === 'failed' && (
+          <p role="alert" className="error">
+            {state.message}
+          </p>
+        )}
+        <div className="dialog-buttons">
+          {!prompting && (
+            <button type="button" onClick={() => onClose(done)}>
+              {state.step === 'confirm' ? 'Cancel' : 'Close'}
+            </button>
+          )}
+          {state.step === 'confirm' && (
+            <button type="button" className="danger" onClick={() => void remove()}>
+              Remove {plugin.name}
+            </button>
+          )}
+        </div>
+      </div>
+    </Dialog>
   );
 }
 

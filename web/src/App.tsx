@@ -10,7 +10,7 @@ import { Op1FunTab } from './ui/Op1Fun';
 import { OpXy } from './ui/OpXy';
 import { Packs } from './ui/Packs';
 import { PatchesTab } from './ui/PatchesTab';
-import { InstallOverUsb } from './ui/PluginInstall';
+import { InstallOverUsb, TryOnOp1 } from './ui/PluginInstall';
 import { Plugins } from './ui/Plugins';
 import { useDevice } from './ui/useDevice';
 import { useLocalLibrary } from './ui/useLocalLibrary';
@@ -43,7 +43,10 @@ export function App() {
   // opus plugins are copied into mods/ on the open drive.
   const pluginActions = (plugin: PluginIndexEntry) =>
     plugin.firmware === 'op1/hundekraft' ? (
-      <InstallOverUsb plugin={plugin} onInstalled={device.setInstalledPlugins} />
+      <>
+        <TryOnOp1 plugin={plugin} onInstalled={device.setInstalledPlugins} />
+        <InstallOverUsb plugin={plugin} onInstalled={device.setInstalledPlugins} />
+      </>
     ) : (
       <CopyToMods plugin={plugin} device={device} />
     );

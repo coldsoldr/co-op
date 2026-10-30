@@ -25,7 +25,7 @@ export const SEQ_MASK = 0x3fff;
 
 /**
  * The commands co-op sends: the reads, and the ones that stage and commit plugin files. co-op never
- * sends OFF_SET (9), DELETE (10) or RESTART (11).
+ * sends OFF_SET (9). DELETE (10) and RESTART (11) only ever remove a plugin the person chose.
  */
 export const Command = {
   HELLO: 1,
@@ -36,6 +36,8 @@ export const Command = {
   ABORT: 6,
   LIST: 7,
   OFF_GET: 8,
+  DELETE: 10,
+  RESTART: 11,
 } as const;
 
 /** The most raw file bytes one DATA message carries: u32 offset + 72 bytes packs to a 96-byte message. */

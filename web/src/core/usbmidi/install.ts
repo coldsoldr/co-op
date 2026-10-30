@@ -5,8 +5,8 @@
  * what is already installed. Then ABORT clears the staging area, each file goes over as BEGIN, DATA
  * and END, and COMMIT asks the user to press T1 (install and restart) or T2 (cancel) on the OP-1.
  *
- * Only `plugins/<id>.knl` and `plugins/<id>.op1p` are ever sent. co-op never sends DELETE, OFF_SET
- * or RESTART: removing a plugin is left to the hundekraft workshop.
+ * Only `plugins/<id>.knl` and `plugins/<id>.op1p` are ever sent. co-op never sends OFF_SET. DELETE
+ * and RESTART only remove a plugin the person chose, and the OP-1 asks for T1 first.
  */
 import { checkKnl, checkOp1p, idFromSavedName } from '@co-op/shared/plugins';
 import { Command, MAX_DATA, Status, crc32, readU32le, statusName, u32le, type Reply } from './framing';
@@ -64,13 +64,14 @@ export type InstallOutcome = 'accepted' | 'unconfirmed';
 
 /** T2 on the OP-1's prompt: nothing was installed. */
 export class CancelledOnOp1Error extends Error {
-  constructor() {
-    super('Cancelled on the OP-1 (T2). Nothing was installed.');
+  constructor(what = 'Nothing was installed.') {
+    super(`Cancelled on the OP-1 (T2). ${what}`);
     this.name = 'CancelledOnOp1Error';
   }
 }
 
 const NOTHING_INSTALLED = 'Nothing was installed.';
+const NOTHING_REMOVED = 'Nothing was removed.';
 
 export const NO_ANSWER = `The OP-1 did not answer. Installing plugins over USB needs hundekraft 3.0.3 or later; TE’s own firmware, op1r and hundekraft 2.7 or older do not answer. If the OP-1 is restarting, wait for the tape screen and try again. Update hundekraft with the hundekraft workshop: ${WORKSHOP_URL}`;
 
@@ -113,6 +114,66 @@ function installedAs(id: string, records: readonly InventoryRecord[]): Inventory
   return records.find(
     (r) => paths.includes(r.path) || (r.name === id && (r.source === 'knl' || r.source === 'op1p')),
   );
+}
+
+/**
+ * Removes one plugin file: the OP-1 asks for T1 or T2, then restarts and deletes it. Resolves as
+ * installPlugins does, and rejects the same ways. The port stays open; the caller closes it.
+ */
+export async function removePlugin(target: MidiPort | Session, path: string, options: InstallOptions = {}): Promise<InstallOutcome> {
+  const { signal, onPrompt } = options;
+  if (!PLUGIN_PATH.test(path)) throw new Error(`${path}: co-op only removes plugin files, as plugins/<id>.knl or plugins/<id>.op1p.`);
+  const control = { timeoutMs: options.controlTimeoutMs ?? CONTROL_TIMEOUT_MS, tries: 1 };
+  const tries = options.tries ?? TRIES;
+  const pollMs = options.pollMs ?? POLL_MS;
+  const session = isSession(target)
+    ? target
+    : createSession(target, { timeoutMs: options.readTimeoutMs ?? DATA_TIMEOUT_MS, ...(signal ? { signal } : {}) });
+
+  async function ask(cmd: number, payload?: Uint8Array): Promise<Reply> {
+    for (let attempt = 0; attempt < tries; attempt++) {
+      signal?.throwIfAborted();
+      try {
+        return await session.ask(cmd, payload, control);
+      } catch (e) {
+        if (!(e instanceof NoAnswerError)) throw e;
+      }
+    }
+    throw new NoAnswerError(cmd, tries);
+  }
+
+  const hello = await ask(Command.HELLO).then(parseHello, (e: unknown) => {
+    throw e instanceof NoAnswerError ? new Error(NO_ANSWER, { cause: e }) : e;
+  });
+  if (!hello.plugins || !hello.inventory) throw new Error(NO_PLUGIN_CAPABILITY);
+  const inventory = parseInventory(await session.readInventory());
+  if (!inventory.records.some((r) => r.path === path)) throw new Error(`${path} is not on the OP-1.`);
+
+  const cleared = await ask(Command.ABORT);
+  if (cleared.status !== Status.OK) throw new Error(`The OP-1 refused to clear its staging area (${statusName(cleared.status)}). ${NOTHING_REMOVED}`);
+  const deleted = await ask(Command.DELETE, Uint8Array.from([...new TextEncoder().encode(path), 0]));
+  if (deleted.status !== Status.OK) throw new Error(`The OP-1 refused to remove ${path} (${statusName(deleted.status)}). ${NOTHING_REMOVED}`);
+
+  onPrompt?.();
+  let prompted = false;
+  for (;;) {
+    let reply: Reply;
+    try {
+      reply = await ask(Command.RESTART);
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      if (prompted || e instanceof NoAnswerError) return 'unconfirmed';
+      throw e;
+    }
+    if (reply.status === Status.OK) return 'accepted';
+    if (reply.status === Status.STATE && prompted) {
+      await ask(Command.ABORT).catch(() => undefined);
+      throw new CancelledOnOp1Error(NOTHING_REMOVED);
+    }
+    if (reply.status !== Status.WAIT_KEY) throw new Error(`The OP-1 refused the restart (${statusName(reply.status)}). ${NOTHING_REMOVED}`);
+    prompted = true;
+    await sleep(pollMs, signal);
+  }
 }
 
 /**

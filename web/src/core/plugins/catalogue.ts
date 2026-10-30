@@ -40,7 +40,7 @@ function isIndexEntry(value: unknown): value is PluginIndexEntry {
   if (!FILE_NAME.test(value.file as string) || !inFolder(id, value.screenshot) || !inFolder(id, value.manual)) return false;
   if (typeof value.sizeBytes !== 'number' || typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)) return false;
   if (!isStringList(value.tags)) return false;
-  const optional = ['requires', 'credits', 'savedName', 'headerAuthor', 'headerVersion'];
+  const optional = ['requires', 'credits', 'video', 'savedName', 'headerAuthor', 'headerVersion'];
   if (!optional.every((k) => value[k] === undefined || typeof value[k] === 'string')) return false;
   return value.source === undefined || (typeof value.source === 'string' && HTTPS.test(value.source));
 }

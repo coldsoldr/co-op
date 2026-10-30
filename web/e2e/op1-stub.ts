@@ -10,6 +10,8 @@ export interface StubOptions {
   /** The LIST text before the restart, and after it (default: unchanged). */
   inventory: string;
   inventoryAfterRestart?: string;
+  /** The LIST text after a RESTART that removed a plugin (default: unchanged). */
+  inventoryAfterRemove?: string;
   /** The stored switched-off list. */
   off?: string;
   /** Hold the reply to the DATA message at this file offset until `op1Stub.release()`. */
@@ -24,6 +26,8 @@ export interface Op1Stub {
   release(): void;
   /** The commands received, by number. */
   commands: number[];
+  /** Plugin paths removed after T1. */
+  removed: string[];
   /** Files installed after T1, with their bytes. */
   installed: { path: string; bytes: number[] }[];
   /** The COMMIT prompt is up. */
@@ -44,7 +48,7 @@ declare global {
  */
 export async function stubOp1(page: Page, options: StubOptions): Promise<void> {
   await page.addInitScript(
-    ({ answer, disconnectOnList, noPorts, inventory, inventoryAfterRestart, off, holdDataAt }) => {
+    ({ answer, disconnectOnList, noPorts, inventory, inventoryAfterRestart, inventoryAfterRemove, off, holdDataAt }) => {
       const HEADER = [0xf0, 0x00, 0x20, 0x76, 0x7d];
       const pack7 = (raw: number[]): number[] => {
         const out: number[] = [];
@@ -83,10 +87,12 @@ export async function stubOp1(page: Page, options: StubOptions): Promise<void> {
       let open: { path: string; size: number; crc: number; bytes: number[] } | null = null;
       let staged: { path: string; bytes: number[] }[] = [];
       let confirmed = false;
+      let deletes: string[] = [];
       let held: (() => void) | null = null;
 
       const stub: Op1Stub = {
         commands: [],
+        removed: [],
         installed: [],
         prompting: false,
         press(key) {
@@ -115,10 +121,10 @@ export async function stubOp1(page: Page, options: StubOptions): Promise<void> {
         access.dispatchEvent(new Event('statechange'));
       };
       /** After T1: the reply goes out, the ports go away, and the OP-1 comes back with its new inventory. */
-      const restart = (): void => {
+      const restart = (after: string | null = inventoryAfterRestart): void => {
         setTimeout(() => setState('disconnected'), 50);
         setTimeout(() => {
-          if (inventoryAfterRestart !== null) listText = encode(inventoryAfterRestart);
+          if (after !== null) listText = encode(after);
           setState('connected');
         }, 600);
       };
@@ -167,6 +173,20 @@ export async function stubOp1(page: Page, options: StubOptions): Promise<void> {
             open = null;
             staged = [];
             return [0];
+          case 10:
+            deletes.push(new TextDecoder().decode(Uint8Array.from(payload.slice(0, -1))));
+            return [0];
+          case 11:
+            if (confirmed) {
+              stub.removed = deletes;
+              deletes = [];
+              stub.prompting = false;
+              confirmed = false;
+              restart(inventoryAfterRemove);
+              return [0];
+            }
+            stub.prompting = true;
+            return [9];
           case 7:
             return pageOf(listText, rd32(payload));
           case 8:
@@ -217,6 +237,7 @@ export async function stubOp1(page: Page, options: StubOptions): Promise<void> {
       noPorts: options.noPorts ?? false,
       inventory: options.inventory,
       inventoryAfterRestart: options.inventoryAfterRestart ?? null,
+inventoryAfterRemove: options.inventoryAfterRemove ?? null,
       off: options.off ?? '',
       holdDataAt: options.holdDataAt ?? null,
     },

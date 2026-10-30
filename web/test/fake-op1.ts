@@ -87,6 +87,9 @@ export class FakeOp1 implements MidiPort {
   staged: StagedFile[] = [];
   /** The files COMMIT installed after T1; null until then. */
   installed: StagedFile[] | null = null;
+  /** Plugin paths DELETE staged, and those a RESTART after T1 removed. */
+  deletes: string[] = [];
+  removed: string[] | null = null;
   /** The COMMIT prompt is on the OP-1's screen. */
   prompting = false;
   /** Decides the fate of each request; starts as the option, and a test may change it. */
@@ -96,6 +99,7 @@ export class FakeOp1 implements MidiPort {
   /** The file being received. */
   private open: { path: string; size: number; crc: number; bytes: number[] } | null = null;
   private confirmed = false;
+  private cancelled = false;
   private polls = 0;
   /** After T1 the OP-1 restarts and answers nothing more. */
   private restarted = false;
@@ -147,6 +151,7 @@ export class FakeOp1 implements MidiPort {
     if (key === 'T1') {
       this.confirmed = true;
     } else {
+      this.cancelled = this.deletes.length > 0;
       this.abort();
       this.prompting = false;
     }
@@ -173,6 +178,7 @@ export class FakeOp1 implements MidiPort {
   private abort(): void {
     this.open = null;
     this.staged = [];
+    this.deletes = [];
   }
 
   private answer({ cmd, payload }: Request): number[] {
@@ -192,6 +198,10 @@ export class FakeOp1 implements MidiPort {
       case 6:
         this.abort();
         return [OK];
+      case 10:
+        return this.stageDelete(payload);
+      case 11:
+        return this.restartPrompt();
       case 7: {
         if (!inventory) return [FORMAT];
         return page(encoder.encode(this.options.inventory ?? ''), readU32(payload));
@@ -244,6 +254,37 @@ export class FakeOp1 implements MidiPort {
     if (crc32(bytes) !== file.crc) return [CRC];
     this.staged.push({ path: file.path, bytes });
     return [OK];
+  }
+
+  /** Stages a removal, once per path; a resend of the same path is fine. */
+  private stageDelete(payload: Uint8Array): number[] {
+    const path = new TextDecoder().decode(payload.subarray(0, -1));
+    if (payload.at(-1) !== 0 || !/^(plugins|content)\/[^/]+\.(knl|op1p)$/.test(path)) return [PATH];
+    if (!this.deletes.includes(path)) this.deletes.push(path);
+    return [OK];
+  }
+
+  /** Like COMMIT with deletes: "wait key" until T1, then ok; "state" once after T2. */
+  private restartPrompt(): number[] {
+    if (this.cancelled) {
+      this.cancelled = false;
+      return [STATE];
+    }
+    if (this.confirmed) {
+      this.removed = this.deletes;
+      this.deletes = [];
+      this.prompting = false;
+      this.restarted = true;
+      return [OK];
+    }
+    this.prompting = true;
+    this.polls++;
+    const { press, afterPolls = 1 } = this.options;
+    if (press && this.polls >= afterPolls) {
+      const key = press;
+      queueMicrotask(() => this.pressKey(key));
+    }
+    return [WAIT_KEY];
   }
 
   /** "wait key" until T1 (then ok, and the OP-1 restarts) or T2 (then "state": nothing staged). */

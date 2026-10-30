@@ -128,6 +128,19 @@ Each step ends on the dev site for the owner to try.
    tab, plugin in the library.
 5. **Trying plugins:** demo videos and Try on my OP-1.
 
+## Where it stands
+
+Steps 1 to 5 are built on `dev` and tested against stand-ins, not yet on a device. Differences from
+the plan above:
+
+- **Turning a knob** follows the recommendation, and the Patches tab warns about it.
+- **New folders** when sending are made in the Library's left column, not in the send dialog.
+- **The audition plugin** is not in the plugin library yet, because its source is not published.
+  Until then it is installed by hand through the hundekraft workshop.
+- **Demo videos** are an optional `video` link in `plugin.json`. No plugin has one yet.
+- **Try on my OP-1** offers Keep or Remove and points to the Patches tab. It does not bring its own
+  demo patches.
+
 ## Parked
 
 Rendering real notes into patch files, or recording previews through a line input. The OP-1
