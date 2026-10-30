@@ -21,6 +21,8 @@ export default defineConfig({
     timeout: 120_000,
     // A Worker URL that only exists inside the tests: op1fun.spec.ts answers it with page.route.
     // There is no Turnstile site key, so feedback still falls back to the GitHub issue link.
-    env: { VITE_WORKER_URL: 'https://worker.e2e.test' },
+    // Only the Test Tones pack is built: the specs count what the catalogue shows, and a community
+    // pack must not fail them. Community packs are still checked by packs:validate and pnpm build.
+    env: { VITE_WORKER_URL: 'https://worker.e2e.test', PACKS_ONLY: 'test-tones' },
   },
 });

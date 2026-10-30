@@ -94,6 +94,15 @@ describe('loadPacks', () => {
     expect(index.packs.map((p) => p.slug)).toEqual(['alpha', 'zeta']);
   });
 
+  it('keeps only the named pack folders and skips the checks on the others', async () => {
+    await goodPack('one');
+    await goodPack('two');
+    await put('broken/pack.json', '{');
+    const { index, issues } = await loadPacks(packsDir, { now: NOW, firmware: FIRMWARE, only: ['two'] });
+    expect(issues).toEqual([]);
+    expect(index.packs.map((p) => p.slug)).toEqual(['two']);
+  });
+
   it('defaults to the registered profiles as known firmware', async () => {
     await goodPack();
     expect((await loadPacks(packsDir, { now: NOW })).issues).toEqual([]);
