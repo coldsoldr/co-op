@@ -102,6 +102,12 @@ they trust or with source they have looked at. To add one, follow
 structure, as a prompt for your coding agent, is in
 [docs/plugin-manual-prompt.md](docs/plugin-manual-prompt.md).
 
+## Versions
+
+The site's version is `version` in `web/package.json`, shown at the bottom left of every
+page and attached to feedback. Raise it when a change reaches users: the minor number for
+a new feature, the patch number for a fix. Tag the release as `v<version>`.
+
 ## Running it
 
 Requires Node 22 or newer and pnpm 11 (pinned through `packageManager`, so

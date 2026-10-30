@@ -131,7 +131,9 @@ export function App() {
         </div>
       </main>
       <footer>
-        <span>CO–OP · COMMUNITY LIBRARIAN FOR OP–1</span>
+        <span>
+          CO–OP · COMMUNITY LIBRARIAN FOR OP–1 · <span title={`Build ${__COMMIT__}`}>V{__APP_VERSION__}</span>
+        </span>
         <a href="https://github.com/coldsoldr/co-op">GITHUB ↗</a>
       </footer>
     </>

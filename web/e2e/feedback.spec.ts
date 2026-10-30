@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
 
+test('shows the site version in the footer', async ({ page }) => {
+  await page.goto('./');
+  await expect(page.getByRole('contentinfo')).toContainText(/V\d+\.\d+\.\d+/);
+});
+
 // The e2e build has no Turnstile site key, so the dialog offers the prefilled GitHub issue instead.
 test('feedback falls back to a prefilled GitHub issue', async ({ page }) => {
   await page.goto('./');
