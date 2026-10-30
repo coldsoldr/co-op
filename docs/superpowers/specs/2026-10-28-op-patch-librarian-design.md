@@ -648,7 +648,7 @@ flutter from Beads under MIT).
 A plugin runs as firmware code, so maintainers merge only from authors
 they trust or with source they have looked at. `docs/contributing-plugins.md`
 covers the folder, the checks, that risk, installing and updating;
-`docs/plugin-manual-prompt.md` is a prompt authors give their coding agent
+`docs/plugin-prompt.md` is a prompt authors give their coding agent
 so every manual has the same sections (summary, requirements, the
 encoder table by colour, second pages and Shift, on screen, tips, what is
 saved with a sound, credits and licence). The pull request template has a

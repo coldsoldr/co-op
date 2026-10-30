@@ -1,27 +1,83 @@
-# A prompt for writing a plugin manual
+# A prompt for preparing a plugin
 
-Every plugin in co-op's library has a `manual.md`, shown in the Plugins tab
-when someone presses "Read the manual". If you wrote the plugin with a coding
-agent (Claude Code, Codex, Cursor or similar), the agent has the source in
-front of it and can write the manual for you. Copy the prompt below into the
-agent, from the folder that holds the plugin's source, and read what it
-writes before you submit it: you know how the plugin behaves, the agent only
-knows what the code says.
+Every plugin in co-op's library looks the same: a screenshot, a short
+description, the same details on its card, and a manual with the same
+sections. If you wrote the plugin with a coding agent (Claude Code, Codex,
+Cursor or similar), the agent has the source in front of it and can prepare
+all of this for you. Copy the prompt below into the agent, from the folder
+that holds the plugin's source, and read what it writes before you submit it:
+you know how the plugin behaves, the agent only knows what the code says.
 
-The guide to submitting a plugin is in
+The Plugins tab shows this same prompt under **Submit a plugin**, with a Copy
+button. The guide to submitting a plugin is in
 [contributing-plugins.md](contributing-plugins.md).
 
 ## The prompt
 
 ````text
-Write the user manual for this OP-1 plugin as a Markdown file called
-manual.md. It is shown in co-op's plugin library next to the plugin's
-screenshot, to people who have never seen the plugin.
+Prepare this OP-1 plugin for co-op's plugin library
+(https://coldsoldr.github.io/co-op/). Every plugin there has to look the same,
+so follow this exactly.
 
 First read the plugin's source: the DSP, the parameter and encoder handling,
 the screen drawing code, what it stores with a sound, and any README or
 comments. Write only what the source shows. If you cannot tell how something
 behaves, leave it out or write "not documented"; never guess.
+
+Make one folder named after the plugin's id, holding exactly four files and
+nothing else, spelled exactly as here:
+
+  <id>/plugin.json      describes the plugin
+  <id>/<id>.knl         the built plugin (<id>.op1p for op1r, <name>.opmod for opus)
+  <id>/manual.md        the manual
+  <id>/screenshot.png   a picture of its screen
+
+The id: for hundekraft, the name the OP-1 stores in a sound with spaces as _
+("tape echo" is tape_echo), 1 to 15 lower-case letters, digits, _ or -. For
+opus, 1 to 40 lower-case letters, digits, _, . or -.
+
+## plugin.json
+
+Use these fields, in this order, as JSON with two-space indents:
+
+- "format": 1
+- "id": the id, the same as the folder name
+- "name": as the OP-1 shows it
+- "firmware": "op1/hundekraft" or "op1/opus"
+- "kind": "synth", "fx" or "feature" (a sequencer or tool)
+- "author": the name to show, as I want to be credited
+- "version": the same version as the built file, if it carries one
+- "description": what it does in one or two plain sentences, at most 500
+  characters, without repeating its name. For example: "Sample-rate and
+  bit-depth reduction with a jittery clock."
+- "license": one of GPL-3.0-or-later, GPL-3.0-only, GPL-2.0-or-later, MIT,
+  BSD-3-Clause, Apache-2.0, MPL-2.0, or LicenseRef-Freeware for a closed plugin
+  that is free to use. A plugin built on an SDK follows that SDK's licence
+  (hundekraft's is GPL-3.0-or-later).
+- "file": the plugin file's name
+- "screenshot": "screenshot.png"
+- "manual": "manual.md"
+- "source": an https:// link to the source. Ask me for it if you cannot find
+  it: a plugin without one is unlikely to be accepted.
+- "requires": the firmware and version it needs, such as "hundekraft 3.0.3"
+- "credits": only if it ports someone else's work: whose code or algorithms,
+  with their licence, at most 200 characters
+- "tags": up to 8, each 1 to 20 lower-case letters, digits or hyphens. Start
+  with what it is ("synth", "effect", "sequencer"), then what it sounds like
+  or comes from ("lo-fi", "mutable-instruments").
+- "savedName": for opus only, "opus.<id>"
+
+## screenshot.png
+
+The plugin's screen on its own, running with a sound playing, on black, as a
+PNG of exactly 960 by 480 pixels (the OP-1's 320 by 160 screen at 3x, with no
+smoothing), at most 1 MB. No device, no hands, no text added. If you cannot
+produce this yourself, say so and I will capture it.
+
+## manual.md
+
+The manual is shown in co-op's plugin library next to the screenshot, to people
+who have never seen the plugin.
 
 Use exactly these sections, in this order. Leave out a section only where it
 says so.
@@ -73,7 +129,7 @@ says so.
     ports (with their licence), the SDK it is built on, and the plugin's own
     licence.
 
-Style:
+Style, for the description as well as the manual:
 
 - Short sentences. Plain words. Explain a technical term the first time it
   appears.
@@ -89,7 +145,12 @@ Style:
   screenshot line.
 - Keep it under 64 KB; a good manual is one or two screens long.
 
-When you are done, list anything you were unsure about so I can check it.
+Make sure the built plugin's file name and the names in plugin.json agree, and
+that any screen SVG has no number with more than four decimals (it hangs the
+OP-1 at boot).
+
+When you are done, show me the folder and list anything you were unsure about
+so I can check it. Do not open a pull request yourself.
 ````
 
 ## An example

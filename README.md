@@ -100,7 +100,7 @@ A plugin runs as firmware code, so maintainers merge one only from an author
 they trust or with source they have looked at. To add one, follow
 [docs/contributing-plugins.md](docs/contributing-plugins.md); the manual
 structure, as a prompt for your coding agent, is in
-[docs/plugin-manual-prompt.md](docs/plugin-manual-prompt.md).
+[docs/plugin-prompt.md](docs/plugin-prompt.md).
 
 ## Versions
 

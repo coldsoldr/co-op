@@ -119,7 +119,7 @@ the fields above it checks:
 - **`.opmod` (opus).** The `OPMD` magic and a 2 MB limit; nothing more is
   known about the format.
 - **screenshot.png.** A PNG of 64 to 2048 pixels each way, at most 1 MB.
-  A capture of the OP-1's screen at 2x or 4x reads best.
+  Use 960 by 480 (the screen at 3x), like the other plugins.
 - **manual.md.** UTF-8 text, not empty, at most 64 KB.
 
 It prints every problem grouped by plugin and ends with
@@ -127,12 +127,14 @@ It prints every problem grouped by plugin and ends with
 request. To see your plugin in the app, run `pnpm --filter @co-op/web dev`
 and open the Plugins tab.
 
-## Writing the manual
+## Preparing the folder
 
-Use the fixed structure in [plugin-manual-prompt.md](plugin-manual-prompt.md).
-It is written as a prompt you can paste into your coding agent, which reads
-the source and drafts the manual; check every line against how the plugin
-really behaves. The seed plugins' manuals are examples.
+Press **Submit a plugin** in the Plugins tab, or open
+[plugin-prompt.md](plugin-prompt.md). It is a prompt you can paste into your
+coding agent, which reads the source and prepares `plugin.json`, the
+screenshot and the manual so your plugin looks like every other in the
+library; check every line against how the plugin really behaves. The seed
+plugins are examples.
 
 ## How people install a plugin
 

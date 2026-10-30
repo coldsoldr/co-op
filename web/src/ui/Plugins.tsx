@@ -15,6 +15,7 @@ import { messageOf } from '../core/util';
 import { saveBlob } from './download';
 import { formatSize } from './format';
 import { Markdown } from './Markdown';
+import { PluginSubmit } from './PluginSubmit';
 
 const firmwareLabel = (id: string): string => getProfile(id)?.label ?? id;
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
@@ -39,6 +40,8 @@ export function Plugins({ active, renderActions }: PluginsProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   /** The plugin whose manual button takes focus when returning to the list. */
   const [returnTo, setReturnTo] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submitButton = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(() => {
     fetchPluginIndex(base())
@@ -62,8 +65,21 @@ export function Plugins({ active, renderActions }: PluginsProps) {
     <section aria-labelledby="plugins-heading">
       <div className="packs-header">
         <h2 id="plugins-heading">Plugins</h2>
+        {!submitting && (
+          <button ref={submitButton} type="button" onClick={() => setSubmitting(true)}>
+            Submit a plugin
+          </button>
+        )}
       </div>
-      {loadError && (
+      {submitting && (
+        <PluginSubmit
+          onBack={() => {
+            setSubmitting(false);
+            requestAnimationFrame(() => submitButton.current?.focus());
+          }}
+        />
+      )}
+      {!submitting && loadError && (
         <div role="alert" className="error">
           <p>Could not load the plugin library: {loadError}</p>
           <button type="button" onClick={load}>
@@ -71,8 +87,8 @@ export function Plugins({ active, renderActions }: PluginsProps) {
           </button>
         </div>
       )}
-      {!index && !loadError && <p role="status">Loading plugins…</p>}
-      {index && open && (
+      {!submitting && !index && !loadError && <p role="status">Loading plugins…</p>}
+      {!submitting && index && open && (
         <PluginManual
           key={open.id}
           plugin={open}
@@ -83,7 +99,7 @@ export function Plugins({ active, renderActions }: PluginsProps) {
           }}
         />
       )}
-      {index && !open && (
+      {!submitting && index && !open && (
         <PluginList
           index={index}
           filter={filter}

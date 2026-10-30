@@ -19,7 +19,7 @@
 - [ ] I wrote this plugin, or I have the right to share it under the licence in `plugin.json`, and any code it ports is credited in `credits`.
 - [ ] `source` links to the source, and I say below which commit the file was built from and how.
 - [ ] I understand a plugin runs as firmware code, and that maintainers merge only from authors they trust or with source they have looked at.
-- [ ] `manual.md` follows `docs/plugin-manual-prompt.md`, and I checked every line against how the plugin behaves.
+- [ ] `manual.md` follows `docs/plugin-prompt.md`, and I checked every line against how the plugin behaves.
 - [ ] `pnpm --filter @co-op/web plugins:validate` passes (or the pull request check is green).
 - [ ] I installed and ran the plugin on an OP-1 with the firmware in `requires`, and it starts again cleanly after a restart.
 - [ ] For an update: `version` is bumped.

@@ -989,6 +989,16 @@ dialog p.counter {
   flex-wrap: wrap;
   gap: 8px;
 }
+.prompt {
+  max-height: 420px;
+  white-space: pre-wrap;
+}
+.plugin-submit {
+  max-width: 76ch;
+}
+.plugin-submit h3 {
+  margin-top: 32px;
+}
 .plugin-screenshot,
 .markdown img {
   display: block;

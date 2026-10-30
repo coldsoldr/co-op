@@ -6,6 +6,28 @@ const seed = fileURLToPath(new URL('../../plugins/', import.meta.url));
 const SEED_IDS = ['bitcrusher', 'drive', 'ensemble', 'freq_shift', 'grids', 'marbles', 'rings', 'tape_drive', 'tape_echo', 'wavefolder'];
 const seedNames = SEED_IDS.map((id) => (JSON.parse(readFileSync(`${seed}${id}/plugin.json`, 'utf8')) as { name: string }).name);
 
+test('explains how to submit a plugin and copies the prompt', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('./');
+  await page.getByRole('tab', { name: 'Plugins' }).click();
+  await page.getByRole('button', { name: 'Submit a plugin' }).click();
+  await expect(page.getByRole('heading', { name: 'What your plugin needs' })).toBeVisible();
+  await expect(page.locator('#panel-plugins article')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Read the full guide' })).toHaveAttribute('href', /contributing-plugins\.md$/);
+
+  await page.getByRole('button', { name: 'Copy the prompt' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Copied' })).toBeVisible();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain('## plugin.json');
+  expect(copied).toContain('## screenshot.png');
+  expect(copied).toContain('## manual.md');
+  expect(copied).not.toContain('````');
+
+  await page.getByRole('button', { name: 'Back to plugins' }).click();
+  await expect(page.locator('#panel-plugins article')).toHaveCount(10);
+  await expect(page.getByRole('button', { name: 'Submit a plugin' })).toBeFocused();
+});
+
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
