@@ -17,6 +17,7 @@ import { filesFromDataTransfer } from '../core/store/drop-store';
 import { profiles } from '../core/profiles/registry';
 import { installedNames } from '../core/plugins/requirements';
 import { playPcm } from './audio';
+import { AuditionTest } from './AuditionTest';
 import { BackupPanel, type BackupControls } from './BackupPanel';
 import { ConfirmDialog } from './Dialog';
 import { saveBlob, zipBlob } from './download';
@@ -64,6 +65,7 @@ export function Library({ device, active = true, op1fun }: { device: Device; act
       ) : (
         <ConnectPanel device={device} onCheckUsb={openUsbCheck} />
       )}
+      {__APP_VERSION__.endsWith('-dev') && <AuditionTest />}
       {usbCheck && <UsbCheck device={device} onClose={() => setUsbCheck(false)} />}
       {device.error && (
         <p role="alert" className="error">
