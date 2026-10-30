@@ -50,7 +50,7 @@ const PRESSURE_CHANNEL_15 = 0xae;
 const CC_COUNT = 20;
 const CC_SUM = 25;
 export const BYTES_PER_MESSAGE = 14 / 8;
-const SETTLE_MS = 500;
+const REPORT_TIMEOUT_MS = 30_000;
 const BATCH_MS = 10;
 
 export interface SpeedResult {
@@ -58,7 +58,7 @@ export interface SpeedResult {
   target: number;
   sent: number;
   received: number;
-  /** The rate actually sent. */
+  /** The rate measured from the first message to the plugin's reply. */
   messagesPerSecond: number;
   /** True when every message arrived with its value intact. */
   intact: boolean;
@@ -90,9 +90,11 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
 
 /**
  * Sends test data at about `target` messages a second for `seconds`, then asks the plugin what
- * arrived. Batches go out every few milliseconds, because a browser timer cannot pace single messages.
+ * arrived. Batches go out every few milliseconds, because a browser timer cannot pace single
+ * messages. The request travels behind the data, so the reply also times the delivery: a browser
+ * accepts messages faster than the USB link carries them.
  */
-export async function measureSpeed(port: MidiPort, target: number, seconds = 2, settleMs = SETTLE_MS): Promise<SpeedResult> {
+export async function measureSpeed(port: MidiPort, target: number, seconds = 2): Promise<SpeedResult> {
   await sendAudition(port, 'zeroSpeed');
   const started = performance.now();
   const total = Math.round(target * seconds);
@@ -105,11 +107,9 @@ export async function measureSpeed(port: MidiPort, target: number, seconds = 2, 
     }
     await wait(BATCH_MS);
   }
-  const elapsed = (performance.now() - started) / 1000;
-  await wait(settleMs);
   const report: Uint8Array[] = [];
-  const done = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(NO_PLUGIN_REPLY)), 4000);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(NO_PLUGIN_REPLY)), REPORT_TIMEOUT_MS);
     port.onSysex((bytes) => {
       if (parseAuditionReply(bytes) === 'report') {
         clearTimeout(timer);
@@ -118,25 +118,59 @@ export async function measureSpeed(port: MidiPort, target: number, seconds = 2, 
         report.push(bytes);
       }
     });
+    port.send(Uint8Array.of(CC_CHANNEL_16, CC_REQUEST, AUDITION_REQUEST.reportSpeed));
   });
-  port.send(Uint8Array.of(CC_CHANNEL_16, CC_REQUEST, AUDITION_REQUEST.reportSpeed));
-  await done;
+  const elapsed = (performance.now() - started) / 1000;
   const { count, sum } = collectReport(report);
   return { target, sent, received: count, messagesPerSecond: sent / elapsed, intact: count === sent && sum === sumOf(sent) };
 }
 
-/** Rising rates, stopping after the first that loses anything; a run stops early if the plugin goes quiet. */
-export const SPEED_STEPS: readonly number[] = [250, 500, 1000, 2000, 4000, 8000];
+const FIRST_TARGET = 8000;
+const LAST_TARGET = 256_000;
+/** How close the highest clean and lowest failing rates get before the search ends. */
+const SEARCH_CLOSE = 0.1;
+/** A run this far below its target means the link, not the plugin, set the pace. */
+const PACED_BELOW = 0.8;
 
-export async function runSpeedTest(port: MidiPort, onResult: (result: SpeedResult) => void): Promise<SpeedResult[]> {
-  const results: SpeedResult[] = [];
-  for (const target of SPEED_STEPS) {
-    const result = await measureSpeed(port, target);
-    results.push(result);
+/** Why a speed test ended. */
+export type SpeedStop = 'lost data' | 'no reply' | 'link limit' | 'top of the test';
+
+/**
+ * Doubles the rate until data is lost, then halves the gap between the highest clean rate and the
+ * lowest failing one. It also ends when the link cannot carry the rate asked for, or when the
+ * plugin stops answering, which a run that overwhelmed the OP-1's MIDI input would cause.
+ */
+export async function runSpeedTest(
+  port: MidiPort,
+  onResult: (result: SpeedResult) => void,
+  seconds = 2,
+  pacedBelow = PACED_BELOW,
+): Promise<SpeedStop> {
+  let clean = 0;
+  let failed = Number.POSITIVE_INFINITY;
+  let target = FIRST_TARGET;
+  for (;;) {
+    let result: SpeedResult;
+    try {
+      result = await measureSpeed(port, target, seconds);
+    } catch {
+      return 'no reply';
+    }
     onResult(result);
-    if (!result.intact) break;
+    if (result.intact) {
+      clean = target;
+      if (result.messagesPerSecond < target * pacedBelow) return 'link limit';
+    } else {
+      failed = target;
+    }
+    if (failed === Number.POSITIVE_INFINITY) {
+      target *= 2;
+      if (target > LAST_TARGET) return 'top of the test';
+    } else {
+      if (failed - clean <= failed * SEARCH_CLOSE) return 'lost data';
+      target = Math.round((clean + failed) / 2);
+    }
   }
-  return results;
 }
 
 /** Seconds to send `bytes` at a measured rate, with no allowance for checking or resending. */

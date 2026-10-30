@@ -66,16 +66,27 @@ describe('speed test', () => {
   });
 
   it('calls a run intact when everything arrived', async () => {
-    const result = await measureSpeed(fakeCounter(), 500, 0.05, 1);
+    const result = await measureSpeed(fakeCounter(), 500, 0.05);
     expect(result).toMatchObject({ target: 500, sent: 25, received: 25, intact: true });
   });
 
-  it('notices a lost message and stops raising the rate', async () => {
+  it('narrows in on the rate where data starts to go missing', async () => {
     const seen: number[] = [];
-    const results = await runSpeedTest(fakeCounter(100), (r) => seen.push(r.target));
-    expect(results.at(-1)?.intact).toBe(false);
-    expect(seen.length).toBeLessThan(6);
-  }, 20000);
+    await expect(runSpeedTest(fakeCounter(50), (r) => seen.push(r.target), 0.01, 0)).resolves.toBe('lost data');
+    expect(seen).toEqual([8000, 4000, 6000, 5000, 5500]);
+  });
+
+  it('stops at the top of the test when nothing is ever lost', async () => {
+    await expect(runSpeedTest(fakeCounter(), () => undefined, 0.002, 0)).resolves.toBe('top of the test');
+  });
+
+  it('stops when the link cannot carry the rate', async () => {
+    await expect(runSpeedTest(fakeCounter(), () => undefined, 0.002, Infinity)).resolves.toBe('link limit');
+  });
+
+  it('reports a plugin that stops answering', async () => {
+    await expect(runSpeedTest(fakePort([]), () => undefined, 0.01)).resolves.toBe('no reply');
+  }, 10000);
 
   it('estimates the time to send a file', () => {
     expect(secondsToSend(1750, 1000)).toBeCloseTo(1);
