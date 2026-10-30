@@ -95,13 +95,17 @@ The plugin grows from the proof of concept:
   needs no JSON text parser.
 - A patch's settings are about 350 bytes, which is under 0.1 s at the measured rate.
 
-Speed test on the owner's OP-1, Vivaldi, 2026-10-30: every step arrived intact, up to 7,936
-messages a second (13.6 KB a second). The limit was not reached. The rate depends on the host, so
-the transfer must still check and resend.
+Speed test on the owner's OP-1, Vivaldi, 2026-10-30, timed by the plugin's reply so the figures
+are delivered rates: 7,909 and 15,857 messages a second as asked, and a ceiling of 18,479 a second
+(31.6 KB a second) when asked for 32,000. Nothing was lost at any rate, so the USB path sets the
+limit and the plugin keeps up with it. The rate depends on the host, so the transfer must still
+check and resend. Its working rate is 15,000 messages a second, under the ceiling, for about
+25 KB a second.
 
-At that rate a typical 460 KB sample patch takes at least 34 s and a 1 MB patch 78 s, before
-checking and before the OP-1 stores it. So sampler and drum patches stay in the browser. A faster
-rate could reopen this.
+At the ceiling a typical 460 KB sample patch takes at least 15 s and a 1 MB patch 33 s, before
+checking and before the OP-1 stores it. That is too slow for clicking through patches, so sampler
+and drum patches stay in the browser. A deliberate "load this one on the OP-1" could be added
+later, but it also needs a way to store the audio, which is untested.
 
 ## Trying a plugin
 

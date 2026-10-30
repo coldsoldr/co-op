@@ -158,10 +158,11 @@ dev site in Vivaldi. The plugin is `ports/knl/audition` in coldsoldr/te-op1-cfw 
   switching the OP-1 off and on. So `PATCH_SET` alone does not save.
 - Not tested: sending a whole patch over MIDI. The test sound was built into the plugin.
   Turning a knob during an audition is expected to let the stock code save the test sound.
-- Speed, plugin 0.2: polyphonic pressure on channel 15 reached the plugin at up to 7,936
-  messages a second (13.6 KB a second at 14 bits a message), with nothing lost and the sum
-  correct at all six rates. The limit was not found. Host and browser: the owner's Windows
-  PC in Vivaldi.
+- Speed, plugin 0.2: polyphonic pressure on channel 15 reached the plugin at a ceiling of
+  18,479 messages a second (31.6 KB a second at 14 bits a message), with nothing lost and
+  the sum correct at every rate tried. Timed by the plugin's reply, which travels behind
+  the data. Asking for 32,000 a second still delivered 18,479, so the USB path sets the
+  limit, not the plugin. Host and browser: the owner's Windows PC in Vivaldi.
 
 ## What a patch's audio section holds (2026-10-30)
 
