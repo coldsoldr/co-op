@@ -5,6 +5,25 @@ test('shows the site version in the footer', async ({ page }) => {
   await expect(page.getByRole('contentinfo')).toContainText(/V\d+\.\d+\.\d+/);
 });
 
+test('opens the changelog from the footer, newest first, and has a link of its own', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('link', { name: 'CHANGELOG' }).click();
+  await expect(page.getByRole('heading', { name: 'Changelog' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Library' })).toBeHidden();
+  const releases = page.locator('.release summary h3');
+  await expect(releases.first()).toHaveText('V0.9.0');
+  await expect(page.locator('.release').first()).toHaveAttribute('open', '');
+  await expect(page.locator('.release').nth(1)).not.toHaveAttribute('open', '');
+  await page.getByText('V0.8.0', { exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'New Patches tab' })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Changelog' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back' }).click();
+  await expect(page.getByRole('tab', { name: 'Library' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Changelog' })).toBeHidden();
+});
+
 // The e2e build has no Turnstile site key, so the dialog offers the prefilled GitHub issue instead.
 test('feedback falls back to a prefilled GitHub issue', async ({ page }) => {
   await page.goto('./');

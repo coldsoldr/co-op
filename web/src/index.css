@@ -1080,6 +1080,48 @@ dialog p.counter {
 .local-actions {
   margin-top: 12px;
 }
+.footer-links {
+  display: flex;
+  gap: 20px;
+}
+.release {
+  margin-bottom: 8px;
+  padding: 0 20px;
+  border-radius: 28px;
+  background: var(--surface);
+}
+.release summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.release summary::-webkit-details-marker {
+  display: none;
+}
+.release summary h3 {
+  margin: 0;
+}
+.release .markdown {
+  padding-bottom: 16px;
+}
+.release .markdown h4 {
+  margin: 20px 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.release .markdown table {
+  border-collapse: collapse;
+}
+.release .markdown th,
+.release .markdown td {
+  padding: 4px 16px 4px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
 .plugin-compare {
   width: 100%;
   border-collapse: collapse;

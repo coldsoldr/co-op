@@ -1,5 +1,6 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { PluginIndexEntry } from '@co-op/shared/plugins';
+import { Changelog } from './ui/Changelog';
 import { Feedback } from './ui/Feedback';
 import { CopyToMods } from './ui/CopyToMods';
 import { useSiteDevice } from './ui/device-choice';
@@ -29,6 +30,8 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id'];
 
+const CHANGELOG_HASH = '#changelog';
+
 export function App() {
   const [tab, setTab] = useState<TabId>('library');
   // One connection for every tab, so the Packs tab installs onto the drive the Library shows.
@@ -38,6 +41,14 @@ export function App() {
   const { theme, toggle } = useTheme();
   const { device: siteDevice, choose } = useSiteDevice();
   const op1 = siteDevice === 'op1';
+  const [changelog, setChangelog] = useState(() => window.location.hash === CHANGELOG_HASH);
+
+  // The address decides, so the section has a link of its own and the browser's Back button works.
+  useEffect(() => {
+    const follow = (): void => setChangelog(window.location.hash === CHANGELOG_HASH);
+    window.addEventListener('hashchange', follow);
+    return () => window.removeEventListener('hashchange', follow);
+  }, []);
   // The op1.fun account, shared by the op1.fun tab and the Library's upload action.
   const op1fun = useOp1Fun();
 
@@ -97,13 +108,18 @@ export function App() {
 
   return (
     <>
-      {!op1 && (
+      {changelog && (
         <main>
+          <Changelog onClose={() => (window.location.hash = '')} />
+        </main>
+      )}
+      {!op1 && (
+        <main hidden={changelog}>
           <OpXy brand={brand} actions={headerActions} />
         </main>
       )}
       {/* Stays mounted while another device is shown, so an open drive and its tabs survive. */}
-      <main hidden={!op1}>
+      <main hidden={!op1 || changelog}>
         <header className="app-header">
           <div className="brand">
             {brand}
@@ -154,7 +170,10 @@ export function App() {
         <span>
           CO–OP · COMMUNITY LIBRARIAN FOR {op1 ? 'OP–1' : 'OP–XY'} · <span title={`Build ${__COMMIT__}`}>V{__APP_VERSION__}</span>
         </span>
-        <a href="https://github.com/coldsoldr/co-op">GITHUB ↗</a>
+        <span className="footer-links">
+          <a href={CHANGELOG_HASH}>CHANGELOG</a>
+          <a href="https://github.com/coldsoldr/co-op">GITHUB ↗</a>
+        </span>
       </footer>
     </>
   );

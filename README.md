@@ -119,7 +119,9 @@ route from the browser. OP-1F is listed as coming soon.
 
 The site's version is `version` in `web/package.json`, shown at the bottom left of every
 page and attached to feedback. Raise it when a change reaches users: the minor number for
-a new feature, the patch number for a fix. Tag the release as `v<version>`.
+a new feature, the patch number for a fix. Tag the release as `v<version>`, and add its notes as
+`docs/release-notes/v<version>.md`, starting with a `# co-op V<version>` heading and a
+`Released YYYY-MM-DD.` line. Each file there shows in the site's Changelog section by itself.
 
 ## Branches
 
