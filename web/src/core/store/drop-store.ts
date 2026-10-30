@@ -112,6 +112,10 @@ export class DropStore implements DeviceStore {
     throw readOnly(path);
   }
 
+  async removeFolder(path: string): Promise<void> {
+    throw readOnly(path);
+  }
+
   private isDir(key: string): boolean {
     return key === '' || this.dirs.has(key);
   }

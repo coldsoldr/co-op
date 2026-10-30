@@ -94,6 +94,15 @@ export class MemoryStore implements DeviceStore {
     this.addParents(joinPath(key, 'x'));
   }
 
+  async removeFolder(path: string): Promise<void> {
+    const key = joinPath(path);
+    this.assertWritable(key);
+    if (key === '' || !this.dirs.has(key)) throw new StoreError(`no such folder: ${key}`);
+    const inside = (entry: string): boolean => entry.startsWith(`${key}/`);
+    if ([...this.files.keys(), ...this.dirs].some(inside)) throw new StoreError(`${key} is not empty`);
+    this.dirs.delete(key);
+  }
+
   /** A copy of every file, keyed by path in code-point order. */
   snapshot(): Record<string, Uint8Array> {
     const out: Record<string, Uint8Array> = {};

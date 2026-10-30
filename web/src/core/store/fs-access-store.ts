@@ -176,6 +176,20 @@ export class FsAccessStore implements DeviceStore {
     }
   }
 
+  async removeFolder(path: string): Promise<void> {
+    try {
+      const parts = splitPath(path);
+      const name = parts.pop();
+      if (name === undefined) throw new StoreError('cannot remove the drive root');
+      const parent = await this.dir(parts, false);
+      await parent.getDirectoryHandle(name); // rejects for a file
+      // Without { recursive: true } this refuses a folder that still holds anything.
+      await parent.removeEntry(name);
+    } catch (error) {
+      throw storeError('remove folder', joinPath(path), error);
+    }
+  }
+
   private async dir(parts: string[], create: boolean): Promise<FileSystemDirectoryHandle> {
     let dir = this.root;
     for (const part of parts) dir = await dir.getDirectoryHandle(part, { create });

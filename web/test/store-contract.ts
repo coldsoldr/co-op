@@ -203,5 +203,21 @@ export function describeWritableStore(name: string, make: StoreFactory, options:
       const store = await make(seed());
       await expect(store.mkdir('synth/user/a.aif')).rejects.toThrow(StoreError);
     });
+
+    it('removes an empty folder', async () => {
+      const store = await make(seed());
+      await store.mkdir('synth/pads');
+      await store.removeFolder('synth/pads');
+      expect(await store.exists('synth/pads')).toBe(false);
+      expect((await store.list('synth')).map((e) => e.name)).not.toContain('pads');
+    });
+
+    it('refuses to remove a folder that holds anything, a file, or a missing folder', async () => {
+      const store = await make(seed());
+      await expect(store.removeFolder('synth/user')).rejects.toThrow(StoreError);
+      await expect(store.removeFolder('synth/user/b.aif')).rejects.toThrow(StoreError);
+      await expect(store.removeFolder('synth/none')).rejects.toThrow(StoreError);
+      expect(await store.exists('synth/user/b.aif')).toBe(true);
+    });
   });
 }

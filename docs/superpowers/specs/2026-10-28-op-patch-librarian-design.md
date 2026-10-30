@@ -293,8 +293,17 @@ write actions when `write` is false.
 
 Device library
 
-- Mount, scan with the active profile, show a tree by folder and a flat list
-  by kind with search and sort.
+- Mount, scan with the active profile, show the patch folders in a left column
+  with an all-patches entry, and the chosen list with search and sort.
+- Add and remove folders under each patch root. A folder with patches asks
+  first; removing it deletes its files, then the folder. `user` is never
+  removed: it holds the OP-1's 8 quick access presets. A folder holding another
+  folder is refused before anything is deleted. On a read-only source the
+  removal is staged as an `rmdir` change.
+- Show free space as an estimate under the folders: 512 MB of flash less the
+  size of every file on the drive. A browser cannot ask a drive for its free
+  space, and the OP-1's system files do not show on it, so the true figure is
+  lower.
 - Preview audio in the browser using the codec's PCM output.
 - Rename, move, copy, delete, with confirmation on destructive actions.
 - Back up: zip the whole patch tree or a selection, with a manifest.

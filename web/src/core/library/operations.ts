@@ -229,6 +229,26 @@ export async function deletePatch(store: DeviceStore, path: string): Promise<voi
   await store.remove(path);
 }
 
+/** The folder in each patch root that holds the OP-1's 8 quick access presets; it always stays. */
+export const PRESET_FOLDER = 'user';
+
+export const isPresetFolder = (name: string): boolean => sameName(name, PRESET_FOLDER);
+
+/**
+ * Removes a patch folder and every file in it. The preset folder is refused, and so is a folder
+ * holding another folder, before anything is deleted.
+ */
+export async function removeFolder(store: DeviceStore, folderPath: string): Promise<void> {
+  const folder = joinPath(folderPath);
+  assertWritable(store, folder);
+  if (isPresetFolder(basename(folder))) throw new OperationError(`${folder} holds the OP-1's quick access presets`);
+  const entries = await store.list(folder);
+  const nested = entries.find((e) => e.kind === 'dir');
+  if (nested) throw new OperationError(`${folder} holds the folder ${nested.name}`);
+  for (const entry of entries) await store.remove(joinPath(folder, entry.name));
+  await store.removeFolder(folder);
+}
+
 /**
  * Creates `<rootPath>/<name>` (for example 'synth/pads') if missing and returns its path. A folder
  * whose name differs only in case is the same folder on the drive, so its path is returned as is;

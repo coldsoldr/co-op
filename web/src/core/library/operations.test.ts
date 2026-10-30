@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  removeFolder,
   freeName,
   renameFile,
   setPatchName,
@@ -37,6 +38,31 @@ const drive = (options: { write?: boolean } = {}): MemoryStore =>
 
 const ssndOf = (bytes: Uint8Array): Uint8Array | undefined =>
   readPatch(bytes).form.chunks.find((c) => c.id === 'SSND')?.data;
+
+describe('removeFolder', () => {
+  const store = () => new MemoryStore({ 'synth/pads/a.aif': Uint8Array.of(1), 'synth/pads/.DS_Store': Uint8Array.of(2), 'synth/user/b.aif': Uint8Array.of(3) });
+
+  it('removes the folder and every file in it', async () => {
+    const drive = store();
+    await removeFolder(drive, 'synth/pads');
+    expect(await drive.exists('synth/pads')).toBe(false);
+    expect(await drive.exists('synth/user/b.aif')).toBe(true);
+  });
+
+  it('never removes the preset folder, in any case', async () => {
+    const drive = store();
+    await expect(removeFolder(drive, 'synth/user')).rejects.toThrow(OperationError);
+    await expect(removeFolder(drive, 'synth/USER')).rejects.toThrow(OperationError);
+    expect(await drive.exists('synth/user/b.aif')).toBe(true);
+  });
+
+  it('deletes nothing from a folder holding a folder', async () => {
+    const drive = store();
+    await drive.mkdir('synth/pads/soft');
+    await expect(removeFolder(drive, 'synth/pads')).rejects.toThrow(OperationError);
+    expect(await drive.exists('synth/pads/a.aif')).toBe(true);
+  });
+});
 
 describe('freeName', () => {
   it('returns the name itself when it is free', async () => {

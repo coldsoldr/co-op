@@ -4,7 +4,8 @@ import { StoreError, basename, dirname, joinPath, splitPath, type DeviceStore, t
 import { byCodePoint, bytesEqual } from '../util';
 
 /**
- * One change against the base store, in its final state. 'mkdir' is a new folder left empty.
+ * One change against the base store, in its final state. 'mkdir' is a new folder left empty;
+ * 'rmdir' is a base folder removed once its files are gone.
  * 'rename' is a case-only rename: the drive file at `path` must be renamed by hand to `to` (a
  * file name in the same folder), because a FAT drive keeps the old spelling when the file is
  * replaced by a copy whose name differs only in case. Its bytes travel as the matching 'write'.
@@ -13,6 +14,7 @@ export type Change =
   | { op: 'write'; path: string; bytes: Uint8Array }
   | { op: 'remove'; path: string }
   | { op: 'mkdir'; path: string }
+  | { op: 'rmdir'; path: string }
   | { op: 'rename'; path: string; to: string };
 
 /** The instructions file inside an exported change set. */
@@ -42,6 +44,8 @@ export class StagedStore implements DeviceStore {
   private readonly dirs = new Set<string>();
   /** Folders made explicitly with mkdir that the base does not have. */
   private readonly made = new Set<string>();
+  /** Base folders that are currently removed. */
+  private readonly goneDirs = new Set<string>();
 
   constructor(private readonly base: DeviceStore) {
     this.label = base.label;
@@ -52,7 +56,8 @@ export class StagedStore implements DeviceStore {
     if (!(await this.isDir(dir))) return [];
     const entries = new Map<string, DirEntry['kind']>();
     for (const entry of await this.base.list(dir)) {
-      if (entry.kind === 'file' && this.removed.has(joinPath(dir, entry.name))) continue;
+      const path = joinPath(dir, entry.name);
+      if (entry.kind === 'file' ? this.removed.has(path) : this.goneDirs.has(path)) continue;
       entries.set(entry.name, entry.kind);
     }
     for (const file of this.staged.keys()) if (dirname(file) === dir) entries.set(basename(file), 'file');
@@ -127,6 +132,15 @@ export class StagedStore implements DeviceStore {
     if (!(await this.base.exists(key))) this.made.add(key);
   }
 
+  async removeFolder(path: string): Promise<void> {
+    const key = joinPath(path);
+    if (key === '' || !(await this.isDir(key))) throw new StoreError(`no such folder: ${key}`);
+    if ((await this.list(key)).length > 0) throw new StoreError(`${key} is not empty`);
+    this.dirs.delete(key);
+    this.made.delete(key);
+    if (await this.base.exists(key)) this.goneDirs.add(key);
+  }
+
   /**
    * The net changes against the base, sorted by path. Written bytes are the staged buffers, not
    * copies. A removal whose path matches a written path ignoring case is dropped: on the OP-1's
@@ -152,6 +166,7 @@ export class StagedStore implements DeviceStore {
       const occupied = [...this.staged.keys(), ...this.made].some((path) => below(dir, path));
       if (!occupied) out.push({ op: 'mkdir', path: dir });
     }
+    for (const dir of this.goneDirs) out.push({ op: 'rmdir', path: dir });
     return out.sort((a, b) => byCodePoint(a.path, b.path));
   }
 
@@ -172,6 +187,7 @@ export class StagedStore implements DeviceStore {
 
   private async isDir(key: string): Promise<boolean> {
     if (key === '' || this.dirs.has(key)) return true;
+    if (this.goneDirs.has(key)) return false;
     return !(await this.baseHasFile(key)) && (await this.base.exists(key));
   }
 
@@ -181,7 +197,10 @@ export class StagedStore implements DeviceStore {
     for (const folder of folders) {
       if (await this.isFile(folder)) throw new StoreError(`cannot create folder ${folder}: a file has that name`);
     }
-    for (const folder of folders) this.dirs.add(folder);
+    for (const folder of folders) {
+      this.dirs.add(folder);
+      this.goneDirs.delete(folder);
+    }
   }
 }
 
@@ -207,6 +226,7 @@ export function exportChangeSet(changes: readonly Change[], now: () => Date = ()
   const zip: Zippable = {};
   const removals: string[] = [];
   const folders: string[] = [];
+  const emptied: string[] = [];
   const renames: string[] = [];
   const copies = new Map<string, string[]>();
   for (const change of changes) {
@@ -218,6 +238,8 @@ export function exportChangeSet(changes: readonly Change[], now: () => Date = ()
       removals.push(change.path);
     } else if (change.op === 'rename') {
       renames.push(`${change.path} -> ${change.to}`);
+    } else if (change.op === 'rmdir') {
+      emptied.push(change.path);
     } else {
       zip[`${change.path}/`] = [new Uint8Array(0), { mtime }];
       folders.push(change.path);
@@ -231,6 +253,7 @@ export function exportChangeSet(changes: readonly Change[], now: () => Date = ()
     '',
     '1. Delete these files from the OP-1 drive:',
     ...(removals.length > 0 ? removals.map((path) => `   ${path}`) : none('nothing to delete')),
+    ...(emptied.length > 0 ? ['   Then delete these folders, now empty:', ...emptied.map((path) => `   ${path}/`)] : []),
     '',
     '2. Create these folders on the OP-1 drive:',
     ...(folders.length > 0 ? folders.map((path) => `   ${path}/`) : none('no new folders')),

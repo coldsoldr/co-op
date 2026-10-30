@@ -146,6 +146,40 @@ describe('changes()', () => {
     expect(store.changes().map((c) => c.path)).toEqual(['synth/user/cluster.aif']);
   });
 });
+describe('removeFolder on a staged source', () => {
+  const staged = () => new StagedStore(new MemoryStore({ 'synth/pads/a.aif': Uint8Array.of(1) }));
+
+  it('lists a base folder for removal after its files, and tells the user to delete it', async () => {
+    const store = staged();
+    await store.remove('synth/pads/a.aif');
+    await store.removeFolder('synth/pads');
+    expect(await store.exists('synth/pads')).toBe(false);
+    expect((await store.list('synth')).map((e) => e.name)).toEqual([]);
+    expect(store.changes()).toEqual([
+      { op: 'rmdir', path: 'synth/pads' },
+      { op: 'remove', path: 'synth/pads/a.aif' },
+    ]);
+    const text = strFromU8(unzipSync(exportChangeSet(store.changes()))[CHANGES_FILE] as Uint8Array);
+    expect(text).toContain('synth/pads/');
+    expect(text).toContain('Then delete these folders');
+  });
+
+  it('leaves no trace of a folder made here, and undoes a removal when it is made again', async () => {
+    const store = staged();
+    await store.mkdir('drum/new');
+    await store.removeFolder('drum/new');
+    expect(store.changes()).toEqual([]);
+    await store.remove('synth/pads/a.aif');
+    await store.removeFolder('synth/pads');
+    await store.mkdir('synth/pads');
+    expect(store.changes()).toEqual([{ op: 'remove', path: 'synth/pads/a.aif' }]);
+  });
+
+  it('refuses a folder with files left', async () => {
+    await expect(staged().removeFolder('synth/pads')).rejects.toThrow(StoreError);
+  });
+});
+
 describe('exportChangeSet', () => {
   const textOf = (zip: Uint8Array): string => strFromU8(unzipSync(zip)[CHANGES_FILE] as Uint8Array);
 

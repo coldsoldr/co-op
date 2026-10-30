@@ -33,6 +33,8 @@ export interface DeviceStore extends DirectoryListing {
   remove(path: string): Promise<void>;
   /** Creates a folder and its parents; no-op if present. */
   mkdir(path: string): Promise<void>;
+  /** Removes an empty folder; throws if it is missing, not a folder or holds anything. */
+  removeFolder(path: string): Promise<void>;
 }
 
 /** The non-empty segments of a path. */

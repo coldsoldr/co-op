@@ -137,6 +137,12 @@ shifter port Mutable Instruments code, MIT, by Emilie Gillet).
 Only known facts: magic `OPMD` in the first four bytes, copied into `mods/` on the
 disk-mode drive, loaded in file-name order (see the custom firmware notes).
 
+## Flash size
+
+The OP-1 has 512 MB of flash, counted in binary units (`synth_sdk/file/file.c` in the
+3.0.3 source). hundekraft's FILE screen walks the storage on the device; nothing on USB
+reports free space, so co-op estimates it from the files the drive shows.
+
 ## As built (phases 9-12, 2026-10-29)
 
 co-op implements the USB check (`web/src/core/usbmidi/`, `web/src/ui/UsbCheck.tsx`),
