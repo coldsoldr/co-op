@@ -35,6 +35,8 @@ export interface LoadOptions {
   now?: Date;
   /** Profile ids a pack may name. Defaults to every registered profile. */
   firmware?: readonly string[];
+  /** Keep only these pack folders. Defaults to all of them. */
+  only?: readonly string[];
 }
 
 export interface PacksResult {
@@ -182,8 +184,9 @@ export async function loadPacks(packsDir: string, options: LoadOptions = {}): Pr
   const issues: PackIssue[] = [];
   const packs: PackIndexEntry[] = [];
   const { folders, links } = await subfolders(packsDir);
-  for (const link of links) issues.push({ pack: link, message: 'is a link; add the real folder instead' });
-  for (const folder of folders) {
+  const wanted = (name: string): boolean => options.only === undefined || options.only.includes(name);
+  for (const link of links.filter(wanted)) issues.push({ pack: link, message: 'is a link; add the real folder instead' });
+  for (const folder of folders.filter(wanted)) {
     const result = await loadPack(packsDir, folder, firmware);
     issues.push(...result.issues);
     if (result.entry) packs.push(result.entry);
