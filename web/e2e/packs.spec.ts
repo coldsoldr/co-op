@@ -100,9 +100,9 @@ test('installs a pack into a dropped drive as staged changes', async ({ page }) 
   await expect(page.getByText('All changes are downloaded.')).toBeVisible();
   const row = page.locator('tr[data-path="synth/test-tones/tone-cluster-2.aif"]');
   await row.getByRole('button', { name: 'More actions for tone-cluster-2.aif' }).click();
-  await row.getByRole('button', { name: 'Rename file tone-cluster-2.aif' }).click();
+  await row.getByRole('button', { name: 'Rename tone-cluster-2.aif' }).click();
   const rename = page.getByRole('dialog', { name: 'Rename tone-cluster-2.aif' });
-  await rename.getByLabel('New file name').fill('second.aif');
+  await rename.getByLabel('New name (for the patch and its file)').fill('second');
   await rename.getByRole('button', { name: 'Rename' }).click();
   await expect(page.locator('tr[data-path="synth/test-tones/second.aif"]')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download changes (4)' })).toBeEnabled();

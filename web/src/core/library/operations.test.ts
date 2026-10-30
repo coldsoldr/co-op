@@ -3,6 +3,7 @@ import {
   removeFolder,
   freeName,
   renameFile,
+  renamePatch,
   setPatchName,
   movePatch,
   copyPatch,
@@ -470,5 +471,40 @@ describe('setPatchName trimming', () => {
     const store = drive();
     await setPatchName(store, 'synth/user/cluster.aif', `  ${'a'.repeat(24)}  `);
     expect(readPatch(store.snapshot()['synth/user/cluster.aif'] as Uint8Array).name).toBe('a'.repeat(24));
+  });
+});
+
+describe('renamePatch', () => {
+  const cluster = fixtureBytes('synth-cluster.aif');
+
+  it('changes the file name and the name inside the patch, keeping the extension', async () => {
+    const store = new MemoryStore({ 'synth/user/old.AIFF': cluster });
+    expect(await renamePatch(store, 'synth/user/old.AIFF', ' new pad ')).toBe('synth/user/new pad.AIFF');
+    expect(await store.exists('synth/user/old.AIFF')).toBe(false);
+    expect(readPatch(await store.read('synth/user/new pad.AIFF')).name).toBe('new pad');
+  });
+
+  it('changes the name inside when the file name stays the same', async () => {
+    const store = new MemoryStore({ 'synth/user/same.aif': cluster });
+    expect(await renamePatch(store, 'synth/user/same.aif', 'same')).toBe('synth/user/same.aif');
+    expect(readPatch(await store.read('synth/user/same.aif')).name).toBe('same');
+  });
+
+  it('only renames the file of a patch with no metadata', async () => {
+    const store = new MemoryStore({ 'synth/user/a.aif': fixtureBytes('no-metadata.aif') });
+    expect(await renamePatch(store, 'synth/user/a.aif', 'a name longer than the patch name limit')).toBe('synth/user/a name longer than the patch name limit.aif');
+  });
+
+  it('changes nothing when the name is taken or cannot be a file name', async () => {
+    const store = new MemoryStore({ 'synth/user/a.aif': cluster, 'synth/user/b.aif': cluster });
+    await expect(renamePatch(store, 'synth/user/a.aif', 'b')).rejects.toThrow(/already exists/);
+    await expect(renamePatch(store, 'synth/user/a.aif', 'bad/name')).rejects.toThrow(/cannot hold/);
+    expect(await store.read('synth/user/a.aif')).toEqual(cluster);
+  });
+
+  it('refuses a name too long for the OP-1 before changing anything', async () => {
+    const store = new MemoryStore({ 'synth/user/a.aif': cluster });
+    await expect(renamePatch(store, 'synth/user/a.aif', 'x'.repeat(25))).rejects.toThrow(/longer/);
+    expect(await store.exists('synth/user/a.aif')).toBe(true);
   });
 });

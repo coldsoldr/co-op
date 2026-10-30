@@ -5,15 +5,14 @@ import {
   deletePatch,
   ensureFolder,
   movePatch,
-  renameFile,
-  setPatchName,
+  renamePatch,
 } from '../core/library/operations';
 import { joinPath, type DeviceStore } from '../core/store/store';
 import { ConfirmDialog, Dialog } from './Dialog';
 import { folderOf, rootOf } from './format';
 import { messageOf } from '../core/util';
 
-type Mode = 'rename' | 'name' | 'move' | 'copy' | 'delete';
+type Mode = 'rename' | 'move' | 'copy' | 'delete';
 
 const NEW_FOLDER = '\u0000new';
 
@@ -49,7 +48,7 @@ interface PatchActionsProps {
   onError: (message: string | null) => void;
 }
 
-/** Rename, set name, move, copy, upload and delete for one library row, behind a round key. */
+/** Rename, move, copy, upload and delete for one library row, behind a round key. */
 export const PatchActions = memo(function PatchActions({
   entry,
   root: givenRoot,
@@ -113,17 +112,8 @@ export const PatchActions = memo(function PatchActions({
         <span aria-hidden="true">···</span>
       </button>
       <div ref={menuRef} id={menuId} popover="auto" className="menu">
-        <button type="button" onClick={() => choose('rename')} disabled={busy} aria-label={`Rename file ${file}`}>
-          Rename file
-        </button>
-        <button
-          type="button"
-          onClick={() => choose('name')}
-          disabled={busy || !canName}
-          aria-label={`Set patch name of ${file}`}
-          title={canName ? undefined : 'no op-1 metadata to hold a name'}
-        >
-          Set patch name
+        <button type="button" onClick={() => choose('rename')} disabled={busy} aria-label={`Rename ${file}`}>
+          Rename
         </button>
         <button type="button" onClick={() => choose('move')} disabled={busy} aria-label={`Move ${file} to a folder`}>
           Move to a folder
@@ -160,22 +150,12 @@ export const PatchActions = memo(function PatchActions({
       {mode === 'rename' && (
         <TextDialog
           title={`Rename ${file}`}
-          label="New file name"
-          initial={file}
+          label="New name (for the patch and its file)"
+          initial={entry.info?.name || file.slice(0, file.lastIndexOf('.'))}
+          {...(canName ? { maxLength: MAX_PATCH_NAME } : {})}
           submitLabel="Rename"
           onCancel={close}
-          onSubmit={(name) => perform((store) => renameFile(store, entry.path, name))}
-        />
-      )}
-      {mode === 'name' && (
-        <TextDialog
-          title={`Set the patch name of ${file}`}
-          label="Patch name (shown on the OP-1)"
-          initial={entry.info?.name ?? ''}
-          maxLength={MAX_PATCH_NAME}
-          submitLabel="Set name"
-          onCancel={close}
-          onSubmit={(name) => perform((store) => setPatchName(store, entry.path, name))}
+          onSubmit={(name) => perform((store) => renamePatch(store, entry.path, name))}
         />
       )}
       {(mode === 'move' || mode === 'copy') && (

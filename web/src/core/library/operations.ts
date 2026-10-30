@@ -173,6 +173,31 @@ export async function setPatchName(store: DeviceStore, path: string, newName: st
 }
 
 /**
+ * Renames a patch: `newName` trimmed becomes its file name, keeping the extension, and the name in
+ * its metadata when it has any. A refused file name changes nothing, and if the metadata cannot be
+ * written the file gets its old name back. Returns the new path.
+ */
+export async function renamePatch(store: DeviceStore, path: string, newName: string): Promise<string> {
+  assertWritable(store, path);
+  const name = newName.trim();
+  if (name === '') throw new OperationError('patch name is empty');
+  const source = joinPath(path);
+  // An unreadable file has no name inside it to change, so it only gets the new file name.
+  const hasMeta = await store.read(source).then((bytes) => readPatch(bytes).meta != null, () => false);
+  if (hasMeta && name.length > MAX_PATCH_NAME) throw new OperationError(`patch name is longer than ${MAX_PATCH_NAME} characters`);
+  const file = basename(source);
+  const target = await renameFile(store, source, `${name}${file.slice(file.lastIndexOf('.'))}`);
+  if (!hasMeta) return target;
+  try {
+    await setPatchName(store, target, name);
+  } catch (error) {
+    await renameFile(store, target, file).catch(() => undefined);
+    throw error;
+  }
+  return target;
+}
+
+/**
  * Moves a file into `targetFolder` (for example 'synth/user', matched to existing folders ignoring
  * case), taking a free name there if its own is used. The bytes are moved untouched. Returns the
  * new path; moving into the folder the file is already in changes nothing.

@@ -16,8 +16,8 @@ feed Back up selected. My folder has no file tools at all.
 | Page | Bulk tools | Per-row tools |
 | --- | --- | --- |
 | Library, OP-1 folders | Move, Copy, Delete, Copy to My folder | Unchanged |
-| Library, My folder group | Move, Copy, Delete, Send to OP-1 | Rename, Set name, Move, Copy, Delete |
-| Patches tab, My folder | Move, Copy, Delete | Rename, Set name, Move, Copy, Delete |
+| Library, My folder group | Move, Copy, Delete, Send to OP-1 | Rename, Move, Copy, Delete |
+| Patches tab, My folder | Move, Copy, Delete | Rename, Move, Copy, Delete |
 | Patches and Packs, Community | Copy to My folder | None |
 
 Community files are read-only, so they only get the copy they already have.
@@ -44,7 +44,7 @@ Identical files are skipped, as for community copies. Files are read through the
 
 ## My folder
 
-- Rename, set patch name, move, copy and delete use the core operations the OP-1 uses.
+- Rename, move, copy and delete use the core operations the OP-1 uses. Rename is one action on every page: it sets the patch name and the file name together, keeping the extension.
 - New folder and remove folder sit in the Library's left column. Folders may hold folders here,
   so removing one includes them, after a confirmation with the patch count.
 - Write permission is asked for on the first change, as Copy to My folder does.

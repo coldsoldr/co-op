@@ -88,8 +88,8 @@ test('renames a patch in My folder from its menu', async ({ page }) => {
   await openPatchesFolder(page);
   const row = page.locator('tr[data-path="pads/one.aif"]');
   await row.getByRole('button', { name: 'More actions for one.aif' }).click();
-  await row.getByRole('button', { name: 'Rename file one.aif' }).click();
-  await page.getByLabel('New file name').fill('better.aif');
+  await row.getByRole('button', { name: 'Rename one.aif' }).click();
+  await page.getByLabel('New name (for the patch and its file)').fill('better');
   await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click();
   await expect(page.locator('tr[data-path="pads/better.aif"]')).toBeVisible();
   expect(await exists(page, 'pads/one.aif')).toBe(false);
