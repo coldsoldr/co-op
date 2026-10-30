@@ -61,7 +61,8 @@ All integers little-endian. CRC-32 is zlib's (poly 0xEDB88320, init and final XO
   A broken plugin never halts the boot: the loader skips it. If a boot does not reach
   the UI, the next boot starts without plugin files (crash marker).
 - Replacing a plugin file with a same-name file in one go can hang the restart on the
-  "kennel: updated" screen (te-op1-cfw README); the safe path is remove, restart, add.
+  "kennel: updated" screen (te-op1-cfw README). The owner has not seen it in a long time, so
+  co-op overwrites in one restart since 2026-10-30.
 - A path sent and deleted in the same session is refused (state).
 
 ### Inventory text (LIST)

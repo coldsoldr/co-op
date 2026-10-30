@@ -133,11 +133,10 @@ test('stays open while the OP-1 shows its prompt: the answer is T1 or T2 there',
   await expect(dialog).toBeHidden();
 });
 
-test('flags a plugin already on the OP-1 and overwrites it on request, in two restarts', async ({ page }) => {
+test('flags a plugin already on the OP-1 and overwrites it on request, in one restart', async ({ page }) => {
   const older = ['fx', 'ensemble', 'knl', 'plugins/ensemble.knl', '0.1', 'coldsoldr', '20000', '0badf00d', 'loaded', '', ''].join('\t');
   await stubOp1(page, {
     inventory: inventoryOf(DELAY, older),
-    inventoryAfterRemove: inventoryOf(DELAY),
     inventoryAfterRestart: inventoryOf(DELAY, ENSEMBLE('loaded')),
   });
   const dialog = await openInstall(page);
@@ -153,13 +152,12 @@ test('flags a plugin already on the OP-1 and overwrites it on request, in two re
   expect(await writesOf(page)).toEqual([]);
 
   await dialog.getByRole('button', { name: 'Overwrite ensemble' }).click();
-  await expect(dialog.getByRole('status')).toContainText('remove the old ensemble');
-  await page.evaluate(() => window.op1Stub.press('T1'));
   await expect(dialog.getByRole('status')).toContainText('Press T1 on the OP-1 to install and restart');
   await page.evaluate(() => window.op1Stub.press('T1'));
   await expect(dialog.locator('[data-state="loaded"]')).toHaveText('ensemble is installed and loaded.');
-  expect(await page.evaluate(() => window.op1Stub.removed)).toEqual(['plugins/ensemble.knl']);
+  expect(await page.evaluate(() => window.op1Stub.removed)).toEqual([]);
   expect((await page.evaluate(() => window.op1Stub.installed)).map((f) => f.path)).toEqual(['plugins/ensemble.knl']);
+  expect(await writesOf(page)).not.toContain(10);
 });
 
 test('changes nothing on the OP-1 when the overwrite is declined in co-op', async ({ page }) => {

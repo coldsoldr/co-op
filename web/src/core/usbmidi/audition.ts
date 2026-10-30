@@ -24,7 +24,7 @@ export const AUDITION_REQUEST = {
 } as const;
 export type AuditionRequest = keyof typeof AUDITION_REQUEST;
 
-export type AuditionReply = 'applied' | 'put back' | 'not synth' | 'nothing to put back' | 'busy' | 'hello' | 'report' | 'bad patch' | 'no memory' | 'ready';
+export type AuditionReply = 'applied' | 'put back' | 'not synth' | 'nothing to put back' | 'busy' | 'hello' | 'report' | 'bad patch' | 'no room' | 'ready' | 'other slot';
 
 const REPLIES: Readonly<Record<number, AuditionReply>> = {
   1: 'applied',
@@ -35,8 +35,9 @@ const REPLIES: Readonly<Record<number, AuditionReply>> = {
   6: 'hello',
   7: 'report',
   8: 'bad patch',
-  9: 'no memory',
+  9: 'no room',
   10: 'ready',
+  11: 'other slot',
 };
 
 /** What a reply means, for people. */
@@ -48,8 +49,9 @@ export const AUDITION_MESSAGES: Record<AuditionReply, string> = {
   'nothing to put back': 'There is nothing to put back: no audition is running.',
   busy: 'The OP-1 was busy saving. Try again.',
   report: 'Speed report received.',
-  'bad patch': 'The patch did not arrive whole. Try again.',
-  'no memory': 'The OP-1 has no memory left for a sampler audition. Restart it, or remove a plugin.',
+  'bad patch': 'The patch did not arrive whole, so the slot has its own sound back. Try again.',
+  'no room': 'The OP-1 could not store a copy of your sound, so nothing was changed. Free some space and try again.',
+  'other slot': 'An audition is running on another slot. Go back to it, or put your sound back first.',
   ready: 'The OP-1 is ready for the audio.',
 };
 
@@ -191,7 +193,8 @@ export async function sendAuditionPatch(port: MidiPort, frame: Uint8Array, audio
     onProgress?.(1);
     return sendAudition(port, 'apply');
   }
-  const ready = await sendAudition(port, 'takeAudio');
+  // The OP-1 first stores the slot's own audio, which takes a few seconds the first time.
+  const ready = await sendAudition(port, 'takeAudio', 30_000);
   if (ready !== 'ready') return ready;
   const packed = pack7(audio);
   const started = performance.now();
@@ -207,7 +210,7 @@ export async function sendAuditionPatch(port: MidiPort, frame: Uint8Array, audio
     onProgress?.(at / packed.length);
     await new Promise((resolve) => setTimeout(resolve, BATCH_MS));
   }
-  return sendAudition(port, 'applyAudio', 8000);
+  return sendAudition(port, 'applyAudio', 30_000);
 }
 
 /** Speed test data travels the same way, 14 bits a message. */

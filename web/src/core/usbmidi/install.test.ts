@@ -41,6 +41,23 @@ function expectOnlyAllowedWrites(op1: FakeOp1): void {
   expect(op1.requests.every((r) => [1, 2, 3, 4, 5, 6, 7, 8].includes(r.cmd))).toBe(true);
 }
 
+describe('overwrite', () => {
+  it('replaces a copy at the same path, and sends no DELETE', async () => {
+    const line = record('fx', 'drive', 'knl', 'plugins/drive.knl', '0.1', 'coldsoldr', '9', 'abcd', 'loaded', '', '');
+    const op1 = device({ inventory: inventoryOf(line) });
+    const file = { path: 'plugins/drive.knl', bytes: knlBytes({ name: 'drive' }) };
+    await expect(installPlugins(op1, [file], { overwrite: true, pollMs: 0 })).resolves.toBe('accepted');
+    expect(op1.installed?.map((f) => f.path)).toEqual(['plugins/drive.knl']);
+    expect(op1.requests.some((r) => r.cmd === 10)).toBe(false);
+  });
+
+  it('still refuses a copy somewhere else, which would leave two', async () => {
+    const line = record('fx', 'drive', 'knl', 'content/drive.knl', '0.1', 'coldsoldr', '9', 'abcd', 'loaded', '', '');
+    const file = { path: 'plugins/drive.knl', bytes: knlBytes({ name: 'drive' }) };
+    await expect(installPlugins(device({ inventory: inventoryOf(line) }), [file], { overwrite: true, pollMs: 0 })).rejects.toThrow('is already on the OP-1');
+  });
+});
+
 describe('removePlugin', () => {
   const on = inventoryOf(record('synth', 'rings', 'knl', 'plugins/rings.knl', '0.1', 'coldsoldr', '9', 'abcd', 'loaded', '', ''));
 
@@ -200,9 +217,8 @@ describe('installPlugins', () => {
       const op1 = device({ inventory: inventoryOf(line) });
       const error = (await installPlugins(op1, [TAPE_DRIVE, DRIVE], fast).catch((e: unknown) => e)) as Error;
       expect(error.message).toMatch(/^drive is already on the OP-1 \(/);
-      expect(error.message).toContain('Remove it first in the hundekraft workshop');
+      expect(error.message).toContain('Remove it in the hundekraft workshop');
       expect(error.message).toContain(WORKSHOP_URL);
-      expect(error.message).toContain('replacing a plugin in place can hang the restart');
       expectNoWrites(op1);
     });
   });

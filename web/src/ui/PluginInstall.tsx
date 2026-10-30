@@ -26,7 +26,7 @@ type Step =
   | { step: 'working'; status: string }
   | { step: 'sending'; sent: number; total: number }
   | { step: 'exists'; record: InventoryRecord; file: PluginFile }
-  | { step: 'prompt'; removing: boolean }
+  | { step: 'prompt' }
   | { step: 'restarting' }
   | { step: 'done'; record: InventoryRecord | null }
   | { step: 'cancelled'; message: string }
@@ -257,8 +257,6 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
   const [state, setState] = useState<Step>({ step: 'confirm' });
   const controller = useRef<AbortController | null>(null);
   const path = `plugins/${plugin.file}`;
-  /** True once an overwrite has taken the old copy off, so a failure afterwards can say so. */
-  const removedOld = useRef(false);
 
   const cancelRef = useRef<HTMLButtonElement>(null);
   const promptRef = useRef<HTMLDivElement>(null);
@@ -282,54 +280,8 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
     }
   }
 
-  /**
-   * Takes the old copy off, then installs the new one. Two restarts and two T1 presses, because
-   * replacing a plugin with a same-named file in one go can hang the OP-1's restart.
-   */
-  async function overwrite(record: InventoryRecord): Promise<void> {
-    controller.current?.abort(new Error(CLOSED));
-    const current = new AbortController();
-    controller.current = current;
-    const { signal } = current;
-    try {
-      if (!record.path.startsWith('plugins/')) throw new Error(`${record.path} cannot be removed from here. Remove it in the hundekraft workshop (${WORKSHOP_URL}), then install again.`);
-      setState({ step: 'working', status: 'Connecting to the OP-1…' });
-      const port = await openOp1Port(signal);
-      let prompted = false;
-      const transfer = new AbortController();
-      const unwatch = port.watch((connected) => {
-        if (!connected) transfer.abort(new Error(prompted ? RESTARTED : 'The OP-1 was disconnected. Nothing was changed.'));
-      });
-      try {
-        await removePlugin(port, record.path, {
-          signal: AbortSignal.any([signal, transfer.signal]),
-          onPrompt: () => {
-            prompted = true;
-            setState({ step: 'prompt', removing: true });
-          },
-        });
-      } catch (e) {
-        if (signal.aborted || messageOf(transfer.signal.reason) !== RESTARTED) throw transfer.signal.aborted ? transfer.signal.reason : e;
-      } finally {
-        unwatch();
-        port.close();
-      }
-      setState({ step: 'restarting' });
-      await waitForOp1Restart(signal);
-      const result = await recheck(signal);
-      if (result.inventory && installedAs(plugin.id, result.inventory.records)) throw new Error(`The old ${plugin.name} is still on the OP-1 after the restart. Nothing new was installed.`);
-      removedOld.current = true;
-      onInstalled(result.inventory);
-    } catch (e) {
-      if (controller.current !== current || messageOf(signal.reason) === CLOSED) return;
-      if (e instanceof CancelledOnOp1Error) setState({ step: 'cancelled', message: `Cancelled on the OP-1 (T2). The old ${plugin.name} is still there.` });
-      else setState({ step: 'failed', message: signal.aborted ? messageOf(signal.reason) : messageOf(e) });
-      return;
-    }
-    await install(true);
-  }
-
-  async function install(afterRemoving = false): Promise<void> {
+  /** With `overwrite`, sends the file over the copy already there. */
+  async function install(overwrite = false): Promise<void> {
     controller.current?.abort(new Error(CLOSED));
     const current = new AbortController();
     controller.current = current;
@@ -339,7 +291,7 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
       const file: PluginFile = { path, bytes: await fetchPluginBytes(base(), plugin) };
       signal.throwIfAborted();
       setState({ step: 'working', status: 'Connecting to the OP-1…' });
-      if (!afterRemoving) {
+      if (!overwrite) {
         const found = await findOnOp1(signal);
         signal.throwIfAborted();
         if (found) {
@@ -357,11 +309,12 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
       });
       try {
         await installPlugins(port, [file], {
+          overwrite,
           signal: AbortSignal.any([signal, transfer.signal]),
           onProgress: (sent, total) => setState({ step: 'sending', sent, total }),
           onPrompt: () => {
             prompted = true;
-            setState({ step: 'prompt', removing: false });
+            setState({ step: 'prompt' });
           },
         });
       } catch (e) {
@@ -376,15 +329,13 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
       await waitForOp1Restart(signal);
       const result = await recheck(signal);
       signal.throwIfAborted();
-      removedOld.current = false;
       onInstalled(result.inventory);
       setState({ step: 'done', record: recordOf(result.inventory, path, plugin.id) });
     } catch (e) {
       // Closing the dialog, or a newer try, took over.
       if (controller.current !== current || messageOf(signal.reason) === CLOSED) return;
-      const gone = removedOld.current ? `The old ${plugin.name} was removed, so it is not on the OP-1 now. ` : '';
-      if (e instanceof CancelledOnOp1Error) setState({ step: 'cancelled', message: `${gone}${e.message}` });
-      else setState({ step: 'failed', message: `${gone}${signal.aborted ? messageOf(signal.reason) : messageOf(e)}` });
+      if (e instanceof CancelledOnOp1Error) setState({ step: 'cancelled', message: e.message });
+      else setState({ step: 'failed', message: signal.aborted ? messageOf(signal.reason) : messageOf(e) });
     }
   }
 
@@ -439,11 +390,7 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
         {state.step === 'prompt' && (
           <div role="status" ref={promptRef} tabIndex={-1}>
             <p>
-              <strong>
-                {state.removing
-                  ? `Press T1 on the OP-1 to remove the old ${plugin.name} and restart, or T2 to keep it.`
-                  : 'Press T1 on the OP-1 to install and restart, or T2 to cancel.'}
-              </strong>
+              <strong>Press T1 on the OP-1 to install and restart, or T2 to cancel.</strong>
             </p>
             <p className="muted">This window waits for your answer on the OP-1; to cancel, press T2 there.</p>
           </div>
@@ -475,7 +422,12 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
             </button>
           )}
           {state.step === 'exists' && (
-            <button type="button" className="danger" onClick={() => void overwrite(state.record)}>
+            <button
+              type="button"
+              className="danger"
+              disabled={state.record.path !== path}
+              onClick={() => void install(true)}
+            >
               Overwrite {plugin.name}
             </button>
           )}
@@ -537,10 +489,17 @@ function AlreadyThere({ plugin, record, file }: { plugin: PluginIndexEntry; reco
       <p>
         {identical ? 'The two files are identical, so overwriting changes nothing.' : `${versionNote} ${sizeNote}`}
       </p>
-      <p className="muted">
-        Overwriting takes two restarts: the old copy comes off first, because replacing a plugin in one go can hang the OP-1. You
-        press T1 on the OP-1 twice. Sounds that use {plugin.name} are not touched.
-      </p>
+      {record.path === file.path ? (
+        <p className="muted">
+          Overwriting replaces the file on the OP-1: you press T1 there, and it restarts once. Sounds that use {plugin.name} are not
+          touched. If the OP-1 hangs on the restart, switch it off and on.
+        </p>
+      ) : (
+        <p className="warning">
+          The copy on the OP-1 is at <code>{record.path}</code>, so this would leave two copies. Remove it in the hundekraft
+          workshop first.
+        </p>
+      )}
     </>
   );
 }

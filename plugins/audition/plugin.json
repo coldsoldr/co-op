@@ -5,7 +5,7 @@
   "firmware": "op1/hundekraft",
   "kind": "feature",
   "author": "coldsoldr",
-  "version": "0.4",
+  "version": "0.5",
   "description": "Plays synth and sampler patches from co-op on the current slot, out of disk mode, and puts your own sound back.",
   "license": "GPL-3.0-or-later",
   "file": "audition.knl",

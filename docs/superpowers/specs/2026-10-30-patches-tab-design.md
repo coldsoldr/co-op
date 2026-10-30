@@ -149,9 +149,12 @@ the plan above:
   the local folder. Drive patches keep their settings in memory, so synth patches audition after
   leaving disk mode. A drive sampler needs its audio, so it cannot.
 - Sampler patches audition too, which replaces "sampler patches stay in the browser" above. The
-  audio goes to a RAM buffer, is checked, and is then copied into the slot's sample buffer after a
-  RAM copy of the slot's own audio is made. The sample file is never marked changed. A sampler
-  patch must be 44.1 kHz; only the buffer's 6 s is sent. Drum kits still preview in the browser.
+  slot's own audio first goes to a temporary file of about 530 KB, then the new audio arrives
+  straight in the slot's sample buffer, because plugin memory is too short for a 1 MB holding
+  buffer (the owner's OP-1 refused one). The slot sounds scrambled during the transfer. Put my sound
+  back, or a failed check, restores it and deletes the file. The slot's sample file is never marked
+  changed. A sampler patch must be 44.1 kHz; only the buffer's 6 s is sent. Drum kits still preview
+  in the browser.
 - The Library's local folders stack as a tree, and a folder shows its own patches and those inside.
 
 ## Parked

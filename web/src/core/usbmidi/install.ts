@@ -33,6 +33,8 @@ export interface PluginFile {
 }
 
 export interface InstallOptions {
+  /** Replace a copy already on the OP-1 under the same path, rather than refusing. */
+  overwrite?: boolean;
   /** Bytes the OP-1 has confirmed so far, of all files. */
   onProgress?: (sent: number, total: number) => void;
   /**
@@ -79,7 +81,7 @@ export const NO_PLUGIN_CAPABILITY = `This OP-1’s firmware cannot install plugi
 
 /** The refusal for a plugin that is already there; `found` says where. */
 export const alreadyInstalled = (id: string, found: string): string =>
-  `${id} is already on the OP-1 (${found}). Remove it first in the hundekraft workshop (${WORKSHOP_URL}), let the OP-1 restart, then install it here: replacing a plugin in place can hang the restart.`;
+  `${id} is already on the OP-1 (${found}). Remove it in the hundekraft workshop (${WORKSHOP_URL}), then install it here.`;
 
 const stoppedAnswering = (what: string): string =>
   `The OP-1 stopped answering ${what}. ${NOTHING_INSTALLED} Check the USB cable and try again.`;
@@ -232,7 +234,8 @@ export async function installPlugins(
   const inventory = parseInventory(text);
   for (const id of ids) {
     const found = installedAs(id, inventory.records);
-    if (found) throw new Error(alreadyInstalled(id, `${found.path || found.name}, ${found.state ?? 'unknown'}`));
+    const same = files.some((f) => f.path === found?.path);
+    if (found && !(options.overwrite && same)) throw new Error(alreadyInstalled(id, `${found.path || found.name}, ${found.state ?? 'unknown'}`));
   }
 
   // 4. Every check passed: from here on the OP-1's staging area changes.

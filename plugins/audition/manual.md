@@ -42,11 +42,13 @@ Nothing of its own. The OP-1 shows the patch as usual, and a sampler patch shows
 - A settings-only patch loads at once. A sampler patch sends its audio, about 21 seconds for the
   full 6 seconds of sound. Clicking another patch cancels the transfer.
 - Drum kits are not auditioned on the OP-1. They preview in the browser.
-- It needs about 1 MB of memory for sampler patches, taken the first time you load one.
+- A sampler slot sounds scrambled while its row fills, so wait until it finishes. It needs no
+  plugin memory: your slot's audio is kept in a file of about 530 KB on the OP-1 until you put it
+  back.
 
 ## What is saved
 
-Nothing, by the plugin. Turning a knob during an audition lets the OP-1 save that sound over the
+Nothing of your sound, by the plugin. Turning a knob during an audition lets the OP-1 save that sound over the
 slot. A sampler's audio is not saved even then, so after a restart such a slot holds the new
 settings with its old audio. Use Put my sound back before you edit.
 

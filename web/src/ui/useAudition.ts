@@ -140,7 +140,7 @@ export function useAudition(): Audition {
 
   const putBack = useCallback(async () => {
     setTransfer(null);
-    const reply = await withPort((port) => sendAudition(port, 'putBack'));
+    const reply = await withPort((port) => sendAudition(port, 'putBack', 30_000));
     if (reply === null) return;
     const fine = reply === 'put back' || reply === 'nothing to put back';
     if (fine) setCurrent(null);
