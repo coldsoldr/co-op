@@ -20,7 +20,8 @@ The pack page behaves like the Patches tab:
 - The preview button plays in the browser and opens the on-screen keyboard. It works with no OP-1.
 
 The row moves from `PatchesTab.tsx` into a shared `PatchRow` component, and `playsOnOp1` moves with
-it. The pack page's own play code is removed. Its checkboxes, notes and file column stay. Packs
+it. The pack page's own play code is removed. Its checkboxes and notes stay, and the file name moves
+under the patch name, as on the Patches tab. Packs
 receives `local` and `audition` from `App.tsx`, as the Patches tab does.
 
 ## Copying
