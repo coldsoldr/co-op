@@ -10,7 +10,8 @@ import { readFileSync } from 'node:fs';
 import { DEFAULT_PACKS_DIR, packsMiddleware } from './scripts/packs-lib';
 import { DEFAULT_PLUGINS_DIR, pluginsMiddleware } from './scripts/plugins-lib';
 
-const base = '/co-op/';
+/** VITE_BASE is set for the dev branch's build, published at /co-op/dev/. */
+const base = process.env.VITE_BASE ?? '/co-op/';
 
 /**
  * Serves `/co-op/packs/index.json` (built on the fly) and the pack files from ../packs during
@@ -53,7 +54,7 @@ export default defineConfig({
   plugins: [react(), communityPacks(), communityPlugins()],
   // Build facts attached to feedback (see src/vite-env.d.ts).
   define: {
-    __APP_VERSION__: JSON.stringify(version),
+    __APP_VERSION__: JSON.stringify(base.endsWith('/dev/') ? `${version}-dev` : version),
     __COMMIT__: JSON.stringify(process.env.GITHUB_SHA?.slice(0, 7) ?? 'dev'),
   },
   test: {

@@ -108,6 +108,17 @@ The site's version is `version` in `web/package.json`, shown at the bottom left 
 page and attached to feedback. Raise it when a change reaches users: the minor number for
 a new feature, the patch number for a fix. Tag the release as `v<version>`.
 
+## Branches
+
+`main` is the live site, https://coldsoldr.github.io/co-op/. `dev` is for trying new
+features and is published at https://coldsoldr.github.io/co-op/dev/, with `-dev` after the
+version in its footer, once its tests pass. Work on `dev` and merge it into `main` when it
+has been tried.
+
+The two share one Worker and one web address, so the dev site needs no setup of its own. It
+also shares what the browser remembers (theme, firmware choice, drive, op1.fun sign-in), and
+feedback and op1.fun uploads from it are real. Changes to `worker/` go live only from `main`.
+
 ## Running it
 
 Requires Node 22 or newer and pnpm 11 (pinned through `packageManager`, so

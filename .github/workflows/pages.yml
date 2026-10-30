@@ -1,8 +1,17 @@
 name: pages
 
+# One Pages site holds both versions: main at /co-op/ and the dev branch at /co-op/dev/. Every
+# publish rebuilds both. A dev push arrives through workflow_run, which runs this file from main,
+# because the github-pages environment only deploys from main. A dev build that fails leaves
+# /co-op/dev/ out of that publish and never holds main back.
+
 on:
   push:
     branches: [main]
+  workflow_run:
+    workflows: [ci]
+    branches: [dev]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -14,6 +23,8 @@ concurrency:
 
 jobs:
   build:
+    # A run started by ci is for the dev branch: publish only after its push passed.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -27,11 +38,36 @@ jobs:
         env:
           VITE_WORKER_URL: ${{ vars.WORKER_URL }}
           VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+      - run: mv web/dist "$RUNNER_TEMP/site"
+      - id: dev
+        run: |
+          if git ls-remote --exit-code origin refs/heads/dev; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.dev.outputs.exists == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: dev
+      - if: steps.dev.outputs.exists == 'true'
+        continue-on-error: true
+        uses: ./.github/actions/setup
+      - id: devbuild
+        if: steps.dev.outputs.exists == 'true'
+        continue-on-error: true
+        run: pnpm --filter @co-op/web build
+        env:
+          VITE_BASE: /co-op/dev/
+          VITE_WORKER_URL: ${{ vars.WORKER_URL }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+      - if: steps.devbuild.outcome == 'success'
+        run: mv web/dist "$RUNNER_TEMP/site/dev"
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: web/dist
+          path: ${{ runner.temp }}/site
 
   e2e:
+    # A run started by ci is for the dev branch: publish only after its push passed.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
