@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryStore } from '../store/memory-store';
 import { fixtureBytes } from '../../../test/fixture-bytes';
-import { communityPatches, filterLocal, findPatchFiles, folderTree, inFolder, localEngines, localFolders, scanLocalFolder, type LocalPatch } from './local-library';
+import { communityPatches, filterLocal, findPatchFiles, folderTree, inFolder, localEngines, localFolders, packPatches, scanLocalFolder, type LocalPatch } from './local-library';
 
 const synth = fixtureBytes('synth-cluster.aif');
 const drum = fixtureBytes('drum-boombap.aif');
@@ -116,5 +116,16 @@ describe('filtering', () => {
   it('filters by engine and lists the engines', () => {
     expect(filterLocal(list, { engine: 'fm' }).map((p) => p.name)).toEqual(['glass harp']);
     expect(localEngines(list)).toEqual(['fm']);
+  });
+});
+
+describe('packPatches', () => {
+  it('lists one pack as community patches', () => {
+    const pack = {
+      slug: 'kit',
+      name: 'Kit',
+      patches: [{ file: 'drum/a.aif', name: 'a', kind: 'drum', engine: 'drum', sizeBytes: 3, sha256: 'ab' }],
+    } as unknown as Parameters<typeof packPatches>[0];
+    expect(packPatches(pack)).toMatchObject([{ path: 'kit/drum/a.aif', folder: 'Kit', pack: { slug: 'kit', file: 'drum/a.aif', sha256: 'ab' } }]);
   });
 });

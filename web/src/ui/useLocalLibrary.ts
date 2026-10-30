@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { scanLocalFolder, type LocalPatch } from '../core/library/local-library';
+import { readLocalPatch, scanLocalFolder, type LocalPatch } from '../core/library/local-library';
 import {
   FsAccessStore,
   chooseLocalFolder,
@@ -15,6 +15,9 @@ import { messageOf } from '../core/util';
 /** Where the chosen folder is remembered, apart from the OP-1 drive. */
 const LOCAL_KEY = 'local';
 
+/** A folder that may be written to, or why there is none. */
+export type WritableFolder = { store: FsAccessStore } | { refused: 'cancelled' | 'denied' };
+
 export interface LocalLibrary {
   /** False in browsers that cannot open a folder. */
   supported: boolean;
@@ -29,6 +32,10 @@ export interface LocalLibrary {
   reconnect(): Promise<void>;
   refresh(): Promise<void>;
   forget(): Promise<void>;
+  /** The folder with write permission, choosing or reconnecting it first. Needs a click. */
+  writableFolder(): Promise<WritableFolder>;
+  /** Reads files that are new in the folder into the list. */
+  add(store: FsAccessStore, paths: readonly string[]): Promise<void>;
 }
 
 /** The person's own patch folder. It needs no device, so every tab shares this one. */
@@ -108,5 +115,29 @@ export function useLocalLibrary(): LocalLibrary {
     setError(null);
   }, []);
 
-  return { supported, folder, remembered, patches, progress, error, choose, reconnect, refresh, forget };
+  const writableFolder = useCallback(async (): Promise<WritableFolder> => {
+    setError(null);
+    const handle = folder?.root ?? remembered;
+    if (handle) {
+      if (!(await ensurePermission(handle, 'readwrite'))) return { refused: 'denied' };
+      if (folder) return { store: folder };
+      const store = new FsAccessStore(handle);
+      await open(store);
+      return { store };
+    }
+    const store = await chooseLocalFolder();
+    if (!store) return { refused: 'cancelled' };
+    if (!(await ensurePermission(store.root, 'readwrite'))) return { refused: 'denied' };
+    await rememberHandle(store.root, LOCAL_KEY);
+    await open(store);
+    return { store };
+  }, [folder, open, remembered]);
+
+  // Takes the store because writableFolder may have just opened it, after this render.
+  const add = useCallback(async (store: FsAccessStore, paths: readonly string[]) => {
+    const read = await Promise.all(paths.map((path) => readLocalPatch(store, path)));
+    setPatches((prev) => [...prev, ...read]);
+  }, []);
+
+  return { supported, folder, remembered, patches, progress, error, choose, reconnect, refresh, forget, writableFolder, add };
 }

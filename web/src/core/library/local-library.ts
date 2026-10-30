@@ -1,4 +1,4 @@
-import type { PackIndex } from '@co-op/shared/packs';
+import type { PackIndex, PackIndexEntry } from '@co-op/shared/packs';
 import { readPatch } from '../codec/patch';
 import { hasPreview } from '../codec/preview';
 import type { PatchKind } from '../codec/op1-meta';
@@ -57,7 +57,7 @@ export async function findPatchFiles(store: DeviceStore, folder = ''): Promise<s
   return found;
 }
 
-async function readLocalPatch(store: DeviceStore, path: string): Promise<LocalPatch> {
+export async function readLocalPatch(store: DeviceStore, path: string): Promise<LocalPatch> {
   const fileName = basename(path);
   const base = { path, fileName, folder: dirname(path) };
   try {
@@ -92,23 +92,26 @@ export async function scanLocalFolder(
   return mapPool(paths, DEFAULT_CONCURRENCY, (path) => readLocalPatch(store, path), onProgress, signal);
 }
 
+/** One pack's patches, in the form the patch lists show. */
+export function packPatches(pack: PackIndexEntry): LocalPatch[] {
+  return pack.patches.map((patch) => ({
+    path: `${pack.slug}/${patch.file}`,
+    fileName: basename(patch.file),
+    folder: pack.name,
+    name: patch.name || stem(basename(patch.file)),
+    kind: patch.kind,
+    engine: patch.engine,
+    fx: null,
+    sizeBytes: patch.sizeBytes,
+    error: null,
+    preview: null,
+    pack: { slug: pack.slug, file: patch.file, sha256: patch.sha256 },
+  }));
+}
+
 /** Every patch of every community pack, as one flat list. */
 export function communityPatches(index: PackIndex): LocalPatch[] {
-  return index.packs.flatMap((pack) =>
-    pack.patches.map((patch) => ({
-      path: `${pack.slug}/${patch.file}`,
-      fileName: basename(patch.file),
-      folder: pack.name,
-      name: patch.name || stem(basename(patch.file)),
-      kind: patch.kind,
-      engine: patch.engine,
-      fx: null,
-      sizeBytes: patch.sizeBytes,
-      error: null,
-      preview: null,
-      pack: { slug: pack.slug, file: patch.file, sha256: patch.sha256 },
-    })),
-  );
+  return index.packs.flatMap(packPatches);
 }
 
 /** The engines named by these patches, in code-point order. */
