@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "name": "melod1c",
+  "slug": "melod1c",
+  "author": "ByronJZA and others, see README",
+  "description": "Melodic synth patches collated from op1.fun: koto, marimba, planks and sparkle.",
+  "license": "CC-BY-SA-4.0",
+  "firmware": ["op1/stock"],
+  "tags": ["synth", "melodic", "keys"],
+  "patches": [
+    { "file": "synth/alesis-marimba-14990.aif", "notes": "By mrbendel." },
+    { "file": "synth/koto_glitch-4031.aif", "notes": "By captainearwax." },
+    { "file": "synth/planks-3845.aif", "notes": "By alanholding, CC BY 4.0." },
+    { "file": "synth/sparkle-17761.aif", "notes": "By ByronJZA." }
+  ]
+}
