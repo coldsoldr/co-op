@@ -57,6 +57,13 @@ export function compatView(row: LibraryRow): CompatView {
   return { level: row.compat.level, label: row.compat.level, detail };
 }
 
+/** The engine and effect of a patch, for example 'fm · spring', or null when they are unknown. */
+export function soundLine(row: LibraryRow): string | null {
+  const traits = row.info?.traits;
+  if (!traits) return null;
+  return [traits.engine, traits.fx].filter(Boolean).join(' · ') || null;
+}
+
 /** The warning for a patch whose metadata kind disagrees with its folder, or null. */
 export function kindMismatchText(row: LibraryRow): string | null {
   if (!row.kindMismatch || !row.info) return null;

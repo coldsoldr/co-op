@@ -1,4 +1,4 @@
-import { memo, useState, type FormEvent } from 'react';
+import { memo, useId, useRef, useState, type FormEvent } from 'react';
 import {
   MAX_PATCH_NAME,
   copyPatch,
@@ -23,10 +23,6 @@ interface PatchActionsProps {
   entry: LibraryRow;
   /** Folder names under the entry's patch root. */
   folders: readonly string[];
-  /** True while this entry is playing. */
-  playing: boolean;
-  /** Starts or stops playback of a path; may reject (for example, audio the browser cannot decode). */
-  onTogglePlay: (path: string) => Promise<void>;
   run: (op: Operation, touched?: readonly string[]) => Promise<void>;
   /** True while any action is queued or running; actions wait for it. */
   busy: boolean;
@@ -38,39 +34,53 @@ interface PatchActionsProps {
   uploadUnavailable: string | null;
   /** The id of an element holding uploadUnavailable, for aria-describedby. */
   uploadNoteId: string;
+  /** Shows a failure in the row, or clears it with null. */
+  onError: (message: string | null) => void;
 }
 
-/** Play, rename, set name, move, copy and delete for one library row. Errors show in the row. */
+/** Rename, set name, move, copy, upload and delete for one library row, behind a round key. */
 export const PatchActions = memo(function PatchActions({
   entry,
   folders,
-  playing,
-  onTogglePlay,
   run,
   staged,
   busy,
   onUpload,
   uploadUnavailable,
   uploadNoteId,
+  onError,
 }: PatchActionsProps) {
   const [mode, setMode] = useState<Mode | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const menuId = useId();
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const file = entry.fileName;
   const canName = entry.info?.hasMeta === true;
 
   async function perform(op: (store: DeviceStore) => Promise<unknown>): Promise<void> {
     setMode(null);
-    setError(null);
+    onError(null);
     try {
       await run(op, [entry.path]);
     } catch (e) {
-      setError(messageOf(e));
+      onError(messageOf(e));
     }
   }
 
-  function play(): void {
-    setError(null);
-    onTogglePlay(entry.path).catch((e: unknown) => setError(`cannot play: ${messageOf(e)}`));
+  /** The menu sits in the top layer, so the table's scroll box cannot clip it; it opens below the key, or above near the bottom. */
+  function placeMenu(): void {
+    const key = moreRef.current?.getBoundingClientRect();
+    const menu = menuRef.current;
+    if (!key || !menu) return;
+    const above = key.top > window.innerHeight / 2;
+    menu.style.top = above ? 'auto' : `${key.bottom + 6}px`;
+    menu.style.bottom = above ? `${window.innerHeight - key.top + 6}px` : 'auto';
+    menu.style.right = `${document.documentElement.clientWidth - key.right}px`;
+  }
+
+  function choose(next: Mode): void {
+    menuRef.current?.hidePopover();
+    setMode(next);
   }
 
   const close = (): void => setMode(null);
@@ -78,56 +88,57 @@ export const PatchActions = memo(function PatchActions({
   return (
     <div className="actions">
       <button
+        ref={moreRef}
         type="button"
-        onClick={play}
-        disabled={!entry.info}
-        aria-label={`${playing ? 'Stop' : 'Play'} ${file}`}
-        aria-pressed={playing}
+        className="more"
+        popoverTarget={menuId}
+        aria-label={`More actions for ${file}`}
+        onClick={placeMenu}
       >
-        {playing ? 'Stop' : 'Play'}
+        <span aria-hidden="true">···</span>
       </button>
-      <button type="button" onClick={() => setMode('rename')} disabled={busy} aria-label={`Rename file ${file}`}>
-        Rename
-      </button>
-      <button
-        type="button"
-        onClick={() => setMode('name')}
-        disabled={busy || !canName}
-        aria-label={`Set patch name of ${file}`}
-        title={canName ? undefined : 'no op-1 metadata to hold a name'}
-      >
-        Name
-      </button>
-      <button type="button" onClick={() => setMode('move')} disabled={busy} aria-label={`Move ${file} to a folder`}>
-        Move
-      </button>
-      <button type="button" onClick={() => setMode('copy')} disabled={busy} aria-label={`Copy ${file} to a folder`}>
-        Copy
-      </button>
-      <button
-        type="button"
-        onClick={() => onUpload(entry)}
-        disabled={uploadUnavailable !== null}
-        aria-label={`Upload ${file} to op1.fun`}
-        aria-describedby={uploadUnavailable !== null ? uploadNoteId : undefined}
-        title={uploadUnavailable ?? undefined}
-      >
-        Upload
-      </button>
-      <button
-        type="button"
-        className="danger"
-        onClick={() => setMode('delete')}
-        disabled={busy}
-        aria-label={`Delete ${file}`}
-      >
-        Delete
-      </button>
-      {error && (
-        <p role="alert" className="row-error">
-          {error}
-        </p>
-      )}
+      <div ref={menuRef} id={menuId} popover="auto" className="menu">
+        <button type="button" onClick={() => choose('rename')} disabled={busy} aria-label={`Rename file ${file}`}>
+          Rename file
+        </button>
+        <button
+          type="button"
+          onClick={() => choose('name')}
+          disabled={busy || !canName}
+          aria-label={`Set patch name of ${file}`}
+          title={canName ? undefined : 'no op-1 metadata to hold a name'}
+        >
+          Set patch name
+        </button>
+        <button type="button" onClick={() => choose('move')} disabled={busy} aria-label={`Move ${file} to a folder`}>
+          Move to a folder
+        </button>
+        <button type="button" onClick={() => choose('copy')} disabled={busy} aria-label={`Copy ${file} to a folder`}>
+          Copy to a folder
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            menuRef.current?.hidePopover();
+            onUpload(entry);
+          }}
+          disabled={uploadUnavailable !== null}
+          aria-label={`Upload ${file} to op1.fun`}
+          aria-describedby={uploadUnavailable !== null ? uploadNoteId : undefined}
+          title={uploadUnavailable ?? undefined}
+        >
+          Upload to op1.fun
+        </button>
+        <button
+          type="button"
+          className="danger"
+          onClick={() => choose('delete')}
+          disabled={busy}
+          aria-label={`Delete ${file}`}
+        >
+          Delete
+        </button>
+      </div>
 
       {mode === 'rename' && (
         <TextDialog

@@ -9,6 +9,7 @@ import { Packs } from './ui/Packs';
 import { InstallOverUsb } from './ui/PluginInstall';
 import { Plugins } from './ui/Plugins';
 import { useDevice } from './ui/useDevice';
+import { useTheme } from './ui/theme';
 import { useOp1Fun } from './ui/useOp1Fun';
 
 const TABS = [
@@ -25,6 +26,7 @@ export function App() {
   const [tab, setTab] = useState<TabId>('library');
   // One connection for every tab, so the Packs tab installs onto the drive the Library shows.
   const device = useDevice();
+  const { theme, toggle } = useTheme();
   // The op1.fun account, shared by the op1.fun tab and the Library's upload action.
   const op1fun = useOp1Fun();
 
@@ -64,28 +66,53 @@ export function App() {
     <>
       <main>
         <header className="app-header">
-          <h1>co-op patch librarian</h1>
-          <Feedback device={device} />
-        </header>
-        <div role="tablist" aria-label="Views" className="tabs" onKeyDown={onKeyDown}>
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              ref={(el) => {
-                buttons.current[t.id] = el;
-              }}
-              type="button"
-              role="tab"
-              id={`tab-${t.id}`}
-              aria-selected={tab === t.id}
-              aria-controls={`panel-${t.id}`}
-              tabIndex={tab === t.id ? 0 : -1}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
+          <div className="brand">
+            <h1>
+              <span className="logo" aria-hidden="true">
+                <span className="blue" />
+                <span className="green" />
+                <span className="grey" />
+                <span className="orange" />
+              </span>
+              co-op<span className="visually-hidden"> patch librarian</span>
+            </h1>
+            <span className="eyebrow">PATCH LIBRARIAN / OP–1</span>
+          </div>
+          <div role="tablist" aria-label="Views" className="tabs" onKeyDown={onKeyDown}>
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                ref={(el) => {
+                  buttons.current[t.id] = el;
+                }}
+                type="button"
+                role="tab"
+                id={`tab-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls={`panel-${t.id}`}
+                tabIndex={tab === t.id ? 0 : -1}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="header-actions">
+            <Feedback device={device} />
+            <button type="button" className="theme-toggle" onClick={toggle} aria-label="Switch light or dark mode">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                {theme === 'dark' ? (
+                  <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" />
+                ) : (
+                  <>
+                    <circle cx="12" cy="12" r="5" />
+                    <path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+                  </>
+                )}
+              </svg>
             </button>
-          ))}
-        </div>
+          </div>
+        </header>
         {/* Every panel stays mounted so the connected drive and inspected file survive a tab switch. */}
         <div role="tabpanel" id="panel-library" aria-labelledby="tab-library" hidden={tab !== 'library'}>
           <Library device={device} active={tab === 'library'} op1fun={op1fun} />
@@ -104,7 +131,8 @@ export function App() {
         </div>
       </main>
       <footer>
-        <a href="https://github.com/coldsoldr/co-op">co-op on GitHub</a>
+        <span>CO–OP · COMMUNITY LIBRARIAN FOR OP–1</span>
+        <a href="https://github.com/coldsoldr/co-op">GITHUB ↗</a>
       </footer>
     </>
   );

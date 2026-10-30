@@ -17,10 +17,11 @@ import { filesFromDataTransfer } from '../core/store/drop-store';
 import { profiles } from '../core/profiles/registry';
 import { installedNames } from '../core/plugins/requirements';
 import { playPcm } from './audio';
-import { BackupPanel } from './BackupPanel';
+import { BackupPanel, type BackupControls } from './BackupPanel';
 import { ConfirmDialog } from './Dialog';
 import { saveBlob, zipBlob } from './download';
-import { compatView, dateStamp, formatSize, groupByFolder, kindMismatchText, rootOf } from './format';
+import { compatView, dateStamp, folderOf, formatSize, kindMismatchText, rootOf, soundLine } from './format';
+import { Folders } from './Folders';
 import { OpusPlugins } from './OpusPlugins';
 import { usePluginPrompt } from './PluginPrompt';
 import { TraitsPopover, type PluginRequirements } from './TraitsPopover';
@@ -37,6 +38,7 @@ import {
   type SortKey,
 } from './rows';
 import type { Device, Operation } from './useDevice';
+import { joinPath } from '../core/store/store';
 import { messageOf } from '../core/util';
 
 /** React does not type webkitdirectory; it passes the attribute through to the DOM. */
@@ -51,7 +53,6 @@ export function Library({ device, active = true, op1fun }: { device: Device; act
   const openUsbCheck = useCallback(() => setUsbCheck(true), []);
   return (
     <section aria-labelledby="library-heading">
-      <h2 id="library-heading">Device library</h2>
       {device.source ? (
         <Connected
           key={device.source.key}
@@ -109,6 +110,15 @@ function ConnectPanel({ device, onCheckUsb }: { device: Device; onCheckUsb: () =
 
   return (
     <div className="connect">
+      <div className="hero">
+        <div>
+          <div className="eyebrow">01 / NOT CONNECTED</div>
+          <h2 id="library-heading">Connect your OP–1</h2>
+        </div>
+        <div className="keys">
+          <Key label="Check over USB" colour="blue" onClick={onCheckUsb} />
+        </div>
+      </div>
       <p>
         Put the OP-1 in disk mode (shift + COM, then DISK) and plug it in by USB; its drive then shows up like a USB
         stick.
@@ -146,19 +156,14 @@ function ConnectPanel({ device, onCheckUsb }: { device: Device; onCheckUsb: () =
           <input type="file" multiple onChange={onPick} disabled={blocked} {...folderInputProps} />
         </label>
       </div>
-      <p>
-        To see which firmware and plugins the OP-1 runs, plug it in normally (not in disk mode) and{' '}
-        <button type="button" onClick={onCheckUsb}>
-          Check over USB
-        </button>
+      <p className="muted">
+        To see which firmware and plugins the OP-1 runs, plug it in normally (not in disk mode) and use Check over USB.
       </p>
       {readingDrop && <p role="status">Reading dropped folder…</p>}
       {device.loading && <p role="status">Opening…</p>}
     </div>
   );
 }
-
-type View = 'folders' | 'all';
 
 interface Sort {
   key: SortKey;
@@ -167,11 +172,32 @@ interface Sort {
 
 const COLUMNS: ReadonlyArray<{ key: SortKey; label: string }> = [
   { key: 'name', label: 'Name' },
-  { key: 'file', label: 'File' },
   { key: 'kind', label: 'Kind' },
   { key: 'size', label: 'Size' },
   { key: 'compat', label: 'Compatibility' },
 ];
+
+/** A round key like the OP-1's, with its coloured dot. */
+function Key({
+  label,
+  colour,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  colour: 'blue' | 'green' | 'grey' | 'orange';
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button type="button" className="key" onClick={onClick} disabled={disabled}>
+      <span className="key-cap">
+        <span className={`key-dot ${colour}`} />
+      </span>
+      {label}
+    </button>
+  );
+}
 
 function Connected({
   device,
@@ -191,7 +217,9 @@ function Connected({
   /** Bumped by every play click and by hiding the tab, so a read that finishes late never starts. */
   const playToken = useRef(0);
   const activeRef = useRef(active);
-  const [view, setView] = useState<View>('folders');
+  /** The folder chosen in the left column; null shows every patch. */
+  const [place, setPlace] = useState<string | null>(null);
+  const backup = useRef<BackupControls>(null);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'ascending' });
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
@@ -277,7 +305,14 @@ function Connected({
     );
   }
 
-  const shown = filterRows(device.rows, query);
+  // A folder gone from the drive (removed, or after a refresh) falls back to all patches.
+  const folder =
+    place !== null && Object.entries(device.folders).some(([root, names]) => names.some((n) => joinPath(root, n) === place))
+      ? place
+      : null;
+  const inView = folder === null ? device.rows : device.rows.filter((r) => folderOf(r) === folder);
+  const where = folder === null ? `on ${source.store.label || 'the drive'}` : `in ${folder}`;
+  const shown = filterRows(inView, query);
   const selectedPaths = device.rows.filter((r) => selected.has(r.path)).map((r) => r.path);
   const allShownSelected = shown.length > 0 && shown.every((r) => selected.has(r.path));
   const pendingPaths = staged ? [...new Set(staged.changes().map((c) => c.path))] : [];
@@ -314,37 +349,42 @@ function Connected({
 
   return (
     <>
-      <div className="source-bar">
-        <p>
-          Source: <strong>{source.store.label || 'dropped folder'}</strong>
-          {staged ? ' (read-only copy)' : ''}{' '}
-          <button type="button" onClick={() => void device.refresh()} disabled={device.busy}>
-            Refresh
-          </button>{' '}
-          <button type="button" onClick={requestDisconnect} disabled={device.busy}>
-            Disconnect
-          </button>{' '}
-          <button type="button" onClick={onCheckUsb}>
-            Check over USB
-          </button>
-        </p>
-        <p>
-          <label>
-            Profile{' '}
-            <select
-              value={device.profile.id}
-              onChange={(e) => void device.setProfile(e.target.value)}
-              disabled={device.busy}
-            >
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </label>{' '}
-          <span className="muted">{device.detection}</span>
-        </p>
+      <div className="hero">
+        <div>
+          <div className="eyebrow">01 / CONNECTED</div>
+          <h2 id="library-heading">OP–1 drive</h2>
+          <div className="pills">
+            <label className="pill firmware-pill">
+              <span className="dot ok" />
+              <span className="visually-hidden">Profile</span>
+              <select
+                value={device.profile.id}
+                onChange={(e) => void device.setProfile(e.target.value)}
+                disabled={device.busy}
+              >
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="pill quiet">{device.detection}</span>
+            <span className="pill quiet">
+              {source.store.label || 'dropped folder'}
+              {staged ? ' (read-only copy)' : ''}
+            </span>
+            <button type="button" onClick={() => void device.refresh()} disabled={device.busy}>
+              Refresh
+            </button>
+          </div>
+        </div>
+        <div className="keys">
+          <Key label="Check over USB" colour="blue" onClick={onCheckUsb} />
+          <Key label="Back up" colour="green" onClick={() => backup.current?.backUp()} disabled={device.busy} />
+          <Key label="Restore" colour="grey" onClick={() => backup.current?.restore()} disabled={device.busy} />
+          <Key label="Disconnect" colour="orange" onClick={requestDisconnect} disabled={device.busy} />
+        </div>
       </div>
 
       {device.suggestion && (
@@ -406,101 +446,88 @@ function Connected({
         </p>
       )}
 
-      {device.progress && (
-        <p role="status">
-          Reading patches: {device.progress.done} of {device.progress.total}
-        </p>
-      )}
-      {!device.loading && device.rows.length === 0 && <p>No patches found in the synth and drum folders.</p>}
-
-      {device.rows.length > 0 && (
-        <>
-          <div className="toolbar">
-            <fieldset className="view-toggle">
-              <legend>View</legend>
-              <label>
-                <input type="radio" name="view" checked={view === 'folders'} onChange={() => setView('folders')} /> By
-                folder
-              </label>
-              <label>
-                <input type="radio" name="view" checked={view === 'all'} onChange={() => setView('all')} /> All
-                patches
-              </label>
-            </fieldset>
-            <label>
-              Search{' '}
+      <div className="library-layout">
+        <Folders device={device} selected={folder} onSelect={setPlace} />
+        <div className="library-main">
+          <div className="library-bar">
+            <div className="eyebrow">03 / {(folder ?? 'all patches').replace('/', ' · ').toUpperCase()}</div>
+            <label className="search">
+              <span className="visually-hidden">Search</span>
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.3-4.3" />
+              </svg>
               <input
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="patch or file name"
+                placeholder="Search patches"
               />
             </label>
           </div>
-          <table className="library">
-            <caption>
-              {shown.length === device.rows.length
-                ? `${device.rows.length} patch file(s) on ${source.store.label || 'the drive'}`
-                : `${shown.length} of ${device.rows.length} patch file(s) on ${source.store.label || 'the drive'}`}
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col" className="select">
-                  <span className="visually-hidden">Select</span>
-                  <input
-                    type="checkbox"
-                    aria-label="Select all shown patches"
-                    checked={allShownSelected}
-                    onChange={(e) => selectShown(e.target.checked)}
-                  />
-                </th>
-                {COLUMNS.map((column) =>
-                  view === 'all' ? (
-                    <th
-                      key={column.key}
-                      scope="col"
-                      aria-sort={sort.key === column.key ? sort.direction : 'none'}
-                    >
-                      <button type="button" className="sort" onClick={() => sortBy(column.key)}>
-                        {column.label}
-                        <span aria-hidden="true">
-                          {sort.key === column.key ? (sort.direction === 'ascending' ? ' ▲' : ' ▼') : ''}
-                        </span>
-                      </button>
-                    </th>
-                  ) : (
-                    <th key={column.key} scope="col">
-                      {column.label}
-                    </th>
-                  ),
-                )}
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            {view === 'all' ? (
-              <tbody>{sortRows(shown, sort.key, sort.direction).map(rowFor)}</tbody>
-            ) : (
-              groupByFolder(shown).map((group) => (
-                <tbody key={group.folder}>
-                  <tr className="group">
-                    <th scope="rowgroup" colSpan={7}>
-                      {group.folder}
-                    </th>
-                  </tr>
-                  {group.rows.map(rowFor)}
-                </tbody>
-              ))
-            )}
-          </table>
-          {shown.length === 0 && <p>No patches match “{query}”.</p>}
-        </>
-      )}
+
+          {device.progress && (
+            <p role="status">
+              Reading patches: {device.progress.done} of {device.progress.total}
+            </p>
+          )}
+          {!device.loading && inView.length === 0 && (
+            <p className="empty">{folder ? 'No patches in this folder yet.' : 'No patches found in the synth and drum folders.'}</p>
+          )}
+
+          {inView.length > 0 && (
+            <>
+              <div className="table-scroll">
+                <table className="library patches">
+                  <caption>
+                    {shown.length === inView.length
+                      ? `${inView.length} patch file(s) ${where}`
+                      : `${shown.length} of ${inView.length} patch file(s) ${where}`}
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className="select">
+                        <span className="visually-hidden">Select</span>
+                        <input
+                          type="checkbox"
+                          aria-label="Select all shown patches"
+                          checked={allShownSelected}
+                          onChange={(e) => selectShown(e.target.checked)}
+                        />
+                      </th>
+                      <th scope="col" className="play">
+                        <span className="visually-hidden">Play</span>
+                      </th>
+                      {COLUMNS.map((column) => (
+                        <th key={column.key} scope="col" aria-sort={sort.key === column.key ? sort.direction : 'none'}>
+                          <button type="button" className="sort" onClick={() => sortBy(column.key)}>
+                            {column.label}
+                            <span aria-hidden="true">
+                              {sort.key === column.key ? (sort.direction === 'ascending' ? ' ▲' : ' ▼') : ''}
+                            </span>
+                          </button>
+                        </th>
+                      ))}
+                      <th scope="col">
+                        <span className="visually-hidden">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>{sortRows(shown, sort.key, sort.direction).map(rowFor)}</tbody>
+                </table>
+              </div>
+              {shown.length === 0 && <p>No patches match “{query}”.</p>}
+            </>
+          )}
+        </div>
+      </div>
 
       {device.profile.firmware === 'opus' && (
         <OpusPlugins store={source.store} settledCount={device.settledCount} />
       )}
 
       <BackupPanel
+        controls={backup}
         store={source.store}
         profile={device.profile}
         staged={staged !== null}
@@ -573,6 +600,14 @@ const Row = memo(function Row({
 }: RowProps) {
   const mismatch = kindMismatchText(row);
   const nonStandard = row.info !== null && !row.info.canonical;
+  const [error, setError] = useState<string | null>(null);
+  const sound = soundLine(row);
+
+  function play(): void {
+    setError(null);
+    onTogglePlay(row.path).catch((e: unknown) => setError(`cannot play: ${messageOf(e)}`));
+  }
+
   return (
     <tr data-path={row.path}>
       <td className="select">
@@ -583,8 +618,29 @@ const Row = memo(function Row({
           onChange={(e) => onSelect(row.path, e.target.checked)}
         />
       </td>
+      <td className="play">
+        <button
+          type="button"
+          className={`play-key ${row.kind}`}
+          onClick={play}
+          disabled={!row.info}
+          aria-label={`${playing ? 'Stop' : 'Play'} ${row.fileName}`}
+          aria-pressed={playing}
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d={playing ? 'M6 5h12v14H6z' : 'M7 4l13 8-13 8z'} />
+          </svg>
+        </button>
+      </td>
       <th scope="row" className="name">
         {displayName(row)}
+        <code className="file">{row.fileName}</code>
+        {sound && <span className="sound">{sound}</span>}
+        {error && (
+          <span role="alert" className="row-error">
+            {error}
+          </span>
+        )}
         {(mismatch || nonStandard) && (
           <ul className="details">
             {mismatch && <li className="warning">{mismatch}</li>}
@@ -596,21 +652,17 @@ const Row = memo(function Row({
           </ul>
         )}
       </th>
-      <td className="file">
-        <code>{row.fileName}</code>
-      </td>
       <td className="kind">{row.kind}</td>
       <td className="size">{formatSize(row.sizeBytes)}</td>
       <td className="compat">
         <CompatBadge row={row} />
         {row.info?.traits && <TraitsPopover row={row} traits={row.info.traits} plugins={plugins} />}
       </td>
-      <td>
+      <td className="more-cell">
         <PatchActions
           entry={row}
           folders={folders ?? NO_FOLDERS}
-          playing={playing}
-          onTogglePlay={onTogglePlay}
+          onError={setError}
           run={run}
           staged={staged}
           busy={busy}

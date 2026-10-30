@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useImperativeHandle, useRef, useState, type ChangeEvent, type Ref } from 'react';
 import type { DeviceProfile } from '../core/profiles/types';
 import {
   RestoreError,
@@ -18,7 +18,14 @@ import { dateStamp } from './format';
 import type { Operation, Progress } from './useDevice';
 import { messageOf } from '../core/util';
 
+/** What the library's round keys start. */
+export interface BackupControls {
+  backUp(): void;
+  restore(): void;
+}
+
 interface BackupPanelProps {
+  controls: Ref<BackupControls>;
   store: DeviceStore;
   profile: DeviceProfile;
   /** True when restored files are staged for download rather than written to the drive. */
@@ -71,7 +78,7 @@ function plan(diff: BackupDiff, selected: ReadonlySet<string>): { paths: string[
 }
 
 /** Download a backup zip of the patch folders (all or selected), and restore selected files from one. */
-export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclusive, run, confirmPlugins }: BackupPanelProps) {
+export function BackupPanel({ controls, store, profile, staged, selectedPaths, busy, exclusive, run, confirmPlugins }: BackupPanelProps) {
   const [backupProgress, setBackupProgress] = useState<Progress | null>(null);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -80,6 +87,11 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
   const [confirming, setConfirming] = useState<string[] | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const { confirmUnsupported, dialog } = useConfirmUnsupported();
+  const restoreInput = useRef<HTMLInputElement>(null);
+  useImperativeHandle(controls, () => ({
+    backUp: () => void download(),
+    restore: () => restoreInput.current?.click(),
+  }));
   /** The paths the unsupported-patch guard last judged; a restore writing any other path asks again. */
   const guarded = useRef<ReadonlySet<string>>(new Set());
 
@@ -240,7 +252,7 @@ export function BackupPanel({ store, profile, staged, selectedPaths, busy, exclu
       <p>
         <label>
           Restore from backup{' '}
-          <input type="file" accept=".zip,application/zip" onChange={(e) => void pick(e)} disabled={working} />
+          <input ref={restoreInput} type="file" accept=".zip,application/zip" onChange={(e) => void pick(e)} disabled={working} />
         </label>
       </p>
       {restoreError && (

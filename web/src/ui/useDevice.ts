@@ -31,6 +31,7 @@ import type { DeviceStore } from '../core/store/store';
 import { createQueue } from './queue';
 import { OVERRIDE_CONFIDENCE, loadRememberedProfile, rememberProfile } from './remembered-profile';
 import { mergeRows, rejudgeRows, toRow, type LibraryRow } from './rows';
+import { driveUsedBytes } from '../core/library/drive-space';
 import { messageOf } from '../core/util';
 
 /** What the library is showing. */
@@ -77,6 +78,8 @@ export interface Device {
   rows: LibraryRow[];
   /** Folder names under each patch root, keyed by root path ('synth'). */
   folders: Record<string, string[]>;
+  /** Bytes in every file on the drive, for the free space estimate; null until listed. */
+  usedBytes: number | null;
   /** Patch reading progress while patches load. */
   progress: Progress | null;
   /** True while the drive is being opened or listed. */
@@ -197,6 +200,7 @@ export function useDevice(): Device {
   const [settledSuggestion, setSettledSuggestion] = useState<{ key: number; value: RankedProfile | null } | null>(null);
   const [rows, setRowsState] = useState<LibraryRow[]>([]);
   const [folders, setFolders] = useState<Record<string, string[]>>({});
+  const [usedBytes, setUsedBytes] = useState<number | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -291,11 +295,13 @@ export function useDevice(): Device {
       try {
         const listed = await loadLibrary(next.store, nextProfile);
         const nextFolders = await listFolders(next.store, nextProfile);
+        const used = await driveUsedBytes(next.store);
         if (!current()) return;
         const previous = touched === null ? new Map<string, LibraryRow>() : new Map(rowsRef.current.map((r) => [r.path, r]));
         const merged = mergeRows(listed, previous, new Set(touched ?? []));
         setRows(merged.rows);
         setFolders(nextFolders);
+        setUsedBytes(used);
         setChangeCount(next.staged ? countChanges(next.staged.changes()) : 0);
         if (merged.toLoad.length === 0) return;
         let last = 0;
@@ -538,6 +544,7 @@ export function useDevice(): Device {
     setSource(null);
     setRows([]);
     setFolders({});
+    setUsedBytes(null);
     setProgress(null);
     setLoading(false);
     setError(null);
@@ -575,6 +582,7 @@ export function useDevice(): Device {
     settledCount,
     rows,
     folders,
+    usedBytes,
     progress,
     loading,
     busy: pending > 0,

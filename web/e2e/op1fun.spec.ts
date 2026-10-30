@@ -252,6 +252,7 @@ test('uploads a library patch to op1.fun through the Worker as raw bytes', async
   await page.goto('./');
   await page.getByLabel('Choose the OP-1 drive folder').setInputFiles(drive);
   const row = page.locator('tr[data-path="synth/user/cluster.aif"]');
+  await row.getByRole('button', { name: 'More actions for cluster.aif' }).click();
   const upload = row.getByRole('button', { name: 'Upload cluster.aif to op1.fun' });
   await expect(upload).toBeDisabled();
   await expect(upload).toHaveAccessibleDescription(/Save your op1.fun email and token on the op1.fun tab/);
@@ -260,6 +261,7 @@ test('uploads a library patch to op1.fun through the Worker as raw bytes', async
   await fillAccount(page);
   await page.getByRole('form', { name: 'op1.fun account' }).getByRole('button', { name: 'Save' }).click();
   await page.getByRole('tab', { name: 'Library' }).click();
+  await row.getByRole('button', { name: 'More actions for cluster.aif' }).click();
   await expect(upload).toBeEnabled();
   await upload.click();
 
