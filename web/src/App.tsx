@@ -2,9 +2,12 @@ import { useRef, useState, type KeyboardEvent } from 'react';
 import type { PluginIndexEntry } from '@co-op/shared/plugins';
 import { Feedback } from './ui/Feedback';
 import { CopyToMods } from './ui/CopyToMods';
+import { useSiteDevice } from './ui/device-choice';
+import { DeviceMenu } from './ui/DeviceMenu';
 import { Inspector } from './ui/Inspector';
 import { Library } from './ui/Library';
 import { Op1FunTab } from './ui/Op1Fun';
+import { OpXy } from './ui/OpXy';
 import { Packs } from './ui/Packs';
 import { InstallOverUsb } from './ui/PluginInstall';
 import { Plugins } from './ui/Plugins';
@@ -27,6 +30,8 @@ export function App() {
   // One connection for every tab, so the Packs tab installs onto the drive the Library shows.
   const device = useDevice();
   const { theme, toggle } = useTheme();
+  const { device: siteDevice, choose } = useSiteDevice();
+  const op1 = siteDevice === 'op1';
   // The op1.fun account, shared by the op1.fun tab and the Library's upload action.
   const op1fun = useOp1Fun();
 
@@ -62,20 +67,37 @@ export function App() {
     buttons.current[id]?.focus();
   }
 
+  const brand = <DeviceMenu device={siteDevice} onChoose={choose} />;
+  const headerActions = (
+    <>
+      <Feedback device={device} />
+      <button type="button" className="theme-toggle" onClick={toggle} aria-label="Switch light or dark mode">
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          {theme === 'dark' ? (
+            <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" />
+          ) : (
+            <>
+              <circle cx="12" cy="12" r="5" />
+              <path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+            </>
+          )}
+        </svg>
+      </button>
+    </>
+  );
+
   return (
     <>
-      <main>
+      {!op1 && (
+        <main>
+          <OpXy brand={brand} actions={headerActions} />
+        </main>
+      )}
+      {/* Stays mounted while another device is shown, so an open drive and its tabs survive. */}
+      <main hidden={!op1}>
         <header className="app-header">
           <div className="brand">
-            <h1>
-              <span className="logo" aria-hidden="true">
-                <span className="blue" />
-                <span className="green" />
-                <span className="grey" />
-                <span className="orange" />
-              </span>
-              co-op<span className="visually-hidden"> patch librarian</span>
-            </h1>
+            {brand}
             <span className="eyebrow">PATCH LIBRARIAN / OP–1</span>
           </div>
           <div role="tablist" aria-label="Views" className="tabs" onKeyDown={onKeyDown}>
@@ -97,25 +119,11 @@ export function App() {
               </button>
             ))}
           </div>
-          <div className="header-actions">
-            <Feedback device={device} />
-            <button type="button" className="theme-toggle" onClick={toggle} aria-label="Switch light or dark mode">
-              <svg aria-hidden="true" viewBox="0 0 24 24">
-                {theme === 'dark' ? (
-                  <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" />
-                ) : (
-                  <>
-                    <circle cx="12" cy="12" r="5" />
-                    <path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
-                  </>
-                )}
-              </svg>
-            </button>
-          </div>
+          <div className="header-actions">{headerActions}</div>
         </header>
         {/* Every panel stays mounted so the connected drive and inspected file survive a tab switch. */}
         <div role="tabpanel" id="panel-library" aria-labelledby="tab-library" hidden={tab !== 'library'}>
-          <Library device={device} active={tab === 'library'} op1fun={op1fun} />
+          <Library device={device} active={op1 && tab === 'library'} op1fun={op1fun} />
         </div>
         <div role="tabpanel" id="panel-packs" aria-labelledby="tab-packs" hidden={tab !== 'packs'}>
           <Packs device={device} active={tab === 'packs'} onOpenLibrary={openLibrary} />
@@ -132,7 +140,7 @@ export function App() {
       </main>
       <footer>
         <span>
-          CO–OP · COMMUNITY LIBRARIAN FOR OP–1 · <span title={`Build ${__COMMIT__}`}>V{__APP_VERSION__}</span>
+          CO–OP · COMMUNITY LIBRARIAN FOR {op1 ? 'OP–1' : 'OP–XY'} · <span title={`Build ${__COMMIT__}`}>V{__APP_VERSION__}</span>
         </span>
         <a href="https://github.com/coldsoldr/co-op">GITHUB ↗</a>
       </footer>

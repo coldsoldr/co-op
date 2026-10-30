@@ -102,6 +102,12 @@ they trust or with source they have looked at. To add one, follow
 structure, as a prompt for your coding agent, is in
 [docs/plugin-prompt.md](docs/plugin-prompt.md).
 
+## Devices
+
+The logo opens a list of devices. OP-1 is the working librarian. OP-XY is a design preview
+over made-up contents, with no device access yet: its files go over MTP, which needs its own
+route from the browser. OP-1F is listed as coming soon.
+
 ## Versions
 
 The site's version is `version` in `web/package.json`, shown at the bottom left of every

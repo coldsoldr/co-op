@@ -88,9 +88,8 @@ test('copies an opus plugin into mods/ of a dropped drive, asking before replaci
   await expect(installed.locator('tbody tr')).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Download changes (1)' })).toBeEnabled();
 
-  // A file of the same name is only replaced after asking; Cancel is the default.
+  // A file of the same name is only replaced after asking; Cancel is the default. The group stays open.
   await page.getByRole('tab', { name: 'Plugins' }).click();
-  await page.getByRole('button', { name: /^co-op/ }).click();
   await copy.click();
   const dialog = page.getByRole('dialog', { name: 'Replace mods/testmod.opmod?' });
   await expect(dialog).toContainText('already has a file named testmod.opmod');

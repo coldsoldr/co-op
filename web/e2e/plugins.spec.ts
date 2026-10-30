@@ -66,6 +66,36 @@ test('leaves a lone author open, with its buttons apart', async ({ page }) => {
   await expect(page.locator('#panel-plugins article')).toHaveCount(0);
 });
 
+test('chooses a device from the logo, remembers it and keeps the OP-1 page', async ({ page }) => {
+  await page.goto('./');
+  const logo = page.getByRole('button', { name: /Choose a device/ });
+  await logo.click();
+  await expect(page.getByRole('button', { name: 'OP-1', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'OP-1F (coming soon)' })).toBeDisabled();
+
+  await page.getByRole('button', { name: 'OP-XY' }).click();
+  await expect(page.getByRole('heading', { name: 'Connect OP–XY' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Library' })).toBeHidden();
+  await expect(page.getByRole('note').filter({ hasText: 'Design preview' })).toBeVisible();
+  await expect(page.getByRole('contentinfo')).toContainText('OP–XY');
+
+  await page.getByRole('button', { name: 'Find OP–XY' }).click();
+  await expect(page.getByRole('button', { name: 'Play glass harp' })).toBeVisible();
+  await page.getByRole('button', { name: /samples/ }).click();
+  await expect(page.getByRole('button', { name: 'Play recording 014' })).toBeVisible();
+  await page.getByRole('button', { name: 'Add a samples folder' }).click();
+  await page.getByLabel('New samples folder name').fill('loops');
+  await page.getByRole('button', { name: 'Add folder' }).click();
+  await expect(page.getByText('Nothing in this folder yet.')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Connect OP–XY' })).toBeVisible();
+  await page.getByRole('button', { name: /Choose a device/ }).click();
+  await page.getByRole('button', { name: 'OP-1', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Library' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Connect OP–XY' })).toBeHidden();
+});
+
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
