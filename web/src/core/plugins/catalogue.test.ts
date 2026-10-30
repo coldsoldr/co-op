@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import type { PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
 import { CatalogueError } from '../catalogue/catalogue';
-import { fetchManual, fetchPluginBytes, fetchPluginIndex, filterPlugins, pluginFileUrl, pluginFolderUrl } from './catalogue';
+import { fetchManual, fetchPluginBytes, fetchPluginIndex, filterPlugins, groupByAuthor, pluginFileUrl, pluginFolderUrl } from './catalogue';
 
 const knl = new Uint8Array([0x4b, 0x4e, 0x4c, 0x00, 1, 2, 3, 4]);
 const sha = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
@@ -160,6 +160,22 @@ describe('filterPlugins', () => {
     expect(ids({ text: 'tape_echo' })).toEqual(['tape_echo']);
     expect(ids({ text: 'rings delay' })).toEqual([]);
     expect(ids({ text: '   ' })).toEqual(['rings', 'tape_echo', 'chorus.x']);
+  });
+});
+
+describe('groupByAuthor', () => {
+  it('sorts authors ignoring case and keeps each author\'s plugins in order', () => {
+    const groups = groupByAuthor([
+      plugin({ id: 'b', author: 'zed' }),
+      plugin({ id: 'a', author: 'Amy' }),
+      plugin({ id: 'c', author: 'zed' }),
+      plugin({ id: 'd', author: 'bob' }),
+    ]);
+    expect(groups.map((g) => [g.author, g.plugins.map((p) => p.id)])).toEqual([
+      ['Amy', ['a']],
+      ['bob', ['d']],
+      ['zed', ['b', 'c']],
+    ]);
   });
 });
 

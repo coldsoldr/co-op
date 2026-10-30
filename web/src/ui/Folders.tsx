@@ -100,7 +100,13 @@ export function Folders({ device, selected, onSelect }: FoldersProps) {
             return (
               <div key={folder} className={`folder${on ? ' on' : ''}`}>
                 <div className="folder-row">
-                  <button type="button" className="folder-pick" aria-current={on} onClick={() => pick(folder)}>
+                  <button
+                    type="button"
+                    className="folder-pick"
+                    aria-current={on}
+                    title={isPresetFolder(name) ? 'Holds the OP–1’s 8 quick access presets' : undefined}
+                    onClick={() => pick(folder)}
+                  >
                     <span>{name}</span>
                     <span className="mono">{count}</span>
                   </button>
@@ -135,7 +141,6 @@ export function Folders({ device, selected, onSelect }: FoldersProps) {
                     </div>
                   </div>
                 )}
-                {on && isPresetFolder(name) && <p className="folder-note">Holds the OP–1’s 8 quick access presets.</p>}
               </div>
             );
           })}

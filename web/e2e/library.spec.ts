@@ -218,9 +218,12 @@ test('adds a folder, keeps the preset folder and removes a folder with its patch
   await expect(page.locator('tbody tr[data-path]')).toHaveCount(1);
   await expect(folders.getByText('free space')).toBeVisible();
 
-  // The preset folder explains itself and offers no way to remove it.
-  await folders.getByRole('region', { name: 'synth folders' }).getByRole('button', { name: /^user/ }).click();
-  await expect(folders.getByText('8 quick access presets')).toBeVisible();
+  // The preset folder explains itself on hover and offers no way to remove it.
+  const user = folders.getByRole('region', { name: 'synth folders' }).getByRole('button', { name: /^user/ });
+  const height = (await user.boundingBox())?.height;
+  await user.click();
+  await expect(user).toHaveAttribute('title', /8 quick access presets/);
+  expect((await user.boundingBox())?.height).toBe(height);
   await expect(folders.getByRole('button', { name: 'Remove folder user' })).toBeHidden();
 
   // A new folder opens empty, and goes without asking because nothing is lost.

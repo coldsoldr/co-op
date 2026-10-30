@@ -77,6 +77,20 @@ export interface PluginFilter {
   tag?: string;
 }
 
+export interface AuthorGroup {
+  author: string;
+  plugins: PluginIndexEntry[];
+}
+
+/** Plugins by author, authors in alphabetical order ignoring case; each keeps the order it was given. */
+export function groupByAuthor(plugins: readonly PluginIndexEntry[]): AuthorGroup[] {
+  const groups = new Map<string, PluginIndexEntry[]>();
+  for (const plugin of plugins) groups.set(plugin.author, [...(groups.get(plugin.author) ?? []), plugin]);
+  return [...groups]
+    .map(([author, list]) => ({ author, plugins: list }))
+    .sort((a, b) => a.author.localeCompare(b.author, 'en', { sensitivity: 'base' }));
+}
+
 /** The plugins that match every given criterion, in index order. */
 export function filterPlugins(index: PluginIndex, filter: PluginFilter): PluginIndexEntry[] {
   const words = (filter.text ?? '').toLowerCase().split(/\s+/).filter(Boolean);

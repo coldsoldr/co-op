@@ -5,6 +5,7 @@ import {
   fetchPluginBytes,
   fetchPluginIndex,
   filterPlugins,
+  groupByAuthor,
   pluginFileUrl,
   pluginFolderUrl,
   type PluginFilter,
@@ -40,6 +41,8 @@ export function Plugins({ active, renderActions }: PluginsProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   /** The plugin whose manual button takes focus when returning to the list. */
   const [returnTo, setReturnTo] = useState<string | null>(null);
+  /** Author groups the user has opened or closed; kept here so a manual and back leaves them as they were. */
+  const [toggled, setToggled] = useState<ReadonlySet<string>>(() => new Set());
   const [submitting, setSubmitting] = useState(false);
   const submitButton = useRef<HTMLButtonElement>(null);
 
@@ -104,6 +107,14 @@ export function Plugins({ active, renderActions }: PluginsProps) {
           index={index}
           filter={filter}
           onFilter={setFilter}
+          toggled={toggled}
+          onToggle={(author) =>
+            setToggled((prev) => {
+              const next = new Set(prev);
+              if (!next.delete(author)) next.add(author);
+              return next;
+            })
+          }
           onOpen={setOpenId}
           returnTo={returnTo}
           renderActions={renderActions}
@@ -117,13 +128,20 @@ interface PluginListProps {
   index: PluginIndex;
   filter: PluginFilter;
   onFilter: (filter: PluginFilter) => void;
+  toggled: ReadonlySet<string>;
+  onToggle: (author: string) => void;
   onOpen: (id: string) => void;
   returnTo: string | null;
   renderActions: PluginsProps['renderActions'];
 }
 
-function PluginList({ index, filter, onFilter, onOpen, returnTo, renderActions }: PluginListProps) {
+function PluginList({ index, filter, onFilter, toggled, onToggle, onOpen, returnTo, renderActions }: PluginListProps) {
   const shown = filterPlugins(index, filter);
+  const groups = groupByAuthor(shown);
+  // A search or filter shows what it found. Otherwise several authors start closed, and a lone
+  // author starts open, as a closed group would be all there is to see.
+  const filtering = Object.keys(filter).length > 0;
+  const startsOpen = groupByAuthor(index.plugins).length === 1;
   const tags = useMemo(() => [...new Set(index.plugins.flatMap((p) => p.tags))].sort(), [index]);
   /** Sets one criterion; the empty string clears it. */
   function set<K extends keyof PluginFilter>(key: K, value: string): void {
@@ -187,17 +205,35 @@ function PluginList({ index, filter, onFilter, onOpen, returnTo, renderActions }
           : `${shown.length} of ${plural(index.plugins.length, 'plugin', 'plugins')}`}
       </p>
       {shown.length === 0 && <p>No plugins match these filters.</p>}
-      <div className="pack-grid">
-        {shown.map((plugin) => (
-          <PluginCard
-            key={plugin.id}
-            plugin={plugin}
-            onOpen={onOpen}
-            focus={plugin.id === returnTo}
-            renderActions={renderActions}
-          />
-        ))}
-      </div>
+      {groups.map(({ author, plugins }) => {
+        const expanded = filtering || toggled.has(author) !== startsOpen;
+        return (
+          <section key={author} className="author-group" aria-label={`Plugins by ${author}`}>
+            <h3>
+              <button type="button" aria-expanded={expanded} disabled={filtering} onClick={() => onToggle(author)}>
+                <span>{author}</span>
+                <span className="mono">{plural(plugins.length, 'plugin', 'plugins')}</span>
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+            </h3>
+            {expanded && (
+              <div className="pack-grid">
+                {plugins.map((plugin) => (
+                  <PluginCard
+                    key={plugin.id}
+                    plugin={plugin}
+                    onOpen={onOpen}
+                    focus={plugin.id === returnTo}
+                    renderActions={renderActions}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
     </>
   );
 }
@@ -250,7 +286,7 @@ function PluginCard({ plugin, onOpen, focus, renderActions }: PluginCardProps) {
         alt={`The ${plugin.name} screen on the OP-1`}
         loading="lazy"
       />
-      <h3 id={headingId}>{plugin.name}</h3>
+      <h4 id={headingId}>{plugin.name}</h4>
       <PluginFacts plugin={plugin} />
       <p>
         <button ref={manualRef} type="button" aria-label={`Read the manual of ${plugin.name}`} onClick={() => onOpen(plugin.id)}>
@@ -287,7 +323,7 @@ function PluginDownload({ plugin, renderActions }: { plugin: PluginIndexEntry; r
 
   return (
     <div className="plugin-actions">
-      <p>
+      <div className="plugin-buttons">
         <button
           type="button"
           className="primary"
@@ -297,9 +333,9 @@ function PluginDownload({ plugin, renderActions }: { plugin: PluginIndexEntry; r
           aria-describedby={hundekraft ? noteId : undefined}
         >
           Download {plugin.file} ({formatSize(plugin.sizeBytes)})
-        </button>{' '}
+        </button>
         {renderActions?.(plugin)}
-      </p>
+      </div>
       {hundekraft && (
         <p className="notice" id={noteId}>
           A plugin runs as firmware code on the OP-1. Install it over USB here or with the{' '}

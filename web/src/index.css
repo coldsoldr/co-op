@@ -607,12 +607,6 @@ svg {
   border-color: currentColor;
   color: inherit;
 }
-.folder-note {
-  margin: 0;
-  padding: 0 16px 12px;
-  font-size: 12px;
-  opacity: 0.8;
-}
 .folder-add {
   display: flex;
   align-items: center;
@@ -985,9 +979,61 @@ dialog p.counter {
   margin: 6px 0;
 }
 .plugin-actions {
+  margin-top: 8px;
+}
+.plugin-buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+.pack-card h4 {
+  margin: 12px 0 0;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.pack-card .notice {
+  margin: 12px 0 0;
+  padding: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+.author-group {
+  margin-top: 8px;
+}
+.author-group h3 {
+  margin: 0 0 12px;
+}
+.author-group h3 button {
+  gap: 12px;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 26px;
+  background: var(--surface);
+  font-size: 17px;
+  font-weight: 500;
+  text-align: left;
+}
+.author-group h3 button:disabled {
+  opacity: 1;
+}
+.author-group h3 .mono {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 400;
+}
+.author-group h3 svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  transition: transform 0.15s;
+}
+.author-group h3 [aria-expanded='true'] svg {
+  transform: rotate(180deg);
 }
 .prompt {
   max-height: 420px;

@@ -58,6 +58,7 @@ test('explains what is needed to copy an opus plugin when no opus drive is open'
   await serveOpusPlugin(page);
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
+  await page.getByRole('button', { name: /^co-op/ }).click();
   const card = page.getByRole('article', { name: 'Test Mod' });
   const copy = card.getByRole('button', { name: 'Copy testmod.opmod to mods/' });
   await expect(copy).toBeDisabled();
@@ -73,6 +74,7 @@ test('copies an opus plugin into mods/ of a dropped drive, asking before replaci
   await expect(installed.locator('tbody tr')).toHaveCount(1);
 
   await page.getByRole('tab', { name: 'Plugins' }).click();
+  await page.getByRole('button', { name: /^co-op/ }).click();
   const card = page.getByRole('article', { name: 'Test Mod' });
   const copy = card.getByRole('button', { name: 'Copy testmod.opmod to mods/' });
   await expect(copy).toHaveAccessibleDescription('opus loads the plugins in mods/ in file-name order.');
@@ -88,6 +90,7 @@ test('copies an opus plugin into mods/ of a dropped drive, asking before replaci
 
   // A file of the same name is only replaced after asking; Cancel is the default.
   await page.getByRole('tab', { name: 'Plugins' }).click();
+  await page.getByRole('button', { name: /^co-op/ }).click();
   await copy.click();
   const dialog = page.getByRole('dialog', { name: 'Replace mods/testmod.opmod?' });
   await expect(dialog).toContainText('already has a file named testmod.opmod');

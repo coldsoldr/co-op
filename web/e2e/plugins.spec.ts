@@ -28,6 +28,44 @@ test('explains how to submit a plugin and copies the prompt', async ({ page, con
   await expect(page.getByRole('button', { name: 'Submit a plugin' })).toBeFocused();
 });
 
+test('groups plugins by author, closed with several authors and open for a search', async ({ page }) => {
+  await page.route('**/plugins/index.json', async (route) => {
+    const response = await route.fetch();
+    const index = (await response.json()) as { plugins: Array<{ id: string; author: string }> };
+    for (const plugin of index.plugins) if (plugin.id === 'rings') plugin.author = 'someone else';
+    await route.fulfill({ response, json: index });
+  });
+  await page.goto('./');
+  await page.getByRole('tab', { name: 'Plugins' }).click();
+
+  const someone = page.getByRole('button', { name: /^someone else/ });
+  await expect(page.getByRole('button', { name: /^coldsoldr/ })).toContainText('9 plugins');
+  await expect(someone).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#panel-plugins article')).toHaveCount(0);
+
+  await someone.click();
+  await expect(page.locator('#panel-plugins article')).toHaveCount(1);
+
+  // Back from a manual, the group is as it was left.
+  await page.getByRole('button', { name: 'Read the manual of rings' }).click();
+  await page.getByRole('button', { name: 'Back to plugins' }).click();
+  await expect(page.locator('#panel-plugins article')).toHaveCount(1);
+
+  await page.getByRole('searchbox', { name: 'Search plugins' }).fill('tape');
+  await expect(page.locator('#panel-plugins article')).toHaveCount(2);
+  await expect(someone).toBeHidden();
+});
+
+test('leaves a lone author open, with its buttons apart', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('tab', { name: 'Plugins' }).click();
+  const rings = page.getByRole('article', { name: 'rings', exact: true });
+  await expect(rings.locator('.plugin-buttons')).toHaveCSS('gap', '8px');
+
+  await page.getByRole('button', { name: /^coldsoldr/ }).click();
+  await expect(page.locator('#panel-plugins article')).toHaveCount(0);
+});
+
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
