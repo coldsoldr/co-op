@@ -64,6 +64,12 @@
 #define FW_AUDIO_CB_IMM          0x0191AB52u   /* [C] kennel make_firmware.py IMM_PATCHES sm_audio_cb */
 #define FW_AUDIO_CB_TARGET       0xFFA04804u   /* the L1 audio callback it points at */
 
+/* ---- decrypted L1 audio core (symbols/l1.sym; confirmed this session) ---- */
+#define L1_AUDIO_CALLBACK        0xFFA04804u   /* [C] graph driver: CYCLES, CLI, vtable dispatches */
+#define L1_VOICE_LOOP            0xFFA009A0u   /* [C] Core voice loop (engine-interface.md) */
+#define L1_LFO_DISPATCH          0xFFA00AD4u   /* [C] per-voice LFO process dispatch */
+#define L1_TAPE_RESAMPLER        0xFFA0619Au   /* [C] tape resampler prologue (kennel) */
+
 /* ---- main-loop service CALL sites (safe place to do thread-context work like file writes) ---- */
 #define FW_CI_SERVICE_CALL       0x019F0A24u   /* [C] kennel: CALL tape_c::service(0) in the main loop */
 

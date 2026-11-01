@@ -60,26 +60,38 @@ plain Blackfin code (ciphertext was 7.99), matching `app-boot-chain.md`.
 - **LFO dispatch at `0xffa00ad4`** (the readable fragment in `lfo-interface.md`): loads the voice's
   LFO pointer, null-checks it, reads the `lfo_active` byte, and branches, as described.
 
-## Seed addresses to annotate next
+## The audio core, as mapped so far
 
-From the decrypted code plus `te-op1-cfw/third_party/opus-kit/sdk/op1fw.h` and kennel's L1 tables
-(`make_firmware.py`): confirm and name each in `symbols/l1.sym` as it is analysed.
+The symbol map is `symbols/l1.sym`. Confirmed this session from the decrypted code:
 
-| Address | Role (to confirm) | Source |
-|---|---|---|
-| `0xffa00000` | crt0 + event vectors | [C] this session |
-| `0xffa04804` | audio DMA callback (the Phase 2 seam target) | [C] this session; kennel `sm_audio_cb` |
-| `0xffa009a0..` | voice loop (render + env + mix + decimate) | engine-interface.md, lfo-interface.md |
-| `0xffa00ad4` | per-voice LFO dispatch (`CALL [vtable+0x14]`) | [C] this session |
-| `0xffa01018` | metronome render (`l1v_metro`) | kennel L1_IMM_PATCHES |
-| `0xffa049fc` | push master L/R to USB (`l1v_push_lr`) | kennel L1_IMM_PATCHES |
-| `0xffa0619a` | tape resampler prologue (`l1v_rs_probe`) | kennel L1_CALLS |
-| `0xffa0709c`, `0xffa0712c` | mix-loop MAX ops (meters) | kennel L1_PCCALLS |
-| `0x01912128` (SDRAM) | `fw_voice_envelope` | op1fw.h |
+- **`l1_audio_callback` (`0xffa04804`)** is the audio DMA callback and whole-graph driver (kennel's
+  `sm_audio_cb` target). It reads `CYCLES` at entry, masks interrupts (`CLI`), then runs the graph as
+  a long series of indirect `CALL (P1)` dispatches (the per-voice renders, the FX, the master chain)
+  plus two direct calls, `l1_cb_sub_036c4` and `l1_cb_sub_017ec`. It ends ~`0xffa05214`. **This is the
+  Phase 2 seam**: coop-fw repoints the plain-SDRAM imm pair at `0x0191AB52` to its own callback, which
+  can wrap or replace this.
+- **`l1_voice_loop` (`0xffa009a0`)** is the Core voice loop (matches `engine-interface.md`), near the
+  per-sample pitch-array setup (`d_pitch_inc` `0xff801950`).
+- **`l1_lfo_dispatch` (`0xffa00ad4`)** loads each voice's LFO object, checks `lfo_active`, and calls
+  its process method, as `lfo-interface.md` reconstructed.
+
+The pitch array `0xff801950` is referenced from three sites: the voice-loop setup (~`0xffa00708`,
+`0xffa00c32`) and inside the callback's render dispatch (`0xffa04b90`).
+
+## Worklist: unidentified L1 functions
+
+The decrypted region has 66 distinct direct call targets. Identified ones are in `symbols/l1.sym`;
+the rest are the reverse-engineering worklist (name them as each is analysed). Notable clusters:
+`0xffa06194`/`0xffa06248`/`0xffa06334` (around the tape resampler `0xffa0619a`), the `0xffa09xxx`
+band (~40 functions: math/DSP helpers, the master chain and meters), and the early
+`0xffa00102..0xffa00e50` group (boot/init and the voice/LFO machinery). The full list is in the
+local disassembly (`scratchpad/.../l1.dis`), not committed.
 
 ## Status
 
-Phase 1's hard gate is **met**: a verified key, the full L1 decrypted, and three structural
-confirmations. The on-device dumper (`tools/dump_l1/`) is no longer needed for the gate; it remains
-only as an optional device-vs-emulator cross-check. Next: expand this map into `symbols/l1.sym` and
-begin Phase 2 (the audio-callback seam at `0xffa04804`), with op1emu as the harness.
+Phase 1's hard gate is **met**: a verified key, the full L1 decrypted, three structural
+confirmations, and the start of the symbol map (`symbols/l1.sym`) including the audio-callback seam.
+The on-device dumper (`tools/dump_l1/`) is no longer needed for the gate; it remains only as an
+optional device-vs-emulator cross-check. Next: follow the callback's dispatches to label the voice
+render, decimator, FX and master-chain functions, and begin Phase 2 at `0xffa04804`, with op1emu as
+the harness.

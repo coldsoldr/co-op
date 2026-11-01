@@ -25,13 +25,24 @@ mkdir -p "$WORK"; cd "$WORK"
 echo "== deps =="
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update -qq
-sudo apt-get install -y -qq ninja-build pkg-config libgl1-mesa-dev xorg-dev python3-pip git curl >/dev/null
+sudo apt-get install -y -qq ninja-build pkg-config libgl1-mesa-dev xorg-dev python3-pip git curl wget gnupg lsb-release >/dev/null
 python3 -m pip install --user -q "cmake>=3.20"
 export PATH="$HOME/.local/bin:$PATH"
 
+echo "== LLVM 15 (bcore's JIT backend requires it) =="
+LLVM_DIR_PATH=/usr/lib/llvm-15/lib/cmake/llvm
+if [ ! -f "$LLVM_DIR_PATH/LLVMConfig.cmake" ]; then
+  CODENAME="$(lsb_release -cs)"
+  wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm15.gpg
+  echo "deb [signed-by=/usr/share/keyrings/llvm15.gpg] http://apt.llvm.org/$CODENAME/ llvm-toolchain-$CODENAME-15 main" | sudo tee /etc/apt/sources.list.d/llvm15.list >/dev/null
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq llvm-15-dev >/dev/null
+fi
+
 echo "== op1emu (clone + build op1emu, ldrdump) =="
 [ -d op1emu ] || git clone --recurse-submodules -j"$JOBS" https://github.com/op1emu/op1emu.git
-cmake -S op1emu -B op1emu/build -G Ninja -DGLFW_BUILD_WAYLAND=OFF -DCMAKE_BUILD_TYPE=Release
+cmake -S op1emu -B op1emu/build -G Ninja -DGLFW_BUILD_WAYLAND=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DLLVM_DIR="$LLVM_DIR_PATH"
 cmake --build op1emu/build --target op1emu ldrdump -j"$JOBS"
 
 echo "== mkyaffs2 (yaffs2utils) =="

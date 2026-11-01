@@ -1,0 +1,30 @@
+# coop-fw L1 symbol map: the decrypted OP-1 R246 audio core (L1 instruction SRAM 0xffa00000).
+#
+# Format: <hex addr> <name> <C|I> <note>   (C = confirmed from the decrypted bytes / research;
+# I = inferred). Reverse-engineering annotation only; no Teenage Engineering code is stored here.
+# Derived this session from the decrypted region plus te-op1-cfw interface docs, opus-kit op1fw.h
+# and kennel's make_firmware.py L1 tables. Expand as functions are analysed.
+
+0xffa00000  l1_crt0                 C  event-vector loads then crt0; SP=0xff803fb0 at 0xffa00054
+0xffa009a0  l1_voice_loop           C  the Core voice loop (engine-interface.md); near the pitch-array setup
+0xffa00ad4  l1_lfo_dispatch         C  per-voice LFO: loads the voice LFO ptr, checks lfo_active, CALL [vt+0x14]
+0xffa01018  l1v_metro               C  metronome render (kennel L1_IMM_PATCHES l1v_metro)
+0xffa04804  l1_audio_callback       C  audio DMA callback / graph driver (kennel sm_audio_cb target); times with CYCLES, CLI, many vtable dispatches
+0xffa036c4  l1_cb_sub_036c4         I  direct callee of the audio callback; sets up 4-wide state at 0xff801870
+0xffa017ec  l1_cb_sub_017ec         I  direct callee of the audio callback; CLI, state at 0xff802618
+0xffa0487c  l1v_push_interleaved    C  muted-output silent block push (kennel L1_IMM_PATCHES)
+0xffa049fc  l1v_push_lr             C  push master L/R (+ tracks) to USB (kennel L1_IMM_PATCHES)
+0xffa0619a  l1_tape_resampler       C  tape resampler prologue (kennel L1_CALLS l1v_rs_probe)
+0xffa0709c  l1_mix_max_fwd          C  mix loop 1: R0 = MAX(R2,R0) meter op (kennel L1_PCCALLS)
+0xffa0712c  l1_mix_max_rev          C  mix loop 2: R0 = MAX(R0,R1) meter op (kennel L1_PCCALLS)
+
+# L1 data (0xff800000 / 0xff900000): live words the audio core reads/writes (te-op1-cfw memory-map.md,
+# lfo-interface.md). Addresses, not contents.
+0xff801950  d_pitch_inc             C  128 x u32 per-sample phase increments (voice pitch)
+0xff801d50  d_voice_gain            C  128 x int16 voice gain array
+0xff801724  d_knob_scratch          C  8 x int16 engine-knob scratch (LFO/render params)
+0xff801064  d_voice_velocity        C  per-voice velocity
+0xff801928  d_mixer                 C  mixer subscreen 0 settings
+0xff8017cc  d_eq                    C  master EQ settings (4 int16)
+0xff8016c4  d_fx                     C  master FX settings
+0xff80189c  d_comp_drive            C  master compressor/drive settings (4 int16; L1 reads the float vector at 0x1ab333c)
