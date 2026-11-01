@@ -45,13 +45,19 @@ fired. Per audio block, in execution order (the `--watch-log` sequence):
 6. **SDRAM post-mix** `LSETUP(0x019de5ac, 0x019de5e8)`: adds one mono term (`R3.H`, from an
    `A0/A1` accumulator generator) to both channels in place (stores `0x019de5cc` R, `0x019de5d4` L).
    Its nonzero count equals loop B's, so the term was zero here: a silent source (metronome/click?) [I].
-7. **Master level stage** writes L back at `0xffa033c0` then R at `0xffa03590` (64 stores each; fewer
-   nonzero than loop B, so it zeroes small values): the body of the master comp/level call
-   (`0xffa04280`, replaced by the coop master suite) [I on the identity, C on the PCs].
+7. **A master-bus pass** writes L back at `0xffa033c0` then R at `0xffa03590` (64 stores each; fewer
+   nonzero than loop B, so it zeroes small values). It still runs in the milestone-B image where
+   `0xffa04280` was replaced, so it is NOT that stage's body; its identity is open [I].
+8. **Coop master stage (`coop_master_apply`)** at the getter site `0xffa017ac`, then the **stock master
+   level/comp `0xffa04280`**: reads d34/db4 and writes the int32 output pair **e34/f34**
+   (`0xff800e34`/`0xff800f34`, stores `0xffa044e0`/`0xffa046f0`), which the SPORT TX conversion loop
+   (`0xffa0171c..0xffa0178e`) turns into the codec DMA ring `0xff800770`. See `docs/audio-graph.md`
+   (second correction): replacing `0xffa04280` silences the codec.
 
 So the stock synth and drum output reaching the master is **mono: identical L and R** (loop B), and the
 only pan machinery (loop A) is silent. True per-voice stereo must intercept at step 3 (the per-voice
-accumulate) and carry two channels through steps 4-5.
+accumulate) and carry two channels through steps 4-5; the stereo result then flows through d34/db4 and
+the stock level stage into e34/f34 unchanged in shape (both are already stereo pairs).
 
 ## coop design
 

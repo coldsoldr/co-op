@@ -46,3 +46,7 @@
 0x01967612  decimate_voice_bus_end  C  RTS of the in-place 128->64 decimation filter: reads the voice bus via I0, writes the 64 results over 0xff800bb4..0xff800c32 (stores 0x01967586/0x0196759a/0x019675d2/0x0196760e; LSETUP x31 unrolled x2); 32x16 fractional IIR (A0 += A1 >>> 15)
 0x01a66b80  drum_sdram_sample_wr    C  drum engine sample path: one W[I0++] = R3.H store per call into the voice bus (32x16 fractional interpolation before it)
 0x019de5a8  postmix_mono_add        C  LSETUP(0x019de5ac,0x019de5e8): adds one mono term (A0/A1 generator) to d34 (0x019de5d4) and db4 (0x019de5cc) in place after the mix loops; term was zero in play (metronome/click?) [I]
+
+# --- master output path (2026-11-01, write tracer) ---
+0x019d90e8  master_level_getter     C  `R0 = 0xff80187c; RTS`: called via CALL (P1) at 0xffa017ac right before the stock level stage; the coop master stage (coop_master_apply) replaces THIS and returns the same value
+0x019d90f2  master_level_sdram_copy I  an SDRAM copy of the 0xffa04280 level stage (same prologue on 0xff801880); not in the live path

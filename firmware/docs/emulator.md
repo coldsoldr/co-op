@@ -118,7 +118,15 @@ write tracer to op1emu instead: `tools/op1emu-patches/0001-write-trace.patch` (a
   whose PCs lie within 0x100 bytes are one loop).
 - **Wrapper:** `tests/sim/watch_writes.sh LDR SCRIPT RANGE...` copies the pristine NAND, runs headless
   deterministic, prints the table. A host write (DMA, the LDR loader) shows as width `host` under
-  whatever PC the CPU state holds then (the loader's shows as `0xffa00000`).
+  whatever PC the CPU state holds then (the loader's shows as `0xffa00000`). MMR writes are traced too
+  (the JIT's MMR fast path is covered), so `--watch-writes 0xffc00c00+0x400` lists every DMA register
+  write with its PC: that is how the SPORT TX ring was found.
+- **Hear a headless run:** `--audio-dump PATH` writes the SPORT transmit frames (what the codec plays)
+  as a 16-bit stereo 44.1 kHz WAV instead of opening a sound device, in headless and deterministic runs
+  too, and logs the frame count and how many frames were nonzero: the end-to-end "does it make sound"
+  test (`tests/sim/hear.sh LDR SCRIPT OUT.wav`). `--audio` opens the real device in a headless run.
+  Milestone B's image passed every bus probe and failed this test with 0 nonzero frames
+  (`docs/audio-graph.md`, second correction).
 
 Results from the first use (stock R246, chord + drum scenarios) are in `docs/stereo-bus.md` and
 `symbols/l1.sym` / `symbols/sdram.sym`: the active per-voice accumulate, decimator and mix loops, with

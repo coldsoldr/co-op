@@ -69,3 +69,12 @@
 0xffa00fae  l1_mix_loop_b           C  LSETUP(0xffa00fb2,0xffa00fda) x64: same 64 samples * gain R0.L * ramped W[P1] added EQUALLY to d34 (0xffa00fca) and db4 (0xffa00fd2): the active mono-to-master path
 0xffa033c0  l1_master_level_wr_L    C  master level stage writes L back in place (64 stores/block; after the SDRAM post-mix). Body of the 0xffa04280 stage [I on identity]
 0xffa03590  l1_master_level_wr_R    C  master level stage writes R back in place (64 stores/block)
+
+# --- master output path, confirmed with the write tracer + --audio-dump (docs/audio-graph.md second correction, 2026-11-01) ---
+0xffa017a4  l1_master_getter_imm    C  P1.L/P1.H = 0x019d90e8 (SDRAM getter), CALL (P1) at 0xffa017ac, then CALL 0xffa04280 at 0xffa017ae: the coop master stage stands in for the getter (l1_insert.py --imm-pair-site)
+0xffa044e0  l1_master_level_out_L   C  inside 0xffa04280: writes the int32 output bus e34 (0xff800e34), 64/block, from d34 with the master level/comp
+0xffa046f0  l1_master_level_out_R   C  inside 0xffa04280: writes f34 (0xff800f34) likewise
+0xffa0171c  l1_sport_tx_convert     C  LSETUP(0xffa01720,0xffa0178e): reads e34 (I1) and f34 (P5) int32, soft-limits (0x7bb8/-0x3472 polynomial) and writes the SPORT TX ring as interleaved 32-bit frames ([I0 ++ M0=8] at 0xffa0173e; last at 0xffa0179e); zero when e34/f34 are unwritten
+0xff800e34  d_master_out_L          C  master OUTPUT bus L, 64 x int32: written by 0xffa04280, read by the SPORT TX conversion and the USB stream. NOT "USB only" and NOT always zero (a block-start probe saw it before the stage ran)
+0xff800f34  d_master_out_R          C  master OUTPUT bus R, 64 x int32
+0xff800770  d_sport_tx_ring         C  SPORT TX DMA ring (DMA1, descriptor list at 0xff800b70, START 0xff800770, 128 x 32-bit words per buffer), what the codec plays

@@ -51,6 +51,19 @@ not wired, so it makes no audible change yet. Milestone C1 (the L1 takeover) is 
 
 ## 3. THE master-bus correction (critical — do not regress)
 
+> **CORRECTED AGAIN later on 2026-11-01 (write tracer + `--audio-dump`, see `docs/audio-graph.md`
+> "second correction").** Both buses are real and in series: d34/db4 (int16) is the mixed master bus;
+> the stock level/comp stage `0xffa04280` reads it and WRITES e34/f34 (int32), which the SPORT TX
+> conversion loop (`0xffa0171c`) and the USB stream consume. e34/f34 are not "USB only" and not zero;
+> the probe that saw zeros ran at the callback entry, before the stage. **The milestone-B image (mbF)
+> replaced `0xffa04280`, so e34/f34 were never written and the codec output was SILENT** (0 nonzero
+> SPORT frames vs 603k for stock); its "audible validation" was a reconstruction from d34/db4, not the
+> output. Fixed in image **mbG**: `coop_master_apply` now replaces the trivial SDRAM getter called at
+> `0xffa017ac` (`l1_insert.py --imm-pair-site 0xffa017a4 --imm-stock 0x019d90e8 --fn <addr>`), processes
+> d34/db4 before the stock stage, and returns the getter's value (0xff80187c); `0xffa04280` stays and
+> runs at its original SP. SPORT output of mbG under the chord: 419,813 nonzero frames. The text below
+> is kept as history; where it says e34/f34 are the USB bus or zero, it is wrong.
+
 An earlier pass mislabeled `0xff800e34`/`0xff800f34` as the "master pair (int32 Q31)". **That is
 WRONG.** op1emu probing proved:
 
@@ -189,8 +202,10 @@ C++ unit tests), `make sim-test` (verifies the fractional MAC on the bfin simula
 ```
 python3 -I tools/inject_app.py  OP1_vdk.ldr out.ldr build/core/coop_combined.elf   # region A + imm seam
 python3 -I tools/l1_decrypt.py  decrypt-ldr out.ldr <KEY> out_plain.ldr --patches third_party/kennel/synth_sdk/l1_patches.json
-python3 -I tools/l1_insert.py   out_plain.ldr out_ins.ldr --call-site 0xffa017ae --call-stock 0xffa04280 --fn <coop_master_apply addr>
+python3 -I tools/l1_insert.py   out_plain.ldr out_ins.ldr --imm-pair-site 0xffa017a4 --imm-stock 0x019d90e8 --fn <coop_master_apply addr>
 ```
+(The old `--call-site 0xffa017ae --call-stock 0xffa04280` replace mode silences the codec: §3 correction.
+Hear the result without a GUI: `op1emu ... --headless --deterministic --audio-dump out.wav --input-script cap.txt`.)
 OTP/XTEA key (page 0xD0, same on every unit; from the public Tolsi/op1dumps reference). **NEVER write
 the key into a committed file.** Read the 16 raw bytes at byte offset 3328 of `~/op1emu-work/otp.bin`
 at run time (`xxd -s 3328 -l 16 -p ~/op1emu-work/otp.bin`) and pass them as `<KEY>` to `decrypt-ldr`;

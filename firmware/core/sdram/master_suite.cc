@@ -2,15 +2,27 @@
  * coop-fw master bus suite — firmware payload (Phase 2, item 11).
  *
  * coop_master_apply() runs a coop FX slot (a stereo delay, core/include/coop_fx.h) then the host-tested
- * master suite (comp -> drive -> EQ, core/include/coop_master.h) on the real codec/speaker master bus
- * d34 (0xff800d34, L) / db4 (0xff800db4, R), 64 x int16, planar. (op1emu probing proved the earlier
- * "master pair 0xff800e34/f34 Q31" was wrong: e34/f34 are the USB-audio bus and are zero on the
- * speaker path; see docs/audio-graph.md.) We widen int16 -> Q31, process, and narrow back with
- * saturation. It is called once per audio block from an insert in the L1 master stage 0xffa00e50
- * (tools/l1_insert.py retargets the comp/level CALL at 0xffa017ae), before the mix loop reads d34/db4.
+ * master suite (comp -> drive -> EQ, core/include/coop_master.h) on the mixed master bus
+ * d34 (0xff800d34, L) / db4 (0xff800db4, R), 64 x int16, planar. We widen int16 -> Q31, process, and
+ * narrow back with saturation.
+ *
+ * Where it sits (op1emu write-traced 2026-11-01, docs/audio-graph.md): the L1 master stage calls a
+ * trivial SDRAM getter at 0xffa017ac (`CALL (P1)`, P1 = 0x019d90e8: `R0 = 0xff80187c; RTS`) and then
+ * the stock master level/comp stage `CALL 0xffa04280` at 0xffa017ae, which reads d34/db4 and WRITES the
+ * int32 output buses e34 (0xff800e34, L) / f34 (0xff800f34, R) that the SPORT TX conversion loop
+ * (0xffa0171c..0xffa0178e) and the USB stream (0x01915608) consume. Milestone B replaced 0xffa04280
+ * with this function, so e34/f34 were never written and the codec output was silence (the earlier
+ * "e34/f34 = USB bus, always zero" reading was a probe at block start, before the stage ran). So this
+ * function now takes the GETTER's place instead: tools/l1_insert.py --imm-pair-site 0xffa017a4 points
+ * P1 at it, it processes d34/db4 before the stock stage runs, and it must return the getter's value
+ * (R0 = 0xff80187c, the first argument 0xffa04280 receives). 0xffa04280 keeps its original SP (it
+ * uses a caller stack slot, which is why calling it through a trampoline hung). The stock stage
+ * overwrites R0-R2 and P0-P2 before using them, and the code after it (0xffa01372) sets its own
+ * pointers, so a C function's clobbers are safe here.
  *
  * Validated in op1emu: the delay line stays zero at idle and fills during a chord (the FX reads live
- * audio); a mute build (write 0 to d34/db4) confirms the coop insert owns the master-bus content.
+ * audio); a mute build (write 0 to d34/db4) confirms the coop insert owns the master-bus content; the
+ * --audio-dump WAV of the SPORT output carries the chord (the test the replace-mode image failed).
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
@@ -18,13 +30,14 @@
 #include "coop_master.h"
 #include "coop_fx.h"
 
-/* The live master bus is d34/db4 (int16, 64 samples, planar), confirmed by op1emu probe: e34/f34
- * (0xff800e34/f34) are always zero in this firmware config, while d34 (0xff800d34) / db4
- * (0xff800db4) carry the mixed master audio and are the buffers the stock master FX render is handed
- * (L1 0xffa017bc/c6). We widen int16 -> Q31 for the coop DSP and narrow back with saturation. */
+/* The mixed master bus d34/db4 (int16, 64 samples, planar): what the stock master FX render is handed
+ * (L1 0xffa017bc/c6) and what the stock level stage 0xffa04280 reads to produce e34/f34. We widen
+ * int16 -> Q31 for the coop DSP and narrow back with saturation. */
 #define MBUS_L ((volatile int16_t *)0xff800d34u)
 #define MBUS_R ((volatile int16_t *)0xff800db4u)
 #define BLOCK 64
+/* What the stock getter at 0x019d90e8 returns; 0xffa04280 receives it in R0 (see the header comment). */
+#define STOCK_GETTER_RESULT 0xff80187cu
 
 /* Milestone B, FX slot 2: a coop stereo feedback delay in series before the master suite. Its delay
  * line lives high in free SDRAM region A (0x02d00000), above our ~5 KB payload at the region base.
@@ -53,7 +66,7 @@ static inline uint32_t coop_cycles(void)
     return v;
 }
 
-extern "C" void coop_master_apply(void)
+extern "C" uint32_t coop_master_apply(void)
 {
     if (!g_inited) {
         coop_master_init(&g_master);    /* transparent until params are set */
@@ -79,6 +92,7 @@ extern "C" void coop_master_apply(void)
     g_master_blocks++;
 
     for (int i = 0; i < BLOCK; i++) { MBUS_L[i] = coop_sat16(L[i] >> 16); MBUS_R[i] = coop_sat16(R[i] >> 16); }
+    return STOCK_GETTER_RESULT;   /* we stand in for the getter the stock level stage's caller invokes */
 }
 
 /* OP1X header so inject_app.py can add this payload as a region-A block. No patches here: the L1

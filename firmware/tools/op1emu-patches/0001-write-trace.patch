@@ -1,8 +1,8 @@
 From 113383ad66f7cb9925b763c4995e8fb9652b39d4 Mon Sep 17 00:00:00 2001
 From: coop-fw <coop-fw@localhost>
 Date: Sun, 1 Nov 2026 21:55:30 +0200
-Subject: [PATCH] Write traces: --watch-writes logs every PC that stores into a
- range
+Subject: [PATCH 1/2] Write traces: --watch-writes logs every PC that stores
+ into a range
 
 Emulator::AddWriteTrace(lo, hi, fn) sees every store that lands in a range
 after it reached memory, at every width (the per-address write hooks only see
@@ -456,6 +456,225 @@ index 972e95a..a959dc5 100644
      std::vector<u8*> directPages;
      // WatchPages(): the watcher (null while it watches nothing), its pages,
      // and what each page's DirectPages() entry is without the watch.
+-- 
+2.25.1
+
+
+From f151f7b08bcf3f3616c8a647c962720a9111c407 Mon Sep 17 00:00:00 2001
+From: coop-fw <coop-fw@localhost>
+Date: Sun, 1 Nov 2026 22:41:17 +0200
+Subject: [PATCH 2/2] --audio-dump: SPORT output to a WAV; --audio in headless;
+ traces see MMR writes
+
+WavAudioOutput writes the SPORT transmit frames (what the codec plays) as a
+16-bit stereo 44.1 kHz WAV instead of a sound device, in headless and
+deterministic runs too, and logs the format and the nonzero frame count.
+--audio opens the real device in a headless run. Write traces now also see the
+MMR fast path in Emulator::WriteAttended, so DMA register writes can be traced.
+---
+ gui/audio_output_wav.cpp | 82 ++++++++++++++++++++++++++++++++++++++++
+ gui/audio_output_wav.h   | 31 +++++++++++++++
+ gui/main.cpp             | 19 +++++++++-
+ src/cpu/emu.cpp          |  1 +
+ 4 files changed, 132 insertions(+), 1 deletion(-)
+ create mode 100755 gui/audio_output_wav.cpp
+ create mode 100755 gui/audio_output_wav.h
+
+diff --git a/gui/audio_output_wav.cpp b/gui/audio_output_wav.cpp
+new file mode 100755
+index 0000000..b75123f
+--- /dev/null
++++ b/gui/audio_output_wav.cpp
+@@ -0,0 +1,82 @@
++#include "audio_output_wav.h"
++
++#include "utils/log.h"
++
++#include <cstring>
++#include <vector>
++
++namespace {
++constexpr uint32_t kRate = 44100;
++constexpr uint16_t kChannels = 2;
++
++void Put16(uint8_t* p, uint16_t v) { p[0] = uint8_t(v); p[1] = uint8_t(v >> 8); }
++void Put32(uint8_t* p, uint32_t v) { Put16(p, uint16_t(v)); Put16(p + 2, uint16_t(v >> 16)); }
++}  // namespace
++
++WavAudioOutput::WavAudioOutput(const std::string& path) : path_(path) {
++    file_ = fopen(path.c_str(), "wb");
++    if (!file_) {
++        LogError("Audio dump: cannot write %s", path.c_str());
++        return;
++    }
++    WriteHeader(0);
++    LogInfo("Audio dump: %s (16-bit stereo WAV, %u Hz)", path.c_str(), kRate);
++}
++
++WavAudioOutput::~WavAudioOutput() {
++    if (!file_) return;
++    WriteHeader(static_cast<uint32_t>(frames_ * kChannels * 2));
++    fclose(file_);
++    LogInfo("Audio dump: %llu frames (%.2f s), %llu nonzero, to %s", static_cast<unsigned long long>(frames_),
++            frames_ / double(kRate), static_cast<unsigned long long>(nonzero_), path_.c_str());
++}
++
++void WavAudioOutput::WriteHeader(uint32_t dataBytes) {
++    uint8_t h[44];
++    memcpy(h, "RIFF", 4);
++    Put32(h + 4, 36 + dataBytes);
++    memcpy(h + 8, "WAVEfmt ", 8);
++    Put32(h + 16, 16);
++    Put16(h + 20, 1);  // PCM
++    Put16(h + 22, kChannels);
++    Put32(h + 24, kRate);
++    Put32(h + 28, kRate * kChannels * 2);
++    Put16(h + 32, kChannels * 2);
++    Put16(h + 34, 16);
++    memcpy(h + 36, "data", 4);
++    Put32(h + 40, dataBytes);
++    fseek(file_, 0, SEEK_SET);
++    fwrite(h, 1, sizeof h, file_);
++    fseek(file_, 0, SEEK_END);
++}
++
++void WavAudioOutput::WriteSamples(const void* data, size_t samples, int channels, int bitsPerSample, bool stereo) {
++    if (!file_ || samples == 0 || channels <= 0) return;
++    if (!formatLogged_) {
++        formatLogged_ = true;
++        LogInfo("Audio dump: SPORT frames of %d word(s) x %d bits, %s", channels, bitsPerSample,
++                stereo ? "stereo frame sync" : "no stereo frame sync");
++    }
++    const bool wide = bitsPerSample > 16;
++    const size_t wordBytes = wide ? 4 : 2;
++    const uint8_t* src = static_cast<const uint8_t*>(data);
++    std::vector<uint8_t> out(samples * 4);
++    auto word = [&](size_t frame, int index) -> int16_t {
++        const uint8_t* p = src + (frame * channels + index) * wordBytes;
++        if (!wide) {
++            return static_cast<int16_t>(uint16_t(p[0] | (p[1] << 8)));
++        }
++        uint32_t v = uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
++        v <<= (32 - bitsPerSample);  // right-justified word to the top of 32
++        return static_cast<int16_t>(static_cast<int32_t>(v) >> 16);
++    };
++    for (size_t i = 0; i < samples; ++i) {
++        const int16_t l = word(i, 0);
++        const int16_t r = (stereo && channels >= 2) ? word(i, 1) : l;
++        Put16(&out[i * 4], uint16_t(l));
++        Put16(&out[i * 4 + 2], uint16_t(r));
++        if (l != 0 || r != 0) ++nonzero_;
++    }
++    fwrite(out.data(), 1, out.size(), file_);
++    frames_ += samples;
++}
+diff --git a/gui/audio_output_wav.h b/gui/audio_output_wav.h
+new file mode 100755
+index 0000000..dd556db
+--- /dev/null
++++ b/gui/audio_output_wav.h
+@@ -0,0 +1,31 @@
++#pragma once
++
++// --audio-dump PATH: the SPORT's transmit frames written to a 16-bit stereo
++// WAV file instead of a sound device, so a headless (and deterministic) run
++// can be heard afterwards or compared sample by sample. Takes the frame's
++// left and right words (a stereo frame sync), or the primary channel's word
++// on both sides; words longer than 16 bits keep their top 16. Logs the SPORT
++// format on the first frame and, at the end, how many frames were nonzero.
++
++#include "peripheral/audio_output.h"
++
++#include <cstdint>
++#include <cstdio>
++#include <string>
++
++class WavAudioOutput : public AudioOutput {
++public:
++    explicit WavAudioOutput(const std::string& path);
++    ~WavAudioOutput() override;
++
++    void WriteSamples(const void* data, size_t samples, int channels, int bitsPerSample, bool stereo) override;
++    bool Ok() const { return file_ != nullptr; }
++
++private:
++    void WriteHeader(uint32_t dataBytes);
++
++    std::string path_;
++    FILE* file_ = nullptr;
++    uint64_t frames_ = 0, nonzero_ = 0;
++    bool formatLogged_ = false;
++};
+diff --git a/gui/main.cpp b/gui/main.cpp
+index 352607e..d79065e 100644
+--- a/gui/main.cpp
++++ b/gui/main.cpp
+@@ -8,6 +8,7 @@
+ #include "headless.h"
+ #include "write_watch.h"
+ #include "audio_output_miniaudio.h"
++#include "audio_output_wav.h"
+ #include "usbipd.h"
+ #include "build_info.h"
+ #ifdef ENABLE_PROFILING
+@@ -130,6 +131,8 @@ static int RunEmulator(int argc, char* argv[]) {
+     bool chainDry = false;
+     bool markDigest = false;
+     bool profileProbes = false;
++    bool headlessAudio = false;
++    std::string audioDump;
+     WriteWatch writeWatch;
+     std::string watchOut;
+     long long watchLog = 0;
+@@ -150,6 +153,11 @@ static int RunEmulator(int argc, char* argv[]) {
+         else if (options && arg == "--nand-rw") nandSnapshot = false;
+         else if (options && arg == "--nand-snapshot") nandSnapshot = true;
+         else if (options && arg == "--headless") headless = true;
++        else if (options && arg == "--audio") headlessAudio = true;
++        else if (options && arg == "--audio-dump") {
++            if (++i == argc || !*argv[i]) throw std::runtime_error("--audio-dump requires a path");
++            audioDump = argv[i];
++        }
+         else if (options && arg == "--deterministic") deterministic = true;
+         else if (options && arg == "--no-chain") noChain = true;
+         else if (options && arg == "--no-loop-blocks") noLoopBlocks = true;
+@@ -280,6 +288,9 @@ static int RunEmulator(int argc, char* argv[]) {
+         std::cout << "Usage: " << argv[0]
+                   << " <nand_flash_file> [ldr_file] [--nand-rw|--nand-snapshot]\n"
+                      "  --headless            No GLFW window or host audio device\n"
++                     "  --audio               ... but do open the host audio device (hear a scripted run)\n"
++                     "  --audio-dump PATH     Write the SPORT output to PATH as a 16-bit stereo WAV instead\n"
++                     "                        of a sound device (headless too; deterministic runs compare)\n"
+                      "  --input-script PATH   Read headless commands from PATH instead of stdin\n"
+                      "  --watch-writes RANGE  Log every PC that stores into RANGE (LO-HI, LO+LEN or LO,\n"
+                      "                        hex): each new writer as it appears, a table at exit;\n"
+@@ -474,7 +485,13 @@ static int RunEmulator(int argc, char* argv[]) {
+     cpu.AttachKeyboard(keyboard);
+     // SPORT still drains DMA and advances its sample accounting without a
+     // host sink. Avoid opening ALSA/PulseAudio devices on headless hosts.
+-    if (!headless) cpu.AttachAudioOutput(std::make_shared<MiniaudioOutput>(audioBufferMs));
++    if (!audioDump.empty()) {
++        auto dump = std::make_shared<WavAudioOutput>(audioDump);
++        if (!dump->Ok()) throw std::runtime_error("--audio-dump: cannot write " + audioDump);
++        cpu.AttachAudioOutput(dump);
++    } else if (!headless || headlessAudio) {
++        cpu.AttachAudioOutput(std::make_shared<MiniaudioOutput>(audioBufferMs));
++    }
+     cpu.SetBootMode(0x0D); // Set BMODE to 0b1101, boot from NAND flash with port H
+ 
+     auto loop = uvw::loop::get_default();
+diff --git a/src/cpu/emu.cpp b/src/cpu/emu.cpp
+index f34a0b7..fa76c7a 100644
+--- a/src/cpu/emu.cpp
++++ b/src/cpu/emu.cpp
+@@ -336,6 +336,7 @@ void Emulator::WriteAttended(u32 addr, T value, bool& hostWork)
+         if constexpr (sizeof(T) == 4) dev->Write32(offset, value);  // as MemoryWrite32
+         else dev->Write(offset, &value, sizeof(T));                 // as MemoryWrite
+         hostWork = dev->HostWorkAfterAccess(offset, true);
++        Trace(addr, sizeof(T), &value);
+         return;
+     }
+     if constexpr (sizeof(T) == 1) MemoryWrite8(addr, value);
 -- 
 2.25.1
 

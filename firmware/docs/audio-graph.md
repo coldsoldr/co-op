@@ -1,15 +1,23 @@
 # The OP-1 R246 audio graph (as driven by the L1 callback)
 
-> **CORRECTION (2026-11-01, op1emu-probed): the master bus is `d34`/`db4`, not `e34`/`f34`.**
-> Earlier notes called `0xff800e34`/`0xff800f34` the master pair (int32 Q31). Direct op1emu probing
-> during a synth chord shows `e34`/`f34` are **always zero** in the normal (speaker) configuration;
-> the live master audio is in **`0xff800d34` (L) / `0xff800db4` (R), int16, 64 samples, planar** (db4
-> = d34 + 0x80). The stock master FX render (`0xffa017e6`) is itself handed d34/db4, and the output
-> mix loop (`0xffa072c8`) reads them. `e34`/`f34` is the **USB-audio stream bus** (`fw_usb_audio_stream`
-> `0x01915608`), non-zero only when a USB-audio host is streaming. So the coop master suite + FX slots
-> operate on **d34/db4** (widening int16 -> Q31 and narrowing back). Also: `0xffa04280` is the master
-> **compressor/level** DSP (operates on `0xff801880`), NOT an EQ biquad; our suite replaces it (item 11).
-> The `e34`/`f34` references just below are left for history but are superseded by this note.
+> **SECOND CORRECTION (2026-11-01, op1emu write-traced; supersedes the probe-based note that stood
+> here).** Both buses are real, in series: **`d34`/`db4` (`0xff800d34`/`0xff800db4`, int16 x64, planar)
+> is the mixed master bus** (the mix loops write it, the stock master FX render is handed it), and the
+> **stock master level/comp stage `0xffa04280` reads d34/db4 and writes the int32 output pair
+> `e34`/`f34` (`0xff800e34`/`0xff800f34`, 64 x int32, planar; store loops at `0xffa044e0` L /
+> `0xffa046f0` R)**, which the **SPORT TX conversion loop `0xffa0171c..0xffa0178e` turns into the codec
+> DMA ring at `0xff800770` (descriptor list, 128 x 32-bit frames)** and the USB stream (`0x01915608`)
+> reads too. The earlier "e34/f34 always zero" reading came from a probe at the callback entry, before
+> the stage had run in that block. **Milestone B's image (`mbF`) replaced `0xffa04280` with the coop
+> stage, so e34/f34 were never written and the codec output was silence** while d34/db4 looked right
+> (the `--audio-dump` WAV showed 0 nonzero frames vs 603k for stock). The coop master stage now
+> stands in for the trivial SDRAM getter the stock code calls just before (`CALL (P1)` at `0xffa017ac`,
+> P1 = `0x019d90e8`: `R0 = 0xff80187c; RTS`; repointed with `l1_insert.py --imm-pair-site 0xffa017a4`),
+> processes d34/db4 there, returns the getter's value, and leaves `0xffa04280` in place at its original
+> SP (it uses a caller stack slot, which is why calling it through a trampoline hung). Item 11's full
+> takeover of the level stage must reproduce the d34/db4 -> e34/f34 level/volume mapping (gain table at
+> `0x0106a8f4`, state at `0xff801880`). The "Corrected model" below had e34/f34 right as the final
+> pair; its "always zero" successor was wrong.
 
 How the stock audio callback drives one audio block, reconstructed from the decrypted L1
 (`l1_audio_callback` at `0xffa04804`) this session. This is the map Phase 2 works against: coop-fw

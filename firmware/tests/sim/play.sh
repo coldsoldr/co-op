@@ -4,7 +4,9 @@
 # time so the pristine image is never mutated. Requires the op1emu work tree from tools/setup_op1emu.sh
 # (GUI build at build/op1emu) and, on Windows, WSLg for the window + sound.
 #
-#   tests/sim/play.sh [LDR]      # LDR defaults to the milestone-B image ~/op1emu-work/mbF.ldr
+#   tests/sim/play.sh [LDR]      # LDR defaults to the milestone-B image ~/op1emu-work/mbG.ldr
+#                                # (mbG = coop master stage at the getter site; the earlier mbF replaced
+#                                # the stock level stage and produced silence at the codec)
 #
 # Sound on WSLg (found 2026-11-01): WSLg's PulseAudio server runs as uid 1000 and refuses clients
 # with another uid, and this distro runs as root; on WSLg 1.0.79 the advertised PULSE_SERVER socket
@@ -15,7 +17,7 @@
 # storage read-write). op1emu has no device option: miniaudio plays on the server's default sink.
 set -e
 WORK=${OP1EMU_WORK:-$HOME/op1emu-work}
-LDR=${1:-$WORK/mbF.ldr}
+LDR=${1:-$WORK/mbG.ldr}
 [ -f "$LDR" ] || { echo "LDR not found: $LDR"; exit 1; }
 [ -f "$WORK/pristine.bin" ] || { echo "pristine NAND not found: $WORK/pristine.bin"; exit 1; }
 cp -f "$WORK/pristine.bin" "$WORK/play_nand.bin"
