@@ -220,8 +220,10 @@ after `wait-frames 1 300000`). Input-script commands: `accel ax ay az`, `wait-fr
 notes `c4 c4# d4 ... c5`, buttons `synth drum tape mixer seq t1..t4 shift help lift drop split rec play
 stop left right enc1..enc4 s1..s8`.
 
-**Hearing it — render a WAV (WSLg audio is broken on the owner's machine).** The GUI opens a window via
-WSLg but PulseAudio refuses connections (WSLg 1.0.79 bug, Windows-side). So render audio offline:
+**Hearing it.** The GUI (`tests/sim/play.sh`) now has sound: PulseAudio refused because WSLg's server
+is uid 1000 and the distro runs as root, and `PULSE_SERVER` named a missing socket; `play.sh` runs
+op1emu as uid 1000 on the live socket (docs/emulator.md "Sound from the GUI on WSLg"). For exact A/B
+comparisons still render a WAV offline:
 capture d34/db4 over a scenario (probe at `0xffa04804` reading 64 L samples from `0xff800d34` as 32
 words + 64 R from `0xff800db4`; split into FOUR probes of 16 words each at the same PC because of the
 16-word cap), reconstruct a 44.1 kHz stereo WAV in Python (`struct`+`wave`), copy to

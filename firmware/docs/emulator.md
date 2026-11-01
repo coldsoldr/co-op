@@ -80,6 +80,21 @@ Requirements it can't self-provide: CMake >= 3.20 (it installs via pip), a C++17
 `sudo` for apt. If the headless boot fails only with a garbled/kacked screen, the OTP byte order is
 reversed for your dump: rerun `otp_txt_to_bin.py` with `--no-reverse`.
 
+## Sound from the GUI on WSLg (fixed 2026-11-01)
+
+`tests/sim/play.sh` opens the GUI with host audio. It was silent because WSLg's PulseAudio server runs
+as uid 1000 and refuses clients of any other uid ("Access denied"; root included), and this WSL distro
+runs as root; on WSLg 1.0.79 the advertised `PULSE_SERVER` socket `/mnt/wslg/PulseServer` also does
+not exist, the live one is `/mnt/wslg/runtime-dir/pulse/native` ("Connection refused"). The earlier
+"WSLg audio is broken on this machine" conclusion was these two together, not a WSLg bug. `play.sh` now
+runs op1emu as the socket's owner (`setpriv --reuid`) with `PULSE_SERVER` set to the live socket, after
+making the home directory traversable (`chmod 711`) and the run NAND and `otp.bin` writable (op1emu
+opens its OTP storage read-write). Verified: a `paplay` tone as uid 1000 reached the RDP sink, and
+op1emu logs `Audio output initialized: 44100Hz, 2ch` with ~170 ms card latency (WSLg's RDP sink; fine
+for listening, not for latency tests). op1emu has no device option: miniaudio plays on the server's
+default sink, which on WSLg is the one `RDPSink` that forwards to Windows' default output device, so
+pick the device on the Windows side. Offline WAV rendering (below) remains the exact A/B method.
+
 ## Who writes X: the write tracer (`--watch-writes`, coop patch, 2026-11-01)
 
 The stock profiling probes fire on block-entry PCs and keep at most 262,144 hits in all, so they
