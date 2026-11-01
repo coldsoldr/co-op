@@ -22,7 +22,15 @@
 
 static coop_master g_master;
 static int g_inited;
-volatile uint32_t g_master_blocks;      /* liveness counter (region-A .bss), like m1's g_blocks */
+volatile uint32_t g_master_blocks;      /* liveness counter (region-A .bss) */
+volatile uint32_t g_master_cycles;      /* peak per-block cost of the suite, for the perf gate */
+
+static inline uint32_t coop_cycles(void)
+{
+    uint32_t v;
+    __asm__ __volatile__("%0 = CYCLES;" : "=d"(v));
+    return v;
+}
 
 extern "C" void coop_master_apply(void)
 {
@@ -30,10 +38,13 @@ extern "C" void coop_master_apply(void)
         coop_master_init(&g_master);    /* transparent until params are set */
         g_inited = 1;
     }
+    uint32_t t0 = coop_cycles();
     int32_t L[BLOCK], R[BLOCK];
     for (int i = 0; i < BLOCK; i++) { L[i] = MASTER_L[i]; R[i] = MASTER_R[i]; }
     coop_master_process(&g_master, L, R, BLOCK);
     for (int i = 0; i < BLOCK; i++) { MASTER_L[i] = L[i]; MASTER_R[i] = R[i]; }
+    uint32_t dt = coop_cycles() - t0;
+    if (dt > g_master_cycles) g_master_cycles = dt;
     g_master_blocks++;
 }
 

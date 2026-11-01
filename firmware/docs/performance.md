@@ -35,3 +35,20 @@ This is a hard gate on every milestone, not an afterthought.
    `docs/phase2.md` per milestone.
 
 Final confirmation of smoothness (and sound) is on the device; the emulator is the fast gate.
+
+## Measured: milestone A (master suite), transparent, 2026-11-01
+
+First real measurement via the profiling op1emu (`--profile-probes` reading our counters at the audio
+callback entry, `--deterministic`):
+
+| Metric | Value |
+|---|---|
+| Blocks our suite ran | 27,504 (0 -> 27,503) — runs every audio block |
+| Peak cost / block | 33,827 cycles = **5.8% of the 580,499-cycle budget** |
+
+Under the 0.75 ceiling with room. But 5.8% is high for a transparent pass (copy in/out + env follower
++ bypass biquad on 64x2 samples): the biquad and Q31 multiplies use int64 math, which GCC lowers to
+libgcc 64-bit multiplies (~50-100 cycles each) instead of the Blackfin's native fractional MAC. **Before
+enabling the full suite under load, rewrite the biquad and Q31 mul to 32-bit fractional MAC** (as the
+te-op1-cfw DSP ports do), for an order-of-magnitude cut. The peak may also include a cold-cache first
+block; steady-state is likely lower.
