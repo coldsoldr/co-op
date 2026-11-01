@@ -61,4 +61,8 @@ passes `verify_bootloader.py` (no `te-boot.ldr`).
 - then `op1_246_coop_dump_otp.op1` / `_full.op1`: add the OTP (boot ROM) and L1 instruction SRAM
   (MDMA1) once the minimal path works.
 
-**Result:** pending run 2.
+**Resolution (2026-11-01):** the Phase 1 gate was met a different way, without run 2. The OTP key is
+the same on every OP-1, so the public reference dump (Tolsi/op1dumps) is valid for this unit;
+`l1_decrypt.py check-key` verified it against kennel's `l1_patches.json` pairs, and the full L1
+decrypts to real code (see `docs/l1-map.md`). The dumper builds (canary/minimal/otp/full) remain
+available for an optional device-vs-emulator cross-check but are not needed for the gate.
