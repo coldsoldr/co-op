@@ -1,0 +1,21 @@
+# Teenage Engineering firmware bytes and device secrets: never committed
+*.op1
+*.ldr
+*.KEY
+*.key
+op1 firmware/
+incoming/
+symbols/otp*
+symbols/l1dump*
+l1dump/
+
+# build output
+build/
+*.o
+*.elf
+*.bin
+*.coop
+__pycache__/
+.venv/
+*.egg-info/
+*.pyc

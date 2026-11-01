@@ -1,0 +1,203 @@
+/*
+ * coop-fw Phase 1: the L1 dumper.
+ *
+ * A one-shot payload injected into the stock OP-1 app (firmware R246) in free SDRAM region A
+ * (0x02c00000). It runs entirely from the main loop: tools/inject_app.py retargets the main-loop
+ * tape-service CALL at 0x019F0A24 (stock target tape_c::service, 0x01A54710) to ServiceHook(),
+ * which captures the L1 image and the OTP key, writes them to a file, and then forwards to the
+ * stock tape service so the device runs normally. Nothing runs in the audio interrupt.
+ *
+ * Why this works: by the time the main loop calls the tape service, YAFFS is mounted and the
+ * runtime-decrypted L1 is in place. L1 instruction SRAM is not readable by ordinary core loads,
+ * so it is copied through MDMA0 (the engine the display copy uses); the data regions are copied
+ * with plain loads. The OTP page-0xD0 key sits in the te-boot context block at 0x03ffff10, where
+ * the init DXE left it (app-boot-chain.md).
+ *
+ * The key and the decrypted code belong to the owner's own device; the output file
+ * (/yaffs2/user/coop_l1.bin) is gitignored and never leaves the owner's hands. The dump exists so
+ * coop-fw can reverse-engineer and replace the audio core (the plan, Phase 1).
+ *
+ * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission (see LICENSE, NOTICE).
+ */
+#include <stdint.h>
+#include "fw_addrs.h"
+
+/* ---- the image header inject_app.py reads (OP1X), at the region start ---- */
+typedef void (*render_fn)(void *self, int16_t *out, const int16_t *params);
+typedef void (*noteon_fn)(void *self, const int16_t *knobs);
+typedef void (*void_fn)(void *self);
+
+struct patch {
+    uint32_t address, kind, stock;
+    const void *value;
+};
+
+struct header {
+    uint32_t magic, version;
+    render_fn render;
+    noteon_fn note_on;
+    void_fn note_off;
+    const struct patch *patches;
+    uint32_t num_patches;
+    uint32_t reserved;
+};
+
+enum { HEADER_MAGIC = 0x5831504fu };          /* "OP1X" */
+enum { PATCH_CALL24 = 3 };
+
+/* The stock main-loop tape service the hook replaces (decoded from kennel's recorded CALL bytes at
+ * 0x019F0A24: target 0x01A54710). ServiceHook forwards to it so the device behaves normally. */
+#define FW_TAPE_SERVICE 0x01A54710u
+
+/* ---- output file format (coop_l1.bin), little-endian ----
+ *   u32 magic "C1DP", u32 version, u32 region_count
+ *   region_count x { u32 addr, u32 len }     (the table)
+ *   u8 key[16]                               (OTP page 0xD0 as the context block holds it)
+ *   the raw region bytes, in table order
+ */
+#define OUT_MAGIC   0x50443143u               /* "C1DP" */
+#define OUT_VERSION 1u
+
+struct region {
+    uint32_t addr;
+    uint32_t len;
+    uint32_t src;
+    int use_mdma;                             /* instruction SRAM must go through MDMA */
+};
+
+/* Staging lives in .bss (an LDR FILL block). 48K instr + 12K dataA + 32K dataB + 4K scratch = 96
+ * KiB; round up to 128 KiB. */
+#define STAGE_BYTES (128u * 1024u)
+static uint8_t g_stage[STAGE_BYTES] __attribute__((aligned(32)));
+static uint8_t g_key[16] __attribute__((aligned(4)));
+static volatile int g_captured;
+static volatile int g_written;
+static volatile uint32_t g_passes;
+
+/* ---- MDMA0 copy of an L1 range to SDRAM (16-bit words) ---- */
+static inline void w16(uint32_t mmr, uint16_t v) { *(volatile uint16_t *)mmr = v; }
+static inline void w32(uint32_t mmr, uint32_t v) { *(volatile uint32_t *)mmr = v; }
+static inline void ssync(void) { __asm__ __volatile__("ssync;" ::: "memory"); }
+
+#define DMA_WDSIZE_16 0x0004
+#define DMA_EN        0x0001
+#define DMA_WNR       0x0002                   /* 1 = destination (writes memory) */
+
+static void mdma_copy(void *dst, uint32_t src, uint32_t bytes)
+{
+    uint32_t count = bytes >> 1;               /* every L1 range is a multiple of 2 */
+    w16(MDMA0_S_CONFIG, 0);
+    w16(MDMA0_D_CONFIG, 0);
+    ssync();
+    w32(MDMA0_S_START_ADDR, src);
+    w16(MDMA0_S_X_MODIFY, 2);
+    w16(MDMA0_S_X_COUNT, (uint16_t)count);
+    w32(MDMA0_D_START_ADDR, (uint32_t)dst);
+    w16(MDMA0_D_X_MODIFY, 2);
+    w16(MDMA0_D_X_COUNT, (uint16_t)count);
+    ssync();
+    w16(MDMA0_S_CONFIG, DMA_WDSIZE_16 | DMA_EN);
+    w16(MDMA0_D_CONFIG, DMA_WDSIZE_16 | DMA_WNR | DMA_EN);
+    ssync();
+    while (!(*(volatile uint16_t *)MDMA0_D_IRQ_STATUS & 0x1)) { }
+    *(volatile uint16_t *)MDMA0_D_IRQ_STATUS = 0x1;       /* W1C DMA_DONE */
+    w16(MDMA0_S_CONFIG, 0);
+    w16(MDMA0_D_CONFIG, 0);
+    ssync();
+}
+
+static void copy_plain(uint8_t *dst, uint32_t src, uint32_t bytes)
+{
+    const volatile uint8_t *s = (const volatile uint8_t *)(uintptr_t)src;
+    for (uint32_t i = 0; i < bytes; i++) dst[i] = s[i];
+}
+
+static const struct region g_regions[] = {
+    { L1_INSTR_BASE,   L1_INSTR_SIZE,   L1_INSTR_BASE,   1 },
+    { L1_DATA_A_BASE,  L1_DATA_A_SIZE,  L1_DATA_A_BASE,  0 },
+    { L1_DATA_B_BASE,  L1_DATA_B_SIZE,  L1_DATA_B_BASE,  0 },
+    { L1_SCRATCH_BASE, L1_SCRATCH_SIZE, L1_SCRATCH_BASE, 0 },
+};
+#define NREGIONS (sizeof(g_regions) / sizeof(g_regions[0]))
+
+static uint32_t total_bytes(void)
+{
+    uint32_t n = 0;
+    for (unsigned r = 0; r < NREGIONS; r++) n += g_regions[r].len;
+    return n;
+}
+
+static void capture(void)
+{
+    uint32_t off = 0;
+    for (unsigned r = 0; r < NREGIONS; r++) {
+        uint8_t *dst = g_stage + off;
+        if (g_regions[r].use_mdma)
+            mdma_copy(dst, g_regions[r].src, g_regions[r].len);
+        else
+            copy_plain(dst, g_regions[r].src, g_regions[r].len);
+        off += g_regions[r].len;
+    }
+    const volatile uint8_t *key = (const volatile uint8_t *)(uintptr_t)FW_OTP_KEY_IN_CONTEXT;
+    for (int i = 0; i < 16; i++) g_key[i] = key[i];
+    g_captured = 1;
+}
+
+/* ---- file write (main-loop thread context) ---- */
+typedef int (*yopen_fn)(const char *path, int oflag, int mode);
+typedef int (*ywrite_fn)(int fd, const void *buf, unsigned n);
+typedef int (*yclose_fn)(int fd);
+
+static void write_file(void)
+{
+    yopen_fn y_open = (yopen_fn)(uintptr_t)FW_YAFFS_OPEN;
+    ywrite_fn y_write = (ywrite_fn)(uintptr_t)FW_YAFFS_WRITE;
+    yclose_fn y_close = (yclose_fn)(uintptr_t)FW_YAFFS_CLOSE;
+
+    int fd = y_open("/yaffs2/user/coop_l1.bin", 2 | 0x40 | 0x200, 0x180);  /* O_RDWR|O_CREAT|O_TRUNC */
+    if (fd < 0) return;
+
+    uint32_t h[3] = { OUT_MAGIC, OUT_VERSION, (uint32_t)NREGIONS };
+    y_write(fd, h, sizeof(h));
+    for (unsigned r = 0; r < NREGIONS; r++) {
+        uint32_t t[2] = { g_regions[r].addr, g_regions[r].len };
+        y_write(fd, t, sizeof(t));
+    }
+    y_write(fd, g_key, sizeof(g_key));
+    uint32_t off = 0, left = total_bytes();
+    while (left) {
+        uint32_t chunk = left > 4096 ? 4096 : left;
+        y_write(fd, g_stage + off, chunk);
+        off += chunk;
+        left -= chunk;
+    }
+    y_close(fd);
+}
+
+/* ServiceHook replaces the CALL tape_c::service at 0x019F0A24. R0 = this (the tape controller),
+ * R1 = arg. Capture on the first pass; write once the filesystem has settled; always forward to the
+ * stock service so the device runs normally. */
+extern "C" int ServiceHook(void *self, int arg)
+{
+    if (!g_captured) capture();
+    g_passes++;
+    if (g_captured && !g_written && g_passes >= 64) { g_written = 1; write_file(); }
+    return ((int (*)(void *, int))(uintptr_t)FW_TAPE_SERVICE)(self, arg);
+}
+
+/* One patch: retarget the main-loop tape-service CALL to ServiceHook. inject_app.py recomputes the
+ * stock CALL from `stock` (the target) and checks the bytes before writing (kind 3). */
+extern "C" const struct patch g_patches[] = {
+    { FW_CI_SERVICE_CALL, PATCH_CALL24, FW_TAPE_SERVICE, (const void *)&ServiceHook },
+};
+
+extern "C" __attribute__((section(".op1header"), used))
+const struct header op1_header = {
+    HEADER_MAGIC, 1u,
+    0,            /* no render hook: the dumper does not touch the audio path */
+    0,
+    0,
+    g_patches,
+    1u,
+    0u,
+};
