@@ -81,30 +81,34 @@ echo "== plaintext LDR (op1emu's documented input is a decrypted LDR) =="
 # key in otp.bin (page 0xD0), using the arrangement l1_decrypt.py check-key confirmed.
 STOCK_LDR="$REPO/../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr"
 if [ -f "$STOCK_LDR" ]; then
-  python3 "$REPO/tools/l1_decrypt.py" decrypt-ldr "$STOCK_LDR" "$KEYHEX" plaintext.ldr \
-    --swap be --order 0123 --words "<"
-  LDR="$PWD/plaintext.ldr"
+  python3 "$REPO/tools/l1_decrypt.py" decrypt-ldr "$STOCK_LDR" "$KEYHEX" "$WORK/plaintext.ldr" \
+    --patches "$REPO/third_party/kennel/synth_sdk/l1_patches.json"
+  LDR="$WORK/plaintext.ldr"
 else
   echo "   stock OP1_vdk.ldr not found; op1emu will need a decrypted LDR you provide"
   LDR=""
 fi
 
 echo "== boot the stock firmware headless and screenshot =="
-# op1emu reads otp.bin and the boot ROM from the working dir (the desktop build has the ROM compiled in).
-cat > boot.txt <<'SCRIPT'
+# op1emu must run from its source root: it reads gui/ui.json (key names) and otp.bin / bootrom from
+# the current directory (the desktop build has the boot ROM compiled in). So cd into the repo, put
+# otp.bin beside gui/, and pass absolute paths for the NAND, the LDR and the script/screenshot.
+test -n "$LDR" || { echo "no LDR to boot; provide a decrypted OP1_vdk.ldr"; exit 1; }
+cp "$WORK/otp.bin" "$WORK/op1emu/otp.bin"
+cat > "$WORK/boot.txt" <<SCRIPT
 accel 64 -64 512
 wait-frames 1 300000
 wait-frames 20 900000
 wait 5000
-screenshot boot.ppm
+screenshot $WORK/boot.ppm
 quit
 SCRIPT
-test -n "$LDR" || { echo "no LDR to boot; provide a decrypted OP1_vdk.ldr"; exit 1; }
-./op1emu/build/op1emu nand.bin "$LDR" --headless --nand-snapshot --input-script boot.txt || {
-  echo "boot failed. Run it in the foreground to see op1emu's output:"
-  echo "  cd $WORK && ./op1emu/build/op1emu nand.bin plaintext.ldr --headless --nand-snapshot --input-script boot.txt"
-  echo "If the screen is garbled (wrong OTP byte order), rebuild otp.bin with --no-reverse and the plaintext LDR."
+( cd "$WORK/op1emu" && ./build/op1emu "$WORK/nand.bin" "$LDR" --headless --nand-snapshot \
+    --input-script "$WORK/boot.txt" ) || {
+  echo "boot failed. Run it in the foreground from the op1emu source root to see its output:"
+  echo "  cd $WORK/op1emu && ./build/op1emu $WORK/nand.bin $LDR --headless --nand-snapshot --input-script $WORK/boot.txt"
+  echo "If the screen is garbled (wrong OTP byte order), rebuild otp.bin with --no-reverse, re-run decrypt-ldr, and boot again."
   exit 1
 }
 echo "DONE: $WORK/boot.ppm written if the firmware reached a frame."
-ls -la boot.ppm 2>/dev/null || echo "(no screenshot; check op1emu output above)"
+ls -la "$WORK/boot.ppm" 2>/dev/null || echo "(no screenshot; check op1emu output above)"
