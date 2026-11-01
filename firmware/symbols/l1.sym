@@ -28,3 +28,9 @@
 0xff8017cc  d_eq                    C  master EQ settings (4 int16)
 0xff8016c4  d_fx                     C  master FX settings
 0xff80189c  d_comp_drive            C  master compressor/drive settings (4 int16; L1 reads the float vector at 0x1ab333c)
+
+# --- voice path (confirmed this session) ---
+0xffa009a0  l1_voice_loop_body      C  voice loop: per-voice LFO (0xffa00ad4), render/env, sum to mono bus; reads knob scratch 0xff801724, gain 0xff801d50, LFO params 0xff8014c4, per-voice LFO objs 0x1aaad6c, Core 0x1aaac0c
+0xffa02798  l1_voice_loop_caller    C  calls l1_voice_loop_body
+0x0191264c  fw_voice_process        I  SDRAM helper called from the voice loop (render or envelope path)
+0xff8013c4  d_adsr                  I  per-slot ADSR scratch (voice loop reads it)

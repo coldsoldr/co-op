@@ -65,3 +65,13 @@ Label the SDRAM targets by disassembling them from the stock image (they are pla
 `ldr_dump.py --elf` + `objdump`, no key needed), confirm the FX-position and master-chain guesses,
 and record them in `symbols/l1.sym` (and a companion SDRAM symbol list). Then prototype the Phase 2
 milestone-1 callback (identity wrap + measure) against op1emu.
+
+## Stereo-bus insertion point (for milestone 2)
+
+The voice loop `l1_voice_loop_body` (`0xffa009a0`, called from `0xffa02798`) renders each voice,
+applies its LFO and envelope, and sums to a **mono** instrument bus; the FX positions
+(`0x01a88028` x3) then process synth/drum/master. So coop-fw makes stereo **at and after the
+instrument bus**: our callback carries the mono bus into stereo L/R and runs stereo FX, rather than
+panning individual voices inside the L1 voice loop (that would mean replacing the loop). Per-voice pan
+is a later feature that does touch the voice loop. This matches the plan: "stereo is made at the bus
+and in stereo-by-design engines and FX."
