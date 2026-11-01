@@ -57,5 +57,7 @@ struct header {
     const struct patch *patches;
     uint32_t num_patches, reserved;
 };
+#ifndef COOP_COMBINED
 extern "C" __attribute__((section(".op1header"), used))
 const struct header op1_header = { 0x5831504fu, 1u, 0, 0, 0, 0, 0u, 0u };
+#endif

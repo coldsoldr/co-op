@@ -52,3 +52,41 @@ libgcc 64-bit multiplies (~50-100 cycles each) instead of the Blackfin's native 
 enabling the full suite under load, rewrite the biquad and Q31 mul to 32-bit fractional MAC** (as the
 te-op1-cfw DSP ports do), for an order-of-magnitude cut. The peak may also include a cold-cache first
 block; steady-state is likely lower.
+
+## Baseline: stock callback vs. coop callback, 2026-11-01
+
+The user asked for the right comparison: measure the stock audio callback's cost first, then measure
+the coop additions relative to it, under the same load. Both measured with the profiling op1emu
+(`--deterministic`, `--profile-probes` reading our counters at the audio-callback entry `0xffa04804`).
+A fresh NAND is restored before each run (pristine snapshot `sha256 d2ee748e...`) so runs are
+comparable.
+
+- **Stock** = the m1 wrapper (`coop_cb.cc`) times the whole stock callback `0xFFA04804`, nothing else
+  changed.
+- **Coop** = the combined image (`make -C core/sdram combined`): the same whole-callback timer, plus
+  the master suite wired in by retargeting the stock master-EQ call (`0xffa017ae`, was calling the
+  stock EQ `0xffa04280`) to `coop_master_apply`. So the suite *replaces* the stock master EQ with
+  comp -> drive -> EQ; the delta already nets out the displaced stock EQ.
+- **Load:** idle at the synth screen, vs. a held three-note chord (c4+e4+g4) rendering voices.
+
+| Scenario | Stock callback | Coop callback | Net added by coop | Suite's own cost |
+|---|---|---|---|---|
+| Idle          | 41,948 (7.2%)  | 62,718 (10.8%) | +20,770 (+3.6%) | 33,827 (5.8%) |
+| Synth chord   | 74,285 (12.8%) | 95,366 (16.4%) | +21,081 (+3.6%) | 33,827 (5.8%) |
+
+(peak cycles/block; % of the 580,499-cycle budget.)
+
+Findings:
+- The coop master suite adds a steady **~3.6% of budget** on top of stock, the same whether idle or
+  playing (its 64x2-sample loop is load-independent). Net of the stock EQ it displaces, the suite's
+  raw self-timed cost is 5.8%, so the stock master EQ was ~2.2%.
+- The whole coop callback peaks at **16.4%** under a chord — far under the 0.75 (75%) ceiling. There
+  is ample headroom for the remaining milestones (FX x2, stereo bus, LFO x2) before the governor is
+  ever needed.
+- The int64 biquad/Q31 MAC rewrite (previous section) is still worth doing for margin, but is no
+  longer urgent: even untouched, the master suite is a small fraction of the budget.
+
+Reproduce: `make -C core/sdram combined`, then inject/decrypt-ldr/l1_insert (fn `coop_master_apply`,
+call-site `0xffa017ae`, stock `0xffa04280`), run under op1emu with probes on `g_max 0x02c01144` (whole
+callback) and `g_master_cycles 0x02c0114c` (suite only). Addresses come from `bfin-elf-nm` on the
+combined ELF and shift if the image changes.
