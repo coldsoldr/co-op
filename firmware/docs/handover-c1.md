@@ -3,6 +3,16 @@
 Written 2026-11-01 for a fresh context. Supersedes `docs/handover-2026-11-01.md` for current state.
 Self-contained: a new session should be able to continue from here plus the repo + memory.
 
+> **Resume point (end of 2026-11-01, tree clean at `cc45c51`).** Done today: the op1emu write tracer
+> (`--watch-writes`) and WAV output (`--audio-dump`, `tests/sim/hear.sh`), both as the patch set in
+> `tools/op1emu-patches/`; the stock voice-sum / decimator / mix PCs pinned (§4 resolved,
+> `docs/stereo-bus.md`); GUI sound on WSLg fixed (`tests/sim/play.sh`); and the milestone-B silence
+> found and fixed (§3 correction, image `mbG.ldr`, coop stage at the getter site). Listen first:
+> `~/Downloads/mbG_chord.wav` vs `stock_chord.wav`, or `wsl -e bash -lc '~/op1emu-work/play.sh'`.
+> Then: C1 takeover mechanism (`docs/stereo-bus.md` "C1 takeover mechanism"), gated by `hear.sh`
+> output, never a bus probe. Open thread for item 11: the stock level stage `0xffa04280` must stay
+> until its d34/db4 -> e34/f34 volume mapping is reproduced.
+
 Branch: `phase0-scaffold-and-l1-dumper`. Working tree clean. Owner: Byron
 (GitHub coldsoldr). The owner flashes the device;
 agents build and verify in the emulator.
