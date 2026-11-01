@@ -91,3 +91,24 @@ liveness counter `g_master_blocks`) is built and ready to wire.
 
 Perf note: the compressor's per-sample divide is skipped at the transparent default; replace it with a
 reciprocal table before enabling compression, and measure against the 0.75-block ceiling.
+
+## Milestone A (master suite) — INTEGRATION VERIFIED in op1emu (2026-11-01)
+
+The master suite now runs inside the L1 audio DSP. Chain:
+1. `inject_app.py` adds the SDRAM payload (`coop_master_apply` at `0x02c00020`).
+2. `l1_decrypt.py decrypt-ldr` -> plaintext LDR.
+3. `l1_insert.py` adds a 16-byte trampoline in free L1 `0xffa0bfb4` (`core/patches/l1_tramp.S`) and
+   retargets the stock master-EQ CALL at `0xffa017ae` (was `0xffa04280`) to it; the trampoline
+   indirect-calls `coop_master_apply` in SDRAM (L1 cannot reach SDRAM by pcrel24), preserving RETS.
+4. op1emu boots it to the normal tape screen: our suite runs in the audio path, transparent by default.
+
+Proof it executes: a first build with the trampoline immediate at the wrong byte offset crashed with
+EXCAUSE 0x21 (undefined instruction) at `0xffa0bfba` *inside our trampoline* — i.e. the retargeted
+call reaches our code; fixing the offsets makes it boot. The stock-byte check in `l1_insert.py` also
+confirmed `0xffa017ae` is the CALL to `0xffa04280`.
+
+For the device: `l1_decrypt.py encrypt-ldr` re-encrypts the modified L1 (byte-exact round trip).
+
+**Next:** enable real comp/drive/EQ params (replace the compressor's per-sample divide with a
+reciprocal table first), and measure cycles/block with the profiling op1emu build (`--profile-probes`
+to read `g_master_blocks`/the cycle counter) against the 0.75-block ceiling.

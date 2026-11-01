@@ -36,3 +36,15 @@ extern "C" void coop_master_apply(void)
     for (int i = 0; i < BLOCK; i++) { MASTER_L[i] = L[i]; MASTER_R[i] = R[i]; }
     g_master_blocks++;
 }
+
+/* OP1X header so inject_app.py can add this payload as a region-A block. No patches here: the L1
+ * call-site retarget + trampoline are applied post-decrypt by tools/l1_insert.py. */
+struct patch { uint32_t address, kind, stock; const void *value; };
+struct header {
+    uint32_t magic, version;
+    void *render, *note_on, *note_off;
+    const struct patch *patches;
+    uint32_t num_patches, reserved;
+};
+extern "C" __attribute__((section(".op1header"), used))
+const struct header op1_header = { 0x5831504fu, 1u, 0, 0, 0, 0, 0u, 0u };
