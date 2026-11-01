@@ -12,8 +12,13 @@ callback unchanged and times it with `CYCLES`, keeping per-block cost in region-
 (`g_blocks 0x02c000a0`, `g_max 0x02c000a4`, `g_last 0x02c000a8`). `inject_app.py` repoints the imm
 pair (`0x0191AB54` `4804`->low, `0x0191AB58` `ffa0`->high) to `CoopAudioCb` after checking the stock
 bytes. **Result:** the coop image boots to the normal tape screen in op1emu — our callback sits in
-the audio path and is transparent. This is the seam; the measurement is stored for a later on-screen
-readout.
+the audio path and is transparent.
+
+**Confirmed our callback actually executes (negative control).** A variant whose `CoopAudioCb` spins
+instead of calling the stock callback hangs the firmware: op1emu times out waiting for frames and
+writes no screenshot, while the identity wrap boots normally. So the imm patch is live and our code
+runs every audio block. The measurement words are stored for a later on-screen readout (op1emu has no
+headless guest-memory peek).
 
 ### Build / inject / boot recipe
 

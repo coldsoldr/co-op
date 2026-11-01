@@ -19,3 +19,9 @@ __pycache__/
 .venv/
 *.egg-info/
 *.pyc
+
+# stray op1emu input scripts / screenshots
+boot.txt
+*.ppm
+boot*.png
+coop_m1.png
