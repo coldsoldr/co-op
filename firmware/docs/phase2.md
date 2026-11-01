@@ -53,3 +53,23 @@ C. **Stereo instrument bus (item 2).** The larger one: coop carries stereo per-b
 Then LFO x2 and stereo tape (Phase 3).
 
 A reader for the measurement words (`g_*`) is still a useful small step (on-screen or op1emu probe).
+
+## Master-suite integration: status and the next step
+
+The master-suite DSP is built and host-tested (`core/include/coop_master.h`, `tests/host/master_test.cc`):
+compressor -> drive -> biquad EQ on the stereo master pair (int32 Q31), `coop_master_process`.
+
+The remaining work is *where* to call it inside the L1 master stage `0xffa00e50`. Static analysis
+located the buffers (`e34`/`f34`) and the downmix read (`0xffa0143a`), but `0xffa00e50` is a
+hand-optimized, recursive, 3-op-bundled function with many live registers mid-flow; a blind
+mid-function trampoline is high-risk, and the exact point where `e34`/`f34` are final yet unread by
+both sinks is not clear statically.
+
+**Next step (serves all three milestones): trace it in op1emu.** Build op1emu with
+`-DENABLE_PROFILING=ON` and use `--profile-trace` / `--profile-probes` (deterministic) to record the
+read/write order of `0xff800e34`/`0xff800f34` across a block. That pins the single instruction after
+which the master pair is final and before both the codec downmix and the USB push read it, giving a
+safe CALL-boundary insertion (ideally retarget the stock EQ call at `0xffa017ae`, or a clean point the
+trace reveals). The same tracing approach locates the FX-dispatch and pan-mix points for milestones B
+and C. The emulator makes these L1 experiments safe (a wrong insert garbles/crashes the emulator, not
+a device).
