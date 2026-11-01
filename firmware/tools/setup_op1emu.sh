@@ -25,9 +25,11 @@ mkdir -p "$WORK"; cd "$WORK"
 echo "== deps =="
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update -qq
-sudo apt-get install -y -qq ninja-build pkg-config libgl1-mesa-dev xorg-dev python3-pip git curl wget gnupg lsb-release >/dev/null
+sudo apt-get install -y -qq ninja-build pkg-config libgl1-mesa-dev xorg-dev python3-pip git curl wget gnupg lsb-release gcc-10 g++-10 >/dev/null
 python3 -m pip install --user -q "cmake>=3.20"
 export PATH="$HOME/.local/bin:$PATH"
+# op1emu/bcore use C++20 (<compare> etc.); Ubuntu 20.04's default g++ 9.4 is too old, g++-10 has it.
+export CC=gcc-10 CXX=g++-10
 
 echo "== LLVM 15 (bcore's JIT backend requires it) =="
 LLVM_DIR_PATH=/usr/lib/llvm-15/lib/cmake/llvm
@@ -41,8 +43,9 @@ fi
 
 echo "== op1emu (clone + build op1emu, ldrdump) =="
 [ -d op1emu ] || git clone --recurse-submodules -j"$JOBS" https://github.com/op1emu/op1emu.git
+rm -rf op1emu/build   # fresh configure so the g++-10 choice takes (cmake won't switch compilers in a cache)
 cmake -S op1emu -B op1emu/build -G Ninja -DGLFW_BUILD_WAYLAND=OFF -DCMAKE_BUILD_TYPE=Release \
-  -DLLVM_DIR="$LLVM_DIR_PATH"
+  -DLLVM_DIR="$LLVM_DIR_PATH" -DCMAKE_C_COMPILER=gcc-10 -DCMAKE_CXX_COMPILER=g++-10
 cmake --build op1emu/build --target op1emu ldrdump -j"$JOBS"
 
 echo "== mkyaffs2 (yaffs2utils) =="
