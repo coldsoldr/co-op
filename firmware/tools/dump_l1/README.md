@@ -32,9 +32,14 @@ raw region bytes, in table order            (0xffa00000, 0xff800000, 0xff900000,
 ## Build
 
 ```sh
-wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw/tools/dump_l1 && make'
-# -> build/dump_l1.elf  (OP1X header, render=0, one CALL-retarget patch)
+wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw/tools/dump_l1 && make'      # minimal: key + L1
+wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw/tools/dump_l1 && make otp'  # also full OTP (for op1emu)
+# -> build/dump_l1.elf / build/dump_l1_otp.elf  (OP1X header, render=0, one CALL-retarget patch)
 ```
+
+Flash the minimal build first (it is the smallest, most-proven change). The `otp` build additionally
+reads the whole OTP through the boot ROM so `tools/mk_otp_bin.py` can produce op1emu's `otp.bin`
+(see `docs/emulator.md`); OTP reads are non-destructive.
 
 ## Make the package (over the owner's OWN stock image)
 
@@ -74,9 +79,11 @@ python tools/l1_decrypt.py compare "$STOCK/OP1_vdk.ldr" <KEYHEX> region_ffa00000
     --base 0xffa00000 --swap <s> --order <o> --words <w>
 ```
 
-`coop_l1.bin` holds the key bytes; extract them and the `0xffa00000` region, then run the two
-commands. A byte-exact match proves the key, proves the dump, and proves we can re-encrypt our own
-L1 blocks later. Do not start Phase 2 until it matches.
+`tools/mk_otp_bin.py coop_l1.bin out/` unpacks the dump: `out/key.hex`, each `out/region_*.bin`,
+and `out/otp.bin` (from an `otp` build). A byte-exact `compare` match proves the key, proves the
+dump, and proves we can re-encrypt our own L1 blocks later. Do not start Phase 2 until it matches.
+With `out/otp.bin` and a NAND image, op1emu boots the owner's firmware as a second check and becomes
+the Phase 2+ dev loop (`docs/emulator.md`).
 
 ## Open item before the first flash
 

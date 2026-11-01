@@ -53,10 +53,25 @@ enum { PATCH_CALL24 = 3 };
  *   u32 magic "C1DP", u32 version, u32 region_count
  *   region_count x { u32 addr, u32 len }     (the table)
  *   u8 key[16]                               (OTP page 0xD0 as the context block holds it)
+ *   u32 otp_status, u32 otp_bytes            (version >= 2; otp_bytes 0 when not captured)
+ *   u8 otp[otp_bytes]                        (the full OTP, for op1emu's otp.bin; DUMP_OTP builds)
  *   the raw region bytes, in table order
+ *
+ * The context-block key is always present and is enough for the Phase 1 key check. A DUMP_OTP build
+ * also reads the whole OTP through the boot ROM so tools/mk_otp_bin.py can make op1emu's otp.bin.
  */
 #define OUT_MAGIC   0x50443143u               /* "C1DP" */
-#define OUT_VERSION 1u
+#define OUT_VERSION 2u
+
+/* ---- OTP, read through the BF52x boot ROM (DUMP_OTP builds only) ----
+ * Mirrors the init DXE's sequence (app-boot-chain.md, te-boot-init.dis at 0xffa00514): OtpCommand(1)
+ * to init, then two 64-bit half reads per 128-bit logical page, then OtpCommand(2) to close. Reads
+ * are non-destructive; OTP is one-time-programmable and we never write it. The ROM entry addresses
+ * are the ones the OP-1's own init DXE calls. */
+#define ROM_OTP_COMMAND 0xEF000018u           /* bfrom_OtpCommand(cmd): 1 = init, 2 = close */
+#define ROM_OTP_READ    0xEF00001Au           /* bfrom_OtpRead(page, half, u64* dst): half 0 lo, 1 hi */
+#define OTP_PAGES       0x200u                 /* op1emu: 0x200 logical pages x 16 bytes = 8 KiB */
+#define OTP_BYTES       (OTP_PAGES * 16u)
 
 struct region {
     uint32_t addr;
@@ -73,6 +88,28 @@ static uint8_t g_key[16] __attribute__((aligned(4)));
 static volatile int g_captured;
 static volatile int g_written;
 static volatile uint32_t g_passes;
+
+#ifdef DUMP_OTP
+static uint8_t g_otp[OTP_BYTES] __attribute__((aligned(8)));
+static volatile uint32_t g_otp_status;        /* 0 = not read, 1 = read ok, 2 = a read reported an error */
+
+static void read_otp(void)
+{
+    typedef int (*otp_cmd_fn)(uint32_t cmd);
+    typedef int (*otp_read_fn)(uint32_t page, uint32_t half, void *dst);
+    otp_cmd_fn cmd = (otp_cmd_fn)(uintptr_t)ROM_OTP_COMMAND;
+    otp_read_fn rd = (otp_read_fn)(uintptr_t)ROM_OTP_READ;
+    int bad = 0;
+    cmd(1);                                    /* init */
+    for (uint32_t p = 0; p < OTP_PAGES; p++) {
+        uint8_t *dst = g_otp + p * 16;
+        if (rd(p, 0, dst) & 1) bad = 1;        /* bit 0 = error, per the init DXE's test */
+        if (rd(p, 1, dst + 8) & 1) bad = 1;
+    }
+    cmd(2);                                    /* close */
+    g_otp_status = bad ? 2 : 1;
+}
+#endif
 
 /* ---- MDMA0 copy of an L1 range to SDRAM (16-bit words) ---- */
 static inline void w16(uint32_t mmr, uint16_t v) { *(volatile uint16_t *)mmr = v; }
@@ -140,6 +177,9 @@ static void capture(void)
     }
     const volatile uint8_t *key = (const volatile uint8_t *)(uintptr_t)FW_OTP_KEY_IN_CONTEXT;
     for (int i = 0; i < 16; i++) g_key[i] = key[i];
+#ifdef DUMP_OTP
+    read_otp();
+#endif
     g_captured = 1;
 }
 
@@ -164,6 +204,14 @@ static void write_file(void)
         y_write(fd, t, sizeof(t));
     }
     y_write(fd, g_key, sizeof(g_key));
+#ifdef DUMP_OTP
+    uint32_t otp_hdr[2] = { g_otp_status, OTP_BYTES };
+    y_write(fd, otp_hdr, sizeof(otp_hdr));
+    y_write(fd, g_otp, OTP_BYTES);
+#else
+    uint32_t otp_hdr[2] = { 0u, 0u };          /* version 2 field: OTP not captured in this build */
+    y_write(fd, otp_hdr, sizeof(otp_hdr));
+#endif
     uint32_t off = 0, left = total_bytes();
     while (left) {
         uint32_t chunk = left > 4096 ? 4096 : left;
