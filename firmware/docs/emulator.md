@@ -51,3 +51,21 @@ op1emu needs two things only the owner's device provides:
 - Phase 2+: an `op1emu`-based harness (likely under `tests/sim/` with a checked-out op1emu) that boots
   a coop-fw NAND image headless, runs an input script, and captures screens and audio for the host
   test suite and CI (where a NAND image is available to the runner; never a committed one).
+
+## Setup (run it yourself; it builds third-party code)
+
+`tools/setup_op1emu.sh` does the whole thing in WSL: installs deps, builds op1emu and `mkyaffs2`,
+provisions `nand.bin` from your stock `op1_246.op1`, writes `otp.bin` from a community OTP dump with
+`tools/otp_txt_to_bin.py`, verifies the key against kennel's pairs, and boots headless to a
+screenshot. Because it clones and builds external projects (op1emu, GLFW, yaffs2utils), Claude Code's
+auto mode will not run it for you; run it yourself or grant the permission:
+
+```sh
+wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw && bash tools/setup_op1emu.sh'
+# or point it at a local OTP dump instead of fetching the public one:
+wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw && OTP_TXT=/path/to/otp.txt bash tools/setup_op1emu.sh'
+```
+
+Requirements it can't self-provide: CMake >= 3.20 (it installs via pip), a C++17 compiler, and passwordless
+`sudo` for apt. If the headless boot fails only with a garbled/kacked screen, the OTP byte order is
+reversed for your dump: rerun `otp_txt_to_bin.py` with `--no-reverse`.
