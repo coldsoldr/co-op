@@ -73,3 +73,21 @@ safe CALL-boundary insertion (ideally retarget the stock EQ call at `0xffa017ae`
 trace reveals). The same tracing approach locates the FX-dispatch and pan-mix points for milestones B
 and C. The emulator makes these L1 experiments safe (a wrong insert garbles/crashes the emulator, not
 a device).
+
+
+### Refined integration design (lower risk than the mid-function insert)
+
+Rather than a blind trampoline at the bundled `0xffa0143a`, the cleaner candidate is to **retarget the
+stock master-EQ CALL at `0xffa017ae`** (which calls `0xffa04280`, the EQ that writes `e34`/`f34`) to
+coop's suite. That is a single call boundary: our function reads `e34`/`f34`, runs comp -> drive -> EQ,
+writes them back, replacing the stock EQ. Downstream (codec downmix, USB push) then read the processed
+pair. Because L1 cannot reach SDRAM by a direct CALL, this uses a tiny L1 trampoline in free L1
+(`0xffa0bfb4`, the range kennel's `.l1tramp` uses): the L1 CALL retargets to the trampoline (pcrel24
+within L1), which saves RETS, indirect-CALLs `coop_master_apply` in SDRAM, restores RETS, returns.
+
+The profiling build + trace confirms the execution order (EQ before both sinks) before we commit to
+this point. The payload `core/sdram/master_suite.cc` (`coop_master_apply`, transparent by default,
+liveness counter `g_master_blocks`) is built and ready to wire.
+
+Perf note: the compressor's per-sample divide is skipped at the transparent default; replace it with a
+reciprocal table before enabling compression, and measure against the 0.75-block ceiling.
