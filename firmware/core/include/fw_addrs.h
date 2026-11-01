@@ -34,18 +34,22 @@
 #define L1_SCRATCH_BASE          0xffb00000u   /* [C] 4 KB scratchpad (voice/LFO/FX objects) */
 #define L1_SCRATCH_SIZE          0x00001000u
 
-/* ---- MDMA0 (memory-to-memory DMA): the engine the display copy uses ---- */
-#define MDMA0_D_NEXT_DESC_PTR    0xffc00f00u   /* [C] memory-map.md: destination channel base */
-#define MDMA0_D_START_ADDR       0xffc00f04u
-#define MDMA0_D_CONFIG           0xffc00f08u
-#define MDMA0_D_X_COUNT          0xffc00f10u
-#define MDMA0_D_X_MODIFY         0xffc00f14u
-#define MDMA0_D_IRQ_STATUS       0xffc00f28u
-#define MDMA0_S_NEXT_DESC_PTR    0xffc00f40u   /* source channel base */
-#define MDMA0_S_START_ADDR       0xffc00f44u
-#define MDMA0_S_CONFIG           0xffc00f48u
-#define MDMA0_S_X_COUNT          0xffc00f50u
-#define MDMA0_S_X_MODIFY         0xffc00f54u
+/* ---- memory-to-memory DMA ----
+ * MDMA0 (`0xffc00f00` dest / `0xffc00f40` src) is the firmware's display-copy engine [C]: it is in
+ * constant use and must NOT be touched, or the display DMA breaks and the device hangs on the
+ * loading screen (observed 2026-11-01). MDMA1 (`0xffc00f80` dest / `0xffc00fc0` src) has no
+ * references in the disassembly [C], so the instruction-SRAM reader uses MDMA1. Channel register
+ * offsets (BF52x HRM): START_ADDR +0x04, CONFIG +0x08, X_COUNT +0x10, X_MODIFY +0x14,
+ * IRQ_STATUS +0x28. */
+#define MDMA1_D_START_ADDR       0xffc00f84u   /* MDMA1 destination channel */
+#define MDMA1_D_CONFIG           0xffc00f88u
+#define MDMA1_D_X_COUNT          0xffc00f90u
+#define MDMA1_D_X_MODIFY         0xffc00f94u
+#define MDMA1_D_IRQ_STATUS       0xffc00fa8u
+#define MDMA1_S_START_ADDR       0xffc00fc4u   /* MDMA1 source channel */
+#define MDMA1_S_CONFIG           0xffc00fc8u
+#define MDMA1_S_X_COUNT          0xffc00fd0u
+#define MDMA1_S_X_MODIFY         0xffc00fd4u
 
 /* ---- firmware functions in plain SDRAM (op1fw.h; verified addresses) ---- */
 #define FW_YAFFS_OPEN            0x01A997F4u   /* int(const char* path, int oflag, int mode); O_RDWR 2, O_CREAT 0x40, O_TRUNC 0x200 */

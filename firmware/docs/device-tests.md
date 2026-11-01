@@ -44,4 +44,21 @@ passes `verify_bootloader.py` (no `te-boot.ldr`).
 - `l1_decrypt.py compare` of the decrypted CALLBACK blocks against the `0xffa00000` region in the
   dump must report **zero mismatches**. Phase 2 does not start until it does.
 
-**Result:** pending the owner's flash.
+**Run 1 (2026-11-01): HANG on the loading screen.** Two bugs, both fixed:
+1. The dumper read L1 through MDMA0 (`0xffc00f00`), which is the firmware's display-copy engine
+   (memory-map.md 5; confirmed: MDMA0 registers have many references in the disassembly, MDMA1 none).
+   Seizing it mid-boot broke the display DMA, hence the hang. Fix: the minimal build no longer uses
+   DMA at all (L1 data and the key are read by ordinary loads); only the optional `DUMP_L1CODE`
+   build reads L1 instruction SRAM, and it uses MDMA1 with a bounded wait.
+2. `ServiceHook` was declared `(void* self, int arg)`, but the stock tape service takes one `int` in
+   R0 (kennel's `STOCK_SERVICE` is `int(*)(int)`). The forwarded call passed the wrong registers.
+   Fix: `ServiceHook(int arg)`, forwarding `((int(*)(int))0x01A54710)(arg)`.
+
+**Run 2 plan (one thing at a time):**
+- `op1_246_coop_canary.op1`: the hook only forwards to the stock service (72 bytes). Boots cleanly =>
+  the CALL-retarget hook and signature are sound.
+- then `op1_246_coop_dump.op1`: DMA-free capture of the key + L1 data, writes `coop_l1.bin`.
+- then `op1_246_coop_dump_otp.op1` / `_full.op1`: add the OTP (boot ROM) and L1 instruction SRAM
+  (MDMA1) once the minimal path works.
+
+**Result:** pending run 2.

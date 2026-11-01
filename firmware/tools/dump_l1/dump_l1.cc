@@ -77,7 +77,7 @@ struct region {
     uint32_t addr;
     uint32_t len;
     uint32_t src;
-    int use_mdma;                             /* instruction SRAM must go through MDMA */
+    int use_mdma;                             /* instruction SRAM must go through MDMA (DUMP_L1CODE) */
 };
 
 /* Staging lives in .bss (an LDR FILL block). 48K instr + 12K dataA + 32K dataB + 4K scratch = 96
@@ -111,37 +111,7 @@ static void read_otp(void)
 }
 #endif
 
-/* ---- MDMA0 copy of an L1 range to SDRAM (16-bit words) ---- */
-static inline void w16(uint32_t mmr, uint16_t v) { *(volatile uint16_t *)mmr = v; }
-static inline void w32(uint32_t mmr, uint32_t v) { *(volatile uint32_t *)mmr = v; }
 static inline void ssync(void) { __asm__ __volatile__("ssync;" ::: "memory"); }
-
-#define DMA_WDSIZE_16 0x0004
-#define DMA_EN        0x0001
-#define DMA_WNR       0x0002                   /* 1 = destination (writes memory) */
-
-static void mdma_copy(void *dst, uint32_t src, uint32_t bytes)
-{
-    uint32_t count = bytes >> 1;               /* every L1 range is a multiple of 2 */
-    w16(MDMA0_S_CONFIG, 0);
-    w16(MDMA0_D_CONFIG, 0);
-    ssync();
-    w32(MDMA0_S_START_ADDR, src);
-    w16(MDMA0_S_X_MODIFY, 2);
-    w16(MDMA0_S_X_COUNT, (uint16_t)count);
-    w32(MDMA0_D_START_ADDR, (uint32_t)dst);
-    w16(MDMA0_D_X_MODIFY, 2);
-    w16(MDMA0_D_X_COUNT, (uint16_t)count);
-    ssync();
-    w16(MDMA0_S_CONFIG, DMA_WDSIZE_16 | DMA_EN);
-    w16(MDMA0_D_CONFIG, DMA_WDSIZE_16 | DMA_WNR | DMA_EN);
-    ssync();
-    while (!(*(volatile uint16_t *)MDMA0_D_IRQ_STATUS & 0x1)) { }
-    *(volatile uint16_t *)MDMA0_D_IRQ_STATUS = 0x1;       /* W1C DMA_DONE */
-    w16(MDMA0_S_CONFIG, 0);
-    w16(MDMA0_D_CONFIG, 0);
-    ssync();
-}
 
 static void copy_plain(uint8_t *dst, uint32_t src, uint32_t bytes)
 {
@@ -149,8 +119,55 @@ static void copy_plain(uint8_t *dst, uint32_t src, uint32_t bytes)
     for (uint32_t i = 0; i < bytes; i++) dst[i] = s[i];
 }
 
+#ifdef DUMP_L1CODE
+/* ---- MDMA1 copy of L1 instruction SRAM to SDRAM (16-bit words) ----
+ * L1 instruction SRAM is not readable by core data loads, so it needs DMA. MDMA1 is used because
+ * MDMA0 is the firmware's display engine. The busy-wait is bounded: a misconfigured transfer gives
+ * up instead of hanging the device. */
+static inline void w16(uint32_t mmr, uint16_t v) { *(volatile uint16_t *)mmr = v; }
+static inline void w32(uint32_t mmr, uint32_t v) { *(volatile uint32_t *)mmr = v; }
+
+#define DMA_WDSIZE_16 0x0004
+#define DMA_EN        0x0001
+#define DMA_WNR       0x0002                   /* 1 = destination (writes memory) */
+#define MDMA_SPINS    2000000u                 /* bound: ~ms at 400 MHz, far longer than any transfer */
+
+static int mdma1_copy(void *dst, uint32_t src, uint32_t bytes)
+{
+    uint32_t count = bytes >> 1;               /* the instruction region is a multiple of 2 */
+    w16(MDMA1_S_CONFIG, 0);
+    w16(MDMA1_D_CONFIG, 0);
+    ssync();
+    w32(MDMA1_S_START_ADDR, src);
+    w16(MDMA1_S_X_MODIFY, 2);
+    w16(MDMA1_S_X_COUNT, (uint16_t)count);
+    w32(MDMA1_D_START_ADDR, (uint32_t)dst);
+    w16(MDMA1_D_X_MODIFY, 2);
+    w16(MDMA1_D_X_COUNT, (uint16_t)count);
+    ssync();
+    w16(MDMA1_S_CONFIG, DMA_WDSIZE_16 | DMA_EN);
+    w16(MDMA1_D_CONFIG, DMA_WDSIZE_16 | DMA_WNR | DMA_EN);
+    ssync();
+    uint32_t spins = 0;
+    while (!(*(volatile uint16_t *)MDMA1_D_IRQ_STATUS & 0x1)) {
+        if (++spins > MDMA_SPINS) break;       /* give up rather than hang */
+    }
+    int done = (*(volatile uint16_t *)MDMA1_D_IRQ_STATUS & 0x1) != 0;
+    *(volatile uint16_t *)MDMA1_D_IRQ_STATUS = 0x1;       /* W1C DMA_DONE */
+    w16(MDMA1_S_CONFIG, 0);
+    w16(MDMA1_D_CONFIG, 0);
+    ssync();
+    return done;
+}
+#endif
+
+/* Regions captured, in file order. The minimal build dumps only what core loads can read (the data
+ * SRAMs and the scratchpad) plus the key; that is enough for the key check and for op1emu. The
+ * DUMP_L1CODE build adds L1 instruction SRAM via MDMA1 for a direct device-vs-emulator cross-check. */
 static const struct region g_regions[] = {
+#ifdef DUMP_L1CODE
     { L1_INSTR_BASE,   L1_INSTR_SIZE,   L1_INSTR_BASE,   1 },
+#endif
     { L1_DATA_A_BASE,  L1_DATA_A_SIZE,  L1_DATA_A_BASE,  0 },
     { L1_DATA_B_BASE,  L1_DATA_B_SIZE,  L1_DATA_B_BASE,  0 },
     { L1_SCRATCH_BASE, L1_SCRATCH_SIZE, L1_SCRATCH_BASE, 0 },
@@ -169,10 +186,13 @@ static void capture(void)
     uint32_t off = 0;
     for (unsigned r = 0; r < NREGIONS; r++) {
         uint8_t *dst = g_stage + off;
-        if (g_regions[r].use_mdma)
-            mdma_copy(dst, g_regions[r].src, g_regions[r].len);
-        else
+        if (g_regions[r].use_mdma) {
+#ifdef DUMP_L1CODE
+            mdma1_copy(dst, g_regions[r].src, g_regions[r].len);
+#endif
+        } else {
             copy_plain(dst, g_regions[r].src, g_regions[r].len);
+        }
         off += g_regions[r].len;
     }
     const volatile uint8_t *key = (const volatile uint8_t *)(uintptr_t)FW_OTP_KEY_IN_CONTEXT;
@@ -222,15 +242,20 @@ static void write_file(void)
     y_close(fd);
 }
 
-/* ServiceHook replaces the CALL tape_c::service at 0x019F0A24. R0 = this (the tape controller),
- * R1 = arg. Capture on the first pass; write once the filesystem has settled; always forward to the
- * stock service so the device runs normally. */
-extern "C" int ServiceHook(void *self, int arg)
+/* ServiceHook replaces the CALL tape_c::service at 0x019F0A24. The stock service takes a single int
+ * argument in R0 (kennel's STOCK_SERVICE is int(*)(int); tape_c is a singleton, no `this`). Capture
+ * on the first pass, write once the filesystem has settled, and always forward to the stock service
+ * so the device runs normally. */
+extern "C" int ServiceHook(int arg)
 {
+#ifndef CANARY
     if (!g_captured) capture();
     g_passes++;
     if (g_captured && !g_written && g_passes >= 64) { g_written = 1; write_file(); }
-    return ((int (*)(void *, int))(uintptr_t)FW_TAPE_SERVICE)(self, arg);
+#else
+    g_passes++;                                /* CANARY: prove the hook boots; do nothing else */
+#endif
+    return ((int (*)(int))(uintptr_t)FW_TAPE_SERVICE)(arg);
 }
 
 /* One patch: retarget the main-loop tape-service CALL to ServiceHook. inject_app.py recomputes the

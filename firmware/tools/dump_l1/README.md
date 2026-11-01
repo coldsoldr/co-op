@@ -37,7 +37,10 @@ wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw/tools/dump_l1 && make otp'  
 # -> build/dump_l1.elf / build/dump_l1_otp.elf  (OP1X header, render=0, one CALL-retarget patch)
 ```
 
-Flash the minimal build first (it is the smallest, most-proven change). The `otp` build additionally
+Flash order after a hang (one variable at a time): `canary` (hook only) -> minimal (key + L1 data,
+DMA-free) -> `otp` / `full`. **Never use MDMA0 (`0xffc00f00`): it is the firmware's display engine and
+seizing it hangs the device on the loading screen.** The `full` build reads L1 instruction SRAM through
+MDMA1 (unused by the firmware) with a bounded wait. The `otp` build additionally
 reads the whole OTP through the boot ROM so `tools/mk_otp_bin.py` can produce op1emu's `otp.bin`
 (see `docs/emulator.md`); OTP reads are non-destructive.
 
