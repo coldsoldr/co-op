@@ -112,3 +112,30 @@ For the device: `l1_decrypt.py encrypt-ldr` re-encrypts the modified L1 (byte-ex
 **Next:** enable real comp/drive/EQ params (replace the compressor's per-sample divide with a
 reciprocal table first), and measure cycles/block with the profiling op1emu build (`--profile-probes`
 to read `g_master_blocks`/the cycle counter) against the 0.75-block ceiling.
+
+
+## Milestone B status (2026-11-01): second FX slot DONE in the emulator; master bus corrected
+
+Two findings while wiring milestone B, both from op1emu probing:
+
+1. **The master bus is `d34`/`db4` (int16), not `e34`/`f34`.** `0xff800e34`/`f34` are always zero in
+   the speaker configuration (that is the USB-audio bus); the live codec master is
+   `0xff800d34`/`0xff800db4`, int16, 64 samples. Milestone A was inserting on `e34`/`f34` and so
+   processing **silence** -- its transparent boot only proved "no crash." The master suite + FX now
+   operate on d34/db4 (widen int16 -> Q31, narrow back).
+2. **`0xffa04280` is the master compressor/level DSP, not the EQ.** It has its own frame and works on
+   `0xff801880` comp state. Our insert at `0xffa017ae` replaces it, which is exactly item 11 (the coop
+   master suite takes over comp/drive/EQ). (`l1_insert.py` augment mode -- call stock then coop -- was
+   tried and dropped: it hangs here because `0xffa04280` is sensitive to the caller stack frame, and
+   replace is the correct design for this stage anyway.)
+
+Milestone B itself: a coop stereo feedback delay (`core/include/coop_fx.h`) is the second master
+insert slot, in series before the suite, delay line in region A `0x02d00000`. Validated in op1emu:
+the delay line stays zero at idle and fills during a chord (reads live audio); a mute build confirms
+the coop insert owns the master-bus content. Cost: FX ~1.9%, suite ~3.3%, whole coop callback 16.0%
+under a chord (docs/performance.md). Final audible confirmation is a device test.
+
+**Still open for a full milestone B (two STOCK FX):** running a *second stock* FX via its vtable
+(`render = *(instance2 + 0x14)`, as the stock master FX render at `0xffa017e6` does with d34/db4)
+needs instantiating a second stock FX object -- deferred; the coop FX slot above proves the mechanism
+and is the plugin-system path.

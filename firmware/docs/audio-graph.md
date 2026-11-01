@@ -1,5 +1,16 @@
 # The OP-1 R246 audio graph (as driven by the L1 callback)
 
+> **CORRECTION (2026-11-01, op1emu-probed): the master bus is `d34`/`db4`, not `e34`/`f34`.**
+> Earlier notes called `0xff800e34`/`0xff800f34` the master pair (int32 Q31). Direct op1emu probing
+> during a synth chord shows `e34`/`f34` are **always zero** in the normal (speaker) configuration;
+> the live master audio is in **`0xff800d34` (L) / `0xff800db4` (R), int16, 64 samples, planar** (db4
+> = d34 + 0x80). The stock master FX render (`0xffa017e6`) is itself handed d34/db4, and the output
+> mix loop (`0xffa072c8`) reads them. `e34`/`f34` is the **USB-audio stream bus** (`fw_usb_audio_stream`
+> `0x01915608`), non-zero only when a USB-audio host is streaming. So the coop master suite + FX slots
+> operate on **d34/db4** (widening int16 -> Q31 and narrowing back). Also: `0xffa04280` is the master
+> **compressor/level** DSP (operates on `0xff801880`), NOT an EQ biquad; our suite replaces it (item 11).
+> The `e34`/`f34` references just below are left for history but are superseded by this note.
+
 How the stock audio callback drives one audio block, reconstructed from the decrypted L1
 (`l1_audio_callback` at `0xffa04804`) this session. This is the map Phase 2 works against: coop-fw
 repoints the plain-SDRAM imm pair at `0x0191AB52` to its own callback and wraps or replaces these

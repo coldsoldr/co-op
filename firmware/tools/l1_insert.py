@@ -75,7 +75,8 @@ def main():
     ap.add_argument('--tramp-at', type=lambda s: int(s, 0), default=0xffa0bfb4)
     args = ap.parse_args()
 
-    if not (0xffa0bfb4 <= args.tramp_at and args.tramp_at + len(TRAMP) <= 0xffa0c000):
+    tramp = build_tramp(args.fn)
+    if not (0xffa0bfb4 <= args.tramp_at and args.tramp_at + len(tramp) <= 0xffa0c000):
         raise SystemExit('trampoline must fit in free L1 0xffa0bfb4..0xffa0c000')
 
     dxes = ldr_dump.parse(open(args.ldr_in, 'rb').read())
@@ -84,7 +85,6 @@ def main():
     dxe = dxes[0]
 
     # add the trampoline as a plain block, inserted before FINAL
-    tramp = build_tramp(args.fn)
     blk = plain_block(args.tramp_at, tramp)
     final = [i for i, b in enumerate(dxe) if b['flags'] & 0x8000]
     if len(final) != 1:

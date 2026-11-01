@@ -19,7 +19,7 @@ combined: $(BUILD)/coop_combined.elf
 $(BUILD)/coop_combined.elf: coop_cb.cc master_suite.cc coop_cb.ld | $(BUILD)
 	$(BFIN_CXX) $(CXXFLAGS) -DCOOP_COMBINED -I../include coop_cb.cc master_suite.cc $(LDFLAGS) -Wl,--undefined=_coop_master_apply -o $@ -lgcc
 	$(BFIN_BIN)/bfin-elf-size $@
-	$(BFIN_BIN)/bfin-elf-nm $@ | grep -iE "CoopAudioCb|coop_master_apply|g_max|g_blocks|g_master" | sort
+	$(BFIN_BIN)/bfin-elf-nm $@ | grep -iE "CoopAudioCb|coop_master_apply|g_max|g_blocks|g_master|g_fx" | sort
 $(BUILD):
 	mkdir -p $(BUILD)
 clean:

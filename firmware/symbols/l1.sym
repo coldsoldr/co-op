@@ -36,14 +36,17 @@
 0xff8013c4  d_adsr                  I  per-slot ADSR scratch (voice loop reads it)
 
 # --- audio buffer bank + master stage (synthesized from 3 RE passes, 2026-11-01) ---
-0xffa00e50  l1_master_stage         C  the mixer + EQ + comp + drive + per-track pan-mix stage (recursive node renderer); downmixes to codec + meter; THE master-suite seam
-0xffa0143a  l1_master_downmix_read  C  where 0xffa00e50 reads e34/f34 for the int16 downmix; master-suite in-place insert goes just before here
-0xffa04280  l1_master_eq_biquad     C  EQ biquad continuation; writes e34 (0xffa0442c) / f34 (0xffa04628) in place
+0xffa00e50  l1_master_stage         C  the mixer + comp + drive + per-track pan-mix stage (recursive node renderer); downmixes to codec + meter; the master-suite seam
+0xffa0143a  l1_master_downmix_read  C  reads e34/f34 (the USB-audio bus) in a CONDITIONAL branch; NOT the speaker path in the tested config (e34/f34 are zero without a USB-audio host)
+0xffa017ae  l1_master_comp_call     C  CALL (stock 0xffa04280) that our master suite + FX slot retarget (runs every block); preceded by the coeff build CALL 0x019d90e8 at 0xffa017ac
+0xffa04280  l1_master_comp_level    C  master COMPRESSOR/level DSP (NOT EQ): own frame (SP-=0x28), operates on 0xff801880 comp state; this is the stage the coop master suite replaces (item 11). Earlier "EQ biquad writing e34/f34" label was WRONG
+0xffa017e6  l1_master_fx_render     C  master FX vtable render: CALL (P0), P0=*(instance+0x14), handed d34 (0xff800d34, in R1/P2) and db4 (0xff800db4, in P0/R2) -> confirms d34/db4 are the live master bus
 0x019d91ea  fw_eq_coeff_build       C  SDRAM: builds EQ coeffs 0xff801b50 from d_eq 0xff8017cc (replace/stop if replacing EQ)
-0xff800e34  d_master_L              C  MASTER LEFT, 64 x int32 (Q31), planar (confirmed by push args)
-0xff800f34  d_master_R              C  MASTER RIGHT, 64 x int32 (Q31), 0x100 after L
-0xff800d34  d_eq_state_L            C  EQ biquad history L (NOT a master buffer; earlier mislabel)
-0xff800db4  d_eq_state_R            C  EQ biquad history R
+0xff800d34  d_master_L              C  MASTER LEFT, 64 x int16, planar (db4 = +0x80). THE live codec/speaker master bus -- carries audio (op1emu probe: non-zero under a chord, read by the FX render + mix loop 0xffa072c8). The coop master suite + FX operate here.
+0xff800db4  d_master_R              C  MASTER RIGHT, 64 x int16, 0x80 after L. See d_master_L.
+0xff800e34  d_usb_audio_L           I  USB-audio stream bus L, int32 (read/written by fw_usb_audio_stream 0x01915608). ZERO when no USB-audio host is streaming (op1emu probe: 0/36341 under a chord). NOT the speaker master -- earlier "MASTER LEFT Q31" label was WRONG.
+0xff800f34  d_usb_audio_R           I  USB-audio stream bus R, int32, 0x100 after L. See d_usb_audio_L.
+0xffa072c8  l1_master_mix_read      C  mix/downmix loop reading d34/db4 (W[I0]/W[I1], int16) -> the output/meter path for d34/db4
 0xff800bb4  d_voice_bus_mono        C  mono voice-accumulate bus, 88.2 kHz, 128 x int16 (voice loop writes it; also read for metering/scope)
 0xff800770  d_codec_tx              C  SPORT0 TX DMA buffer (int16 interleaved, 64 frames, ping-pong 0xff800970); the DAC/speaker output
 0xff800b74  d_codec_tx_live         C  cached pointer to the live TX half (SPORT ISR 0xffa004fe)

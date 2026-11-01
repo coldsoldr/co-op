@@ -1,6 +1,7 @@
 /* coop-fw master bus suite: compressor -> drive -> EQ, on the stereo master pair (int32/Q31).
  *
- * The master pair is 0xff800e34 (L) / 0xff800f34 (R), 64 x int32 Q31 (docs/audio-graph.md). The suite
+ * This is pure DSP on caller-supplied Q31 stereo blocks. The firmware wrapper (core/sdram/master_suite.cc)
+ * feeds it the real master bus d34/db4 (0xff800d34/0xff800db4, int16), widened to Q31. The suite
  * runs comp first (so the drive's character is level-independent), then drive, then EQ. Fixed-point,
  * no FPU, no libc, no per-sample divides on the hot path (the one divide is in the compressor's gain
  * and can be replaced by a reciprocal table; kept explicit here for the host-tested reference).

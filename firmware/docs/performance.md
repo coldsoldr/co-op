@@ -124,3 +124,36 @@ Reproduce: `make -C core/sdram combined`, then inject/decrypt-ldr/l1_insert (fn 
 call-site `0xffa017ae`, stock `0xffa04280`), run under op1emu with probes on `g_max 0x02c01144` (whole
 callback) and `g_master_cycles 0x02c0114c` (suite only). Addresses come from `bfin-elf-nm` on the
 combined ELF and shift if the image changes.
+
+## Milestone B: second FX slot (coop stereo delay), 2026-11-01
+
+A coop stereo feedback delay (`core/include/coop_fx.h`, host-tested in `tests/host/fx_test.cc`) runs
+as a second master insert slot, in series before the master suite, on the real master bus. Its delay
+line (64 KiB/channel) lives high in free SDRAM region A (`0x02d00000`).
+
+**Buffer correction found during this milestone:** the master suite and FX were first written for
+`e34`/`f34` (`0xff800e34`/`f34`), which op1emu probing showed are **always zero** (that is the
+USB-audio bus). The live codec/speaker master bus is **`d34`/`db4` (`0xff800d34`/`0xff800db4`, int16,
+64 samples)**. Milestone A's transparent boot only proved "no crash," not signal flow; it was
+processing silence. The suite + FX now widen d34/db4 int16 -> Q31, process, and narrow back. See
+`docs/audio-graph.md` and `symbols/l1.sym`.
+
+Validation (op1emu, pristine NAND per run): at idle the delay line stays zero (no audio to delay);
+during a held chord it fills (20,976 of 33,809 samples non-zero) -- i.e. the FX is reading and
+processing the live master audio. A mute build (write 0 to d34/db4) left d34/db4 fully zero with no
+later overwrite, confirming the coop insert owns the master-bus content. Final audible confirmation is
+a device test (the owner flashes).
+
+Cost (peak cycles/block, % of the 580,499-cycle budget), replace-mode insert at `0xffa017ae`:
+
+| Stage | Idle | Chord |
+|---|---|---|
+| FX slot (stereo delay) | 10,107 (1.7%) | 11,131 (1.9%) |
+| Master suite (comp/drive/EQ) | 17,083 (2.9%) | 18,991 (3.3%) |
+| Whole coop callback | 57,205 (9.9%) | 92,628 (16.0%) |
+
+Two coop stages (delay + suite) add ~5% of budget over stock; the whole coop callback peaks at 16.0%
+under a chord, far under the 0.75 (75%) ceiling. The insert *replaces* the stock master
+compressor/level stage (`0xffa04280`, the comp DSP on `0xff801880`), which is exactly item 11 (the
+coop master suite takes over master comp/drive/EQ); it writes only comp state, not meters, so memorize
+is unaffected.
