@@ -29,4 +29,36 @@ static inline void coop_gain_block(int16_t *buf, int16_t gain, int n)
     for (int i = 0; i < n; i++) buf[i] = coop_mul_q15(buf[i], gain);
 }
 
+/* ---- Q31 (the master pair is int32/Q31) ---- */
+
+static inline int32_t coop_sat32(int64_t v)
+{
+    return v > 2147483647LL ? 2147483647 : (v < -2147483648LL ? (int32_t)-2147483648LL : (int32_t)v);
+}
+
+/* Q31 multiply of two int32 (rounded, saturated). 0x7fffffff ~= 1.0. */
+static inline int32_t coop_mul_q31(int32_t a, int32_t b)
+{
+    int64_t p = ((int64_t)a * (int64_t)b + (1LL << 30)) >> 31;
+    return coop_sat32(p);
+}
+
+/* multiply a Q31 sample by a Q(frac) gain given as int32 with `frac` fractional bits (so gain can be
+ * > 1.0 without overflowing the operand). */
+static inline int32_t coop_mul_qn(int32_t sample, int32_t gain, int frac)
+{
+    int64_t p = ((int64_t)sample * (int64_t)gain + ((int64_t)1 << (frac - 1))) >> frac;
+    return coop_sat32(p);
+}
+
+static inline int32_t coop_add32(int32_t a, int32_t b)
+{
+    return coop_sat32((int64_t)a + (int64_t)b);
+}
+
+static inline int32_t coop_abs32(int32_t a)
+{
+    return a < 0 ? (a == (int32_t)-2147483648LL ? 2147483647 : -a) : a;
+}
+
 #endif
