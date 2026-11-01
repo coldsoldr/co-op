@@ -33,11 +33,18 @@ stages it must (the stereo buses, the master suite), keeping the hot kernels in 
 | `0xffa049e0` | `0x019ae7cc` | SDRAM | stage [I] |
 | `0xffa049e8` | `0xffa017ec` | L1 | helper: `CLI`, state at `0xff802618` (master chain?) [I] |
 | `0xffa049fc` | `0x019e1b3c` | SDRAM | `l1v_push_lr`: push master L/R (+ tracks) to USB [C: kennel] |
-| `0xffa04a04` | `0x019e2f24` | SDRAM | stage [I] |
-| `0xffa04a30`, `0x4a3a`, `0x4ade`, `0x4b38`, `0x4b6e` | `0x019c2f24` / `0x019c2f04` / `0x019c3044` | SDRAM | late mix / meter / tape stages (the `0x019cxxxx` band) [I] |
+| `0xffa04a04` | `0x019e2f24` | SDRAM | **MIDI-out drain** (calls `fw_midi_send`) [C] |
+| `0xffa04a30`.. | `0x019c2f24` / `0x019c2f04` / `0x019c3044` | SDRAM | **input, not audio**: `KeyHandler::PushKey`, wake KeyHandler, `AddKnob` [C] |
 
 The per-sample voice work (`l1_voice_loop` `0xffa009a0`, the pitch array `0xff801950`, the decimation
 88.2 -> 44.1) runs inside the dispatch region around `0xffa04b90` [C: pitch-array reference there].
+
+**Corrected reading (this session).** The audio DSP ends at the master push `l1v_push_lr`
+(`0x019e1b3c`). Everything after is not audio: `0x019e2f24` drains MIDI to USB, the `0x019aexxxx`
+calls scan the key banks, and the `0x019c2xxx`/`0x019c3044` calls queue keys/encoders and wake the
+KeyHandler thread. `0x01a8e340` is tape chunk streaming (`fw_yaffs_pread`/`close`), not an audio
+stage. So the audio ISR does: input/USB setup, voices + FX + master, push output, then scan and
+queue the key matrix. See `symbols/sdram.sym`.
 
 ## What this means for the target coop-fw graph
 
@@ -49,7 +56,8 @@ The target graph (plan, Phase 2) stays the same, but the build order is clearer:
   bus suite (comp -> drive -> EQ)** goes just before it, fed by `l1_cb_sub_017ec` (`0xffa017ec`), the
   likely current master stage.
 - `l1_cb_sub_036c4` (`0xffa036c4`), with its 4-wide state, is the prime suspect for the **tape / track
-  mix** (four tracks) and so the place stereo tape tracks are summed.
+  mix** (four tracks) and so the place stereo tape tracks are summed; `0x01a8e340` (tape chunk
+  streaming) feeds it from the tape file.
 
 ## Next
 

@@ -1,0 +1,33 @@
+# coop-fw SDRAM symbol map: the plain (unencrypted) OP-1 R246 functions the L1 audio callback drives.
+#
+# Format: <hex addr> <name> <C|I> <note>. Reverse-engineering annotation; no TE code stored here.
+# Identified this session by disassembling the plain SDRAM from the stock image and by the functions
+# each one calls (op1fw.h names, fw_* helpers, KeyHandler). The audio callback (symbols/l1.sym
+# l1_audio_callback) calls these in block order; see docs/audio-graph.md.
+
+# --- audio output / USB ---
+0x019e1a88  l1v_push_interleaved    C  silent/muted-block push to USB (kennel L1_IMM_PATCHES)
+0x019e1b3c  l1v_push_lr             C  push master L/R (+ tracks) to USB (kennel L1_IMM_PATCHES); the master audio leaves here
+0x019e2f24  fw_midi_out_drain       C  calls fw_midi_send (0x019e0d18) + fw_usb_configured: drains queued MIDI to USB
+
+# --- the FX stage (the hook for two FX slots per position) ---
+0x01a88028  fx_render_position      I  called 3x per block (FX positions 0 synth / 1 drum / 2 master); local helpers 0x1a880d8/818e/86b4
+0x01a8e340  tape_cache_io           C  calls fw_yaffs_pread (0x01a99ca8) + fw_yaffs_close: tape chunk streaming from the tape file
+
+# --- input: key/encoder scan and queue (runs at the END of the audio ISR, not audio DSP) ---
+0x019ae7cc  key_bank_scan           I  reads key banks 0x23..0x26 (lfo-interface/screen docs); input, not audio
+0x019c2f24  KeyHandler_PushKey      C  queues a key event into s_key_queue (te-op1-cfw screen docs)
+0x019c2f04  fw_post_keyhandler      C  wakes the KeyHandler thread (op1fw.h)
+0x019c3044  KeyHandler_AddKnob      C  adds an encoder delta to s_knob_acc[4] (te-op1-cfw screen docs)
+
+# --- early-block stages (not yet pinned; call alloc/USB helpers) ---
+0x0193ee7c  cb_stage_input          I  first callback stage; calls TLSF free (0x1a5e310) + 0x1aa2b14/324a
+0x019e193c  cb_stage_usb            I  calls fw_usb_configured (0x1a69360) + 0x1a0dc7c/0x1aa494a
+
+# --- shared helpers (named in te-op1-cfw docs / op1fw.h) ---
+0x01919aa8  fw_assert_handler       C  assert/panic handler (lfo-interface.md)
+0x019e0d18  fw_midi_send            C  USB MIDI out (op1fw.h)
+0x01a69360  fw_usb_configured       C  USB-configured check (op1fw.h)
+0x01a99ca8  fw_yaffs_pread          C  yaffs pread (op1fw.h)
+0x01a99908  fw_yaffs_close          C  yaffs close (op1fw.h)
+0x01a5e310  fw_tlsf_free            C  TLSF pool free wrapper (memory-map.md)
