@@ -41,3 +41,8 @@
 0x01a99ca8  fw_yaffs_pread          C  yaffs pread (op1fw.h)
 0x01a99908  fw_yaffs_close          C  yaffs close (op1fw.h)
 0x01a5e310  fw_tlsf_free            C  TLSF pool free wrapper (memory-map.md)
+
+# --- voice bus / mix path, confirmed dynamically with the op1emu write tracer (docs/stereo-bus.md, 2026-11-01) ---
+0x01967612  decimate_voice_bus_end  C  RTS of the in-place 128->64 decimation filter: reads the voice bus via I0, writes the 64 results over 0xff800bb4..0xff800c32 (stores 0x01967586/0x0196759a/0x019675d2/0x0196760e; LSETUP x31 unrolled x2); 32x16 fractional IIR (A0 += A1 >>> 15)
+0x01a66b80  drum_sdram_sample_wr    C  drum engine sample path: one W[I0++] = R3.H store per call into the voice bus (32x16 fractional interpolation before it)
+0x019de5a8  postmix_mono_add        C  LSETUP(0x019de5ac,0x019de5e8): adds one mono term (A0/A1 generator) to d34 (0x019de5d4) and db4 (0x019de5cc) in place after the mix loops; term was zero in play (metronome/click?) [I]

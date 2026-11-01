@@ -96,6 +96,17 @@ random×spread at note-on; 0 = centered, full = hard L..R), per-voice stereo mix
 into int32 stereo bus). Centered pan ⇒ L==R. Native Blackfin multiplies, no libgcc. `COOP_MAX_VOICES=12`
 covers synth (6) + drums (12).
 
+> **RESOLVED later on 2026-11-01.** The write-hook tracer exists (`--watch-writes`, patch in
+> `tools/op1emu-patches/`, wrapper `tests/sim/watch_writes.sh`, writeup in `docs/emulator.md`) and
+> answered the question on the stock image: synth per-voice sum = `0xffa00d5a`/`0xffa00d70` (loop
+> `LSETUP 0xffa00d4a..0xffa00d62`), drum sum = `0xffa0093e` (the loop static analysis had taken for the
+> synth), in-place 128->64 decimator in SDRAM (`0x01967586..0x0196760e`), active mix = loop B
+> `0xffa00fca` (L) / `0xffa00fd2` (R) adding the SAME value to both channels; the "global pan" loop A
+> (`0xffa00f76`/`0xffa00f7e`) wrote zero in every block. Stock synth/drum output is mono. The "~20 s
+> boot" below was wall time; the callback runs from ~1.96 s guest time. Everything is in
+> `docs/stereo-bus.md` (pipeline + C1 mechanism options) and `symbols/*.sym`. The text below is kept
+> as history of the blocker.
+
 **THE BLOCKER (why C1 stalled):** to place the takeover I must find *which* L1 code actually does the
 per-voice sum and the pan-mix (the master stage has many conditional branches; static disassembly can't
 tell which run). I tried the emulator's profiling probes and hit two hard walls:
@@ -264,11 +275,13 @@ enforce). Commit attribution lines in use: `Co-Authored-By: Claude Opus 4.8 <nor
 
 ## 9. Immediate next actions
 
-1. **Build the op1emu write-hook PC-logger** (§4 unblock) — the one thing blocking C1.
-2. Use it to pin the active per-voice-sum and pan-mix PCs; update `symbols/l1.sym` / `docs/stereo-bus.md`.
-3. Implement C1: trampoline the takeover (via `l1_insert.py`) to pan voices into a stereo bus using
-   `coop_voice.h`, decimate to d34/db4, **centered pan matching stock** (regression gate — probe +
-   rendered-WAV A/B vs stock).
+1. ~~Build the op1emu write-hook PC-logger~~ DONE (`--watch-writes`; `tests/sim/watch_writes.sh`).
+2. ~~Pin the active per-voice-sum and pan-mix PCs~~ DONE (`docs/stereo-bus.md`, `symbols/*.sym`).
+3. Implement C1: choose the takeover mechanism (`docs/stereo-bus.md` "C1 takeover mechanism": the
+   accumulate is inline code, so either redirect the stock sum via its bus immediates + a vtable render
+   wrapper, or overwrite the loop with a trampoline call), pan voices into a stereo bus using
+   `coop_voice.h`, decimate both channels to d34/db4, **centered pan matching stock loop B** (regression
+   gate — write tracer + rendered-WAV A/B vs stock).
 4. C2: wire the spread control to a real parameter (+ UI later). C3: stereo engines/FX.
 5. Separately (small win any time): wire real parameters into the master suite so it stops being
    transparent (comp/drive/EQ from `0xff801880`/`0xff8017cc`, add a drive page).

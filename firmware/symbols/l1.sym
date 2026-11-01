@@ -55,3 +55,17 @@
 0x019e193c  fw_usb_in_resampler     C  SDRAM: USB audio input resampler (reads ring 0x01aadb60)
 0x01915608  fw_usb_audio_stream     C  SDRAM: bidir USB audio stream, reads/writes e34/f34 by state
 0xff800370  d_sport_rx_desc         C  SPORT0 RX DMA descriptor base (0x0191ab40 sets up SPORT DMA)
+
+# --- voice bus / mix path, confirmed dynamically with the op1emu write tracer (docs/stereo-bus.md, 2026-11-01) ---
+0xff800bb4  d_voice_bus             C  mono voice bus: 128 x int16 @ 88.2 kHz after the per-voice sums; first 64 overwritten in place by the SDRAM decimator (sdram.sym)
+0xffa06a48  l1_master_clear         C  per-block clear of d34/db4 (LSETUP x32, int32 stores at 0xffa06a48 L / 0xffa06a4a R); first writer in the block
+0xffa01d1e  l1_voice_bus_clear      C  per-block clear of the voice bus (LSETUP x64 int32)
+0xffa00d28  l1_synth_render_call    C  CALL (P2), P2 = *(vtable+0x14): synth voice render; followed by the synth accumulate
+0xffa00d46  l1_synth_accum_loop     C  LSETUP(0xffa00d4a,0xffa00d62) LC0=127: bus[i] = sat(bus[i] + render[i]*ramp[i]*gain), ramp P5=[SP+0x38], gain W[P4]; stores 0xffa00d5a (body) + 0xffa00d70 (last); bus imm at 0xffa00d2e/0xffa00d32
+0xffa00d7c  l1_synth_voice_meter    C  R0 = MAX(R0,R1)(V) -> [P0+0x40] after the accumulate
+0xffa00904  l1_drum_render_call     C  CALL (P0), P0 = *(vtable+0x24), param W[vtable+0x20]: drum voice render
+0xffa00922  l1_drum_accum_loop      C  LSETUP(0xffa00926,0xffa0093e) LC0=128: bus[i] = sat(bus[i] + sat(2*render[i]*gain)), gain W[P5]; store 0xffa0093e; bus imm at 0xffa00912/0xffa00916. Runs only in drum mode
+0xffa00f2c  l1_mix_loop_a           C  LSETUP(0xffa00f30,0xffa00f86) x64: 64 decimated bus samples * L gain R0.H / R gain R2.H * R6.L + peak meters -> d34 (0xffa00f76) / db4 (0xffa00f7e). WROTE ZERO in every block (chord and drum): the silent "global pan"
+0xffa00fae  l1_mix_loop_b           C  LSETUP(0xffa00fb2,0xffa00fda) x64: same 64 samples * gain R0.L * ramped W[P1] added EQUALLY to d34 (0xffa00fca) and db4 (0xffa00fd2): the active mono-to-master path
+0xffa033c0  l1_master_level_wr_L    C  master level stage writes L back in place (64 stores/block; after the SDRAM post-mix). Body of the 0xffa04280 stage [I on identity]
+0xffa03590  l1_master_level_wr_R    C  master level stage writes R back in place (64 stores/block)

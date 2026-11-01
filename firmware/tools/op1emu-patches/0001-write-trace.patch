@@ -1,0 +1,461 @@
+From 113383ad66f7cb9925b763c4995e8fb9652b39d4 Mon Sep 17 00:00:00 2001
+From: coop-fw <coop-fw@localhost>
+Date: Sun, 1 Nov 2026 21:55:30 +0200
+Subject: [PATCH] Write traces: --watch-writes logs every PC that stores into a
+ range
+
+Emulator::AddWriteTrace(lo, hi, fn) sees every store that lands in a range
+after it reached memory, at every width (the per-address write hooks only see
+32-bit stores and replace them). The pages it covers leave DirectPages(), so
+generated code calls back for each access; bcore materializes CpuState::pc
+before every memory callback, so the storing packet PC is readable there.
+
+gui: --watch-writes RANGE (repeatable; LO-HI, LO+LEN or LO, hex) records per
+writer PC the store count, nonzero count, widths, address span, first/last
+value and guest times, prints each new writer as it appears and a table at
+exit (--watch-out FILE for TSV); --watch-log N / --watch-from S print N single
+stores from guest time S, which gives the writer order inside a block. Works in
+every build, no probe hit cap.
+---
+ gui/main.cpp        |  36 ++++++++++++
+ gui/write_watch.cpp | 132 ++++++++++++++++++++++++++++++++++++++++++++
+ gui/write_watch.h   |  66 ++++++++++++++++++++++
+ src/cpu/emu.cpp     |  34 +++++++++++-
+ src/cpu/emu.h       |  26 +++++++++
+ 5 files changed, 293 insertions(+), 1 deletion(-)
+ create mode 100755 gui/write_watch.cpp
+ create mode 100755 gui/write_watch.h
+
+diff --git a/gui/main.cpp b/gui/main.cpp
+index c190330..352607e 100644
+--- a/gui/main.cpp
++++ b/gui/main.cpp
+@@ -6,6 +6,7 @@
+ #include "utils/log.h"
+ #include "glfw_display.h"
+ #include "headless.h"
++#include "write_watch.h"
+ #include "audio_output_miniaudio.h"
+ #include "usbipd.h"
+ #include "build_info.h"
+@@ -129,6 +130,10 @@ static int RunEmulator(int argc, char* argv[]) {
+     bool chainDry = false;
+     bool markDigest = false;
+     bool profileProbes = false;
++    WriteWatch writeWatch;
++    std::string watchOut;
++    long long watchLog = 0;
++    double watchFrom = 0;
+     const std::pair<const char*, std::string*> valueOptions[] = {
+         {"--profile-marks", &profileMarks}, {"--profile-trace", &profileTrace},
+         {"--profile-census", &profileCensus}, {"--perf-ctl-fifo", &perfFifo},
+@@ -244,6 +249,24 @@ static int RunEmulator(int argc, char* argv[]) {
+             std::cout << BuildInfoJson() << std::endl;
+             return 0;
+         }
++        else if (options && arg == "--watch-writes") {
++            if (++i == argc || !*argv[i]) throw std::runtime_error("--watch-writes requires a range");
++            writeWatch.Add(WriteWatch::ParseRange(argv[i]));
++        }
++        else if (options && arg == "--watch-log") {
++            if (++i == argc || !*argv[i]) throw std::runtime_error("--watch-log requires a count");
++            try { watchLog = std::stoll(argv[i]); } catch (const std::exception&) { watchLog = -1; }
++            if (watchLog < 0) throw std::runtime_error(std::string("Invalid --watch-log count: ") + argv[i]);
++        }
++        else if (options && arg == "--watch-from") {
++            if (++i == argc || !*argv[i]) throw std::runtime_error("--watch-from requires guest seconds");
++            try { watchFrom = std::stod(argv[i]); } catch (const std::exception&) { watchFrom = -1; }
++            if (watchFrom < 0) throw std::runtime_error(std::string("Invalid --watch-from seconds: ") + argv[i]);
++        }
++        else if (options && arg == "--watch-out") {
++            if (++i == argc || !*argv[i]) throw std::runtime_error("--watch-out requires a path");
++            watchOut = argv[i];
++        }
+         else if (options && arg == "--input-script") {
+             if (++i == argc) throw std::runtime_error("--input-script requires a path");
+             inputScript = argv[i];
+@@ -258,6 +281,12 @@ static int RunEmulator(int argc, char* argv[]) {
+                   << " <nand_flash_file> [ldr_file] [--nand-rw|--nand-snapshot]\n"
+                      "  --headless            No GLFW window or host audio device\n"
+                      "  --input-script PATH   Read headless commands from PATH instead of stdin\n"
++                     "  --watch-writes RANGE  Log every PC that stores into RANGE (LO-HI, LO+LEN or LO,\n"
++                     "                        hex): each new writer as it appears, a table at exit;\n"
++                     "                        repeatable. Any build; no probe hit cap\n"
++                     "  --watch-out PATH      Also write that table to PATH (TSV)\n"
++                     "  --watch-log N         Also print the first N single stores into those ranges\n"
++                     "  --watch-from SECONDS  ... at or after this guest time (default 0)\n"
+                      "  --deterministic       Run as fast as the host allows, not at the device's\n"
+                      "                        pace: repeatable runs, for measurement and tests\n"
+                      "  --rtc-epoch SECONDS   RTC time at boot (default: the host's; 2024-01-01\n"
+@@ -332,6 +361,8 @@ static int RunEmulator(int argc, char* argv[]) {
+     if (positional.size() > 2) throw std::runtime_error("Expected NAND and optional LDR paths");
+     if (!inputScript.empty() && !headless)
+         throw std::runtime_error("--input-script requires --headless");
++    if ((!watchOut.empty() || watchLog || watchFrom) && writeWatch.Empty())
++        throw std::runtime_error("--watch-out, --watch-log and --watch-from need a --watch-writes range");
+ #ifndef ENABLE_PROFILING
+     if (anyProfiling)
+         throw std::runtime_error("Profiling options need a build with -DENABLE_PROFILING=ON");
+@@ -365,6 +396,10 @@ static int RunEmulator(int argc, char* argv[]) {
+ 
+     // Create BlackFin CPU
+     BlackFinCpu cpu(deterministic);
++    if (!writeWatch.Empty()) {
++        writeWatch.Install(cpu);
++        if (watchLog) writeWatch.LogStores(static_cast<uint64_t>(watchFrom * 1e9), static_cast<uint64_t>(watchLog));
++    }
+     cpu.SetTwiSpeedup(twiSpeedup);
+     cpu.SetMdmaSpeedup(mdmaSpeedup);
+     // An LDR runs with the host looking at the PC after every block
+@@ -534,6 +569,7 @@ static int RunEmulator(int argc, char* argv[]) {
+     LogInfo("Stopping CPU thread...");
+     cpuShouldStop.store(true);
+     cpuThread.join();
++    if (!writeWatch.Empty()) writeWatch.Report(watchOut);
+     if (cpu.Failed()) {
+         LogError("Emulation stopped: CPU execution failed");
+         result = 1;
+diff --git a/gui/write_watch.cpp b/gui/write_watch.cpp
+new file mode 100755
+index 0000000..f527a19
+--- /dev/null
++++ b/gui/write_watch.cpp
+@@ -0,0 +1,132 @@
++#include "write_watch.h"
++
++#include "cpu/cpu.h"
++#include "cpu/time_source.h"
++
++#include <algorithm>
++#include <cstdio>
++#include <stdexcept>
++
++namespace {
++
++uint32_t ParseHex(const std::string& text, const std::string& spec) {
++    std::string digits = text;
++    if (digits.rfind("0x", 0) == 0 || digits.rfind("0X", 0) == 0) digits = digits.substr(2);
++    size_t used = 0;
++    unsigned long long value = 0;
++    bool ok = !digits.empty() && digits.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
++    try { if (ok) value = std::stoull(digits, &used, 16); } catch (const std::exception&) { ok = false; }
++    if (!ok || used != digits.size() || value > 0xFFFFFFFFull)
++        throw std::runtime_error("Invalid --watch-writes range (LO-HI, LO+LEN or LO, hex): " + spec);
++    return static_cast<uint32_t>(value);
++}
++
++const char* Widths(uint32_t mask) {
++    static const char* const names[16] = {
++        "-",      "8",      "16",      "8/16",      "32",      "8/32",      "16/32",      "8/16/32",
++        "host",   "8+host", "16+host", "8/16+host", "32+host", "8/32+host", "16/32+host", "all",
++    };
++    return names[mask & 15];
++}
++
++}  // namespace
++
++WriteWatch::Range WriteWatch::ParseRange(const std::string& spec) {
++    Range range;
++    range.text = spec;
++    const size_t dash = spec.find('-'), plus = spec.find('+');
++    if (dash != std::string::npos) {
++        range.lo = ParseHex(spec.substr(0, dash), spec);
++        range.hi = ParseHex(spec.substr(dash + 1), spec);
++    } else if (plus != std::string::npos) {
++        range.lo = ParseHex(spec.substr(0, plus), spec);
++        const uint32_t length = ParseHex(spec.substr(plus + 1), spec);
++        if (length == 0) throw std::runtime_error("Empty --watch-writes range: " + spec);
++        range.hi = static_cast<uint32_t>(std::min<uint64_t>(uint64_t(range.lo) + length - 1, 0xFFFFFFFFull));
++    } else {
++        range.lo = ParseHex(spec, spec);
++        range.hi = static_cast<uint32_t>(std::min<uint64_t>(uint64_t(range.lo) + 3, 0xFFFFFFFFull));
++    }
++    if (range.hi < range.lo) throw std::runtime_error("Inverted --watch-writes range: " + spec);
++    return range;
++}
++
++void WriteWatch::Install(BlackFinCpu& cpu) {
++    livePrinted_.assign(ranges_.size(), 0);
++    for (size_t i = 0; i < ranges_.size(); ++i) {
++        const Range& range = ranges_[i];
++        cpu.GetEmulator().AddWriteTrace(range.lo, range.hi, [this, &cpu, i](uint32_t addr, uint32_t length, uint32_t value) {
++            OnStore(i, cpu.PC(), cpu.Time().Nanoseconds(), addr, length, value);
++        });
++        fprintf(stderr, "[watch] %s: tracing stores to 0x%08x..0x%08x\n", range.text.c_str(), range.lo, range.hi);
++    }
++}
++
++void WriteWatch::OnStore(size_t range, uint32_t pc, uint64_t ns, uint32_t addr, uint32_t length, uint32_t value) {
++    const uint32_t widthBit = length == 1 ? 1 : length == 2 ? 2 : length == 4 ? 4 : 8;
++    if (logMax_ && ns >= logFromNs_ && logged_ < logMax_) {
++        ++logged_;
++        fprintf(stderr, "[watch] store t=%.6fs pc=0x%08x addr=0x%08x width=%u value=0x%08x (%s)\n", ns / 1e9, pc, addr,
++                length, value, ranges_[range].text.c_str());
++    }
++    auto [it, fresh] = writers_.try_emplace({range, pc});
++    Writer& w = it->second;
++    if (fresh) {
++        w.order = order_++;
++        w.minAddr = w.maxAddr = w.firstAddr = addr;
++        w.firstValue = value;
++        w.firstNs = ns;
++        if (livePrinted_[range]++ < kLivePcs)
++            fprintf(stderr, "[watch] %s: writer #%llu pc=0x%08x addr=0x%08x width=%u value=0x%08x t=%.4fs\n",
++                    ranges_[range].text.c_str(), static_cast<unsigned long long>(w.order), pc, addr, length, value,
++                    ns / 1e9);
++    }
++    ++w.stores;
++    if (value != 0) {
++        if (w.nonzero++ == 0) w.firstNonzeroNs = ns;
++        w.lastNonzeroNs = ns;
++    }
++    w.widths |= widthBit;
++    w.minAddr = std::min(w.minAddr, addr);
++    w.maxAddr = std::max(w.maxAddr, addr);
++    w.lastAddr = addr;
++    w.lastValue = value;
++    w.lastNs = ns;
++}
++
++void WriteWatch::Report(const std::string& path) const {
++    std::vector<std::pair<const std::pair<size_t, uint32_t>*, const Writer*>> rows;
++    for (const auto& [key, writer] : writers_) rows.push_back({&key, &writer});
++    std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
++        if (a.first->first != b.first->first) return a.first->first < b.first->first;
++        return a.second->order < b.second->order;
++    });
++    FILE* file = path.empty() ? nullptr : fopen(path.c_str(), "w");
++    if (!path.empty() && !file) fprintf(stderr, "[watch] cannot write %s\n", path.c_str());
++    auto both = [&](const char* line) {
++        fputs(line, stderr);
++        if (file) fputs(line, file);
++    };
++    char line[512];
++    both("range\tpc\tstores\tnonzero\twidths\tmin_addr\tmax_addr\tfirst_addr\tfirst_value\tlast_addr\tlast_value\t"
++         "first_s\tlast_s\tfirst_nonzero_s\tlast_nonzero_s\n");
++    for (const auto& [key, w] : rows) {
++        snprintf(line, sizeof line,
++                 "%s\t0x%08x\t%llu\t%llu\t%s\t0x%08x\t0x%08x\t0x%08x\t0x%08x\t0x%08x\t0x%08x\t%.4f\t%.4f\t%.4f\t%.4f\n",
++                 ranges_[key->first].text.c_str(), key->second, static_cast<unsigned long long>(w->stores),
++                 static_cast<unsigned long long>(w->nonzero), Widths(w->widths), w->minAddr, w->maxAddr, w->firstAddr,
++                 w->firstValue, w->lastAddr, w->lastValue, w->firstNs / 1e9, w->lastNs / 1e9, w->firstNonzeroNs / 1e9,
++                 w->lastNonzeroNs / 1e9);
++        both(line);
++    }
++    for (size_t i = 0; i < ranges_.size(); ++i) {
++        size_t writers = 0;
++        uint64_t stores = 0;
++        for (const auto& [key, w] : writers_)
++            if (key.first == i) { ++writers; stores += w.stores; }
++        snprintf(line, sizeof line, "# %s: %zu writer PC(s), %llu store(s)\n", ranges_[i].text.c_str(), writers,
++                 static_cast<unsigned long long>(stores));
++        both(line);
++    }
++    if (file) fclose(file);
++}
+diff --git a/gui/write_watch.h b/gui/write_watch.h
+new file mode 100755
+index 0000000..c049772
+--- /dev/null
++++ b/gui/write_watch.h
+@@ -0,0 +1,66 @@
++#pragma once
++
++// --watch-writes: who stores into a guest address range. One Emulator write
++// trace per range (Emulator::AddWriteTrace) records, per storing PC, how many
++// stores landed in the range, their widths, the addresses and values of the
++// first and last and the guest time of each, prints each new PC as it first
++// appears (up to kLivePcs per range, so an aborted run still tells) and a
++// table at exit. Works in every build; it needs no profiling support.
++//
++// The PC is bcore's CpuState::pc at the callback: the packet of the storing
++// instruction (bcore materializes pc before every memory callback). A store
++// the host makes (DMA, the LDR loader) is attributed to whatever PC the CPU
++// state holds then; a trace on a DMA target shows that as a wide width.
++
++#include <cstdint>
++#include <map>
++#include <string>
++#include <utility>
++#include <vector>
++
++class BlackFinCpu;
++
++class WriteWatch {
++public:
++    struct Range {
++        uint32_t lo = 0, hi = 0;
++        std::string text;  // as given on the command line
++    };
++    // "LO-HI" (inclusive), "LO+LEN" or "LO" (one word of 4 bytes); hex, "0x"
++    // optional. Throws std::runtime_error on a bad spec.
++    static Range ParseRange(const std::string& spec);
++
++    void Add(Range range) { ranges_.push_back(std::move(range)); }
++    bool Empty() const { return ranges_.empty(); }
++    // Installs the traces on cpu's emulator; cpu gives the PC and guest time.
++    // Before the CPU runs.
++    void Install(BlackFinCpu& cpu);
++    // The table, to stderr and, if path is nonempty, to that file (TSV with a
++    // header line). After the CPU thread ended.
++    void Report(const std::string& path) const;
++
++    // Also print the first `count` individual stores at or after guest time
++    // fromNs, one line each: the order of the writers inside a block.
++    void LogStores(uint64_t fromNs, uint64_t count) { logFromNs_ = fromNs; logMax_ = count; }
++
++    static constexpr size_t kLivePcs = 64;
++
++private:
++    struct Writer {
++        uint64_t order = 0;  // 0-based: the order PCs first appeared in, over every range
++        uint64_t stores = 0;
++        uint64_t nonzero = 0;  // stores of a value other than 0: whether this writer carried signal
++        uint32_t widths = 0;  // bit 0: 1 byte, 1: 2, 2: 4, 3: wider (a host write)
++        uint32_t minAddr = 0, maxAddr = 0;
++        uint32_t firstAddr = 0, firstValue = 0, lastAddr = 0, lastValue = 0;
++        uint64_t firstNs = 0, lastNs = 0;
++        uint64_t firstNonzeroNs = 0, lastNonzeroNs = 0;  // guest time of the first and last nonzero store
++    };
++    void OnStore(size_t range, uint32_t pc, uint64_t ns, uint32_t addr, uint32_t length, uint32_t value);
++
++    std::vector<Range> ranges_;
++    std::vector<size_t> livePrinted_;
++    std::map<std::pair<size_t, uint32_t>, Writer> writers_;  // (range index, pc)
++    uint64_t order_ = 0;
++    uint64_t logFromNs_ = 0, logMax_ = 0, logged_ = 0;
++};
+diff --git a/src/cpu/emu.cpp b/src/cpu/emu.cpp
+index db99c81..f34a0b7 100644
+--- a/src/cpu/emu.cpp
++++ b/src/cpu/emu.cpp
+@@ -1,6 +1,7 @@
+ #include <algorithm>
+ #include <atomic>
+ #include <cassert>
++#include <cstring>
+ #include <functional>
+ #include <typeinfo>
+ #include "emu.h"
+@@ -75,6 +76,9 @@ void Emulator::MemoryRead(u32 addr, void* buffer, int length)
+ void Emulator::MemoryWrite(u32 addr, const void* buffer, int length)
+ {
+     Watch(addr, length);
++    const u32 start = addr;
++    const void* const data = buffer;
++    const int total = length;
+     while (length > 0) {
+         Device* dev = Find(addr);
+         if (!dev) {
+@@ -88,6 +92,7 @@ void Emulator::MemoryWrite(u32 addr, const void* buffer, int length)
+             length -= len;
+         }
+     }
++    if (total > 0) Trace(start, u32(total), data);
+ }
+ 
+ bool Emulator::Maps(u32 addr, u32 length)
+@@ -155,6 +160,7 @@ void Emulator::MemoryWrite32(u32 vaddr, u32 value)
+             dev->Write32(offset, value);
+         }
+     }
++    Trace(vaddr, 4, &value);
+ }
+ 
+ void Emulator::MemoryWrite64(u32 vaddr, u64 value)
+@@ -166,7 +172,32 @@ bool Emulator::MemoryWriteExclusive32(u32 vaddr, u32 value, u32 expected)
+ {
+     Watch(vaddr, 4);
+     auto atomic = (std::atomic<u32>*)MemoryMap(vaddr);
+-    return atomic->compare_exchange_strong(expected, value);
++    const bool stored = atomic->compare_exchange_strong(expected, value);
++    if (stored) Trace(vaddr, 4, &value);
++    return stored;
++}
++
++void Emulator::AddWriteTrace(u32 lo, u32 hi, WriteTrace trace)
++{
++    assert(lo <= hi);
++    writeTraces_.push_back({lo, hi, std::move(trace)});
++    RebuildDirectPages();
++}
++
++bool Emulator::Traced(u32 first, u32 last) const
++{
++    for (const auto& range : writeTraces_)
++        if (range.lo <= last && first <= range.hi) return true;
++    return false;
++}
++
++void Emulator::TraceAccess(u32 addr, u32 length, const void* value)
++{
++    const u32 last = u32(std::min<u64>(u64(addr) + length - 1, 0xFFFFFFFF));
++    u32 word = 0;
++    memcpy(&word, value, std::min<u32>(length, 4));  // little-endian host, as the guest
++    for (const auto& range : writeTraces_)
++        if (range.lo <= last && addr <= range.hi) range.trace(addr, length, word);
+ }
+ 
+ void* Emulator::MemoryMap(u32 addr)
+@@ -203,6 +234,7 @@ void Emulator::RebuildDirectPages()
+             if (other) continue;
+             if (readHooks.lower_bound(first) != readHooks.upper_bound(last)) continue;
+             if (writeHooks.lower_bound(first) != writeHooks.upper_bound(last)) continue;
++            if (Traced(first, last)) continue;
+             directPages[page >> PAGE_BITS] = static_cast<u8*>(dev->Map(first - dev->BaseAddress()));
+         }
+     }
+diff --git a/src/cpu/emu.h b/src/cpu/emu.h
+index 972e95a..a959dc5 100644
+--- a/src/cpu/emu.h
++++ b/src/cpu/emu.h
+@@ -78,6 +78,21 @@ public:
+     void AddReadHook(u32 addr, std::function<u32(u32)> hook) { readHooks[addr] = hook; RebuildDirectPages(); }
+     void AddWriteHook(u32 addr, std::function<void(u32, u32)> hook) { writeHooks[addr] = hook; RebuildDirectPages(); }
+ 
++    // A write trace sees every store that lands in [lo, hi] (inclusive) after
++    // it reached memory: the address stored to, the width in bytes and the
++    // value (little-endian; the first four bytes of a longer host write, as
++    // DMA's or the LDR loader's). Unlike a write hook it replaces nothing,
++    // covers every width (hooks only see 32-bit stores) and may span a
++    // range; several traces may overlap. The pages it covers stop being
++    // direct (DirectPages()), so generated code calls back here for each
++    // access to them, and the storing instruction's PC can be read from the
++    // CPU state inside the trace (bcore materializes pc before every memory
++    // callback). The trace runs on the thread that stores and must not write
++    // a guest register (as a hook: Memory::callbacks_preserve_registers()).
++    using WriteTrace = std::function<void(u32 addr, u32 length, u32 value)>;
++    void AddWriteTrace(u32 lo, u32 hi, WriteTrace trace);
++    bool TracesWrites() const { return !writeTraces_.empty(); }
++
+     // The guest pages generated code may load from and store to directly
+     // (bcore's Memory::page_table()): one entry per page, the host address of
+     // its first byte, or null where an access must come through the device
+@@ -143,6 +158,12 @@ protected:
+         if (watcher_) WatchAccess(addr, length);
+     }
+     void WatchAccess(u32 addr, u32 length);
++    // After a store of length bytes at addr: the write traces it lands in.
++    void Trace(u32 addr, u32 length, const void* value) {
++        if (!writeTraces_.empty()) TraceAccess(addr, length, value);
++    }
++    void TraceAccess(u32 addr, u32 length, const void* value);
++    bool Traced(u32 first, u32 last) const;
+ 
+     std::shared_ptr<FastMem> fastmem;
+     std::shared_ptr<std::array<u8*, NUM_PAGE_TABLE_ENTRIES>> pageTable;
+@@ -150,6 +171,11 @@ protected:
+     std::vector<Device*> devices;
+     std::map<u32, std::function<u32(u32)>> readHooks;
+     std::map<u32, std::function<void(u32, u32)>> writeHooks;
++    struct WriteTraceRange {
++        u32 lo, hi;
++        WriteTrace trace;
++    };
++    std::vector<WriteTraceRange> writeTraces_;
+     std::vector<u8*> directPages;
+     // WatchPages(): the watcher (null while it watches nothing), its pages,
+     // and what each page's DirectPages() entry is without the watch.
+-- 
+2.25.1
+

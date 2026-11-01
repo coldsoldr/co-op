@@ -43,6 +43,18 @@ fi
 
 echo "== op1emu (clone + build op1emu, ldrdump) =="
 [ -d op1emu ] || git clone --recurse-submodules -j"$JOBS" https://github.com/op1emu/op1emu.git
+# coop's op1emu patches (tools/op1emu-patches/*.patch, e.g. the --watch-writes tracer, docs/emulator.md).
+# Each is applied once: skipped when it no longer applies cleanly because it is already in the tree.
+for p in "$REPO"/tools/op1emu-patches/*.patch; do
+  [ -f "$p" ] || continue
+  if git -C op1emu apply --check "$p" 2>/dev/null; then
+    git -C op1emu apply "$p" && echo "   applied $(basename "$p")"
+  elif git -C op1emu apply --check --reverse "$p" 2>/dev/null; then
+    echo "   $(basename "$p") already applied"
+  else
+    echo "   WARNING: $(basename "$p") does not apply to this op1emu; rebase it"
+  fi
+done
 rm -rf op1emu/build   # fresh configure so the g++-10 choice takes (cmake won't switch compilers in a cache)
 cmake -S op1emu -B op1emu/build -G Ninja -DGLFW_BUILD_WAYLAND=OFF -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_DIR="$LLVM_DIR_PATH" -DCMAKE_C_COMPILER=gcc-10 -DCMAKE_CXX_COMPILER=g++-10

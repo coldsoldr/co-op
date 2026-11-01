@@ -79,3 +79,37 @@ wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw && OTP_TXT=/path/to/otp.txt 
 Requirements it can't self-provide: CMake >= 3.20 (it installs via pip), a C++17 compiler, and passwordless
 `sudo` for apt. If the headless boot fails only with a garbled/kacked screen, the OTP byte order is
 reversed for your dump: rerun `otp_txt_to_bin.py` with `--no-reverse`.
+
+## Who writes X: the write tracer (`--watch-writes`, coop patch, 2026-11-01)
+
+The stock profiling probes fire on block-entry PCs and keep at most 262,144 hits in all, so they
+cannot answer "which code stores into this buffer" over a run long enough to make sound. coop-fw adds a
+write tracer to op1emu instead: `tools/op1emu-patches/0001-write-trace.patch` (applied by
+`setup_op1emu.sh` after the clone; `git apply` it by hand on an existing tree and rebuild
+`build/op1emu`). It is an upstream-shaped change, kept as a patch because op1emu is a third-party tree.
+
+- **Core:** `Emulator::AddWriteTrace(lo, hi, fn)` sees every store that lands in `[lo, hi]` after it
+  reached memory, at every width. The per-address `AddWriteHook` only sees 32-bit stores and
+  *replaces* them (the generic 8/16-bit path never consulted it), which is why the voice bus, written
+  with `W[I0++]`, needed this. Traced pages leave the JIT's direct page table, so generated code calls
+  back for each store; bcore materializes `CpuState::pc` before every memory callback, so the storing
+  packet's PC is exact. Any build, no profiling support needed.
+- **Front end:** `--watch-writes RANGE` (repeatable; `LO-HI`, `LO+LEN` or `LO`, hex). Prints each new
+  writer PC as it appears, then a table at exit: per (range, PC) the store count, **nonzero store
+  count** (whether that writer ever carried signal), widths, address span, first/last value, first/last
+  guest time and first/last nonzero time. `--watch-out FILE` writes the table as TSV. `--watch-log N`
+  with `--watch-from SECONDS` also prints N single stores from that guest time, which gives the order
+  of the writers inside one audio block (pair it with the scratch `runs.py`-style grouping: stores
+  whose PCs lie within 0x100 bytes are one loop).
+- **Wrapper:** `tests/sim/watch_writes.sh LDR SCRIPT RANGE...` copies the pristine NAND, runs headless
+  deterministic, prints the table. A host write (DMA, the LDR loader) shows as width `host` under
+  whatever PC the CPU state holds then (the loader's shows as `0xffa00000`).
+
+Results from the first use (stock R246, chord + drum scenarios) are in `docs/stereo-bus.md` and
+`symbols/l1.sym` / `symbols/sdram.sym`: the active per-voice accumulate, decimator and mix loops, with
+the stock "global pan" loop proven to write zeros.
+
+**Timing facts this corrected:** the audio callback and the per-block bus clears run from **~1.96 s
+guest time**, not ~20 s; the "20 s" was wall-clock boot in deterministic mode (script `wait` is wall
+time, and the guest ran ~1 s of guest time per wall second here). A chord at ~18 s wall landed at
+~21-23 s guest. Trust the trace's guest-time columns over script timing.
