@@ -76,10 +76,21 @@ if [ -f "$REPO/../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr" ]; then
     "$REPO/third_party/kennel/synth_sdk/l1_patches.json" "$KEYHEX" || echo "   (key check could not run; continuing)"
 fi
 
+echo "== plaintext LDR (op1emu's documented input is a decrypted LDR) =="
+# op1emu takes a decrypted OP1_vdk.ldr (op-decryptor2 style). Build one from the stock LDR with the
+# key in otp.bin (page 0xD0), using the arrangement l1_decrypt.py check-key confirmed.
+STOCK_LDR="$REPO/../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr"
+if [ -f "$STOCK_LDR" ]; then
+  python3 "$REPO/tools/l1_decrypt.py" decrypt-ldr "$STOCK_LDR" "$KEYHEX" plaintext.ldr \
+    --swap be --order 0123 --words "<"
+  LDR="$PWD/plaintext.ldr"
+else
+  echo "   stock OP1_vdk.ldr not found; op1emu will need a decrypted LDR you provide"
+  LDR=""
+fi
+
 echo "== boot the stock firmware headless and screenshot =="
-# op1emu reads otp.bin and bootrom from the working dir; the desktop build has the boot ROM compiled in.
-# Pass the encrypted app LDR; op1emu's emulated boot ROM decrypts it with otp.bin.
-LDR="$REPO/../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr"
+# op1emu reads otp.bin and the boot ROM from the working dir (the desktop build has the ROM compiled in).
 cat > boot.txt <<'SCRIPT'
 accel 64 -64 512
 wait-frames 1 300000
@@ -88,9 +99,11 @@ wait 5000
 screenshot boot.ppm
 quit
 SCRIPT
+test -n "$LDR" || { echo "no LDR to boot; provide a decrypted OP1_vdk.ldr"; exit 1; }
 ./op1emu/build/op1emu nand.bin "$LDR" --headless --nand-snapshot --input-script boot.txt || {
-  echo "boot with the encrypted LDR + otp.bin failed; if otp.bin byte order is wrong, try:"
-  echo "  python3 $REPO/tools/otp_txt_to_bin.py $OTP_TXT otp.bin --no-reverse"
+  echo "boot failed. Run it in the foreground to see op1emu's output:"
+  echo "  cd $WORK && ./op1emu/build/op1emu nand.bin plaintext.ldr --headless --nand-snapshot --input-script boot.txt"
+  echo "If the screen is garbled (wrong OTP byte order), rebuild otp.bin with --no-reverse and the plaintext LDR."
   exit 1
 }
 echo "DONE: $WORK/boot.ppm written if the firmware reached a frame."

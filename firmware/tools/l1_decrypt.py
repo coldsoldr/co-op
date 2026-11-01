@@ -244,9 +244,26 @@ def resolve_key(args):
     return [base[int(c)] for c in args.order], args.words
 
 
+def resolve_key_auto(args):
+    """If --patches is given, find the key arrangement that decrypts the known pairs (so the caller
+    need not know the byte order of the key bytes); otherwise use the explicit --swap/--order/--words."""
+    patches = getattr(args, 'patches', None)
+    if not patches:
+        return resolve_key(args)
+    data = open(args.ldr, 'rb').read()
+    units, problems = pairs_from_patches(data, patches)
+    if problems or not units:
+        raise SystemExit('cannot verify the key: ' + ('; '.join(problems) or 'no known pairs'))
+    for _swap, _perm, key in key_arrangements(args.key):
+        for words in ('<', '>'):
+            if check_units(units, key, words):
+                return key, words
+    raise SystemExit('no arrangement of this key decrypts the known pairs (wrong key?)')
+
+
 def cmd_decrypt(args):
     data = open(args.ldr, 'rb').read()
-    key, words = resolve_key(args)
+    key, words = resolve_key_auto(args)
     os.makedirs(args.out, exist_ok=True)
     regions = {}
     for b in callback_blocks(data):
@@ -264,9 +281,29 @@ def cmd_decrypt(args):
         print('{}: {} bytes'.format(path, len(reg)))
 
 
+def cmd_decrypt_ldr(args):
+    """Write a plaintext OP1_vdk.ldr: decrypt every CALLBACK block's payload in place and clear the
+    decryption-callback flag (0x0400), so a loader treats the blocks as already-plain. This matches
+    op-decryptor2's output contract and is what op1emu expects as its LDR argument. Structure, other
+    flags and ordering are preserved (ldr_dump round-trips byte-exact)."""
+    import ldr_dump
+    data = open(args.ldr, 'rb').read()
+    key, words = resolve_key_auto(args)
+    dxes = ldr_dump.parse(data)
+    n = 0
+    for dxe in dxes:
+        for b in dxe:
+            if b['flags'] & 0x0400 and not b['flags'] & 0x1000 and b['payload']:
+                b['payload'] = decrypt_payload(b['payload'], key, words)
+                b['flags'] &= ~0x0400            # clear CALLBACK: the payload is now plaintext
+                n += 1
+    open(args.out, 'wb').write(ldr_dump.serialize(dxes))
+    print('{}: {} CALLBACK blocks decrypted and flagged plain'.format(args.out, n))
+
+
 def cmd_compare(args):
     data = open(args.ldr, 'rb').read()
-    key, words = resolve_key(args)
+    key, words = resolve_key_auto(args)
     dump = open(args.dump, 'rb').read()
     mismatches = covered = 0
     for b in callback_blocks(data):
@@ -299,11 +336,11 @@ def main():
     p.add_argument('patches')
     p.add_argument('key')
     p.set_defaults(fn=cmd_check_key)
-    for name, fn in (('decrypt', cmd_decrypt), ('compare', cmd_compare)):
+    for name, fn in (('decrypt', cmd_decrypt), ('decrypt-ldr', cmd_decrypt_ldr), ('compare', cmd_compare)):
         p = sub.add_parser(name)
         p.add_argument('ldr')
         p.add_argument('key')
-        if name == 'decrypt':
+        if name in ('decrypt', 'decrypt-ldr'):
             p.add_argument('out')
         else:
             p.add_argument('dump')
@@ -311,6 +348,7 @@ def main():
         p.add_argument('--swap', choices=('le', 'be'), default='le', help='byte order of the key words')
         p.add_argument('--order', default='0123', help='key word permutation (from check-key)')
         p.add_argument('--words', choices=('<', '>'), default='<', help='byte order inside an 8-byte unit')
+        p.add_argument('--patches', help='l1_patches.json: auto-pick the key arrangement that decrypts the known pairs')
         p.set_defaults(fn=fn)
     args = ap.parse_args()
     args.fn(args)

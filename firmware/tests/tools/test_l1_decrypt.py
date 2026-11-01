@@ -97,3 +97,41 @@ class TestKeyRecovery(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestDecryptLdr(unittest.TestCase):
+    """decrypt-ldr: a CALLBACK block's payload is decrypted in place and its flag cleared."""
+    def _synthetic_ldr_with_callback(self, plaintext, key):
+        import struct as _s
+        from functools import reduce
+        SIG = 0xAD
+        enc = L.encrypt_payload(plaintext, key)  # payload stored encrypted, like a real CALLBACK block
+
+        def hdr(flags, target, count, arg):
+            code = (SIG << 24) | flags | 6
+            h = bytearray(_s.pack('<IIII', code, target, count, arg))
+            h[2] = reduce(lambda a, b: a ^ b, h)
+            return bytes(h)
+        body = bytearray()
+        body += hdr(0x0400, 0xffa00000, len(enc), 0) + enc   # CALLBACK block
+        body += hdr(0x8000, 0xffa00000, 0, 0)                # FINAL
+        return bytes(hdr(0x4000, 0xffa00000, 0, len(body)) + body)
+
+    def test_decrypt_ldr_clears_flag_and_decrypts(self):
+        import tempfile, os as _os, types
+        key = [0x11111111, 0x22222222, 0x33333333, 0x44444444]
+        plaintext = bytes(range(48))  # two 24-byte chunks
+        ldr = self._synthetic_ldr_with_callback(plaintext, key)
+        with tempfile.TemporaryDirectory() as td:
+            inp = _os.path.join(td, 'in.ldr'); out = _os.path.join(td, 'out.ldr')
+            open(inp, 'wb').write(ldr)
+            keyhex = struct.pack('<4I', *key).hex()
+            args = types.SimpleNamespace(ldr=inp, key=keyhex, out=out,
+                                         swap='le', order='0123', words='<', patches=None)
+            L.cmd_decrypt_ldr(args)
+            import ldr_dump
+            dxes = ldr_dump.parse(open(out, 'rb').read())
+            cb = [b for d in dxes for b in d if b['target'] == 0xffa00000 and b['payload']]
+            self.assertEqual(len(cb), 1)
+            self.assertEqual(cb[0]['flags'] & 0x0400, 0)        # CALLBACK cleared
+            self.assertEqual(cb[0]['payload'], plaintext)       # decrypted in place
