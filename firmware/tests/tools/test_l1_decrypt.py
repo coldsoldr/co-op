@@ -135,3 +135,29 @@ class TestDecryptLdr(unittest.TestCase):
             self.assertEqual(len(cb), 1)
             self.assertEqual(cb[0]['flags'] & 0x0400, 0)        # CALLBACK cleared
             self.assertEqual(cb[0]['payload'], plaintext)       # decrypted in place
+
+
+class TestEncryptLdrRoundTrip(unittest.TestCase):
+    """decrypt-ldr then encrypt-ldr round-trips a synthetic LDR with an L1 CALLBACK block."""
+    def test_round_trip(self):
+        import tempfile, os as _os, types, struct as _s
+        from functools import reduce
+        key = [0xdeadbeef, 0x01020304, 0x0a0b0c0d, 0x11223344]
+        plaintext = bytes((i * 7) & 0xff for i in range(72))  # 3 chunks of 24
+        enc = L.encrypt_payload(plaintext, key)
+        SIG = 0xAD
+        def hdr(flags, target, count, arg):
+            code = (SIG << 24) | flags | 6
+            h = bytearray(_s.pack('<IIII', code, target, count, arg)); h[2] = reduce(lambda a, b: a ^ b, h); return bytes(h)
+        body = bytearray()
+        body += hdr(0x0400, 0xffa00000, len(enc), 0) + enc    # L1 CALLBACK block (encrypted)
+        body += hdr(0x8000, 0xffa00000, 0, 0)
+        ldr = bytes(hdr(0x4000, 0xffa00000, 0, len(body)) + body)
+        with tempfile.TemporaryDirectory() as td:
+            a = _os.path.join(td, 'a.ldr'); b = _os.path.join(td, 'b.ldr'); c = _os.path.join(td, 'c.ldr')
+            open(a, 'wb').write(ldr)
+            keyhex = _s.pack('<4I', *key).hex()
+            args = types.SimpleNamespace(key=keyhex, swap='le', order='0123', words='<', patches=None)
+            L.cmd_decrypt_ldr(types.SimpleNamespace(ldr=a, out=b, **vars(args)))
+            L.cmd_encrypt_ldr(types.SimpleNamespace(ldr=b, out=c, **vars(args)))
+            self.assertEqual(open(a, 'rb').read(), open(c, 'rb').read())  # byte-exact round trip

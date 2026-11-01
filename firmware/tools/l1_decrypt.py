@@ -301,6 +301,28 @@ def cmd_decrypt_ldr(args):
     print('{}: {} CALLBACK blocks decrypted and flagged plain'.format(args.out, n))
 
 
+def cmd_encrypt_ldr(args):
+    """The inverse of decrypt-ldr: re-encrypt the L1 blocks and restore their CALLBACK flag, so an
+    LDR with modified (plaintext) L1 becomes a device-loadable image the boot ROM will decrypt. Every
+    block targeting L1 (0xff800000..0xffbfffff) that is currently plain is XTEA-encrypted (bytes 0-7
+    of every 24) and flagged CALLBACK. Used to deploy an L1 change to the device; the emulator takes
+    the plaintext LDR directly and needs no re-encryption."""
+    import ldr_dump
+    data = open(args.ldr, 'rb').read()
+    key, words = resolve_key_auto(args)
+    dxes = ldr_dump.parse(data)
+    n = 0
+    for dxe in dxes:
+        for b in dxe:
+            in_l1 = 0xff800000 <= b['target'] < 0xffc00000
+            if in_l1 and not b['flags'] & 0x0400 and not b['flags'] & 0x1000 and b['payload']:
+                b['payload'] = encrypt_payload(b['payload'], key, words)
+                b['flags'] |= 0x0400             # restore CALLBACK: the ROM decrypts it at load
+                n += 1
+    open(args.out, 'wb').write(ldr_dump.serialize(dxes))
+    print('{}: {} L1 blocks re-encrypted and flagged CALLBACK'.format(args.out, n))
+
+
 def cmd_compare(args):
     data = open(args.ldr, 'rb').read()
     key, words = resolve_key_auto(args)
@@ -336,11 +358,11 @@ def main():
     p.add_argument('patches')
     p.add_argument('key')
     p.set_defaults(fn=cmd_check_key)
-    for name, fn in (('decrypt', cmd_decrypt), ('decrypt-ldr', cmd_decrypt_ldr), ('compare', cmd_compare)):
+    for name, fn in (('decrypt', cmd_decrypt), ('decrypt-ldr', cmd_decrypt_ldr), ('encrypt-ldr', cmd_encrypt_ldr), ('compare', cmd_compare)):
         p = sub.add_parser(name)
         p.add_argument('ldr')
         p.add_argument('key')
-        if name in ('decrypt', 'decrypt-ldr'):
+        if name in ('decrypt', 'decrypt-ldr', 'encrypt-ldr'):
             p.add_argument('out')
         else:
             p.add_argument('dump')
