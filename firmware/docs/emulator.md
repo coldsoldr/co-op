@@ -1,5 +1,15 @@
 # op1emu: the emulator as coop-fw's test harness
 
+> **CONFIRMED WORKING (2026-11-01).** op1emu boots our decrypted OP-1 R246 firmware headless and
+> reaches the main UI (the tape screen). Full pipeline, no device dump: public OTP key
+> (Tolsi/op1dumps) -> verified with `l1_decrypt.py check-key` against kennel's pairs ->
+> `otp_txt_to_bin.py` otp.bin -> `provision_nand.py` nand.bin from the stock `op1_246.op1` ->
+> `l1_decrypt.py decrypt-ldr` plaintext.ldr -> `op1emu nand.bin plaintext.ldr --headless`. Built with
+> g++-10 + LLVM 15; `tools/setup_op1emu.sh` does it all. Boot to the tape screen ~3 min headless
+> (first boot recreates the tape FAT image; a persisted NAND boots faster). This is the Phase 2 dev
+> loop.
+
+
 [op1emu](https://github.com/op1emu/op1emu) (MIT) is a working BF52x emulator for the OP-1: a JIT CPU
 (its `bcore` and `bfin_sim` submodules), the boot ROM, NAND, OTP, PPI/DMA, SPORT audio, the display,
 and USB/IP. It boots stock R246 to the main screen, desktop or in the browser (WebAssembly). It is
