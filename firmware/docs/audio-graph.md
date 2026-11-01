@@ -15,6 +15,12 @@ callback calls directly (`0xffa036c4`, `0xffa017ec`). So Phase 2 does not have t
 whole core in L1; it can drive the existing SDRAM DSP from its own callback and replace only the
 stages it must (the stereo buses, the master suite), keeping the hot kernels in L1.
 
+> **CORRECTION (pending full synthesis):** `0x01a88028` is NOT the FX dispatcher (it is a level
+> indicator setter; the 3 calls are if/elseif/else gated ~every 20 blocks). The real FX render is a
+> vtable dispatch inside `0xffa00e50` (render = `*(*instance+0x14)`; master buffers L `0xff800d34`,
+> R `0xff800db4`). The table below is kept for the call order but the `0x01a88028` "FX positions"
+> reading is SUPERSEDED. See `symbols/sdram.sym`.
+
 ## Block sequence (top-level calls, in order) [C for the order and addresses]
 
 | Callback site | Target | Region | Role (confirmed / inferred) |
