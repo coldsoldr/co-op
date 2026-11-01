@@ -59,3 +59,17 @@ decimate busL/busR 88.2 -> 44.1 into the master pair d34/db4 (replacing the glob
 - [ ] C1 L1 takeover of the voice accumulate + pan-mix (the risky step; needs careful op1emu
   verification, like milestone B — confirm buffers carry signal before trusting the insert).
 - [ ] C2 spread control + UI. [ ] C3 stereo engines/FX.
+
+## Drums are pannable too (owner decision, 2026-11-01)
+
+Per-voice panning applies to the **drum kit** as well: each drum voice (up to 12) gets its own pan +
+spread, the same model as synth voices. `coop_voice.h` already sizes `COOP_MAX_VOICES = 12` for this.
+The drum voice path (drum FX position 1, drum voice table `0xff801754`) mirrors the synth takeover:
+intercept the per-drum-voice accumulate, pan each drum voice into the stereo bus. Scheduled after the
+synth stereo bus is proven (C1/C2 on synth first, then the same on drums).
+
+## Stereo through the FX chain
+
+The whole insert/master chain is stereo in / stereo out, with insert FX placed after the per-voice pan,
+so per-voice placement and spread survive the effects. Mono effects are hosted dual-mono. See
+docs/fx-abi.md for the full contract and the 3rd-party porting rules.

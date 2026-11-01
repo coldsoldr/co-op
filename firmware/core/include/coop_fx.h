@@ -11,6 +11,11 @@
  * per-sample read/modify/write. It is transparent when mix == 0 (early return), so the slot can be
  * present but silent, as milestone A's suite was, before any effect is enabled.
  *
+ * STEREO CONTRACT (docs/fx-abi.md): every FX slot is stereo in / stereo out, placed after the
+ * per-voice pan so stereo placement survives the chain. coop FX are stereo-native (this delay runs L
+ * and R independently). Hosted mono effects are run dual-mono (twice, independent per-channel state).
+ * This delay already satisfies the porting rules as a stereo-native effect.
+ *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
 #ifndef COOP_FX_H
