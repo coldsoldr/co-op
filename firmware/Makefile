@@ -24,13 +24,19 @@ BFIN_CXXFLAGS := $(BFIN_CFLAGS) -std=c++17 -fno-exceptions -fno-rtti -fno-thread
 HOST_CXXFLAGS := -O2 -std=c++17 -Wall -Wextra -DOP1_HOST
 HOST_CFLAGS   := -O2 -std=c11 -Wall -Wextra -DOP1_HOST
 
-.PHONY: all host-test core plugins package clean tools-test dumper
+.PHONY: all host-test sim-test core plugins package clean tools-test dumper
 
 all: host-test
 
 # ---- host tests: Python tool tests + C/C++ unit tests under tests/host ----
 host-test: tools-test
 	@$(MAKE) -C tests/host HOST_CXX="$(HOST_CXX)" HOST_CC="$(HOST_CC)" HOST_CXXFLAGS="$(HOST_CXXFLAGS)" HOST_CFLAGS="$(HOST_CFLAGS)"
+
+# ---- sim test: verify the device (Blackfin) DSP codegen against the int64 reference ----
+# Needs the bfin-elf toolchain + simulator (bfin-elf-run); confirms coop_mul_fr / the biquad's
+# hardware-MAC path is bit-identical to the portable reference the host tests validate.
+sim-test:
+	BFIN_BIN="$(BFIN_BIN)" bash tests/sim/run_fr_check.sh
 
 tools-test:
 	$(PYTHON) -m unittest discover -s tests/tools -p 'test_*.py' -v

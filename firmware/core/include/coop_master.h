@@ -56,13 +56,21 @@ static inline int32_t coop_comp_sample(coop_comp_state *st, int32_t x, int32_t t
 /* ---- biquad EQ (transposed direct form II, per channel) ---- */
 typedef struct { int32_t s1, s2; } coop_biquad_state;
 
+/* coef (Q COOP_EQ_FRAC) * sample (Q31) -> Q31, as int64 (coef can exceed 1, so the product can
+ * exceed full-scale before the state sums settle). The fractional MAC gives (coef*x) >> 31; shifting
+ * back up by 31-COOP_EQ_FRAC restores the COOP_EQ_FRAC scaling. |coef| must stay < 2^(31-FRAC) = 8. */
+static inline int64_t coop_eq_prod(int32_t coef, int32_t x)
+{
+    return (int64_t)coop_mul_fr(coef, x) << (31 - COOP_EQ_FRAC);
+}
+
 static inline int32_t coop_biquad_sample(coop_biquad_state *st, int32_t x,
                                          int32_t b0, int32_t b1, int32_t b2, int32_t a1, int32_t a2)
 {
-    int64_t y = ((int64_t)b0 * x >> COOP_EQ_FRAC) + st->s1;
+    int64_t y = coop_eq_prod(b0, x) + st->s1;
     int32_t yo = coop_sat32(y);
-    st->s1 = (int32_t)(((int64_t)b1 * x - (int64_t)a1 * yo) >> COOP_EQ_FRAC) + st->s2;
-    st->s2 = (int32_t)(((int64_t)b2 * x - (int64_t)a2 * yo) >> COOP_EQ_FRAC);
+    st->s1 = (int32_t)(coop_eq_prod(b1, x) - coop_eq_prod(a1, yo) + st->s2);
+    st->s2 = (int32_t)(coop_eq_prod(b2, x) - coop_eq_prod(a2, yo));
     return yo;
 }
 

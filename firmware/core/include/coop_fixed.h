@@ -36,19 +36,36 @@ static inline int32_t coop_sat32(int64_t v)
     return v > 2147483647LL ? 2147483647 : (v < -2147483648LL ? (int32_t)-2147483648LL : (int32_t)v);
 }
 
-/* Q31 multiply of two int32 (rounded, saturated). 0x7fffffff ~= 1.0. */
+/* ---- 1.31 fractional multiply: the hot-path primitive ----
+ * coop_mul_fr(a,b) = (a*b) >> 31 for two Q31 operands, truncated toward -inf, saturated (only
+ * (-1)*(-1) overflows, to +0x7fffffff). On the Blackfin it is the hardware fractional MAC
+ * (__builtin_bfin_mult_fr1x32x32: ~6 instructions, no call), which is why the DSP uses it instead of
+ * a 64-bit multiply. The host build uses a bit-identical int64 reference so the host tests validate
+ * exactly what runs on the device. Verified against the reference on the bfin simulator
+ * (tests/sim/fr_check). */
+static inline int32_t coop_mul_fr(int32_t a, int32_t b)
+{
+#ifdef __bfin__
+    return __builtin_bfin_mult_fr1x32x32(a, b);
+#else
+    int64_t r = ((int64_t)a * (int64_t)b) >> 31;        /* arithmetic (floor), like the MAC >>> */
+    return r > 2147483647LL ? 2147483647 : (int32_t)r;  /* only INT_MIN*INT_MIN reaches +2^31 */
+#endif
+}
+
+/* Q31 multiply of two int32 (truncated, saturated). 0x7fffffff ~= 1.0. */
 static inline int32_t coop_mul_q31(int32_t a, int32_t b)
 {
-    int64_t p = ((int64_t)a * (int64_t)b + (1LL << 30)) >> 31;
-    return coop_sat32(p);
+    return coop_mul_fr(a, b);
 }
 
 /* multiply a Q31 sample by a Q(frac) gain given as int32 with `frac` fractional bits (so gain can be
- * > 1.0 without overflowing the operand). */
+ * > 1.0 without overflowing the operand). Uses the fractional MAC and rescales by the 31-frac extra
+ * fractional bits; `frac` must be in [1,31]. The low 31-frac bits of the result are zero (negligible
+ * at these levels); gain magnitude must stay < 2^(31-frac) (e.g. < 2048x for frac=20). */
 static inline int32_t coop_mul_qn(int32_t sample, int32_t gain, int frac)
 {
-    int64_t p = ((int64_t)sample * (int64_t)gain + ((int64_t)1 << (frac - 1))) >> frac;
-    return coop_sat32(p);
+    return coop_sat32((int64_t)coop_mul_fr(sample, gain) << (31 - frac));
 }
 
 static inline int32_t coop_add32(int32_t a, int32_t b)

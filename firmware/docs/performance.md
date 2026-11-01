@@ -47,11 +47,45 @@ callback entry, `--deterministic`):
 | Peak cost / block | 33,827 cycles = **5.8% of the 580,499-cycle budget** |
 
 Under the 0.75 ceiling with room. But 5.8% is high for a transparent pass (copy in/out + env follower
-+ bypass biquad on 64x2 samples): the biquad and Q31 multiplies use int64 math, which GCC lowers to
-libgcc 64-bit multiplies (~50-100 cycles each) instead of the Blackfin's native fractional MAC. **Before
-enabling the full suite under load, rewrite the biquad and Q31 mul to 32-bit fractional MAC** (as the
-te-op1-cfw DSP ports do), for an order-of-magnitude cut. The peak may also include a cold-cache first
-block; steady-state is likely lower.
++ bypass biquad on 64x2 samples): the biquad and Q31 multiplies used int64 math, which GCC lowered to
+libgcc 64-bit multiplies (a call plus ~50-100 cycles each) instead of the Blackfin's native fractional
+MAC. **Done (see next section):** the biquad and Q31 mul were rewritten to the hardware fractional MAC.
+
+## Fractional-MAC rewrite of the DSP primitives, 2026-11-01
+
+`coop_fixed.h`'s `coop_mul_q31`/`coop_mul_qn` and `coop_master.h`'s biquad were moved off int64
+multiplies onto the Blackfin 1.31 fractional MAC (`__builtin_bfin_mult_fr1x32x32`, `coop_mul_fr`). The
+host build keeps a bit-identical int64 reference, so the host tests still validate exactly what runs on
+the device. `coop_mul_qn` and the biquad rescale the MAC result by the extra fractional bits
+(coefficients stay Q28, `|coef| < 8`).
+
+Codegen (bfin-elf-g++ -O2 -mcpu=bf524):
+
+| Function | Before | After |
+|---|---|---|
+| `coop_mul_q31` | 35 instr + libgcc call | 7 instr, no call |
+| `coop_biquad_sample` | 128 instr + 5 libgcc calls | 86 instr, no calls |
+
+Verified bit-exact on the Blackfin simulator (`make sim-test`, `tests/sim/fr_check.cc`): 200,049
+multiply vectors with 0 mismatches vs the int64 reference, biquad max difference 0 LSB over 100,000
+samples, and `(-1)*(-1)` saturates to `0x7fffffff`.
+
+Effect on the transparent master suite (same op1emu method, pristine NAND per run):
+
+| Metric | int64 | MAC | 
+|---|---|---|
+| Suite peak / block | 33,827 (5.8%) | **18,546 (3.2%)** |
+| Whole coop callback, idle | 62,718 (10.8%) | 47,387 (8.2%) |
+| Whole coop callback, chord | 95,366 (16.4%) | 80,044 (13.8%) |
+| Net added over stock, idle | +20,770 (+3.6%) | **+5,439 (+0.9%)** |
+| Net added over stock, chord | +21,081 (+3.6%) | **+5,759 (+1.0%)** |
+
+The suite's own cost dropped 45%, and the coop callback's overhead over stock fell from ~3.6% to ~1%
+of budget. The suite cost is load-independent (fixed 64-sample loop). The remaining ~18.5k cycles are
+the block copy in/out, the compressor envelope follower, and the (still transparent) comp/EQ math;
+processing the master pair in place would trim the copy further if ever needed. Headroom is now very
+large for the FX, stereo-bus and LFO milestones. (The compressor's one per-sample divide, taken only
+above threshold, is the next int64/libgcc item to replace with a reciprocal when real params land.)
 
 ## Baseline: stock callback vs. coop callback, 2026-11-01
 
