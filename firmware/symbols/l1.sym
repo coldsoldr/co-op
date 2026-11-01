@@ -34,3 +34,21 @@
 0xffa02798  l1_voice_loop_caller    C  calls l1_voice_loop_body
 0x0191264c  fw_voice_process        I  SDRAM helper called from the voice loop (render or envelope path)
 0xff8013c4  d_adsr                  I  per-slot ADSR scratch (voice loop reads it)
+
+# --- audio buffer bank + master stage (synthesized from 3 RE passes, 2026-11-01) ---
+0xffa00e50  l1_master_stage         C  the mixer + EQ + comp + drive + per-track pan-mix stage (recursive node renderer); downmixes to codec + meter; THE master-suite seam
+0xffa0143a  l1_master_downmix_read  C  where 0xffa00e50 reads e34/f34 for the int16 downmix; master-suite in-place insert goes just before here
+0xffa04280  l1_master_eq_biquad     C  EQ biquad continuation; writes e34 (0xffa0442c) / f34 (0xffa04628) in place
+0x019d91ea  fw_eq_coeff_build       C  SDRAM: builds EQ coeffs 0xff801b50 from d_eq 0xff8017cc (replace/stop if replacing EQ)
+0xff800e34  d_master_L              C  MASTER LEFT, 64 x int32 (Q31), planar (confirmed by push args)
+0xff800f34  d_master_R              C  MASTER RIGHT, 64 x int32 (Q31), 0x100 after L
+0xff800d34  d_eq_state_L            C  EQ biquad history L (NOT a master buffer; earlier mislabel)
+0xff800db4  d_eq_state_R            C  EQ biquad history R
+0xff800bb4  d_voice_bus_mono        C  mono voice-accumulate bus, 88.2 kHz, 128 x int16 (voice loop writes it; also read for metering/scope)
+0xff800770  d_codec_tx              C  SPORT0 TX DMA buffer (int16 interleaved, 64 frames, ping-pong 0xff800970); the DAC/speaker output
+0xff800b74  d_codec_tx_live         C  cached pointer to the live TX half (SPORT ISR 0xffa004fe)
+0xff801b50  d_eq_coeffs             C  master EQ coefficients (built by fw_eq_coeff_build)
+0xff8018b4  d_comp_drive_gains      C  comp/drive gains region (near d_comp_drive 0xff80189c; float vec 0x01ab333c via loader 0x01a29d30)
+0x019e193c  fw_usb_in_resampler     C  SDRAM: USB audio input resampler (reads ring 0x01aadb60)
+0x01915608  fw_usb_audio_stream     C  SDRAM: bidir USB audio stream, reads/writes e34/f34 by state
+0xff800370  d_sport_rx_desc         C  SPORT0 RX DMA descriptor base (0x0191ab40 sets up SPORT DMA)

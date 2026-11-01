@@ -15,7 +15,49 @@ callback calls directly (`0xffa036c4`, `0xffa017ec`). So Phase 2 does not have t
 whole core in L1; it can drive the existing SDRAM DSP from its own callback and replace only the
 stages it must (the stereo buses, the master suite), keeping the hot kernels in L1.
 
-> **CORRECTION (pending full synthesis):** `0x01a88028` is NOT the FX dispatcher (it is a level
+## Corrected model (three RE passes, 2026-11-01) — source of truth
+
+The entire instrument / mixer / FX / decimation / master DSP is in **L1**. The only plain-SDRAM
+functions in the audio path are the USB-ring I/O and the EQ-coefficient builder. The audio graph:
+
+1. **Voice loop `0xffa009a0` (L1):** renders 6 synth voices (engine `render` writes int16 at 88.2 kHz
+   to `0xff80113c`), applies per-voice LFO + envelope + gain, and **sums to a mono 88.2 kHz bus at
+   `0xff800bb4`** (128 x int16). Drums go through the same renderer via `0xffa005d4`.
+2. **Master stage `0xffa00e50` (L1, recursive node renderer):** decimates the mono bus 88.2 -> 44.1
+   (FIR, on the summed bus), runs the per-position FX (object/vtable dispatch: render = `*(*instance
+   + 0x14)`), **pan-mixes each mono track into the stereo master pair**, runs the master EQ (biquad,
+   continuation `0xffa04280`, writes `e34`/`f34` in place) + comp/drive, and **downmixes to the codec
+   + meter** (the int16 read loop starts at `0xffa0143a`). Reached at `0xffa02116` / `0xffa02db2`.
+3. **Master pair (final): `0xff800e34` (L) / `0xff800f34` (R), 64 x int32 (Q31), planar.** Sinks take
+   the top 16 bits.
+4. **Two sinks, both fed from the master signal computed in `0xffa00e50`:**
+   - **Codec / speaker:** SPORT0 TX DMA buffer `0xff800770`/`0xff800970` (int16 interleaved, ping-pong;
+     SPORT ISR `0xffa004fe`). The downmix inside `0xffa00e50` feeds this.
+   - **USB:** `l1v_push_lr` (`0x019e1b3c`, SDRAM) reads `e34`/`f34` and interleaves into the USB ring
+     `0x01aaeb60`. Called at the callback tail `0xffa04a04` with R0=`e34`, R1=`f34`.
+5. Tape/track audio mixes in **before** the master (`0xffa036c4`, fed by tape streaming `0x01a8e340`),
+   so the master pair is post-track-mix.
+
+### What this means for the three milestones
+
+- **The DSP is L1, so these are L1 modifications, not SDRAM trampolines.** We can do them: the L1
+  decrypt/re-encrypt round-trip is byte-exact (`l1_decrypt.py encrypt-ldr`), and the emulator runs the
+  plaintext LDR directly (patch L1 in the plaintext, no re-encrypt for testing).
+- **Master bus suite (item 11):** insert a stereo comp -> drive -> EQ pass on the master pair
+  `e34`/`f34` **inside `0xffa00e50`, just before the downmix read `0xffa0143a`** (or own the stage).
+  This is the ONLY point before the codec/USB split, so it affects **both** outputs. **Do NOT trampoline
+  the push `0x019e1b3c` — it is USB-only and would desync the speaker.**
+- **Stereo instrument bus (item 2):** stock "stereo" is mono bus + pan into `e34`/`f34`. True stereo
+  synths need coop's callback to carry stereo per-bus buffers (region A/B) and stereo FX, then sum to
+  `e34`/`f34` — a larger reimplementation around `0xffa00e50`.
+- **Two FX slots (item 3):** the FX render is the vtable dispatch inside `0xffa00e50`; a second stock FX
+  is a second `render = *(*instance2 + 0x14)` call on the same bus buffer, with instance2 given its own
+  state/scratch in region B (`0x02800000`). An L1 insert.
+
+`0x01a88028` is NOT FX (it sets a 0..5 level indicator); the callback's three calls to it are a UI
+level bucket gated ~every 20 blocks. The block table below is kept for call order only.
+
+> **Earlier note (superseded by the model above):** `0x01a88028` is NOT the FX dispatcher (it is a level
 > indicator setter; the 3 calls are if/elseif/else gated ~every 20 blocks). The real FX render is a
 > vtable dispatch inside `0xffa00e50` (render = `*(*instance+0x14)`; master buffers L `0xff800d34`,
 > R `0xff800db4`). The table below is kept for the call order but the `0x01a88028` "FX positions"

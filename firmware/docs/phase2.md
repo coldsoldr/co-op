@@ -30,14 +30,26 @@ python tools/l1_decrypt.py decrypt-ldr coop.ldr <KEYHEX> coop_plaintext.ldr \
 # boot in op1emu from its source root (see docs/emulator.md), screenshot to verify
 ```
 
-## Next milestones (plan)
+## Next milestones (revised after the 3-pass RE, 2026-11-01)
 
-2. Own mixer graph with stock engines via an adapter; stereo instrument buses (start master L=R).
-3. Stereo tape (Phase 3).
-4. Master bus suite (comp -> drive -> EQ) before the master push `l1v_push_lr` (`0x019e1b3c`),
-   fed by the current master stage `0xffa017ec`.
-5. LFO x2.
-6. FX x2: wrap the per-position FX call (`0x01a88028`, run 3x/block) to run FX1 then FX2.
+The audio DSP is all in L1 (`docs/audio-graph.md`), so these are L1 edits, not SDRAM trampolines.
+That is fine: the L1 decrypt/re-encrypt round-trip is byte-exact (`l1_decrypt.py encrypt-ldr`), and the
+emulator runs the plaintext LDR directly (patch L1 in the plaintext; re-encrypt only for the device).
+Each milestone is measured against the 0.75-block ceiling (`docs/performance.md`).
 
-A reader for the measurement words (`g_*`) is the next small step, so milestone 1's cycle figures can
-be read on screen or via an op1emu memory probe.
+**Recommended order (sequential, not parallel — all three touch the L1 master stage `0xffa00e50`):**
+
+A. **Master bus suite (item 11) FIRST.** Insert a stereo comp -> drive -> EQ pass on the master pair
+   `0xff800e34`/`0xff800f34` (64 x int32 Q31) inside `0xffa00e50`, just before the downmix read at
+   `0xffa0143a`. This is the only point before the codec/USB split, so it affects both outputs. It is
+   a bounded L1 insert, the DSP is fully host-testable, and it is self-contained. **Not** the push
+   `0x019e1b3c` (USB-only). Proves the L1-modification dev loop.
+B. **Two FX slots (item 3).** After slot 1's stock render inside `0xffa00e50`, call the render
+   primitive again for a second stock effect (`render = *(*instance2 + 0x14)`) on the same bus, with
+   instance2's own state/scratch in region B `0x02800000`. An L1 insert near the FX dispatch.
+C. **Stereo instrument bus (item 2).** The larger one: coop carries stereo per-bus buffers and stereo
+   FX, summing to `e34`/`f34`. Likely a partial takeover of `0xffa00e50`.
+
+Then LFO x2 and stereo tape (Phase 3).
+
+A reader for the measurement words (`g_*`) is still a useful small step (on-screen or op1emu probe).
