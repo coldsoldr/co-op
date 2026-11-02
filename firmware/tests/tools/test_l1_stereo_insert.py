@@ -34,7 +34,7 @@ class Encodings(unittest.TestCase):
 
     def test_layout_fits_and_is_contiguous(self):
         tr = si.layout(si.TRAMP_BASE, {'synth': 1, 'drum': 2, 'mix': 3, 'noteon': 4})
-        self.assertEqual([a for _, a, _ in tr], [0xffa0bfb4, 0xffa0bfc0, 0xffa0bfcc, 0xffa0bfdc])
+        self.assertEqual([a for _, a, _ in tr], [0xffa0bfb4, 0xffa0bfc0, 0xffa0bfcc, 0xffa0bfdc])   # noteon last, without --tape-stereo
         self.assertEqual(sum(len(b) for _, _, b in tr), 52)
 
     def test_site_patches_keep_length_and_kept_instructions(self):
@@ -56,7 +56,7 @@ class Encodings(unittest.TestCase):
 
 class TapeStereo(unittest.TestCase):
     THUNKS = {"synth": 1, "drum": 2, "mix": 3, "noteon": 4, "tape_rec": 0x02c01768, "tape_gains": 0x02c017be,
-              "tape_io": 0x02c02838, "tape_mount": 0x02c025a8}
+              "tape_io": 0x02c02838, "tape_mount": 0x02c025a8, "seam": 0x02c01900, "seam_fill": 0x02c01a00}
 
     def test_tramp_plain(self):
         # P2.L = 0x1234; P2.H = 0x2c0; JUMP (P2); NOP  (bfin-elf-as)
@@ -64,13 +64,14 @@ class TapeStereo(unittest.TestCase):
 
     def test_layout_with_tape_fills_the_free_range_exactly(self):
         tr = si.layout(si.TRAMP_BASE, self.THUNKS, tape=True)
-        self.assertEqual([n for n, _, _ in tr], ["synth", "drum", "mix", "noteon", "tape_rec", "tape_gains"])
+        self.assertEqual([n for n, _, _ in tr], ["synth", "drum", "mix", "tape_rec", "tape_gains", "seam"])   # the L1 note-on hook gives way
         self.assertEqual(tr[-1][1] + len(tr[-1][2]), si.TRAMP_END)
         self.assertEqual(si.layout(si.TRAMP_BASE, self.THUNKS)[-1][0], "noteon")   # default: no tape
 
     def test_tape_patches(self):
         tr = si.layout(si.TRAMP_BASE, self.THUNKS, tape=True)
         t = dict((n, a) for n, a, _ in tr)
+        si.thunks_global.update(self.THUNKS)
         p = dict((a, (s, n)) for a, s, n in si.tape_patches(tr))
         for a, (s, n) in p.items():
             self.assertEqual(len(s), len(n), hex(a))
@@ -88,7 +89,9 @@ class TapeStereo(unittest.TestCase):
             self.assertEqual(p[site], (call24(site, 0x01a54710), call24(site, si.SDRAM_TRAMP_AT + 16)))
         for site in si.TAPE_MOUNT_CALLERS:
             self.assertEqual(p[site], (call24(site, 0x01996f38), call24(site, si.SDRAM_TRAMP_AT + 32)))
-        self.assertEqual(len(p), 2 + 1 + 4 + 5)
+        self.assertEqual(p[si.SEAM_SITE], (bytes.fromhex("0ae17cef4ae1b401"), call24(si.SEAM_SITE, t["seam"]) + bytes.fromhex("00000000")))
+        self.assertEqual(p[si.SEAM_FILL_SITE], (bytes.fromhex("09e1844249e1a501"), si.imm_pair_bytes(1, 0x02c01a00)))
+        self.assertEqual(len(p), 2 + 1 + 2 + 4 + 5)
 
 
 def synthetic_ldr(l1_bytes_at):

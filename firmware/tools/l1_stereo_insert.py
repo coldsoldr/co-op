@@ -76,6 +76,10 @@ TAPE_IO_STEP = 0x01a54710                                          # tape_cache_
 TAPE_IO_CALLERS = (0x019f0a24, 0x019f0be2)                           # tape_c::service(0) in the main loop, service(1) at shutdown
 TAPE_MOUNT = 0x01996f38                                              # tape_image_mount_and_index
 TAPE_MOUNT_CALLERS = (0x0199758e, 0x019f0354)
+SEAM_SITE = 0xffa0706e                                               # P2.L = 0xef7c; P2.H = 0x1b4 before the seam loop (hook B)
+SEAM_STOCK = bytes.fromhex("0ae17cef" "4ae1b401")
+SEAM_FILL_SITE = 0xffa073b8                                          # P1 = 0x01a54284 (the stock seam fill) -> coop_seam_fill
+SEAM_FILL_STOCK = bytes.fromhex("09e18442" "49e1a501")
 TAPE_BYTE_PATCHES = [                                             # (address, stock, new): lanes 4 -> 8, gR at +0x10
     (0xffa0705a, bytes.fromhex("2468"), bytes.fromhex("4468")),   # seam loop LC1: P4 = 4 -> 8
     (0xffa07106, bytes.fromhex("2268"), bytes.fromhex("4268")),   # main mix LC1: P2 = 4 -> 8
@@ -128,9 +132,12 @@ def tramp_noteon(thunk):
 def layout(tramp_at, thunks, tape=False):
     """(name, address, bytes) for the trampolines packed from tramp_at."""
     parts = [('synth', tramp_synth(thunks['synth'])), ('drum', tramp_drum(thunks['drum'])),
-             ('mix', tramp_mix(thunks['mix'])), ('noteon', tramp_noteon(thunks['noteon']))]
+             ('mix', tramp_mix(thunks['mix']))]
     if tape:
-        parts += [('tape_rec', tramp_plain(thunks['tape_rec'])), ('tape_gains', tramp_plain(thunks['tape_gains']))]
+        parts += [('tape_rec', tramp_plain(thunks['tape_rec'])), ('tape_gains', tramp_plain(thunks['tape_gains'])),
+                  ('seam', tramp_plain(thunks['seam']))]
+    else:
+        parts.append(('noteon', tramp_noteon(thunks['noteon'])))
     out, a = [], tramp_at
     for name, b in parts:
         out.append((name, a, b))
@@ -146,11 +153,13 @@ def site_patches(tramps):
     synth_new = SYNTH_STOCK[2:6] + call24(SYNTH_CALL_AT, t['synth'])
     drum_new = DRUM_STOCK[2:8] + call24(DRUM_CALL_AT, t['drum'])
     mix_new = call24(MIX_SITE, t['mix']) + jump_s(MIX_SITE + 4, MIX_RESUME)
-    noteon_new = NOTEON_STOCK[2:6] + call24(NOTEON_CALL_AT, t['noteon'])
     assert len(synth_new) == len(SYNTH_STOCK) and len(drum_new) == len(DRUM_STOCK) and len(mix_new) == len(MIX_STOCK)
-    assert len(noteon_new) == len(NOTEON_STOCK)
-    return [(SYNTH_SITE, SYNTH_STOCK, synth_new), (DRUM_SITE, DRUM_STOCK, drum_new), (MIX_SITE, MIX_STOCK, mix_new),
-            (NOTEON_SITE, NOTEON_STOCK, noteon_new)]
+    out = [(SYNTH_SITE, SYNTH_STOCK, synth_new), (DRUM_SITE, DRUM_STOCK, drum_new), (MIX_SITE, MIX_STOCK, mix_new)]
+    if 'noteon' in t:
+        noteon_new = NOTEON_STOCK[2:6] + call24(NOTEON_CALL_AT, t['noteon'])
+        assert len(noteon_new) == len(NOTEON_STOCK)
+        out.append((NOTEON_SITE, NOTEON_STOCK, noteon_new))
+    return out
 
 
 def patch_at(dxe, address, stock, new):
@@ -177,12 +186,17 @@ def patch_at(dxe, address, stock, new):
     raise SystemExit('{:#x} not found in a loaded block'.format(address))
 
 
+thunks_global = {}
+
+
 def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
     """[(address, stock, new)] for the stereo tape: record CALL sites, the gains hook, the lane constants, and the
     SDRAM callers of tape_cache_io_step / tape_image_mount_and_index retargeted at region-C trampolines 1 and 2."""
     t = {name: a for name, a, _ in tramps}
     out = [(site, call24(site, TAPE_REC_FN), call24(site, t['tape_rec'])) for site in TAPE_REC_SITES]
     out.append((TAPE_GAINS_SITE, TAPE_GAINS_STOCK, call24(TAPE_GAINS_SITE, t['tape_gains']) + bytes.fromhex('00000000')))
+    out.append((SEAM_SITE, SEAM_STOCK, call24(SEAM_SITE, t['seam']) + bytes.fromhex('00000000')))
+    out.append((SEAM_FILL_SITE, SEAM_FILL_STOCK, imm_pair_bytes(1, thunks_global['seam_fill'])))
     out += [(site, call24(site, TAPE_IO_STEP), call24(site, sdram_tramp_at + 16)) for site in TAPE_IO_CALLERS]
     out += [(site, call24(site, TAPE_MOUNT), call24(site, sdram_tramp_at + 32)) for site in TAPE_MOUNT_CALLERS]
     return out + list(TAPE_BYTE_PATCHES)
@@ -202,6 +216,8 @@ def thunk_addresses(elf):
             'core_noteon': symbol_address(syms, 'coop_core_noteon_thunk')[0],
             'tape_rec': symbol_address(syms, 'coop_tape_rec_thunk')[0],
             'tape_gains': symbol_address(syms, 'coop_tape_gains_thunk')[0],
+            'seam': symbol_address(syms, 'coop_seam_prologue_thunk')[0],
+            'seam_fill': symbol_address(syms, 'coop_seam_fill')[0],
             'tape_io': symbol_address(syms, 'coop_tape_io_step')[0],
             'tape_mount': symbol_address(syms, 'coop_tape_mount_and_index')[0]}
 
@@ -213,6 +229,7 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
         raise SystemExit('expected a single-DXE LDR')
     dxe = dxes[0]
     tramps = layout(tramp_at, thunks, tape)
+    thunks_global.update(thunks)
     lines = []
     patches = site_patches(tramps) + core_noteon_patches()
     if tape:

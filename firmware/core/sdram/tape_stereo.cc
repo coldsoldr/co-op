@@ -30,6 +30,7 @@
 #define REC_RING        ((volatile uint32_t *)0xff8029f4u)         /* record input ring (history + 64 new) */
 #define REC_RING_WORDS  41                                         /* 0xff8029f4..0xff802a98 */
 #define TRACKS 4
+#define SEAM_VALID      ((volatile uint16_t *)0x018c17f0u)       /* seam valid mask: stock bits 0-3 per track */
 
 /* --- controls (.data: inject_app --set-word) --- */
 __attribute__((section(".data"))) volatile uint32_t g_coop_tape_stereo = 1;     /* 0 = single stock call on lane t (mono lanes 0-3, stock layout) */
@@ -63,11 +64,32 @@ static void copy_words(volatile uint32_t *dst, const volatile uint32_t *src, int
     for (int i = 0; i < n; i++) dst[i] = src[i];
 }
 
+#define CACHE_HEAD_P    (*(uint8_t *volatile *)0x01b4ef3cu)
+#define NODE_DATA_OFF   0x10
+#define NODE_NEXT_OFF   0x14
+#define LANE_BYTES      0x10000
+static inline uint32_t coop_cli(void) { uint32_t m; __asm__ __volatile__("cli %0;" : "=d"(m) : : "memory"); return m; }
+static inline void coop_sti(uint32_t m) { __asm__ __volatile__("sti %0;" : : "d"(m) : "memory"); }
+/* Move every cache node data pointer by `delta` bytes (the stock code then sees lanes 4-7 as tracks 0-3). */
+static void coop_nodes_shift(int32_t delta)
+{
+    uint8_t *head = CACHE_HEAD_P;
+    for (uint8_t *n = head; n; n = *(uint8_t **)(n + NODE_NEXT_OFF)) *(int32_t *)(n + NODE_DATA_OFF) += delta;
+}
+/* A track word outside 0..3 (a tape.db saved by the first T2 image while the right-lane pass had it at 4-7) trips
+ * the stock assert ReadInterface.cpp:471; clamp it wherever coop runs early. */
+extern "C" void coop_tape_clamp_track(void)
+{
+    int32_t t = *TAPE_TRACK;
+    if (t < 0 || t >= TRACKS) *TAPE_TRACK = t & 3;
+}
+
 /* Replaces the two `CALL 0xffa06334` sites (0xffa0217a synth, 0xffa02dca drums) via coop_tape_rec_thunk. */
 extern "C" void coop_tape_record(const int16_t *mono)
 {
     uint32_t t0 = coop_cycles();
     g_tape_rec_calls++;
+    coop_tape_clamp_track();
     g_tape_mono_ptr = (uint32_t)(uintptr_t)mono;
     if (!g_coop_tape_stereo) {                 /* stock behaviour: one mono pass on lane t */
         STOCK_RECORD(mono);
@@ -94,21 +116,25 @@ extern "C" void coop_tape_record(const int16_t *mono)
 
     copy_words(g_rec_snap, REC_STATE, REC_STATE_WORDS);
     copy_words(g_tape_snap, TAPE_STATE, TAPE_STATE_WORDS);
-    /* pass 1: left lane */
+    /* pass 1: left lane = the stock pass on track t */
     copy_words(REC_RING, g_ringL, REC_RING_WORDS);
-    *TAPE_TRACK = 2 * track;
     STOCK_RECORD(g_inL);
     copy_words(g_ringL, REC_RING, REC_RING_WORDS);
     copy_words(g_rec_after, REC_STATE, REC_STATE_WORDS);
     copy_words(g_tape_after, TAPE_STATE, TAPE_STATE_WORDS);
-    /* pass 2: right lane, from the same starting state */
+    /* pass 2: right lane, from the same starting state. The track word 0xff802964 is NOT touched (the UI and
+     * tape_db_save read it from the main thread and the device showed they can see our window): the stock pass
+     * addresses node.data + (t << 16), so every node data pointer is moved up by four lanes for the pass, with
+     * interrupts masked so nothing else sees the moved pointers. The dirty bit it sets is bit t, as pass 1. */
     copy_words(REC_STATE, g_rec_snap, REC_STATE_WORDS);
     copy_words(TAPE_STATE, g_tape_snap, TAPE_STATE_WORDS);
     copy_words(REC_RING, g_ringR, REC_RING_WORDS);
-    *TAPE_TRACK = 2 * track + 1;
+    uint32_t imask = coop_cli();
+    coop_nodes_shift(TRACKS * LANE_BYTES);
     STOCK_RECORD(g_inR);
+    coop_nodes_shift(-(int32_t)(TRACKS * LANE_BYTES));
+    coop_sti(imask);
     copy_words(g_ringR, REC_RING, REC_RING_WORDS);
-    *TAPE_TRACK = track;
     for (int i = 0; i < REC_STATE_WORDS; i++)   /* both passes must end in the same record state */
         if (REC_STATE[i] != g_rec_after[i]) { g_tape_state_mismatch++; break; }
     for (int i = 0; i < TAPE_STATE_WORDS; i++)
@@ -134,8 +160,8 @@ extern "C" void coop_tape_gains(uint32_t sp)
     for (int i = 0; i < 16; i++) g_lane_gains[i] = 0;
     for (int t = 0; t < TRACKS; t++) {
         if (stereo) {
-            g_lane_gains[2 * t] = g[t];            /* L lane: left gain only */
-            g_lane_gains[8 + 2 * t + 1] = g[4 + t];/* R lane: right gain only */
+            g_lane_gains[t] = g[t];                /* L lane t: left gain only */
+            g_lane_gains[8 + TRACKS + t] = g[4 + t];/* R lane 4 + t: right gain only */
         } else {
             g_lane_gains[t] = g[t];                /* stock lanes 0-3, lanes 4-7 silent */
             g_lane_gains[8 + t] = g[4 + t];
@@ -146,7 +172,7 @@ extern "C" void coop_tape_gains(uint32_t sp)
         for (int t = 0; t < TRACKS; t++) {
             int16_t m;
             if (stereo) {
-                int16_t a = g_lane_meters[2 * t], b = g_lane_meters[2 * t + 1];
+                int16_t a = g_lane_meters[t], b = g_lane_meters[TRACKS + t];
                 m = a > b ? a : b;
             } else {
                 m = g_lane_meters[t];
@@ -160,4 +186,43 @@ extern "C" void coop_tape_gains(uint32_t sp)
     }
     *slot_g = g_lane_gains;
     *slot_m = g_lane_meters;
+    *SEAM_VALID &= 0x000f;                     /* the fill decision (== 0xf) sees the stock nibble; hook B mirrors it */
+}
+
+/* ---- loop seams for 8 lanes (docs/tape-stereo.md section 9) ----
+ * The stock seam fill (0x1a54284) computes, per track t, the crossfade over the loop point from the chunk
+ * data at node.data + (t << 16) into the 4 staging buffers 0x01b4ef7c[t]; the seam loop in the tick mixes
+ * staging[lane] for every lane whose bit is set in W[0x018c17f0]. coop_seam_fill runs the stock fill twice:
+ * once as is (L lanes 0-3 -> stock buffers) and once with every node data pointer moved up by 4 lanes and the
+ * stock pointer table pointed at coop buffers (R lanes 4-7). coop_seam_prologue (hook B, right before the seam
+ * loop) hands the loop an 8-entry pointer table and mirrors the valid nibble into bits 4-7. */
+#define STOCK_SEAM_FILL ((void (*)(void))0x01a54284u)
+#define SEAM_TABLE      ((uint32_t *)0x01b4ef7cu)        /* 4 staging buffer pointers */
+#define SEAM_SAMPLES    594
+static int16_t g_seam_r[TRACKS][SEAM_SAMPLES + 2];
+static uint32_t g_seam_table8[8];
+volatile uint32_t g_tape_seam_fills, g_tape_seam_prologues;
+
+extern "C" void coop_seam_fill(void)
+{
+    g_tape_seam_fills++;
+    STOCK_SEAM_FILL();                                   /* L lanes into the stock buffers */
+    uint32_t saved[TRACKS];
+    uint32_t imask = coop_cli();
+    for (int t = 0; t < TRACKS; t++) { saved[t] = SEAM_TABLE[t]; SEAM_TABLE[t] = (uint32_t)(uintptr_t)g_seam_r[t]; }
+    coop_nodes_shift(TRACKS * LANE_BYTES);
+    STOCK_SEAM_FILL();                                   /* R lanes (as tracks 0-3) into the coop buffers */
+    coop_nodes_shift(-(int32_t)(TRACKS * LANE_BYTES));
+    for (int t = 0; t < TRACKS; t++) SEAM_TABLE[t] = saved[t];
+    coop_sti(imask);
+}
+
+/* Hook B (site 0xffa0706e, the P2 = 0x01b4ef7c before the seam loop): returns the table P2 gets. */
+extern "C" uint32_t *coop_seam_prologue(void)
+{
+    g_tape_seam_prologues++;
+    for (int t = 0; t < TRACKS; t++) { g_seam_table8[t] = SEAM_TABLE[t]; g_seam_table8[TRACKS + t] = (uint32_t)(uintptr_t)g_seam_r[t]; }
+    uint16_t m = *SEAM_VALID & 0x000f;
+    *SEAM_VALID = (uint16_t)(m | (m << 4));
+    return g_seam_table8;
 }

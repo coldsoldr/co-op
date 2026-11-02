@@ -113,4 +113,32 @@ spread chord on track 1, STOP, power off/on, play: the take is there and stereo 
 meters move; disk mode shows `tape/track_1..4.aif` as stereo files that open in a DAW; no dropouts
 while recording with 4 tracks playing (the 128 KiB flush per main-loop pass is the thing to watch).
 
+**Result (2026-11-02, owner): FAIL, device recovered by the T3 package.** Flashed; boots, the first boot
+rebuilt the tape; synth auditions in stereo on the synth page but **mono on the tape page** (the tape page
+monitors the instrument through the tape path; coop does not stereo-ise that path yet); **recording to tape
+is stereo**; **lift took one side** (expected at T2: lift/drop/erase still copy the stock mono range);
+**switching to track 2 crashed** with `ReadInterface.cpp:471 ch >= 0 && ch < kTapeNumTracks` and the device
+then asserted at every boot. Cause [C]: the T2 record hook set the track word `0xff802964` to 4-7 for its
+right-lane pass; the tape screen draw (`0x1a5c984 -> 0x1a29a74`, which asserts) and `tape_db_save` read
+that word from the main thread and on the device they can see that window (the emulator never did), so a
+track of 4-7 was drawn and saved to `tape.db`, which then asserted on every boot. Fix (T3 package): the
+right-lane pass no longer touches the track word (node data pointers moved by four lanes for the pass,
+interrupts masked), and a saved track >= 4 is clamped at mount, at every audio block and at every main-loop
+I/O step before the tape screen can read it.
+
+## Phase 3 milestone T3: stereo tape fixes — device test (pending, 2026-11-02)
+
+`build/pkg/op1_246_coop_t3_stereo_tape.op1` (copy in Downloads). Recovery from the T2 assert loop: flash it;
+the clamp runs before the tape screen reads the track. If the device still asserts at boot, the fallback is
+the bootloader factory reset (tape and user presets lost) and a fresh flash.
+
+Changes since T2: lane order L 0-3 / R 4-7 (same files on disk); right-lane pass through node pointers (no
+track word writes); held saves while recording (one 128 KiB flush per second per chunk instead of one per
+main-loop pass: 12 flushes instead of 418 in the emulator take); the loop-seam crossfade for eight lanes
+(**untested**: the emulator scenarios set no loop; if loops misbehave or crash, report it and avoid loops);
+track clamp. Still mono: lift/drop (one side), the instrument monitor on the tape page.
+
+**What to record:** boots without the assert; record stereo, power cycle, play (stereo); a loop (in/out)
+around a stereo take plays without a click or crash; lift still takes one side (known).
+
 Result: _not yet flashed_.

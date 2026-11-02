@@ -291,7 +291,38 @@ Device: `build/pkg/op1_246_coop_t2_stereo_tape.op1` (also in Downloads) — **fl
 tape on the first boot** (recordings lost; back up with co-op first). Pending the owner's result in
 `docs/device-tests.md`.
 
-### 8.2 T3 next
+## 9. T3 (2026-11-02): lane order, right-lane pass without the track word, held saves, eight-lane seams
+
+- **Device bug from T2.** The owner flashed the T2 package: stereo recording worked, but switching to track 2
+  asserted `ReadInterface.cpp:471 ch >= 0 && ch < kTapeNumTracks` and the device then asserted at every
+  boot. The T2 record hook wrote the lane index 4-7 into the track word `0xff802964` for its second pass;
+  the tape screen draw (`0x1a5c984` -> `0x1a29a74`, the function that asserts and returns a per-track byte
+  from `0xff8010a0[ch]`) and `tape_db_save` read the word from the main thread and on the device they saw
+  it, so the bad track was drawn and saved. Lesson: a word the UI thread reads must never carry a transient
+  value from the audio path, whatever the emulator shows. Fix: `coop_tape_clamp_track` (mount, every audio
+  block, every I/O step) and the pass below.
+- **Lane order** is now L lanes 0-3, R lanes 4-7 (`t`, `4 + t`): the stock four-track code (seam fill,
+  record extent, dirty bits, meters) then sees the L lanes as its tracks. The file layout is unchanged.
+- **Right-lane pass.** `coop_tape_record` runs the stock pass once as is (lane t) and once with every node
+  data pointer moved up by `4 * 0x10000` under `cli`, so the stock code addresses lane `4 + t` while the
+  track word stays `t`; both passes set dirty bit t and the I/O step flushes the pair on bit t or `4 + t`.
+- **Held saves** (kennel kn_tape.c rule): while recording, a node saved less than 1 s ago keeps its flush
+  request and the step goes on to loads; the take end flushes everything. Emulator take: 12 flushes instead
+  of 418, held 596 times, 0 errors.
+- **Loop seams for eight lanes.** `coop_seam_fill` (the L1 `P1 = 0x01a54284` at `0xffa073b8` now loads its
+  address) runs the stock fill twice, the second time with the node pointers moved and the stock staging
+  table pointed at coop buffers (R lanes); hook B (`0xffa0706e`, the `P2 = 0x01b4ef7c` before the seam
+  loop, through `coop_seam_prologue_thunk`) hands the loop an 8-entry pointer table and mirrors the
+  valid nibble `W[0x018c17f0]` into bits 4-7; hook A clears bits 4-7 each block so the stock `== 0xf`
+  fill decision keeps working. The L1 note-on trampoline (which never fired) gave its 12 bytes to hook B.
+  **Untested**: the deterministic scenarios set no loop (the stock fill returns at once when loop out <=
+  loop in); a loop scenario needs the loop keys in the op1emu key map.
+- Verified (op1emu): full-spread take in-session and after a power cycle plays with width 0.27 (live 0.27);
+  state-mismatch counters 0; spread-0 envelopes equal stock within the boot-timeline shift.
+- Still open: lift/drop/erase/split/join copy one lane; the instrument monitor on the tape page is mono;
+  tape.db reset on rebuild; first-boot notice; album key inert; a loop test.
+
+### 8.2 T3 next (as written before T3)
 
 Held saves while recording (kennel `kn_tape.c`); the loop seam path for 8 lanes (`0xffa070b8`, the
 SDRAM seam fill `0x1a54284`, 4 x 594-sample staging buffers); lift/drop/erase/split/join for lane

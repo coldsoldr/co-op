@@ -78,9 +78,12 @@ static void stereo_init(void)
 }
 
 /* Called by CoopAudioCb before the stock callback: a block starts. */
+extern "C" void coop_tape_clamp_track(void);           /* tape_stereo.cc: a saved track word >= 4 trips a stock assert */
+
 extern "C" void coop_stereo_block_start(void)
 {
     if (!g_inited) stereo_init();
+    coop_tape_clamp_track();
     if (g_coop_force_stereo_out) *OUTPUT_MODE_B = 1;
     g_hb_ramp = *HB_RAMP_W;
     g_rendered_prev = g_rendered_cur;

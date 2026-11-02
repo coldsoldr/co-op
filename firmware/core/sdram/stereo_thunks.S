@@ -283,3 +283,64 @@ _coop_tape_gains_thunk:
     P1.L = 0x17f0;
     P1.H = 0x18c;
     RTS;
+
+/* Hook B of the stereo tape: replaces the 8-byte `P2.L = 0xef7c; P2.H = 0x1b4` at 0xffa0706e, right before the
+ * seam mix loop. Inline code: everything but P2 is preserved; P2 = the 8-entry staging table coop_seam_prologue
+ * returns. */
+    .global _coop_seam_prologue_thunk
+    .type   _coop_seam_prologue_thunk, STT_FUNC
+_coop_seam_prologue_thunk:
+    [--SP] = RETS;
+    [--SP] = ASTAT;
+    [--SP] = (R7:0, P5:0);
+    [--SP] = I0;
+    [--SP] = I1;
+    [--SP] = I2;
+    [--SP] = I3;
+    [--SP] = B0;
+    [--SP] = L0;
+    [--SP] = M0;
+    [--SP] = LC0;
+    [--SP] = LT0;
+    [--SP] = LB0;
+    [--SP] = LC1;
+    [--SP] = LT1;
+    [--SP] = LB1;
+    R3 = A0.W;
+    [--SP] = R3;
+    R3 = A0.X;
+    [--SP] = R3;
+    R3 = A1.W;
+    [--SP] = R3;
+    R3 = A1.X;
+    [--SP] = R3;
+    SP += -12;
+    CALL _coop_seam_prologue;
+    SP += 12;
+    P2 = R0;
+    [SP + 76] = P2;                  /* the saved P2 slot: 68 B of DAG/loop/acc pushes above SP, then P0, P1, P2 of (R7:0, P5:0) */
+    R3 = [SP++];
+    A1.X = R3;
+    R3 = [SP++];
+    A1.W = R3;
+    R3 = [SP++];
+    A0.X = R3;
+    R3 = [SP++];
+    A0.W = R3;
+    LB1 = [SP++];
+    LT1 = [SP++];
+    LC1 = [SP++];
+    LB0 = [SP++];
+    LT0 = [SP++];
+    LC0 = [SP++];
+    M0 = [SP++];
+    L0 = [SP++];
+    B0 = [SP++];
+    I3 = [SP++];
+    I2 = [SP++];
+    I1 = [SP++];
+    I0 = [SP++];
+    (R7:0, P5:0) = [SP++];
+    ASTAT = [SP++];
+    RETS = [SP++];
+    RTS;
