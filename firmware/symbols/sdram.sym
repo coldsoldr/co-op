@@ -72,3 +72,5 @@
 0x0107d034  d_tape_cache_nodes      C  24 cache nodes, stride 0x28: B+0 valid, B+2 flush req, W+4 dirty mask (bit/track), W+6 chunk, +0xc start sample, +0x10 data (track t at +t*0x10000), +0x14 next, +0x18 prev
 0x018c17d8  d_tape_rec_state        C  +0 recording byte, +4 record resampler phase, +0x14 record node, +0x18 W seam mask, +0x1c B seam valid
 0x018c1810  d_tape_track_base       C  int32[4] file offsets of the track data in tape_c.raw (filled at mount; kennel TRACK_BASE)
+0x01a54710  tape_cache_io_step      C  per node: load (4 x yaffs_read of 0x10000 at TRACK_BASE[t] + chunk<<16 into data + t*0x10000; count R4 = 4 at 0x1a5476a) or flush (dirty bits t = 0..3, R1 = 4 at 0x1a547e8, yaffs_write at 0x1a54842); T2 patches the counts to 8 and the base table
+0x01a53f7c  tape_record_extent      C  (start, end, lane_mask): marks W[0x018c17f2] |= mask when the recorded range touches a loop seam zone (+-297) and clears W[0x018c17f0] bits (seam stale); called at the end of each record pass

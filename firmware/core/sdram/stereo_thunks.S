@@ -166,3 +166,120 @@ _coop_mix_thunk:
     RETS = [SP++];
     RTS;
     .size _coop_mix_thunk, .-_coop_mix_thunk
+
+/* ---- stereo tape (tape_stereo.cc) ---- */
+
+/* Stands in for the two `CALL 0xffa06334` (l1_tape_record) sites: entered by JUMP from the tape_rec
+ * trampoline with RETS = the stock return and R0 = the mono input pointer. The stock function is a normal
+ * callee (R7:4, P5:3 saved); coop_tape_record calls it twice and honours the ABI, so only the DAG and
+ * accumulator state that compiled code may keep live across a CALL is saved here as in the mix thunk. */
+    .global _coop_tape_rec_thunk
+    .type   _coop_tape_rec_thunk, STT_FUNC
+_coop_tape_rec_thunk:
+    [--SP] = RETS;
+    [--SP] = I0;
+    [--SP] = I1;
+    [--SP] = I2;
+    [--SP] = I3;
+    [--SP] = B0;
+    [--SP] = L0;
+    [--SP] = M0;
+    [--SP] = LC1;
+    [--SP] = LT1;
+    [--SP] = LB1;
+    R3 = A0.W;
+    [--SP] = R3;
+    R3 = A0.X;
+    [--SP] = R3;
+    R3 = A1.W;
+    [--SP] = R3;
+    R3 = A1.X;
+    [--SP] = R3;
+    SP += -12;
+    CALL _coop_tape_record;
+    SP += 12;
+    R3 = [SP++];
+    A1.X = R3;
+    R3 = [SP++];
+    A1.W = R3;
+    R3 = [SP++];
+    A0.X = R3;
+    R3 = [SP++];
+    A0.W = R3;
+    LB1 = [SP++];
+    LT1 = [SP++];
+    LC1 = [SP++];
+    M0 = [SP++];
+    L0 = [SP++];
+    B0 = [SP++];
+    I3 = [SP++];
+    I2 = [SP++];
+    I1 = [SP++];
+    I0 = [SP++];
+    RETS = [SP++];
+    RTS;
+
+/* Entered by JUMP from the tape_gains trampoline, which the tick reaches through a CALL that replaces the
+ * 8-byte `P1.L = 0x17f0; P1.H = 0x18c` at 0xffa06de0, right after the stock pan law. Inline code: every
+ * register but P1 is preserved, including ASTAT. coop_tape_gains gets the SP the tick had (its frame
+ * holds the gain and meter pointers) and leaves P1 = 0x018c17f0 as the displaced instructions would. */
+    .global _coop_tape_gains_thunk
+    .type   _coop_tape_gains_thunk, STT_FUNC
+_coop_tape_gains_thunk:
+    [--SP] = RETS;
+    [--SP] = ASTAT;
+    [--SP] = (R7:0, P5:0);
+    [--SP] = I0;
+    [--SP] = I1;
+    [--SP] = I2;
+    [--SP] = I3;
+    [--SP] = B0;
+    [--SP] = L0;
+    [--SP] = M0;
+    [--SP] = LC0;
+    [--SP] = LT0;
+    [--SP] = LB0;
+    [--SP] = LC1;
+    [--SP] = LT1;
+    [--SP] = LB1;
+    R3 = A0.W;
+    [--SP] = R3;
+    R3 = A0.X;
+    [--SP] = R3;
+    R3 = A1.W;
+    [--SP] = R3;
+    R3 = A1.X;
+    [--SP] = R3;
+    R0 = SP;
+    R1 = 132 (X);                    /* back to the SP at entry: RETS 4 + ASTAT 4 + (R7:0,P5:0) 56 + I0-I3 16 + B0/L0/M0 12 + LC/LT/LB x2 24 + A0/A1 16 */
+    R0 = R0 + R1;
+    SP += -12;
+    CALL _coop_tape_gains;
+    SP += 12;
+    R3 = [SP++];
+    A1.X = R3;
+    R3 = [SP++];
+    A1.W = R3;
+    R3 = [SP++];
+    A0.X = R3;
+    R3 = [SP++];
+    A0.W = R3;
+    LB1 = [SP++];
+    LT1 = [SP++];
+    LC1 = [SP++];
+    LB0 = [SP++];
+    LT0 = [SP++];
+    LC0 = [SP++];
+    M0 = [SP++];
+    L0 = [SP++];
+    B0 = [SP++];
+    I3 = [SP++];
+    I2 = [SP++];
+    I1 = [SP++];
+    I0 = [SP++];
+    (R7:0, P5:0) = [SP++];
+    ASTAT = [SP++];
+    RETS = [SP++];
+    P1.L = 0x17f0;
+    P1.H = 0x18c;
+    RTS;

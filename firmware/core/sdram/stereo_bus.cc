@@ -51,6 +51,7 @@ static uint32_t g_hb_ramp;                             /* stock ramp word as of 
 static uint32_t g_side_tail;                           /* blocks left to keep decimating after the last panned voice */
 static int g_side_dirty;                               /* dL/dR hold data that must be cleared next block */
 static int g_inited;
+static int g_side_this_block;                          /* loop B added decimated difference buses this block */
 
 /* liveness / perf counters (read from the emulator or a probe) */
 volatile uint32_t g_stereo_blocks, g_stereo_hooks, g_stereo_mixes, g_stereo_side_blocks, g_stereo_note_ons;
@@ -167,13 +168,24 @@ extern "C" void coop_mix_entry(uint32_t r0, uint32_t r1, uint32_t r2)
         coop_dc_block(&g_dcR, g_decR, g_decR, c, COOP_MBLK);
         coop_mix_b(MBUS_L, MBUS_R, MONO_BUS64, g_decL, g_decR, gain, ramp, step);
         g_stereo_side_blocks++;
+        g_side_this_block = 1;
         if (--g_side_tail == 0) {                      /* the rings are flushed; drop the DC tail */
             coop_hb_init(&g_hbL); coop_hb_init(&g_hbR);
             coop_dc_init(&g_dcL); coop_dc_init(&g_dcR);
         }
     } else {
         coop_mix_b_mono(MBUS_L, MBUS_R, MONO_BUS64, gain, ramp, step);
+        g_side_this_block = 0;
     }
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_stereo_mix_cycles_max) g_stereo_mix_cycles_max = dt;
+}
+
+/* For the stereo tape record tap (tape_stereo.cc), which runs after loop B in the same block: the
+ * decimated difference buses (M units) if the mix added them this block, else 0 (returns 0). */
+extern "C" int coop_stereo_side_bufs(const int16_t **l, const int16_t **r)
+{
+    if (!g_side_this_block) return 0;
+    *l = g_decL; *r = g_decR;
+    return 1;
 }

@@ -1,7 +1,8 @@
-# Stereo tape (Phase 3) — traced model and design
+# Stereo tape (Phase 3) — traced model, design and milestone T1
 
-Status 2026-11-02: research done to the point where the design is concrete (section 4); nothing
-implemented yet. The plan of record (owner's plan, "Phase 3: stereo tape") decides the shape:
+Status 2026-11-02: **milestone T1 (stereo record + play in RAM) implemented and verified in op1emu**,
+see section 7. Sections 1-3 are the traced stock engine, section 4 the design as first written
+(interleaved frames); T1 took the lane layout described in section 7 instead. The plan of record (owner's plan, "Phase 3: stereo tape") decides the shape:
 **4 stereo tracks, no album**, a fresh sparse FAT16 image on first boot after a co-op backup prompt,
 `tape.db` schema unchanged, kennel `kn_tapes.c` / `kn_tape.c` reused for the image and the write-back
 cadence. Everything below marked [C] was traced on the stock image in op1emu (write tracer,
@@ -164,3 +165,87 @@ stopped == stock output sample for sample.
   FX return) — matters only for where coop reads M; the difference buses are per block regardless.
 - Emulator facts: the provisioned NAND tape is empty (silence on PLAY); record-then-play works
   deterministically with `det_tape_rec.txt`; wall-time `wait` scripts are not comparable.
+
+## 7. Milestone T1: stereo tracks as lane pairs on the stock engine [C, op1emu]
+
+Implemented 2026-11-02 in `core/sdram/tape_stereo.cc`, two thunks in `stereo_thunks.S`
+(`coop_tape_rec_thunk`, `coop_tape_gains_thunk`) and `tools/l1_stereo_insert.py --tape-stereo`
+(`tools/build_image.sh --tape-stereo`). Emulator only so far: **do not flash a T1 image** (section 7.3).
+
+### 7.1 Layout: 8 mono lanes instead of interleaved frames
+
+Section 4 planned interleaved stereo frames per track-chunk, which needs new L1 loops and a new record
+function. T1 uses the fact that the whole stock engine is parameterised by a *lane index* with a 64 KiB
+stride: node data holds `lanes x 0x10000` bytes, the record function writes lane `W[0xff802964]` at
+`data + (lane << 16) + 2*offset`, the play mix walks lanes with stride `[FP-0x74] = 0x10000`. So a stereo
+track t is the lane pair **2t = L, 2t+1 = R** of an 8-lane node (512 KiB), and the stock code is reused
+with these changes only:
+
+| what | stock | T1 (`l1_stereo_insert.py --tape-stereo`) |
+|---|---|---|
+| node data size, `tape_cache_init` | `BITSET (R0, 18)` at `0x01a54172` (256 KiB) | bit 19 (512 KiB): `904a -> 984a` |
+| play mix lane count | `P2 = 4` at `0xffa07106` | `P2 = 8` (`2268 -> 4268`) |
+| seam mix lane count | `P4 = 4` at `0xffa0705a` | `P4 = 8` (`2468 -> 4468`); the seam path itself is still 4-wide (T3) |
+| right gain of a lane | `W[P0 + 8]` at `0xffa07138`, `W[P1 + 8]` at `0xffa070a6` | `W[P + 0x10]`: the gain table is 8 + 8 words |
+| gain table / meters | stack `gL[4], gR[4]` at `[SP+0x5c]`, 4 meters at `[SP+0x60]` | `coop_tape_gains(sp)` (hook replaces the 8-byte `P1.L/P1.H = 0x018c17f0` at `0xffa06de0` after the pan law) rewrites the two slots: lanes `(gL_t, 0)` / `(0, gR_t)`, an 8-word coop meter array folded into the 4 stock meters one block later |
+| record | `CALL 0xffa06334` at `0xffa0217a` / `0xffa02dca` | `CALL tramp -> coop_tape_rec_thunk -> coop_tape_record(mono)` |
+
+**The mixer's track pan becomes balance**, the stock pan law unchanged.
+
+### 7.2 Record: the stock function twice per block
+
+`coop_tape_record(mono)` builds `L = sat(M + dL)`, `R = sat(M + dR)` from the mono bus the stock call
+passes (`[SP+0x38]` = `0xff800bb4`) and the stereo bus's decimated difference buses for this block
+(`coop_stereo_side_bufs`, valid because the tap runs after loop B; zero when the mix was mono), then
+runs the **unmodified stock `l1_tape_record`** once per channel with the lane index swapped
+(`0xff802964 = 2t`, then `2t+1`, restored to `t` at the end). Between the passes the engine state is put
+back to what it was before pass 1, and after pass 2 it is set to what pass 1 left, so the two passes
+look like one stock pass plus a second lane's data:
+
+- snapshot/restore: `d_tape_rec_state` `0x018c17d8` (8 words) and the tape state words
+  `0xff802960..0xff8029f4` (37 words; position, record position, level words, chunk requests);
+- each channel keeps its own copy of the record input ring `0xff8029f4..0xff802a98` (41 words:
+  18 samples of interpolator history + 64 new), swapped in before and out after its pass;
+- the resampled buffer `0x01b5f8f4` and the node's dirty bits need no handling (rewritten / OR-ed).
+
+Self-checks: `g_tape_state_mismatch` (record state after pass 2 != after pass 1) and
+`g_tape_state_mismatch2` (tape state) stayed 0 over the whole run. Cost: `g_tape_rec_cycles_max`
+12,737 cycles (2.2% of a block; the stock pass is ~5k, the second pass plus 4 x 41-word copies the rest).
+
+Finding on the way: a first version that restored the state only *between* the passes recorded the same
+sample values into both lanes but **not** stock's values, and the spread-0 image played the take back
+one block late; also putting the post-pass-1 state back *after* pass 2 made both lanes bit-identical to
+stock's track (0 of 32,680 samples differ in the traced chunk) and the output identical. The mismatch
+counters never fired in either version, so the difference sat in a word pass 2 touches that the checks
+do not cover (a candidate: the chunk-request words `0xff8029e4/e8`, which `tape_rec_node_lookup`
+rewrites); the fix removes the dependence. Diagnostic lesson recorded in `docs/emulator.md`: compare
+**RAM contents** (record stores) as well as WAVs, and remember that the gains hook keys on the same
+control word (a "stock single pass" probe with the stereo gain layout plays the right lane silent).
+
+### 7.3 Verified (op1emu, `tests/sim/det_tape_rec.txt` and `det_chord.txt`)
+
+| image | result |
+|---|---|
+| `--tape-stereo`, spread 0 (`t1_zero3`) | **sample-identical to stock** over the whole record + play run (4,040,573 frames from 5 s) and over the chord scenario (3,137,942 frames). Both recorded lanes identical to stock's recorded track in RAM. |
+| `--tape-stereo`, spread 32767, `g_coop_force_stereo_out=1` (`t1_full2`, copy `C:\Users\byron\Downloads\t1_full_st.wav`) | live chord L 977 / R 698 / side 218, width 0.27; **playback L 745 / R 532 / side 169, width 0.27** (level x0.76 from the stock tape play gain): the stereo take plays back with the live width and balance. |
+| `g_coop_tape_stereo=0` (8-lane loops, stock single pass, stock gain layout) | identical to stock (the loop/gain patches alone are transparent). |
+
+Not covered yet (and why a T1 image must not be flashed): the **write-back and chunk load still run the
+stock 4-lane loops** (`tape_cache_io_step` `0x1a54710`: `R4 = 4` at `0x1a5476a`, `R1 = 4` at
+`0x1a547e8`, `TRACK_BASE` `0x018c1810[4]`), so on a stock image lane 1 (track 1 R) is saved into the
+`track_2.aif` file and lanes 4-7 are never loaded: the take survives in RAM only, and a device would
+write a stereo take across the mono track files. T2 fixes this.
+
+### 7.4 Next: T2 file layout and image, T3 seams/edits
+
+- **T2.** Loop counts 4 -> 8 in `tape_cache_io_step` and an 8-entry coop base table instead of
+  `0x018c1810` (also referenced by lift `0x1a5485c`, lift-all `0x1a549b8`, erase `0x1a54b08`, mount
+  `0x19970aa`); the mount/index of a coop image with **8 mono AIFC files** (`track_1_L.aif`,
+  `track_1_R.aif`, ... 0xF28000 frames each: a DAW pairs them, co-op pairs them; 243 MB, the album
+  dropped) — or 4 stereo AIFC with an interleave/de-interleave step in the chunk I/O (128 KiB bounce
+  buffer); `tools/tape_image.py` on kennel's `kn_tape_image_meta`; a first-boot rebuild with a
+  `coop_tape` marker. Heap: 24 x 512 KiB = 12 MB of the 16 MB heap 0 (7.2 MB in use today);
+  fallback 16 nodes.
+- **T3.** The seam path (`0xffa070b8` and the SDRAM seam fill `0x1a54284`, 4 x 594-sample staging
+  buffers) for 8 lanes; lift/drop/erase/split/join byte math for lane pairs (`src_ch/dst_ch < 4`
+  asserts in `tape_c.cpp`); stereo meters in the tape UI; the album key inert.

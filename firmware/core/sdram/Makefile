@@ -16,11 +16,11 @@ $(BUILD)/coop_cb.elf: coop_cb.cc coop_cb.ld | $(BUILD)
 # Combined baseline+suite image: m1's whole-callback timer (CoopAudioCb, imm-seam patched)
 # plus the master suite (coop_master_apply, wired by tools/l1_insert.py), one header, region A.
 combined: $(BUILD)/coop_combined.elf
-STEREO_KEEP := -Wl,--undefined=_coop_synth_render_thunk -Wl,--undefined=_coop_drum_render_thunk -Wl,--undefined=_coop_mix_thunk -Wl,--undefined=_coop_synth_noteon_thunk -Wl,--undefined=_coop_core_noteon_thunk
-$(BUILD)/coop_combined.elf: coop_cb.cc master_suite.cc stereo_bus.cc stereo_thunks.S lfo2.cc coop_cb.ld | $(BUILD)
-	$(BFIN_CXX) $(CXXFLAGS) -DCOOP_COMBINED -I../include coop_cb.cc master_suite.cc stereo_bus.cc stereo_thunks.S lfo2.cc $(LDFLAGS) -Wl,--undefined=_coop_master_apply $(STEREO_KEEP) -o $@ -lgcc
+STEREO_KEEP := -Wl,--undefined=_coop_synth_render_thunk -Wl,--undefined=_coop_drum_render_thunk -Wl,--undefined=_coop_mix_thunk -Wl,--undefined=_coop_synth_noteon_thunk -Wl,--undefined=_coop_core_noteon_thunk -Wl,--undefined=_coop_tape_rec_thunk -Wl,--undefined=_coop_tape_gains_thunk
+$(BUILD)/coop_combined.elf: coop_cb.cc master_suite.cc stereo_bus.cc stereo_thunks.S lfo2.cc tape_stereo.cc coop_cb.ld | $(BUILD)
+	$(BFIN_CXX) $(CXXFLAGS) -DCOOP_COMBINED -I../include coop_cb.cc master_suite.cc stereo_bus.cc stereo_thunks.S lfo2.cc tape_stereo.cc $(LDFLAGS) -Wl,--undefined=_coop_master_apply $(STEREO_KEEP) -o $@ -lgcc
 	$(BFIN_BIN)/bfin-elf-size $@
-	$(BFIN_BIN)/bfin-elf-nm $@ | grep -iE "CoopAudioCb|coop_master_apply|coop_.*thunk|coop_.*hook|coop_mix_entry|g_coop_|g_max|g_blocks|g_master|g_fx|g_stereo|lfo2" | sort
+	$(BFIN_BIN)/bfin-elf-nm $@ | grep -iE "CoopAudioCb|coop_master_apply|coop_.*thunk|coop_.*hook|coop_mix_entry|g_coop_|g_max|g_blocks|g_master|g_fx|g_stereo|lfo2|tape" | sort
 $(BUILD):
 	mkdir -p $(BUILD)
 clean:

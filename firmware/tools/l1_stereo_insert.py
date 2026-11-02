@@ -65,6 +65,21 @@ CORE_NOTEON = 0x01967854
 CORE_NOTEON_CALLERS = (0x01a8442c, 0x01a848e4, 0x01a8564e)
 SDRAM_TRAMP_AT = 0x01e00000
 
+# --- stereo tape, milestone T1 (docs/tape-stereo.md section 4; --tape-stereo) ---
+# The stock L1 record function and the tape tick stay; the tick runs its 4-track mix over 8 lanes with a
+# coop gain table, and the record CALL sites go through coop_tape_rec_thunk (two stock passes, L/R lanes).
+TAPE_REC_SITES = (0xffa0217a, 0xffa02dca)                         # CALL 0xffa06334 (synth path, drum path)
+TAPE_REC_FN = 0xffa06334
+TAPE_GAINS_SITE = 0xffa06de0                                      # P1.L = 0x17f0; P1.H = 0x18c (after the pan law)
+TAPE_GAINS_STOCK = bytes.fromhex("09e1f017" "49e18c01")
+TAPE_BYTE_PATCHES = [                                             # (address, stock, new): lanes 4 -> 8, gR at +0x10
+    (0xffa0705a, bytes.fromhex("2468"), bytes.fromhex("4468")),   # seam loop LC1: P4 = 4 -> 8
+    (0xffa07106, bytes.fromhex("2268"), bytes.fromhex("4268")),   # main mix LC1: P2 = 4 -> 8
+    (0xffa07138, bytes.fromhex("00a9"), bytes.fromhex("00aa")),   # R0 = W[P0 + 0x8] (X) -> W[P0 + 0x10]  (gR, main mix)
+    (0xffa070a6, bytes.fromhex("0aa9"), bytes.fromhex("0aaa")),   # R2 = W[P1 + 0x8] (X) -> W[P1 + 0x10]  (gR, seam mix)
+    (0x01a54172, bytes.fromhex("904a"), bytes.fromhex("984a")),   # tape_cache_init: BITSET (R0, 18) -> 19: node data 256 -> 512 KiB
+]
+
 
 def imm_pair_bytes(preg, value):
     """`Px.L = lo; Px.H = hi` for P0..P5 (LDIMMhalf: e108 + reg for .L, e148 + reg for .H)."""
@@ -96,15 +111,22 @@ def tramp_mix(thunk):
     return bytes.fromhex('6701') + imm_pair_bytes(0, thunk) + bytes.fromhex('6000' '2701' '1000')
 
 
+def tramp_plain(thunk):
+    """12-byte trampoline for a site that was already a CALL: P2 = thunk; JUMP (P2); the thunk RTSes."""
+    return imm_pair_bytes(2, thunk) + bytes.fromhex("5200") + bytes.fromhex("0000")
+
+
 def tramp_noteon(thunk):
     # P0 = [P1 + 0x1c]  = c8 ad ;  P2 = thunk ;  JUMP (P2) = 52 00
     return bytes.fromhex('c8ad') + imm_pair_bytes(2, thunk) + bytes.fromhex('5200')
 
 
-def layout(tramp_at, thunks):
+def layout(tramp_at, thunks, tape=False):
     """(name, address, bytes) for the trampolines packed from tramp_at."""
     parts = [('synth', tramp_synth(thunks['synth'])), ('drum', tramp_drum(thunks['drum'])),
              ('mix', tramp_mix(thunks['mix'])), ('noteon', tramp_noteon(thunks['noteon']))]
+    if tape:
+        parts += [('tape_rec', tramp_plain(thunks['tape_rec'])), ('tape_gains', tramp_plain(thunks['tape_gains']))]
     out, a = [], tramp_at
     for name, b in parts:
         out.append((name, a, b))
@@ -151,6 +173,14 @@ def patch_at(dxe, address, stock, new):
     raise SystemExit('{:#x} not found in a loaded block'.format(address))
 
 
+def tape_patches(tramps):
+    """[(address, stock, new)] for the stereo tape: record CALL sites, the gains hook, the lane constants."""
+    t = {name: a for name, a, _ in tramps}
+    out = [(site, call24(site, TAPE_REC_FN), call24(site, t['tape_rec'])) for site in TAPE_REC_SITES]
+    out.append((TAPE_GAINS_SITE, TAPE_GAINS_STOCK, call24(TAPE_GAINS_SITE, t['tape_gains']) + bytes.fromhex('00000000')))
+    return out + list(TAPE_BYTE_PATCHES)
+
+
 def core_noteon_patches(sdram_tramp_at=SDRAM_TRAMP_AT):
     """[(address, stock, new)] retargeting the Core::NoteOn callers at the region-C trampoline."""
     return [(site, call24(site, CORE_NOTEON), call24(site, sdram_tramp_at)) for site in CORE_NOTEON_CALLERS]
@@ -162,18 +192,23 @@ def thunk_addresses(elf):
             'drum': symbol_address(syms, 'coop_drum_render_thunk')[0],
             'mix': symbol_address(syms, 'coop_mix_thunk')[0],
             'noteon': symbol_address(syms, 'coop_synth_noteon_thunk')[0],
-            'core_noteon': symbol_address(syms, 'coop_core_noteon_thunk')[0]}
+            'core_noteon': symbol_address(syms, 'coop_core_noteon_thunk')[0],
+            'tape_rec': symbol_address(syms, 'coop_tape_rec_thunk')[0],
+            'tape_gains': symbol_address(syms, 'coop_tape_gains_thunk')[0]}
 
 
-def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE):
+def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     """The whole operation on LDR bytes -> (new bytes, report lines)."""
     dxes = ldr_dump.parse(ldr_bytes)
     if len(dxes) != 1:
         raise SystemExit('expected a single-DXE LDR')
     dxe = dxes[0]
-    tramps = layout(tramp_at, thunks)
+    tramps = layout(tramp_at, thunks, tape)
     lines = []
-    for address, stock, new in site_patches(tramps) + core_noteon_patches():
+    patches = site_patches(tramps) + core_noteon_patches()
+    if tape:
+        patches += tape_patches(tramps)
+    for address, stock, new in patches:
         patch_at(dxe, address, stock, new)
         lines.append('site {:#x}: {} -> {}'.format(address, stock.hex(), new.hex()))
     blob = b''.join(b for _, _, b in tramps)
@@ -195,13 +230,14 @@ def main():
     ap.add_argument('ldr_out')
     ap.add_argument('--elf', required=True, help='the coop combined ELF (for the thunk addresses)')
     ap.add_argument('--tramp-at', type=lambda s: int(s, 0), default=TRAMP_BASE)
+    ap.add_argument('--tape-stereo', action='store_true', help='also wire the stereo tape (T1): 8 lanes, coop record tap')
     args = ap.parse_args()
     thunks = thunk_addresses(args.elf)
-    out, lines = insert(open(args.ldr_in, 'rb').read(), thunks, args.tramp_at)
+    out, lines = insert(open(args.ldr_in, 'rb').read(), thunks, args.tramp_at, args.tape_stereo)
     open(args.ldr_out, 'wb').write(out)
     for line in lines:
         print(line)
-    print('{}: stereo bus wired'.format(args.ldr_out))
+    print('{}: stereo bus wired{}'.format(args.ldr_out, ' + stereo tape (T1)' if args.tape_stereo else ''))
 
 
 if __name__ == '__main__':

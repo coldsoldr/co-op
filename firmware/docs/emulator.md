@@ -161,3 +161,16 @@ time, and the guest ran ~1 s of guest time per wall second here). A chord at ~18
 - **One-command images.** `tools/build_image.sh OUT.ldr [--set-word NAME=VALUE ...] [--device OUT_enc.ldr]`
   runs the whole pipeline (inject, decrypt with the key read from `otp.bin`, master imm patch, stereo
   insert) and never stores the key.
+
+## Diagnosing a tape/record difference (lesson from milestone T1, 2026-11-02)
+
+When a coop image differs from stock only in the tape playback, compare the **recorded RAM data**, not
+only the WAV: `tests/sim/watch_writes.sh IMG tests/sim/det_tape_rec.txt 0x000e2940+0xc00100` with
+`WATCH_LOG=200000 WATCH_FROM=33.0` logs every record store (`pc=0xffa065de`, node data in heap 0;
+the 24 node blocks are 0x40000 apart on stock and 0x80000 apart with the 8-lane cache), and a short
+Python pass indexes them by `(addr - node_data) >> 1` to compare sample values at the same tape
+positions between two runs. Two traps met on the way: a trace range that ends inside the last node
+looks like a recording hole, and a probe that switches one coop path off through a control word other
+coop code also reads (here the lane gain layout) measures the wrong thing. The per-block tape and record
+state words (`0xff802974`, `0xff80298c`, `0x018c17d8`, `0x018c17ec`) compared identical between the
+runs in that case; the recorded values did not, which is what pointed at the record pass itself.

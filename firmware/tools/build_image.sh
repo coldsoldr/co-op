@@ -8,6 +8,7 @@
 #   --set-word g_coop_spread=32767      image-time controls (inject_app --set-word; see stereo_bus.cc,
 #   --set-word g_coop_master_flags=1    master_suite.cc for the words)
 #   --device OUT_enc.ldr     also re-encrypt the L1 for the device (l1_decrypt encrypt-ldr)
+#   --tape-stereo            also wire the stereo tape (T1, docs/tape-stereo.md): 8-lane cache, coop record tap
 #   ELF=path                 the payload (default build/core/coop_combined.elf)
 #   STOCK_LDR=path           the stock encrypted OP1_vdk.ldr (default ../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr)
 #   OTP_BIN=path             the OTP image whose page 0xD0 holds the XTEA key (default ~/op1emu-work/otp.bin)
@@ -26,10 +27,12 @@ OTP_BIN=${OTP_BIN:-$HOME/op1emu-work/otp.bin}
 PATCHES=$here/third_party/kennel/synth_sdk/l1_patches.json
 setwords=()
 device=""
+tape=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --set-word) setwords+=(--set-word "$2"); shift 2 ;;
     --device) device=$2; shift 2 ;;
+    --tape-stereo) tape=--tape-stereo; shift ;;
     *) echo "unknown argument: $1"; exit 2 ;;
   esac
 done
@@ -49,7 +52,7 @@ python3 -I "$here/tools/inject_app.py" "$STOCK_LDR" "$work/inj.ldr" "$ELF" "${se
 python3 -I "$here/tools/l1_decrypt.py" decrypt-ldr "$work/inj.ldr" "$key" "$work/plain.ldr" --patches "$PATCHES"
 python3 -I "$here/tools/l1_insert.py" "$work/plain.ldr" "$work/master.ldr" \
     --imm-pair-site 0xffa017a4 --imm-stock 0x019d90e8 --fn "$master_fn"
-python3 -I "$here/tools/l1_stereo_insert.py" "$work/master.ldr" "$OUT" --elf "$ELF"
+python3 -I "$here/tools/l1_stereo_insert.py" "$work/master.ldr" "$OUT" --elf "$ELF" $tape
 echo "# $OUT: plaintext coop image (op1emu); payload $ELF; master stage at $master_fn"
 if [ -n "$device" ]; then
   # The key arrangement check-key reports for this key (`--swap le --order 1032 --words "<"`; verified:

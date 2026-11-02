@@ -54,6 +54,38 @@ class Encodings(unittest.TestCase):
         self.assertEqual(n[4:], call24(si.NOTEON_CALL_AT, 0xffa0bfdc))
 
 
+class TapeStereo(unittest.TestCase):
+    THUNKS = {"synth": 1, "drum": 2, "mix": 3, "noteon": 4, "tape_rec": 0x02c01768, "tape_gains": 0x02c017be}
+
+    def test_tramp_plain(self):
+        # P2.L = 0x1234; P2.H = 0x2c0; JUMP (P2); NOP  (bfin-elf-as)
+        self.assertEqual(si.tramp_plain(0x02c01234).hex(), "0ae134124ae1c00252000000")
+
+    def test_layout_with_tape_fills_the_free_range_exactly(self):
+        tr = si.layout(si.TRAMP_BASE, self.THUNKS, tape=True)
+        self.assertEqual([n for n, _, _ in tr], ["synth", "drum", "mix", "noteon", "tape_rec", "tape_gains"])
+        self.assertEqual(tr[-1][1] + len(tr[-1][2]), si.TRAMP_END)
+        self.assertEqual(si.layout(si.TRAMP_BASE, self.THUNKS)[-1][0], "noteon")   # default: no tape
+
+    def test_tape_patches(self):
+        tr = si.layout(si.TRAMP_BASE, self.THUNKS, tape=True)
+        t = dict((n, a) for n, a, _ in tr)
+        p = dict((a, (s, n)) for a, s, n in si.tape_patches(tr))
+        for a, (s, n) in p.items():
+            self.assertEqual(len(s), len(n), hex(a))
+        for site in si.TAPE_REC_SITES:                                       # CALL 0xffa06334 -> CALL tramp_tape_rec
+            self.assertEqual(p[site], (call24(site, 0xffa06334), call24(site, t["tape_rec"])))
+        s, n = p[si.TAPE_GAINS_SITE]                                         # 8 bytes: CALL + two NOPs
+        self.assertEqual(s, bytes.fromhex("09e1f01749e18c01"))
+        self.assertEqual(n, call24(si.TAPE_GAINS_SITE, t["tape_gains"]) + bytes.fromhex("00000000"))
+        self.assertEqual(p[0xffa0705a], (bytes.fromhex("2468"), bytes.fromhex("4468")))   # P4 = 4 -> 8
+        self.assertEqual(p[0xffa07106], (bytes.fromhex("2268"), bytes.fromhex("4268")))   # P2 = 4 -> 8
+        self.assertEqual(p[0xffa07138], (bytes.fromhex("00a9"), bytes.fromhex("00aa")))   # W[P0+8] -> W[P0+0x10]
+        self.assertEqual(p[0xffa070a6], (bytes.fromhex("0aa9"), bytes.fromhex("0aaa")))
+        self.assertEqual(p[0x01a54172], (bytes.fromhex("904a"), bytes.fromhex("984a")))   # BITSET bit 18 -> 19
+        self.assertEqual(len(p), 2 + 1 + 5)
+
+
 def synthetic_ldr(l1_bytes_at):
     """A one-DXE LDR with plain blocks at the given {address: bytes} plus a FINAL block."""
     first = plain_block(0xffa00000, b'')           # an empty FIRST block; serialize() sets its argument
