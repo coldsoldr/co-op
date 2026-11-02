@@ -19,6 +19,7 @@
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
 #include <stdint.h>
+#include "coop_l1.h"
 #include "coop_stereo.h"
 
 #define STOCK_RECORD    ((void (*)(const int16_t *))0xffa06334u)   /* l1_tape_record(mono_in) */
@@ -38,17 +39,38 @@ __attribute__((section(".data"))) volatile uint32_t g_coop_tape_stereo_in = 1;  
 
 /* --- counters --- */
 volatile uint32_t g_tape_rec_calls, g_tape_rec_cycles_max, g_tape_state_mismatch, g_tape_gains_calls;
-volatile uint32_t g_tape_rec_cycles_win;
+volatile uint32_t g_tape_rec_cycles_win, g_tape_rec_cycles_sum_win, g_tape_l1;   /* stats v3; g_tape_l1 = buffers in L1 */
 volatile uint32_t g_tape_rec_side_blocks, g_tape_mono_ptr, g_tape_state_mismatch2, g_tape_mismatch_word;
 
-/* --- state --- */
-static int16_t g_inL[COOP_MBLK], g_inR[COOP_MBLK];
-static uint32_t g_ringL[REC_RING_WORDS], g_ringR[REC_RING_WORDS];
-static uint32_t g_rec_snap[REC_STATE_WORDS], g_tape_snap[TAPE_STATE_WORDS];
-static uint32_t g_rec_after[REC_STATE_WORDS], g_tape_after[TAPE_STATE_WORDS];
-static int g_rings_inited;
-static int16_t g_lane_gains[16];          /* [0..7] = L-side gains per lane, [8..15] = R-side gains per lane */
-static int16_t g_lane_meters[8];
+/* --- state: in the L1 pool (coop_l1.h, T4) when it is there, else these SDRAM copies --- */
+static int16_t s_inL[COOP_MBLK], s_inR[COOP_MBLK];
+static uint32_t s_ringL[REC_RING_WORDS], s_ringR[REC_RING_WORDS];
+static uint32_t s_rec_snap[REC_STATE_WORDS], s_tape_snap[TAPE_STATE_WORDS];
+static uint32_t s_rec_after[REC_STATE_WORDS], s_tape_after[TAPE_STATE_WORDS];
+static int16_t s_lane_gains[16], s_lane_meters[8];
+static int16_t *g_inL = s_inL, *g_inR = s_inR;
+static uint32_t *g_ringL = s_ringL, *g_ringR = s_ringR;
+static uint32_t *g_rec_snap = s_rec_snap, *g_tape_snap = s_tape_snap;
+static uint32_t *g_rec_after = s_rec_after, *g_tape_after = s_tape_after;
+static int g_rings_inited, g_bufs_inited;
+static int16_t *g_lane_gains = s_lane_gains;  /* [0..7] = L-side gains per lane, [8..15] = R-side gains per lane */
+static int16_t *g_lane_meters = s_lane_meters;
+static void tape_bufs_init(void)
+{
+    g_bufs_inited = 1;
+    if (coop_l1_state() != 1) return;
+    g_inL = (int16_t *)coop_l1_or(sizeof s_inL, s_inL);
+    g_inR = (int16_t *)coop_l1_or(sizeof s_inR, s_inR);
+    g_ringL = (uint32_t *)coop_l1_or(sizeof s_ringL, s_ringL);
+    g_ringR = (uint32_t *)coop_l1_or(sizeof s_ringR, s_ringR);
+    g_rec_snap = (uint32_t *)coop_l1_or(sizeof s_rec_snap, s_rec_snap);
+    g_tape_snap = (uint32_t *)coop_l1_or(sizeof s_tape_snap, s_tape_snap);
+    g_rec_after = (uint32_t *)coop_l1_or(sizeof s_rec_after, s_rec_after);
+    g_tape_after = (uint32_t *)coop_l1_or(sizeof s_tape_after, s_tape_after);
+    g_lane_gains = (int16_t *)coop_l1_or(sizeof s_lane_gains, s_lane_gains);
+    g_lane_meters = (int16_t *)coop_l1_or(sizeof s_lane_meters, s_lane_meters);
+    g_tape_l1 = g_inL != s_inL;
+}
 static volatile int16_t *g_stock_meters;  /* the 4 stock peak words the UI reads */
 
 extern "C" int coop_stereo_side_bufs(const int16_t **l, const int16_t **r);   /* stereo_bus.cc */
@@ -90,6 +112,7 @@ extern "C" void coop_tape_record(const int16_t *mono)
 {
     uint32_t t0 = coop_cycles();
     g_tape_rec_calls++;
+    if (!g_bufs_inited) tape_bufs_init();
     coop_tape_clamp_track();
     g_tape_mono_ptr = (uint32_t)(uintptr_t)mono;
     if (!g_coop_tape_stereo) {                 /* stock behaviour: one mono pass on lane t */
@@ -146,6 +169,7 @@ extern "C" void coop_tape_record(const int16_t *mono)
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_tape_rec_cycles_max) g_tape_rec_cycles_max = dt;
     if (dt > g_tape_rec_cycles_win) g_tape_rec_cycles_win = dt;
+    g_tape_rec_cycles_sum_win += dt;
 }
 
 /* From coop_tape_gains_thunk, in the tick right after the stock pan law (site 0xffa06de0), with the
@@ -155,6 +179,7 @@ extern "C" void coop_tape_record(const int16_t *mono)
 extern "C" void coop_tape_gains(uint32_t sp)
 {
     g_tape_gains_calls++;
+    if (!g_bufs_inited) tape_bufs_init();
     int stereo = g_coop_tape_stereo != 0;      /* the loops run 8 lanes either way (LC1 patched): always hand them a table */
     int16_t **slot_g = (int16_t **)(uintptr_t)(sp + 0x5c);
     int16_t **slot_m = (int16_t **)(uintptr_t)(sp + 0x60);

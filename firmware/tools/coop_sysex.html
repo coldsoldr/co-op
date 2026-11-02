@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>coop SysEx file reader</title>
+<style>
+  :root { --bg: #fafafa; --fg: #1a1a1a; --mute: #666; --line: #ddd; --accent: #0a6; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #141414; --fg: #eee; --mute: #999; --line: #333; } }
+  body { margin: 0; padding: 16px; font: 15px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--fg); max-width: 900px; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { color: var(--mute); margin: 4px 0 12px; }
+  label { display: block; margin: 8px 0 4px; }
+  input, select, button { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  input[type=text] { width: 100%; box-sizing: border-box; }
+  button { cursor: pointer; margin-right: 8px; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  pre { white-space: pre-wrap; word-break: break-all; border: 1px solid var(--line); border-radius: 6px; padding: 10px; min-height: 120px; font-size: 13px; }
+  #status { margin: 10px 0; }
+</style>
+</head>
+<body>
+<h1>coop SysEx file reader</h1>
+<p>Reads a file from the running OP-1 over USB-MIDI (coop-fw milestone U1, <code>core/sdram/coop_sysex.cc</code>).
+Chrome or Edge with Web MIDI; plug the OP-1 in, pick its MIDI port, say hello, then read.</p>
+<label for="port">MIDI port</label>
+<select id="port"></select>
+<label for="path">Path on the device</label>
+<input id="path" type="text" value="/yaffs2/user/coop_stats.txt">
+<div style="margin-top:10px">
+  <button id="hello">Hello</button>
+  <button id="read" class="primary">Read file</button>
+  <button id="save" disabled>Save as...</button>
+</div>
+<div id="status">Not connected.</div>
+<pre id="out"></pre>
+<script>
+const HDR = [0xF0, 0x00, 0x20, 0x76, 0x7D];
+const FILE_GET = 0x20, HELLO = 0x21, REPLY = 0x40;
+const STATUS = ['ok', 'format', 'state', 'path', 'size', 'offset', 'crc', 'io'];
+let access = null, inPort = null, outPort = null, seq = 1, pending = null, fileBytes = null;
+
+function pack7(bytes) {
+  const out = [];
+  for (let i = 0; i < bytes.length; i += 7) {
+    const g = bytes.slice(i, i + 7);
+    let hi = 0;
+    g.forEach((b, k) => { hi |= ((b >> 7) & 1) << k; });
+    out.push(hi, ...g.map(b => b & 0x7F));
+  }
+  return out;
+}
+function unpack7(bytes) {
+  const out = [];
+  for (let i = 0; i < bytes.length;) {
+    const hi = bytes[i++];
+    for (let k = 0; k < 7 && i < bytes.length; k++, i++) out.push(bytes[i] | (((hi >> k) & 1) << 7));
+  }
+  return out;
+}
+function setStatus(s) { document.getElementById('status').textContent = s; }
+
+function send(cmd, payload) {
+  return new Promise((resolve, reject) => {
+    const s = seq++ & 0x3FFF;
+    const msg = [...HDR, cmd, s & 0x7F, (s >> 7) & 0x7F, ...pack7(payload), 0xF7];
+    if (msg.length > 96) { reject(new Error('message too long for the OP-1 (' + msg.length + ' > 96)')); return; }
+    const timer = setTimeout(() => { pending = null; reject(new Error('no reply in 2 s')); }, 2000);
+    pending = { seq: s, cmd, resolve: v => { clearTimeout(timer); resolve(v); } };
+    outPort.send(msg);
+  });
+}
+function onMidi(e) {
+  const d = e.data;
+  if (d.length < 9 || d[0] !== 0xF0 || d[1] !== 0 || d[2] !== 0x20 || d[3] !== 0x76 || d[4] !== 0x7D) return;
+  const cmd = d[5], s = d[6] | (d[7] << 7);
+  if (!pending || s !== pending.seq || cmd !== (pending.cmd | REPLY)) return;
+  const payload = unpack7(Array.from(d.slice(8, d.length - 1)));
+  const p = pending; pending = null;
+  p.resolve(payload);
+}
+
+async function connect() {
+  try {
+    access = await navigator.requestMIDIAccess({ sysex: true });
+  } catch (err) { setStatus('Web MIDI with SysEx refused: ' + err.message); return; }
+  const sel = document.getElementById('port');
+  sel.innerHTML = '';
+  for (const o of access.outputs.values()) {
+    const opt = document.createElement('option');
+    opt.value = o.id; opt.textContent = o.name;
+    if (/op-1/i.test(o.name)) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  pick();
+  sel.onchange = pick;
+  setStatus(sel.options.length ? 'Port list ready.' : 'No MIDI output found. Is the OP-1 plugged in and on?');
+}
+function pick() {
+  const id = document.getElementById('port').value;
+  outPort = access.outputs.get(id);
+  if (inPort) inPort.onmidimessage = null;
+  inPort = null;
+  for (const i of access.inputs.values()) if (outPort && i.name === outPort.name) inPort = i;
+  if (!inPort) for (const i of access.inputs.values()) if (/op-1/i.test(i.name)) inPort = i;
+  if (inPort) inPort.onmidimessage = onMidi;
+}
+
+document.getElementById('hello').onclick = async () => {
+  if (!outPort || !inPort) { setStatus('Pick a port first.'); return; }
+  try {
+    const r = await send(HELLO, []);
+    if (r[0] !== 0) { setStatus('HELLO: ' + (STATUS[r[0]] || r[0])); return; }
+    const name = String.fromCharCode(...r.slice(1, 5)), proto = r[5] | (r[6] << 8), tag = String.fromCharCode(...r.slice(7));
+    setStatus('Device answers: ' + name + ' protocol ' + proto + ' build ' + tag);
+  } catch (err) { setStatus('HELLO failed: ' + err.message + ' (is a coop image with the SysEx channel running?)'); }
+};
+
+document.getElementById('read').onclick = async () => {
+  if (!outPort || !inPort) { setStatus('Pick a port first.'); return; }
+  const path = document.getElementById('path').value.trim();
+  const pathBytes = Array.from(new TextEncoder().encode(path));
+  const out = [];
+  let total = null;
+  try {
+    for (let off = 0; total === null || off < total;) {
+      const payload = [off & 0xFF, (off >> 8) & 0xFF, (off >> 16) & 0xFF, (off >>> 24) & 0xFF, ...pathBytes];
+      const r = await send(FILE_GET, payload);
+      if (r[0] !== 0) { setStatus('Read failed at offset ' + off + ': ' + (STATUS[r[0]] || r[0])); return; }
+      total = r[1] | (r[2] << 8) | (r[3] << 16) | (r[4] << 24);
+      const data = r.slice(5);
+      if (!data.length && off < total) { setStatus('Empty reply at offset ' + off); return; }
+      out.push(...data);
+      off += data.length;
+      setStatus('Reading ' + path + ': ' + off + ' / ' + total + ' bytes');
+      if (total === 0) break;
+    }
+  } catch (err) { setStatus('Read failed: ' + err.message); return; }
+  fileBytes = new Uint8Array(out);
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(fileBytes);
+  const printable = /^[\x09\x0A\x0D\x20-\x7E]*$/.test(text);
+  document.getElementById('out').textContent = printable ? text : '(' + fileBytes.length + ' binary bytes; use Save as...)';
+  document.getElementById('save').disabled = false;
+  setStatus('Read ' + path + ': ' + fileBytes.length + ' bytes.');
+};
+
+document.getElementById('save').onclick = () => {
+  if (!fileBytes) return;
+  const path = document.getElementById('path').value.trim();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([fileBytes]));
+  a.download = path.split('/').pop() || 'file.bin';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+if (navigator.requestMIDIAccess) connect(); else setStatus('This browser has no Web MIDI. Use Chrome or Edge.');
+</script>
+</body>
+</html>

@@ -87,6 +87,11 @@ TAPE_DROP = 0x01a549b8                                               # -> coop_d
 TAPE_DROP_CALLERS = (0x0191b67e, 0x01a54aee)                         # clipboard service, drop-all
 TAPE_ERASE = 0x01a54b08                                              # fast_tape_erase -> coop_erase (tramp +80)
 TAPE_ERASE_CALLERS = (0x0191b9f0,)
+# --- SysEx file channel, milestone U1 (core/sdram/coop_sysex.cc) ---
+# PlayerManager::tick -> midi_poll: CALL midi_rx_parse (kennel du_fw.c); retargeted at a jump trampoline (+96) to
+# coop_sysex_rx_poll, which runs the stock parser itself. Only when the ELF has the symbol.
+MIDI_RX_SITE = 0x019e3cc8
+MIDI_RX_PARSE = 0x019e31a4
 SEAM_SITE = 0xffa0706e                                               # P2.L = 0xef7c; P2.H = 0x1b4 before the seam loop (hook B)
 SEAM_STOCK = bytes.fromhex("0ae17cef" "4ae1b401")
 SEAM_FILL_SITE = 0xffa073b8                                          # P1 = 0x01a54284 (the stock seam fill) -> coop_seam_fill
@@ -223,6 +228,8 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
     out += [(site, call24(site, TAPE_LIFT), call24(site, sdram_tramp_at + 48)) for site in TAPE_LIFT_CALLERS]
     out += [(site, call24(site, TAPE_DROP), call24(site, sdram_tramp_at + 64)) for site in TAPE_DROP_CALLERS]
     out += [(site, call24(site, TAPE_ERASE), call24(site, sdram_tramp_at + 80)) for site in TAPE_ERASE_CALLERS]
+    if thunks_global.get('sysex_rx'):
+        out.append((MIDI_RX_SITE, call24(MIDI_RX_SITE, MIDI_RX_PARSE), call24(MIDI_RX_SITE, sdram_tramp_at + 96)))
     return out + list(TAPE_BYTE_PATCHES)
 
 
@@ -233,7 +240,11 @@ def core_noteon_patches(sdram_tramp_at=SDRAM_TRAMP_AT):
 
 def thunk_addresses(elf):
     syms = read_elf_symbols(elf)
-    return {'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
+    try:
+        sysex_rx = symbol_address(syms, 'coop_sysex_rx_poll')[0]
+    except Exception:                                  # an ELF without the SysEx channel
+        sysex_rx = None
+    return {'sysex_rx': sysex_rx,'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
             'drum': symbol_address(syms, 'coop_drum_render_thunk')[0],
             'mix': symbol_address(syms, 'coop_mix_thunk')[0],
             'noteon': symbol_address(syms, 'coop_synth_noteon_thunk')[0],
@@ -273,11 +284,16 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     if tape:                                               # +16: tape_cache_io_step, +32: tape_image_mount_and_index
         sdram_blob += build_tramp(thunks['tape_io']) + build_tramp(thunks['tape_mount'])
         sdram_blob += build_jump_tramp(thunks['lift']) + build_jump_tramp(thunks['drop']) + build_jump_tramp(thunks['erase'])   # +48, +64, +80
+        if thunks.get('sysex_rx'):
+            sdram_blob += build_jump_tramp(thunks['sysex_rx'])                                                             # +96
     dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, sdram_blob))
     for name, a, b in tramps:
         lines.append('tramp_{} at {:#x} ({} B) -> {:#x}'.format(name, a, len(b), thunks[name]))
     lines.append('sdram tramp at {:#x} (16 B) -> {:#x} for Core::NoteOn callers {}'.format(
         SDRAM_TRAMP_AT, thunks['core_noteon'], ', '.join('{:#x}'.format(s) for s in CORE_NOTEON_CALLERS)))
+    if tape and thunks.get('sysex_rx'):
+        lines.append('sdram tramp at {:#x} -> {:#x} (midi_rx_parse caller {:#x}: the SysEx file channel)'.format(
+            SDRAM_TRAMP_AT + 96, thunks['sysex_rx'], MIDI_RX_SITE))
     if tape:
         lines.append('sdram tramp at {:#x} -> {:#x} (tape_cache_io_step callers {}), {:#x} -> {:#x} (mount callers {})'.format(
             SDRAM_TRAMP_AT + 16, thunks['tape_io'], ', '.join('{:#x}'.format(s) for s in TAPE_IO_CALLERS),

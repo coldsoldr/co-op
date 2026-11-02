@@ -339,7 +339,7 @@ Readings:
 - The stats need two changes: per-stage sums per window (averages, not only maxima) and a second ring of the
   heaviest windows by `cb_max`, so a recording or chord window is never lost to the time ring.
 
-### Milestone T4: fit the stereo stages inside the budget on the device (plan)
+### Milestone T4: fit the stereo stages inside the budget on the device (plan, as written before T4a)
 
 Order, each step measured on the device with the stats:
 1. Stats v3: per-stage window sums, a heaviest-windows ring, hook calls per block.
@@ -352,3 +352,33 @@ Order, each step measured on the device with the stats:
 3. Flushes in two 64 KiB halves across passes.
 4. If still short of the 0.75 ceiling with six FM voices recorded: instruction-cache way locking for the hot
    coop code (one or two 4 KB ways), which keeps it resident across the main loop's UI work.
+
+### T4a: kernels, the L1 pool, split flushes, stats v3 (2026-11-02)
+
+Steps 1-3 of the plan, one package (`op1_246_coop_t4a_stereo_tape.op1`):
+
+- **Kernels.** The per-voice difference accumulate (synth and drum) and the four mix loops (A, A mono, B, B mono)
+  are Blackfin inline-assembly kernels in `core/include/coop_stereo.h`: one hardware loop each, the streams through
+  DAG registers, 16-bit parameter pairs in register halves, the pointers handed over in a small argument block
+  (eight data registers are not enough for every operand as a "d" constraint). The C versions stay as the `_c`
+  references and the host build. `tests/sim/kern_check.cc` (`run_kern_check.sh`, GNU simulator) compares every
+  kernel against its reference over 3000 random blocks with the edge values in every operand: 0 mismatching blocks.
+- **L1 pool** (`core/sdram/l1_pool.cc`, `coop_l1.h`): the stock Lander game's 40 sound buffers in L1 data B
+  (`0xFF90081C..0xFF906908`, kennel's `kn_l1.c`), taken only when their table is exactly the stock layout, then the
+  table is pointed at a dummy with size 0 (the game's sounds go silent in coop). The stereo stages' buses, decimator
+  rings, DC states, pan states and sine table, and the record tap's input, rings, snapshots and lane tables live
+  there (2,976 bytes of ~24 KB); every user keeps an SDRAM fallback. `l1 state 1 used 2976` in the stats.
+- **Flushes in halves** (`tape_io.cc`): one 64 KiB half per main-loop pass. The request byte is cleared when a
+  node's flush starts, the dirty bits stay set over the halves (the stock record sets the request byte on every
+  write), and a track's bits are cleared after its second half only if no request arrived meanwhile.
+- **Stats v3** (`coop_stats.cc`, `coop_stats 3`): per-window sums for the record tap, mix and hook (averages, not
+  only maxima), `hook_max` per window, an `l1` line, and `top` lines: the eight heaviest windows by `cb_max`
+  kept for the whole session, so a take or a chord is never pushed out by the time ring (T3g lost the recorded
+  chord that way). The tail text in track 4 grows to 8 KiB (46 ms of the tape's end).
+- **SysEx file channel** (milestone U1, `core/sdram/coop_sysex.cc`, `tools/coop_sysex.html`): see `docs/sysex.md`.
+
+Emulator (op1emu, CYCLES = instructions): callback peak 117,647 (was 122,410), hook 1,943 (2,554), mix 14,284
+(16,112), record tap 13,417 (13,530): the instruction count barely moves, as expected; the device gain is the L1
+residency and the smaller code, which only the device can show. Gates (sequential runs, docs/emulator.md): the full-spread T4a image is sample-identical to the full-spread T3g image on the chord scenario (3,491,181 frames from 2 s); the spread-0 tape image was not compared with stock (the tape-stereo image differs from stock on the tape-monitor path by design; the mono kernels are covered by the simulator check and the full-image identity). The record scenario against the
+T3g image: same level, peak and width (0.2307), the usual one-block timing shift. Stats: 19 writes, 19 tail
+writes, 0 errors; the heaviest-windows ring kept the recording window.

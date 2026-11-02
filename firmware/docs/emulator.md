@@ -189,3 +189,11 @@ loop in / loop out / loop on-off (key codes 0x2d-0x2f). `tests/sim/det_tape_loop
 take; the coop images emulate slower than stock, so its tail `wait` is 150 s to capture five passes.
 `tests/sim/det_tape_rec_long_quit.txt` records a 4-second take (six chunk boundaries) for a power-cycle run
 followed by `det_tape_play_start.txt`: the file path of every chunk.
+
+## Gate runs and the kernel check (T4a, 2026-11-02)
+
+- Two emulator runs are frame-aligned only when the script schedules its events in guest time (`at`, as
+  `det_chord.txt`) **and** the runs happen one at a time: `wait` lines are wall time, so a parallel run or a build
+  shifts the end of a run and any wall-timed event. Run gate scenarios sequentially on an idle machine.
+- `tests/sim/run_kern_check.sh` builds `kern_check.cc` for the Blackfin and runs it in the GNU simulator: the T4
+  assembly kernels of `coop_stereo.h` against their C references over 3000 random blocks with edge values.

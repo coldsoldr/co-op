@@ -18,6 +18,7 @@
  */
 #include <stdint.h>
 #include "coop_stereo.h"
+#include "coop_l1.h"
 
 /* --- stock buffers and words (all [C], write-traced 2026-11-02) --- */
 #define VOICE_OUT   ((const int16_t *)0xff80113cu)   /* render out (R1 of render; 0xffa009de, 0xffa0068c) */
@@ -40,12 +41,20 @@ __attribute__((section(".data"))) volatile uint32_t g_coop_stereo_enable = 1; /*
 __attribute__((section(".data"))) volatile uint32_t g_coop_force_stereo_out = 0;
 #define OUTPUT_MODE_B ((volatile uint8_t *)0x018b621du)
 
-/* --- state (region-A .bss) --- */
-static int32_t g_sdL[COOP_VBLK], g_sdR[COOP_VBLK];     /* difference buses, 88.2 kHz */
-static int16_t g_decL[COOP_MBLK], g_decR[COOP_MBLK];   /* after decimation + DC block */
-static coop_hb_state g_hbL, g_hbR;
-static coop_dc_state g_dcL, g_dcR;
-static coop_spread g_pan_synth, g_pan_drum;
+/* --- state: the per-block hot data in the L1 pool (coop_l1.h, T4), with region-A .bss as the fallback --- */
+static int32_t s_sdL[COOP_VBLK], s_sdR[COOP_VBLK];
+static int16_t s_decL[COOP_MBLK], s_decR[COOP_MBLK];
+static coop_hb_state s_hbL, s_hbR;
+static coop_dc_state s_dcL, s_dcR;
+static coop_spread s_pan_synth, s_pan_drum;
+static int16_t s_sin[65];
+static int32_t *g_sdL = s_sdL, *g_sdR = s_sdR;         /* difference buses, 88.2 kHz */
+static int16_t *g_decL = s_decL, *g_decR = s_decR;     /* after decimation + DC block */
+static coop_hb_state *g_hbL = &s_hbL, *g_hbR = &s_hbR;
+static coop_dc_state *g_dcL = &s_dcL, *g_dcR = &s_dcR;
+static coop_spread *g_pan_synth = &s_pan_synth, *g_pan_drum = &s_pan_drum;
+static const int16_t *g_sin = coop_sin_q15;            /* the pan law's quarter sine, copied into L1 */
+volatile uint32_t g_stereo_l1;                         /* 1 = the hot state is in L1 */
 static uint32_t g_rendered_prev, g_rendered_cur;       /* bits 0-5 synth voices, 16-27 drum voices */
 static uint32_t g_hb_ramp;                             /* stock ramp word as of this block, before the stock decimator */
 static uint32_t g_side_tail;                           /* blocks left to keep decimating after the last panned voice */
@@ -56,6 +65,7 @@ static int g_side_this_block;                          /* loop B added decimated
 /* liveness / perf counters (read from the emulator or a probe) */
 volatile uint32_t g_stereo_blocks, g_stereo_hooks, g_stereo_mixes, g_stereo_side_blocks, g_stereo_note_ons;
 volatile uint32_t g_stereo_hook_cycles_max, g_stereo_mix_cycles_max, g_stereo_mix_cycles_win;
+volatile uint32_t g_stereo_hook_cycles_win, g_stereo_hook_cycles_sum_win, g_stereo_mix_cycles_sum_win;   /* stats v3 */
 
 extern "C" int16_t *g_mix_ramp_ptr;                    /* P1 of loop A / B, stored by coop_mix_thunk */
 int16_t *g_mix_ramp_ptr;
@@ -78,11 +88,26 @@ static inline uint32_t coop_cycles(void)
 
 static void stereo_init(void)
 {
-    coop_hb_init(&g_hbL); coop_hb_init(&g_hbR);
-    coop_dc_init(&g_dcL); coop_dc_init(&g_dcR);
-    coop_spread_init(&g_pan_synth, 0);
-    coop_spread_init(&g_pan_drum, 0);
-    g_pan_drum.rng = 0x7F4A7C15u;                      /* a different stream from the synth's */
+    if (coop_l1_state() == 1) {
+        g_sdL = (int32_t *)coop_l1_or(sizeof s_sdL, s_sdL);
+        g_sdR = (int32_t *)coop_l1_or(sizeof s_sdR, s_sdR);
+        g_decL = (int16_t *)coop_l1_or(sizeof s_decL, s_decL);
+        g_decR = (int16_t *)coop_l1_or(sizeof s_decR, s_decR);
+        g_hbL = (coop_hb_state *)coop_l1_or(sizeof s_hbL, &s_hbL);
+        g_hbR = (coop_hb_state *)coop_l1_or(sizeof s_hbR, &s_hbR);
+        g_dcL = (coop_dc_state *)coop_l1_or(sizeof s_dcL, &s_dcL);
+        g_dcR = (coop_dc_state *)coop_l1_or(sizeof s_dcR, &s_dcR);
+        g_pan_synth = (coop_spread *)coop_l1_or(sizeof s_pan_synth, &s_pan_synth);
+        g_pan_drum = (coop_spread *)coop_l1_or(sizeof s_pan_drum, &s_pan_drum);
+        int16_t *sin_l1 = (int16_t *)coop_l1_alloc(sizeof s_sin);
+        if (sin_l1) { for (int i = 0; i < 65; i++) sin_l1[i] = coop_sin_q15[i]; g_sin = sin_l1; }
+        g_stereo_l1 = g_sdL != s_sdL;
+    }
+    coop_hb_init(g_hbL); coop_hb_init(g_hbR);
+    coop_dc_init(g_dcL); coop_dc_init(g_dcR);
+    coop_spread_init(g_pan_synth, 0);
+    coop_spread_init(g_pan_drum, 0);
+    g_pan_drum->rng = 0x7F4A7C15u;                     /* a different stream from the synth's */
     g_inited = 1;
 }
 
@@ -103,8 +128,8 @@ extern "C" void coop_stereo_block_start(void)
         g_side_dirty = 0;
     }
     int16_t spread = (int16_t)(g_coop_spread > 32767u ? 32767u : g_coop_spread);
-    coop_spread_set(&g_pan_synth, spread);
-    coop_spread_set(&g_pan_drum, spread);
+    coop_spread_set(g_pan_synth, spread);
+    coop_spread_set(g_pan_drum, spread);
     g_stereo_blocks++;
 }
 
@@ -120,7 +145,7 @@ extern "C" void coop_synth_note_on_hook(uint32_t voice, uint32_t dispatched)
     if (voice >= COOP_SYNTH_VOICES || !dispatched) return;
     if (!g_inited) stereo_init();
     g_stereo_note_ons++;
-    coop_spread_note_on(&g_pan_synth, (int)voice);
+    coop_spread_note_on(g_pan_synth, (int)voice);
     coop_lfo2_trigger_synth(voice);
 }
 
@@ -138,7 +163,7 @@ static void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)
         coop_lfo2_trigger_drum(voice);
     }
     g_hb_ramp = *HB_RAMP_W;                            /* the stock step for this block is set by now */
-    coop_pan_delta d = coop_pan_deltas(pans->pan[voice]);
+    coop_pan_delta d = coop_pan_deltas_tab(pans->pan[voice], g_sin);
     if (d.dL == 0 && d.dR == 0) return;                /* centred: nothing beyond the stock sum */
     int16_t gain = *VOICE_GAIN;
     if (is_drum) coop_side_accum_drum(g_sdL, g_sdR, VOICE_OUT, gain, d);
@@ -147,13 +172,15 @@ static void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)
     g_side_tail = 4;
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_stereo_hook_cycles_max) g_stereo_hook_cycles_max = dt;
+    if (dt > g_stereo_hook_cycles_win) g_stereo_hook_cycles_win = dt;
+    g_stereo_hook_cycles_sum_win += dt;
 }
 
 /* R7 at the synth render call = voice index 0..5 (0xffa009c2 zeroes it, 0xffa00da0 increments). */
 extern "C" void coop_synth_voice_hook(uint32_t r7)
 {
     if (r7 >= COOP_SYNTH_VOICES) return;
-    voice_hook(&g_pan_synth, (int)r7, 1u << r7, 0);
+    voice_hook(g_pan_synth, (int)r7, 1u << r7, 0);
 }
 
 /* R7 at the drum render call counts 12 down to 1 (0xffa0072a, 0xffa00946). */
@@ -161,7 +188,7 @@ extern "C" void coop_drum_voice_hook(uint32_t r7)
 {
     if (r7 == 0 || r7 > COOP_DRUM_VOICES) return;
     int voice = COOP_DRUM_VOICES - (int)r7;
-    voice_hook(&g_pan_drum, voice, 1u << (16 + voice), 1);
+    voice_hook(g_pan_drum, voice, 1u << (16 + voice), 1);
 }
 
 /* The difference buses for this block (decimated + DC-blocked once; both mix loops may ask). 1 = present. */
@@ -170,17 +197,17 @@ static int side_prepare(void)
     if (!g_side_tail) return 0;
     if (!g_side_dec_done) {
         int16_t hr = (int16_t)g_hb_ramp, hs = (int16_t)(g_hb_ramp >> 16);
-        coop_hb_decimate(&g_hbL, g_sdL, g_decL, HB_COEFS, hr, hs);
-        coop_hb_decimate(&g_hbR, g_sdR, g_decR, HB_COEFS, hr, hs);
+        coop_hb_decimate(g_hbL, g_sdL, g_decL, HB_COEFS, hr, hs);
+        coop_hb_decimate(g_hbR, g_sdR, g_decR, HB_COEFS, hr, hs);
         int32_t c = *DC_COEF_W;
-        coop_dc_block(&g_dcL, g_decL, g_decL, c, COOP_MBLK);
-        coop_dc_block(&g_dcR, g_decR, g_decR, c, COOP_MBLK);
+        coop_dc_block(g_dcL, g_decL, g_decL, c, COOP_MBLK);
+        coop_dc_block(g_dcR, g_decR, g_decR, c, COOP_MBLK);
         g_side_dec_done = 1;
         g_stereo_side_blocks++;
         g_side_this_block = 1;
         if (--g_side_tail == 0) {                      /* the rings are flushed; drop the DC tail */
-            coop_hb_init(&g_hbL); coop_hb_init(&g_hbR);
-            coop_dc_init(&g_dcL); coop_dc_init(&g_dcR);
+            coop_hb_init(g_hbL); coop_hb_init(g_hbR);
+            coop_dc_init(g_dcL); coop_dc_init(g_dcR);
         }
     }
     return 1;
@@ -213,6 +240,7 @@ extern "C" uint32_t coop_mix_entry(uint32_t r0, uint32_t r1, uint32_t r2)
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_stereo_mix_cycles_max) g_stereo_mix_cycles_max = dt;
     if (dt > g_stereo_mix_cycles_win) g_stereo_mix_cycles_win = dt;
+    g_stereo_mix_cycles_sum_win += dt;
     return ret;
 }
 

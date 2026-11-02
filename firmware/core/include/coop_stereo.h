@@ -33,7 +33,7 @@
  * the centred mix identical to stock. */
 typedef struct { int16_t dL, dR; } coop_pan_delta;
 
-static inline coop_pan_delta coop_pan_deltas(int16_t pan_q15)
+static inline coop_pan_delta coop_pan_deltas_tab(int16_t pan_q15, const int16_t *coop_sin_q15)
 {
     int32_t u = (int32_t)pan_q15 + 32768;        /* 0..65535 */
     int32_t pos = u >> 10, frac = u & 1023;
@@ -54,13 +54,14 @@ static inline coop_pan_delta coop_pan_deltas(int16_t pan_q15)
     coop_pan_delta d; d.dL = (int16_t)gL; d.dR = (int16_t)gR;
     return d;
 }
+static inline coop_pan_delta coop_pan_deltas(int16_t pan_q15) { return coop_pan_deltas_tab(pan_q15, coop_sin_q15); }
 
 /* ---- per-voice difference accumulate (runs right after the stock render, before the stock sum) ----
  * The stock synth sum (0xffa00d46) adds  sat(out[i] * env[i]) * gain  per sample (16-bit fractional,
  * default rounding); the drum sum (0xffa00922) adds  sat(2 * (out[i] * gain)). We form the identical
  * per-voice value v and accumulate v*(g-1) into the int32 difference buses. */
-static inline void coop_side_accum_synth(int32_t *dL, int32_t *dR, const int16_t *out,
-                                         const int16_t *env, int16_t gain, coop_pan_delta d)
+static inline void coop_side_accum_synth_c(int32_t *dL, int32_t *dR, const int16_t *out,
+                                           const int16_t *env, int16_t gain, coop_pan_delta d)
 {
     for (int i = 0; i < COOP_VBLK; i++) {
         int16_t v = coop_fr16_mul(coop_fr16_mul(out[i], env[i]), gain);
@@ -69,8 +70,8 @@ static inline void coop_side_accum_synth(int32_t *dL, int32_t *dR, const int16_t
     }
 }
 
-static inline void coop_side_accum_drum(int32_t *dL, int32_t *dR, const int16_t *out,
-                                        int16_t gain, coop_pan_delta d)
+static inline void coop_side_accum_drum_c(int32_t *dL, int32_t *dR, const int16_t *out,
+                                          int16_t gain, coop_pan_delta d)
 {
     for (int i = 0; i < COOP_VBLK; i++) {
         int16_t v = coop_fr16_shl1(coop_fr16_mul(out[i], gain));
@@ -78,6 +79,86 @@ static inline void coop_side_accum_drum(int32_t *dL, int32_t *dR, const int16_t 
         dR[i] += ((int32_t)v * d.dR) >> 15;
     }
 }
+
+#ifdef __bfin__
+/* Blackfin kernels (T4). Register budget: the pointers travel in a small argument block whose address is in P5
+ * (an explicit register variable, so the asm can use P0-P2 and I0-I2 freely), pairs of 16-bit parameters share
+ * one data register's halves, the loop count is preloaded into LC0. The products v*d are integer (IS)
+ * 16x16 -> 32 then >>> 15, exactly the C expression; v itself is the same fractional multiply chain as
+ * coop_fr16_mul (default rounding). Verified bit-exact against the _c versions in the GNU simulator
+ * (tests/sim/kern_check.cc) and by the op1emu gates. */
+static inline void coop_side_accum_synth(int32_t *dL, int32_t *dR, const int16_t *out,
+                                         const int16_t *env, int16_t gain, coop_pan_delta d)
+{
+    uint32_t pans = ((uint32_t)(uint16_t)d.dR << 16) | (uint16_t)d.dL;
+    const void *args[4] = { out, env, dL, dR };
+    register const void **ap __asm__("P5") = args;
+    int32_t t0, t1, t2, t4, t6;
+    __asm__ volatile(
+        "%[t0] = [P5 + 0];\n\t"
+        "I0 = %[t0];\n\t"
+        "%[t0] = [P5 + 4];\n\t"
+        "I1 = %[t0];\n\t"
+        "P0 = [P5 + 8];\n\t"
+        "P1 = [P5 + 12];\n\t"
+        "%[t0] = %[n] (X);\n\t"
+        "LC0 = %[t0];\n\t"
+        "LSETUP (1f, 2f) LC0;\n\t"
+        "1: %[t0].L = W[I0++];\n\t"
+        "%[t1].L = W[I1++];\n\t"
+        "%[t2].L = %[t0].L * %[t1].L;\n\t"
+        "%[t2].L = %[t2].L * %[g].L;\n\t"
+        "%[t4] = %[t2].L * %[pans].L (IS);\n\t"
+        "%[t6] = %[t2].L * %[pans].H (IS);\n\t"
+        "%[t4] >>>= 15;\n\t"
+        "%[t6] >>>= 15;\n\t"
+        "%[t0] = [P0];\n\t"
+        "%[t0] = %[t0] + %[t4];\n\t"
+        "[P0++] = %[t0];\n\t"
+        "%[t1] = [P1];\n\t"
+        "%[t1] = %[t1] + %[t6];\n\t"
+        "2: [P1++] = %[t1];"
+        : [t0] "=&d"(t0), [t1] "=&d"(t1), [t2] "=&d"(t2), [t4] "=&d"(t4), [t6] "=&d"(t6)
+        : "a"(ap), [n] "i"(COOP_VBLK), [g] "d"((int32_t)gain), [pans] "d"(pans)
+        : "I0", "I1", "P0", "P1", "LC0", "LT0", "LB0", "memory");
+}
+
+static inline void coop_side_accum_drum(int32_t *dL, int32_t *dR, const int16_t *out,
+                                        int16_t gain, coop_pan_delta d)
+{
+    uint32_t pans = ((uint32_t)(uint16_t)d.dR << 16) | (uint16_t)d.dL;
+    const void *args[3] = { out, dL, dR };
+    register const void **ap __asm__("P5") = args;
+    int32_t t0, t1, t2, t4, t6;
+    __asm__ volatile(
+        "%[t0] = [P5 + 0];\n\t"
+        "I0 = %[t0];\n\t"
+        "P0 = [P5 + 4];\n\t"
+        "P1 = [P5 + 8];\n\t"
+        "%[t0] = %[n] (X);\n\t"
+        "LC0 = %[t0];\n\t"
+        "LSETUP (1f, 2f) LC0;\n\t"
+        "1: %[t0].L = W[I0++];\n\t"
+        "%[t2].L = %[t0].L * %[g].L;\n\t"
+        "%[t2].L = %[t2].L << 1 (S);\n\t"
+        "%[t4] = %[t2].L * %[pans].L (IS);\n\t"
+        "%[t6] = %[t2].L * %[pans].H (IS);\n\t"
+        "%[t4] >>>= 15;\n\t"
+        "%[t6] >>>= 15;\n\t"
+        "%[t0] = [P0];\n\t"
+        "%[t0] = %[t0] + %[t4];\n\t"
+        "[P0++] = %[t0];\n\t"
+        "%[t1] = [P1];\n\t"
+        "%[t1] = %[t1] + %[t6];\n\t"
+        "2: [P1++] = %[t1];"
+        : [t0] "=&d"(t0), [t1] "=&d"(t1), [t2] "=&d"(t2), [t4] "=&d"(t4), [t6] "=&d"(t6)
+        : "a"(ap), [n] "i"(COOP_VBLK), [g] "d"((int32_t)gain), [pans] "d"(pans)
+        : "I0", "P0", "P1", "LC0", "LT0", "LB0", "memory");
+}
+#else
+#define coop_side_accum_synth coop_side_accum_synth_c
+#define coop_side_accum_drum  coop_side_accum_drum_c
+#endif
 
 /* ---- replica of the stock L1 half-band decimator (0xffa005d4..0xffa00682) ----
  * Per output: the two new input samples go into 32-entry rings (even into one, odd into the other);
@@ -176,9 +257,9 @@ static inline void coop_dc_block(coop_dc_state *st, const int16_t *in, int16_t *
  * per sample  L[i] += ((m*gL)*ramp),  R[i] += ((m*gR)*ramp),  meter = max(meter, |m*level|),  ramp += step
  * with ramp = W[rec], meter = W[rec+1], level read from 0x01b4ef6e every sample, all fr16 ops. The coop version
  * adds the difference buses to m before the gains. Returns the final ramp. */
-static inline int16_t coop_mix_a(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
-                                 const int16_t *dL, const int16_t *dR, int16_t gL, int16_t gR, int16_t step,
-                                 volatile int16_t *rec, const volatile int16_t *level)
+static inline int16_t coop_mix_a_c(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
+                                   const int16_t *dL, const int16_t *dR, int16_t gL, int16_t gR, int16_t step,
+                                   volatile int16_t *rec, const volatile int16_t *level)
 {
     int16_t ramp = rec[0], meter = rec[1];
     for (int i = 0; i < COOP_MBLK; i++) {
@@ -196,9 +277,9 @@ static inline int16_t coop_mix_a(volatile int16_t *L, volatile int16_t *R, const
     return ramp;
 }
 
-static inline int16_t coop_mix_a_mono(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
-                                      int16_t gL, int16_t gR, int16_t step, volatile int16_t *rec,
-                                      const volatile int16_t *level)
+static inline int16_t coop_mix_a_mono_c(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
+                                        int16_t gL, int16_t gR, int16_t step, volatile int16_t *rec,
+                                        const volatile int16_t *level)
 {
     int16_t ramp = rec[0], meter = rec[1];
     for (int i = 0; i < COOP_MBLK; i++) {
@@ -216,9 +297,9 @@ static inline int16_t coop_mix_a_mono(volatile int16_t *L, volatile int16_t *R, 
     return ramp;
 }
 
-static inline void coop_mix_b(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
-                              const int16_t *dL, const int16_t *dR, int16_t gain,
-                              int16_t *ramp_state, int16_t step)
+static inline void coop_mix_b_c(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
+                                const int16_t *dL, const int16_t *dR, int16_t gain,
+                                int16_t *ramp_state, int16_t step)
 {
     int16_t ramp = *ramp_state;
     for (int i = 0; i < COOP_MBLK; i++) {
@@ -233,8 +314,8 @@ static inline void coop_mix_b(volatile int16_t *L, volatile int16_t *R, const in
 }
 
 /* the mono fast path (no panned voice sounding): exactly loop B */
-static inline void coop_mix_b_mono(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
-                                   int16_t gain, int16_t *ramp_state, int16_t step)
+static inline void coop_mix_b_mono_c(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
+                                     int16_t gain, int16_t *ramp_state, int16_t step)
 {
     int16_t ramp = *ramp_state;
     for (int i = 0; i < COOP_MBLK; i++) {
@@ -245,5 +326,181 @@ static inline void coop_mix_b_mono(volatile int16_t *L, volatile int16_t *R, con
     }
     *ramp_state = ramp;
 }
+
+#ifdef __bfin__
+/* Blackfin kernels (T4), same conventions as the accumulate above. The mono bus and the difference buses stream
+ * through I0-I2, the stereo bus is read-modify-written through P0/P1 (saturating 16-bit adds), level through P2;
+ * gL/gR share a register (L/H), as do ramp/step (L = ramp advances, H = step). Loop A keeps the meter as a
+ * saturating ABS + MAX (V), reloading the level word every sample as the stock loop does. */
+static inline int16_t coop_mix_a(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
+                                 const int16_t *dL, const int16_t *dR, int16_t gL, int16_t gR, int16_t step,
+                                 volatile int16_t *rec, const volatile int16_t *level)
+{
+    const void *args[6] = { M, dL, dR, (const void *)L, (const void *)R, (const void *)level };
+    register const void **ap __asm__("P5") = args;
+    uint32_t rs = ((uint32_t)(uint16_t)step << 16) | (uint16_t)rec[0];
+    uint32_t g = ((uint32_t)(uint16_t)gR << 16) | (uint16_t)gL;
+    int32_t meter = rec[1];
+    int32_t m, a, b, t;
+    __asm__ volatile(
+        "%[t] = [P5 + 0];\n\t"
+        "I0 = %[t];\n\t"
+        "%[t] = [P5 + 4];\n\t"
+        "I1 = %[t];\n\t"
+        "%[t] = [P5 + 8];\n\t"
+        "I2 = %[t];\n\t"
+        "P0 = [P5 + 12];\n\t"
+        "P1 = [P5 + 16];\n\t"
+        "P2 = [P5 + 20];\n\t"
+        "%[t] = %[n] (X);\n\t"
+        "LC0 = %[t];\n\t"
+        "LSETUP (1f, 2f) LC0;\n\t"
+        "1: %[m].L = W[I0++];\n\t"
+        "%[t] = W[P2] (X);\n\t"
+        "%[t].L = %[m].L * %[t].L;\n\t"
+        "%[t] = ABS %[t] (V);\n\t"
+        "%[meter] = MAX (%[meter], %[t]) (V);\n\t"
+        "%[a].L = W[I1++];\n\t"
+        "%[b].L = W[I2++];\n\t"
+        "%[a].L = %[m].L + %[a].L (S);\n\t"
+        "%[b].L = %[m].L + %[b].L (S);\n\t"
+        "%[a].L = %[a].L * %[g].L;\n\t"
+        "%[b].L = %[b].L * %[g].H;\n\t"
+        "%[a].L = %[a].L * %[rs].L;\n\t"
+        "%[b].L = %[b].L * %[rs].L;\n\t"
+        "%[t] = W[P0] (X);\n\t"
+        "%[t].L = %[a].L + %[t].L (S);\n\t"
+        "W[P0++] = %[t];\n\t"
+        "%[t] = W[P1] (X);\n\t"
+        "%[t].L = %[b].L + %[t].L (S);\n\t"
+        "W[P1++] = %[t];\n\t"
+        "2: %[rs].L = %[rs].H + %[rs].L (S);"
+        : [rs] "+d"(rs), [meter] "+d"(meter), [m] "=&d"(m), [a] "=&d"(a), [b] "=&d"(b), [t] "=&d"(t)
+        : "a"(ap), [n] "i"(COOP_MBLK), [g] "d"(g)
+        : "I0", "I1", "I2", "P0", "P1", "P2", "LC0", "LT0", "LB0", "memory");
+    rec[0] = (int16_t)rs; rec[1] = (int16_t)meter;
+    return (int16_t)rs;
+}
+
+static inline int16_t coop_mix_a_mono(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
+                                      int16_t gL, int16_t gR, int16_t step, volatile int16_t *rec,
+                                      const volatile int16_t *level)
+{
+    const void *args[4] = { M, (const void *)L, (const void *)R, (const void *)level };
+    register const void **ap __asm__("P5") = args;
+    uint32_t rs = ((uint32_t)(uint16_t)step << 16) | (uint16_t)rec[0];
+    uint32_t g = ((uint32_t)(uint16_t)gR << 16) | (uint16_t)gL;
+    int32_t meter = rec[1];
+    int32_t m, a, b, t;
+    __asm__ volatile(
+        "%[t] = [P5 + 0];\n\t"
+        "I0 = %[t];\n\t"
+        "P0 = [P5 + 4];\n\t"
+        "P1 = [P5 + 8];\n\t"
+        "P2 = [P5 + 12];\n\t"
+        "%[t] = %[n] (X);\n\t"
+        "LC0 = %[t];\n\t"
+        "LSETUP (1f, 2f) LC0;\n\t"
+        "1: %[m].L = W[I0++];\n\t"
+        "%[t] = W[P2] (X);\n\t"
+        "%[t].L = %[m].L * %[t].L;\n\t"
+        "%[t] = ABS %[t] (V);\n\t"
+        "%[meter] = MAX (%[meter], %[t]) (V);\n\t"
+        "%[a].L = %[m].L * %[g].L;\n\t"
+        "%[b].L = %[m].L * %[g].H;\n\t"
+        "%[a].L = %[a].L * %[rs].L;\n\t"
+        "%[b].L = %[b].L * %[rs].L;\n\t"
+        "%[t] = W[P0] (X);\n\t"
+        "%[t].L = %[a].L + %[t].L (S);\n\t"
+        "W[P0++] = %[t];\n\t"
+        "%[t] = W[P1] (X);\n\t"
+        "%[t].L = %[b].L + %[t].L (S);\n\t"
+        "W[P1++] = %[t];\n\t"
+        "2: %[rs].L = %[rs].H + %[rs].L (S);"
+        : [rs] "+d"(rs), [meter] "+d"(meter), [m] "=&d"(m), [a] "=&d"(a), [b] "=&d"(b), [t] "=&d"(t)
+        : "a"(ap), [n] "i"(COOP_MBLK), [g] "d"(g)
+        : "I0", "P0", "P1", "P2", "LC0", "LT0", "LB0", "memory");
+    rec[0] = (int16_t)rs; rec[1] = (int16_t)meter;
+    return (int16_t)rs;
+}
+
+static inline void coop_mix_b(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
+                              const int16_t *dL, const int16_t *dR, int16_t gain,
+                              int16_t *ramp_state, int16_t step)
+{
+    const void *args[5] = { M, dL, dR, (const void *)L, (const void *)R };
+    register const void **ap __asm__("P5") = args;
+    uint32_t rs = ((uint32_t)(uint16_t)step << 16) | (uint16_t)*ramp_state;
+    int32_t m, a, b, t;
+    __asm__ volatile(
+        "%[t] = [P5 + 0];\n\t"
+        "I0 = %[t];\n\t"
+        "%[t] = [P5 + 4];\n\t"
+        "I1 = %[t];\n\t"
+        "%[t] = [P5 + 8];\n\t"
+        "I2 = %[t];\n\t"
+        "P0 = [P5 + 12];\n\t"
+        "P1 = [P5 + 16];\n\t"
+        "%[t] = %[n] (X);\n\t"
+        "LC0 = %[t];\n\t"
+        "LSETUP (1f, 2f) LC0;\n\t"
+        "1: %[m].L = W[I0++];\n\t"
+        "%[a].L = W[I1++];\n\t"
+        "%[b].L = W[I2++];\n\t"
+        "%[a].L = %[m].L + %[a].L (S);\n\t"
+        "%[b].L = %[m].L + %[b].L (S);\n\t"
+        "%[a].L = %[a].L * %[g].L;\n\t"
+        "%[b].L = %[b].L * %[g].L;\n\t"
+        "%[a].L = %[a].L * %[rs].L;\n\t"
+        "%[b].L = %[b].L * %[rs].L;\n\t"
+        "%[t] = W[P0] (X);\n\t"
+        "%[t].L = %[a].L + %[t].L (S);\n\t"
+        "W[P0++] = %[t];\n\t"
+        "%[t] = W[P1] (X);\n\t"
+        "%[t].L = %[b].L + %[t].L (S);\n\t"
+        "W[P1++] = %[t];\n\t"
+        "2: %[rs].L = %[rs].H + %[rs].L (S);"
+        : [rs] "+d"(rs), [m] "=&d"(m), [a] "=&d"(a), [b] "=&d"(b), [t] "=&d"(t)
+        : "a"(ap), [n] "i"(COOP_MBLK), [g] "d"((int32_t)gain)
+        : "I0", "I1", "I2", "P0", "P1", "LC0", "LT0", "LB0", "memory");
+    *ramp_state = (int16_t)rs;
+}
+
+static inline void coop_mix_b_mono(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
+                                   int16_t gain, int16_t *ramp_state, int16_t step)
+{
+    const void *args[3] = { M, (const void *)L, (const void *)R };
+    register const void **ap __asm__("P5") = args;
+    uint32_t rs = ((uint32_t)(uint16_t)step << 16) | (uint16_t)*ramp_state;
+    int32_t m, a, t;
+    __asm__ volatile(
+        "%[t] = [P5 + 0];\n\t"
+        "I0 = %[t];\n\t"
+        "P0 = [P5 + 4];\n\t"
+        "P1 = [P5 + 8];\n\t"
+        "%[t] = %[n] (X);\n\t"
+        "LC0 = %[t];\n\t"
+        "LSETUP (1f, 2f) LC0;\n\t"
+        "1: %[m].L = W[I0++];\n\t"
+        "%[a].L = %[m].L * %[g].L;\n\t"
+        "%[a].L = %[a].L * %[rs].L;\n\t"
+        "%[t] = W[P0] (X);\n\t"
+        "%[t].L = %[a].L + %[t].L (S);\n\t"
+        "W[P0++] = %[t];\n\t"
+        "%[t] = W[P1] (X);\n\t"
+        "%[t].L = %[a].L + %[t].L (S);\n\t"
+        "W[P1++] = %[t];\n\t"
+        "2: %[rs].L = %[rs].H + %[rs].L (S);"
+        : [rs] "+d"(rs), [m] "=&d"(m), [a] "=&d"(a), [t] "=&d"(t)
+        : "a"(ap), [n] "i"(COOP_MBLK), [g] "d"((int32_t)gain)
+        : "I0", "P0", "P1", "LC0", "LT0", "LB0", "memory");
+    *ramp_state = (int16_t)rs;
+}
+#else
+#define coop_mix_a      coop_mix_a_c
+#define coop_mix_a_mono coop_mix_a_mono_c
+#define coop_mix_b      coop_mix_b_c
+#define coop_mix_b_mono coop_mix_b_mono_c
+#endif
 
 #endif

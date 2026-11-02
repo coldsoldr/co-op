@@ -1,17 +1,17 @@
 /*
- * coop-fw device statistics file: the counters the coop stages keep (per-block cycle peaks, tape I/O work, edits,
- * state-mismatch detectors) written as text into the last 4 KiB of track 4's audio in the tape image (the one channel disk
- * mode copies unchanged: tape/track_4.aif, read with tools/tape_tail_stats.py) and to /yaffs2/user/coop_stats.txt (not
- * visible in disk mode, which is a synthesised FAT). Nothing else on the device can read our words (docs/performance.md: "a reader for the
- * measurement words").
+ * coop-fw device statistics (format 3, T4): the counters the coop stages keep (per-block cycle peaks and sums, tape
+ * I/O work, edits, state-mismatch detectors, the L1 pool) written as text into the last 8 KiB of track 4's audio in
+ * the tape image (the one channel disk mode copies unchanged: tape/track_4.aif, read with tools/tape_tail_stats.py)
+ * and to /yaffs2/user/coop_stats.txt (not visible in disk mode, which is a synthesised FAT). Nothing else on the
+ * device can read our words (docs/performance.md).
  *
  * Every WINDOW_CYCLES (5 s) coop_stats_tick snapshots the window counters (the *_win words the producers keep:
- * whole audio callback, record tap, mix replacement, I/O step / gap / load / flush) and the growth of the cumulative
- * counters (voice hooks, side blocks, record calls, loads, flushes) into a ring of the last WINDOWS windows and
- * zeroes them; the file is rewritten after a window closes while nothing is recording (the write itself is
- * main-loop work we keep out of a take). It is also written once after FIRST_WRITE_PASSES main-loop passes (the
- * L1 dumper's proven point: the filesystem has settled), so even a short session leaves a file that names the
- * build. Cumulative peaks stay as they are. Format: one "name value" pair list per line.
+ * whole audio callback, record tap, mix replacement, voice hook, I/O step / gap / load / flush) and the growth of
+ * the cumulative counters (voice hooks, side blocks, record calls, loads, flushes) into a ring of the last WINDOWS
+ * windows and, separately, a ring of the TOP heaviest windows by cb_max (so a chord or a take is never pushed out by
+ * time); then zeroes them. The file is rewritten after a window closes while nothing is recording (the write is
+ * main-loop work we keep out of a take), and once after FIRST_WRITE_PASSES passes so a short session leaves a file
+ * that names the build. Format: one "name value" pair list per line.
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
@@ -21,15 +21,17 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "t3g"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "t4a"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       12
+#define TOP           8
 #define FIRST_WRITE_PASSES 64
 
 extern volatile uint32_t g_last, g_max, g_blocks, g_max_win, g_blocks_win, g_cb_sum_win, g_cb_over_win;   /* coop_cb.cc */
 extern volatile uint32_t g_stereo_hooks, g_stereo_hook_cycles_max, g_stereo_mix_cycles_max, g_stereo_mix_cycles_win, g_stereo_side_blocks;
+extern volatile uint32_t g_stereo_hook_cycles_win, g_stereo_hook_cycles_sum_win, g_stereo_mix_cycles_sum_win, g_stereo_l1;
 extern volatile uint32_t g_lfo2_cycles_max;
-extern volatile uint32_t g_tape_rec_calls, g_tape_rec_cycles_max, g_tape_rec_cycles_win, g_tape_rec_side_blocks;
+extern volatile uint32_t g_tape_rec_calls, g_tape_rec_cycles_max, g_tape_rec_cycles_win, g_tape_rec_cycles_sum_win, g_tape_rec_side_blocks, g_tape_l1;
 extern volatile uint32_t g_tape_state_mismatch, g_tape_state_mismatch2, g_tape_mismatch_word, g_tape_seam_fills;
 extern volatile uint32_t g_tape_io_loads, g_tape_io_flushes, g_tape_io_held, g_tape_io_errors;
 extern volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g_tape_io_flush_cycles_max, g_tape_io_gap_cycles_max;
@@ -37,22 +39,23 @@ extern volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g
 extern volatile uint32_t g_tape_io_steps_win;
 extern volatile uint32_t g_edit_lifts, g_edit_drops, g_edit_erases, g_edit_errors, g_edit_mono_fallbacks;
 extern volatile uint32_t g_master_cycles, g_fx_cycles;
+extern volatile uint32_t g_l1_state, g_l1_used, g_l1_refused;                                 /* l1_pool.cc */
+extern "C" int coop_tape_write_tail(const char *text, int len);   /* tape_io.cc: the last 8 KiB of track 4's audio */
 
 volatile uint32_t g_stats_writes, g_stats_errors, g_stats_windows, g_stats_ticks, g_stats_tail_writes, g_stats_tail_errors;
-extern "C" int coop_tape_write_tail(const char *text, int len);   /* tape_io.cc: the last 4 KiB of track 4's audio */
 
 struct window {
-    uint32_t blocks, cb_max, cb_sum, cb_over, rec_max, mix_max, hooks, side, recs;
+    uint32_t seq, blocks, cb_max, cb_sum, cb_over, rec_max, rec_sum, mix_max, mix_sum, hook_max, hook_sum, hooks, side, recs;
     uint32_t io_steps, io_step_max, io_gap_max, io_load_max, io_flush_max, loads, flushes;
     uint8_t recording;
 };
-static struct window g_ring[WINDOWS];
+static struct window g_ring[WINDOWS], g_top[TOP];
 static uint32_t g_ring_next;
 static uint32_t g_window_start;
 static uint32_t g_prev_hooks, g_prev_side, g_prev_recs, g_prev_loads, g_prev_flushes;
 static int g_started;
 static uint8_t g_win_recording;
-static char g_text[4096];
+static char g_text[8192];
 static int g_len;
 
 static inline uint32_t now_cycles(void) { uint32_t v; __asm__ __volatile__("%0 = CYCLES;" : "=d"(v)); return v; }
@@ -66,14 +69,25 @@ static void putn(uint32_t v)
 }
 static void kv(const char *k, uint32_t v) { put(" "); put(k); put(" "); putn(v); }
 
+static void put_window(const char *tag, const struct window *w)
+{
+    put(tag); kv("seq", w->seq); kv("blocks", w->blocks); kv("cb_max", w->cb_max); kv("cb_sum", w->cb_sum); kv("cb_over", w->cb_over);
+    kv("rec_max", w->rec_max); kv("rec_sum", w->rec_sum); kv("mix_max", w->mix_max); kv("mix_sum", w->mix_sum);
+    kv("hook_max", w->hook_max); kv("hook_sum", w->hook_sum); kv("hooks", w->hooks); kv("side", w->side); kv("recs", w->recs);
+    kv("io_steps", w->io_steps); kv("io_step_max", w->io_step_max); kv("io_gap_max", w->io_gap_max);
+    kv("io_load_max", w->io_load_max); kv("io_flush_max", w->io_flush_max); kv("loads", w->loads); kv("flushes", w->flushes);
+    kv("recording", w->recording); put("\n");
+}
+
 static void write_file(void)
 {
     g_len = 0;
-    put("coop_stats 2 build " STATS_BUILD "\n");
+    put("coop_stats 3 build " STATS_BUILD "\n");
     put("cb"); kv("blocks", g_blocks); kv("max", g_max); kv("last", g_last); kv("cycles", now_cycles()); put("\n");
     put("stages"); kv("rec_max", g_tape_rec_cycles_max); kv("mix_max", g_stereo_mix_cycles_max);
     kv("hook_max", g_stereo_hook_cycles_max); kv("lfo2_max", g_lfo2_cycles_max); kv("master_max", g_master_cycles);
     kv("fx_max", g_fx_cycles); kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
+    put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); put("\n");
     put("tape"); kv("rec_calls", g_tape_rec_calls); kv("rec_side_blocks", g_tape_rec_side_blocks);
     kv("mismatch", g_tape_state_mismatch); kv("mismatch2", g_tape_state_mismatch2); kv("mismatch_word", g_tape_mismatch_word);
     kv("seam_fills", g_tape_seam_fills); put("\n");
@@ -87,11 +101,11 @@ static void write_file(void)
     for (uint32_t i = 0; i < WINDOWS; i++) {                           /* oldest first */
         const struct window *w = &g_ring[(g_ring_next + i) % WINDOWS];
         if (!w->blocks && !w->io_steps) continue;
-        put("win"); kv("blocks", w->blocks); kv("cb_max", w->cb_max); kv("cb_sum", w->cb_sum); kv("cb_over", w->cb_over);
-        kv("rec_max", w->rec_max); kv("mix_max", w->mix_max); kv("hooks", w->hooks); kv("side", w->side); kv("recs", w->recs);
-        kv("io_steps", w->io_steps); kv("io_step_max", w->io_step_max); kv("io_gap_max", w->io_gap_max);
-        kv("io_load_max", w->io_load_max); kv("io_flush_max", w->io_flush_max); kv("loads", w->loads); kv("flushes", w->flushes);
-        kv("recording", w->recording); put("\n");
+        put_window("win", w);
+    }
+    for (uint32_t i = 0; i < TOP; i++) {                               /* the heaviest windows, any order */
+        if (!g_top[i].blocks) continue;
+        put_window("top", &g_top[i]);
     }
     g_text[g_len] = 0;
     if (coop_tape_write_tail(g_text, g_len + 1) == 0) g_stats_tail_writes++; else g_stats_tail_errors++;   /* the channel disk mode copies */
@@ -100,6 +114,13 @@ static void write_file(void)
     int ok = Y_WRITE(fd, g_text, g_len) == g_len;
     if (Y_CLOSE(fd) != 0) ok = 0;
     if (ok) g_stats_writes++; else g_stats_errors++;
+}
+
+static void keep_if_heavy(const struct window *w)
+{
+    uint32_t imin = 0;
+    for (uint32_t i = 1; i < TOP; i++) if (g_top[i].cb_max < g_top[imin].cb_max) imin = i;
+    if (w->cb_max > g_top[imin].cb_max || !g_top[imin].blocks) g_top[imin] = *w;
 }
 
 /* From coop_tape_io_step (main loop, mode 0) on every pass. */
@@ -114,12 +135,17 @@ extern "C" void coop_stats_tick(int recording)
     g_window_start = now;
     struct window *w = &g_ring[g_ring_next];
     g_ring_next = (g_ring_next + 1) % WINDOWS;
+    w->seq = g_stats_windows;
     w->blocks = g_blocks_win;            g_blocks_win = 0;
     w->cb_max = g_max_win;               g_max_win = 0;
     w->cb_sum = g_cb_sum_win;            g_cb_sum_win = 0;
     w->cb_over = g_cb_over_win;          g_cb_over_win = 0;
     w->rec_max = g_tape_rec_cycles_win;  g_tape_rec_cycles_win = 0;
+    w->rec_sum = g_tape_rec_cycles_sum_win; g_tape_rec_cycles_sum_win = 0;
     w->mix_max = g_stereo_mix_cycles_win; g_stereo_mix_cycles_win = 0;
+    w->mix_sum = g_stereo_mix_cycles_sum_win; g_stereo_mix_cycles_sum_win = 0;
+    w->hook_max = g_stereo_hook_cycles_win; g_stereo_hook_cycles_win = 0;
+    w->hook_sum = g_stereo_hook_cycles_sum_win; g_stereo_hook_cycles_sum_win = 0;
     w->hooks = g_stereo_hooks - g_prev_hooks;              g_prev_hooks = g_stereo_hooks;
     w->side = g_tape_rec_side_blocks - g_prev_side;        g_prev_side = g_tape_rec_side_blocks;
     w->recs = g_tape_rec_calls - g_prev_recs;              g_prev_recs = g_tape_rec_calls;
@@ -132,5 +158,6 @@ extern "C" void coop_stats_tick(int recording)
     w->flushes = g_tape_io_flushes - g_prev_flushes;       g_prev_flushes = g_tape_io_flushes;
     w->recording = g_win_recording;      g_win_recording = 0;
     g_stats_windows++;
+    keep_if_heavy(w);
     if (!recording) write_file();
 }

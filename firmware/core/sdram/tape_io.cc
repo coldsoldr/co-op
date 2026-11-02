@@ -229,6 +229,20 @@ extern "C" int coop_tape_mount_and_index(void)
 }
 
 /* ---- chunk I/O: tape_cache_io_step (0x1a54710) with lane pairs ---- */
+static void interleave_n(uint8_t *dst, const uint8_t *lane_l, const uint8_t *lane_r, int frames)
+{
+    uint32_t *d = (uint32_t *)dst;
+    const uint16_t *l = (const uint16_t *)lane_l, *r = (const uint16_t *)lane_r;
+    for (int i = 0; i < frames; i++) d[i] = (uint32_t)l[i] | ((uint32_t)r[i] << 16);
+}
+/* Flushes in two 64 KiB halves (T4): one half per main-loop pass, so a pass blocks the UI no longer than stock's
+ * 64 KiB write (the device: 75 ms for the whole 128 KiB). Protocol: the request byte is cleared when the node's flush
+ * starts and the dirty bits stay set while the halves are written (the stock record sets the request byte on
+ * every write, so a write that lands meanwhile shows there); a track's dirty bit is cleared after its second half
+ * only if no request arrived, else the node is flushed again later. A node whose chunk changed under us is dropped. */
+static uint8_t *g_flush_node;
+static int16_t g_flush_chunk;
+static int g_flush_track, g_flush_half;
 static void deinterleave_n(const uint8_t *src, uint8_t *lane_l, uint8_t *lane_r, int frames)
 {
     const uint32_t *s = (const uint32_t *)src;
@@ -262,7 +276,7 @@ static int rw_chunk(int write, int t, int chunk) { return rw_bytes(write, t, chu
  * text of up to TAIL_BYTES is written into the last TAIL_BYTES of track 4's audio (the final 23 ms of the tape on
  * track 4: inaudible unless the tape is played to its very end there) and read back from tape/track_4.aif with
  * tools/tape_tail_stats.py. Zero padded: the padding is silence. */
-#define TAIL_BYTES 4096
+#define TAIL_BYTES 8192
 extern "C" int coop_tape_write_tail(const char *text, int len)
 {
     if (CACHE_FD < 0 || len < 0) return -1;
@@ -302,6 +316,7 @@ volatile uint32_t g_tape_io_gap_cycles_max, g_tape_io_gap_cycles_win;   /* end o
 static uint32_t g_step_end;
 static uint8_t g_step_seen;
 extern "C" void coop_stats_tick(int recording);   /* coop_stats.cc */
+extern "C" void coop_sysex_service(void);         /* coop_sysex.cc: answer queued SysEx file requests (U1) */
 static inline void peak(volatile uint32_t *max, volatile uint32_t *win, uint32_t dt) { if (dt > *max) *max = dt; if (dt > *win) *win = dt; }
 
 static inline uint32_t now_cycles(void) { uint32_t v; __asm__ __volatile__("%0 = CYCLES;" : "=d"(v)); return v; }
@@ -329,31 +344,42 @@ static int io_step(int mode)
 {
     coop_tape_clamp_track();
     int recording = RECORDING != 0 && mode == 0;
-    if (mode == 0) coop_stats_tick(recording);
+    if (mode == 0) { coop_stats_tick(recording); coop_sysex_service(); }
     int flush_all = !recording && g_was_recording;                     /* the take ended (or a forced flush): nothing held */
     g_was_recording = (uint8_t)recording;
     uint32_t now = now_cycles();
     for (uint8_t *node = CACHE_HEAD; node; node = *(uint8_t **)(node + NODE_NEXT)) {
         uint8_t *data = *(uint8_t **)(node + NODE_DATA);
         int16_t chunk = *(int16_t *)(node + NODE_CHUNK);
-        if (node[NODE_FLUSHREQ]) {                                     /* flush: every dirty lane pair */
-            int slot = node_slot(node);
-            if (recording && !flush_all && slot >= 0 && g_saved_once[slot] && now - g_saved_at[slot] < HOLD_CYCLES) {
-                g_tape_io_held++;
-                continue;                                              /* held: the request stays, loads may go on */
+        if (node[NODE_FLUSHREQ] || g_flush_node == node) {              /* flush: every dirty lane pair, a half per pass */
+            if (g_flush_node != node) {
+                int slot = node_slot(node);
+                if (recording && !flush_all && slot >= 0 && g_saved_once[slot] && now - g_saved_at[slot] < HOLD_CYCLES) {
+                    g_tape_io_held++;
+                    continue;                                          /* held: the request stays, loads may go on */
+                }
+                if (slot >= 0) { g_saved_at[slot] = now; g_saved_once[slot] = 1; }
+                node[NODE_FLUSHREQ] = 0;
+                g_flush_node = node; g_flush_chunk = chunk; g_flush_track = 0; g_flush_half = 0;
             }
-            if (slot >= 0) { g_saved_at[slot] = now; g_saved_once[slot] = 1; }
-            node[NODE_FLUSHREQ] = 0;
-            for (int t = 0; t < TRACKS; t++) {
-                uint16_t bits = (uint16_t)((1u << t) | (1u << (TRACKS + t)));   /* both passes set bit t; 4+t is legacy */
-                if (!(*(uint16_t *)(node + NODE_DIRTY) & bits)) continue;
-                *(uint16_t *)(node + NODE_DIRTY) &= (uint16_t)~bits;  /* cleared before the write, as stock */
-                uint32_t f0 = now_cycles();
-                interleave(g_bounce, data + t * LANE_BYTES, data + (TRACKS + t) * LANE_BYTES);
-                if (rw_chunk(1, t, chunk) != 0) g_tape_io_errors++;
-                g_tape_io_flushes++;
-                peak(&g_tape_io_flush_cycles_max, &g_tape_io_flush_cycles_win, now_cycles() - f0);
+            if (chunk != g_flush_chunk || chunk < 0) { g_flush_node = 0; continue; }   /* reassigned under us */
+            uint16_t bits = 0;
+            while (g_flush_track < TRACKS) {
+                bits = (uint16_t)((1u << g_flush_track) | (1u << (TRACKS + g_flush_track)));   /* both passes set bit t; 4+t is legacy */
+                if (*(uint16_t *)(node + NODE_DIRTY) & bits) break;
+                g_flush_track++;
             }
+            if (g_flush_track >= TRACKS) { g_flush_node = 0; continue; }           /* this node is done */
+            int t = g_flush_track, half = g_flush_half;
+            uint32_t f0 = now_cycles();
+            interleave_n(g_bounce, data + t * LANE_BYTES + half * (LANE_BYTES / 2),
+                         data + (TRACKS + t) * LANE_BYTES + half * (LANE_BYTES / 2), PART_FRAMES);
+            if (rw_bytes(1, t, chunk, half * (PART_FRAMES * 4), PART_FRAMES * 4) != 0) g_tape_io_errors++;
+            peak(&g_tape_io_flush_cycles_max, &g_tape_io_flush_cycles_win, now_cycles() - f0);   /* per half */
+            if (half == 0) { g_flush_half = 1; return 1; }
+            if (!node[NODE_FLUSHREQ]) *(uint16_t *)(node + NODE_DIRTY) &= (uint16_t)~bits;   /* nothing landed meanwhile */
+            g_flush_half = 0; g_flush_track++;
+            g_tape_io_flushes++;
             return 1;
         }
         if (mode != 0) return 0;

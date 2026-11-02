@@ -224,3 +224,21 @@ voice hook costs up to 33,710 cycles per voice on the device (13x the emulator),
 (26 windows), so the recorded-chord windows are lost; the chord window that survived shows the UI's
 main-loop passes dropping from ~600 to 371 per 5 s and a 138 ms main-loop gap. Lag by model (owner): FM
 and Voltage worse than string. Next: milestone T4 (`docs/performance.md`).
+
+## Milestone T4a: kernels, L1 pool, split flushes, stats v3, SysEx file channel — device test (pending, 2026-11-02)
+
+`build/pkg/op1_246_coop_t4a_stereo_tape.op1` (copy in Downloads; sha256 in the commit). Supersedes T3g. The first
+optimisation round from the T3g numbers (`docs/performance.md`, T4a) plus the SysEx file channel (`docs/sysex.md`).
+No reformat. The stock Lander game's sounds are silent on this image (its L1 buffers hold coop's hot data).
+
+**What to do:**
+1. Flash, boot, wait 10 s. Tape page, tape stopped: hold an FM chord 5 s, then a string chord 5 s. Record 10 s of
+   silence, stop. Record the FM chord 5 s, stop. Play it back, stop. Wait 15 s. Note which steps lag, and how it
+   compares with T3g.
+2. With the device still on and plugged in: open `tools/coop_sysex.html` in Chrome or Edge, pick the OP-1 port,
+   click Hello (it should answer `coop protocol 1 build t4a`), then Read file with the default path
+   `/yaffs2/user/coop_stats.txt`; Save as... into Downloads. If that fails, say what the page said, and fall back to
+   shift+COM disk mode and `tape/track_4.aif` as before.
+3. Leave the end of track 4 alone (the stats live in its last 46 ms).
+
+Result: _not yet flashed_.
