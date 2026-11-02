@@ -1,7 +1,7 @@
 /*
  * coop-fw device statistics file: the counters the coop stages keep (per-block cycle peaks, tape I/O work, edits,
  * state-mismatch detectors) written as text to /yaffs2/user/coop_stats.txt by the main loop, so the owner can copy
- * it in disk mode. Nothing else on the device can read our words (docs/performance.md: "a reader for the
+ * it in disk mode (as user/coop_stats.txt on the drive, the folder coop_l1.bin was in). Nothing else on the device can read our words (docs/performance.md: "a reader for the
  * measurement words").
  *
  * Every WINDOW_CYCLES (5 s) coop_stats_tick snapshots the window counters (the *_win words the producers keep:

@@ -210,7 +210,7 @@ block after the main loop evicts it; ~100-190 cycles a line) and NAND time insid
 
 `core/sdram/coop_stats.cc` writes `/yaffs2/user/coop_stats.txt` from the main loop (the tape I/O step) every
 5 s while nothing is recording: cumulative peaks and a ring of the last twelve 5-second windows. Visible in disk
-mode. Lines are `name value` pairs:
+mode as `user/coop_stats.txt` (the `user` folder of the drive, like `coop_l1.bin`; not the root). Lines are `name value` pairs:
 
 - `cb blocks/max/last`: the whole coop audio callback (CYCLES, device time including cache misses); the
   ceiling is 435,000 (0.75 of a block).
@@ -253,7 +253,7 @@ stats file `io_load_max` is now per part.
 
 ### T3f: the stats file names its build and measures the main loop's gaps (2026-11-02)
 
-The owner's T3e-era report: no `coop_stats.txt` in the disk root (which package was on the device for that
+The owner's T3e-era report: no `coop_stats.txt` in the disk root (the file lives under `user/` on the disk-mode drive, as `coop_l1.bin` did; the root was the wrong place to look) (which package was on the device for that
 run is not known: T3c has no writer), and the lag is specific to voices: recording with nothing playing keeps
 the tape animation smooth, and it starts lagging as soon as voices play. The cycle counter is not the reason
 for a missing file: the Rings probe in `../te-op1-cfw` read 399 MHz from CYCLES on this device without
