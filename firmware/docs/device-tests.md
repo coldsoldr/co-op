@@ -215,4 +215,12 @@ FM model (lags?), then with the string model (lags?). Record 10 s of silence, st
 into disk mode, copy `tape/track_4.aif` to Downloads (63 MB). I run `tools/tape_tail_stats.py` on it. Note
 which steps lagged.
 
-Result: _not yet flashed_.
+Result (2026-11-02, the owner): **PASS for the channel**: `track_4.aif` copied, `tools/tape_tail_stats.py`
+prints the stats (`docs/device-stats/t3g_2026-11-02_fm_chord.txt`; 22 tail writes, 0 errors, mismatch
+counters 0). The first device cycle numbers, read in `docs/performance.md` ("T3g: the first device numbers"):
+the audio callback peaks at **461,297 cycles = 79% of a block** (ceiling 75%; the emulator said 21%), the
+voice hook costs up to 33,710 cycles per voice on the device (13x the emulator), the record tap and the mix
+3-3.6x. The 12-window ring had been pushed past the recording windows by the time the file was written
+(26 windows), so the recorded-chord windows are lost; the chord window that survived shows the UI's
+main-loop passes dropping from ~600 to 371 per 5 s and a 138 ms main-loop gap. Lag by model (owner): FM
+and Voltage worse than string. Next: milestone T4 (`docs/performance.md`).

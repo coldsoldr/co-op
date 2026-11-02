@@ -302,3 +302,53 @@ one the window figures should confirm.
 Verified in op1emu (`tests/sim/det_tape_rec.txt`): 19 tail writes, 0 tail errors, audio identical in RMS, peak and
 width (0.2307) to the T3f image. `tools/tape_tail_stats.py` was checked on a synthetic track file with the same
 chunk layout and clip trailer.
+
+### T3g: the first device numbers (2026-11-02)
+
+`docs/device-stats/t3g_2026-11-02_fm_chord.txt`, read back from `track_4.aif`. Block budget 580,499 cycles;
+the device's CYCLES includes cache misses, SDRAM contention and nested interrupts, so these are the real costs.
+
+| Figure | Device | Emulator | Ratio |
+|---|---|---|---|
+| Audio callback, worst block (`cb max`) | 461,297 (**79%** of a block) | 122,376 (21%) | 3.8x |
+| Record tap, worst (`rec_max`) | 48,259 (8.3%) | 13,530 | 3.6x |
+| Mix replacement, worst (`mix_max`) | 46,389 (8.0%) | 16,107 | 2.9x |
+| Voice hook, worst, one voice (`hook_max`) | 33,710 (5.8%) | 2,554 | **13x** |
+| Tape rolling, no voices: average per block | 73-87k (12.6-15%) | 45.9k | 1.6-1.9x |
+| Tape stopped: average per block | 6-18k (1-3%) | - | - |
+| Node part load, 64 KiB (`load_max`) | 16.0M cycles = 40 ms | 0.22M | NAND |
+| Chunk flush, 128 KiB (`flush_max`) | 30.1M cycles = 75 ms | 0.56M | NAND |
+| Main-loop passes per 5 s, idle / chord window | ~600 / 371 | 625 | - |
+| Longest main-loop gap, idle / chord window | 8-22 ms / **138 ms** | 8 ms | - |
+
+Readings:
+- **The audio side is the cause.** A chord with the tape rolling takes the callback to 41% in the one chord
+  window the ring kept and to 79% in the worst block of the session (the recorded FM chord, whose windows
+  were pushed out of the 12-window ring: 26 windows had passed). The Rings probe saw the screen starve above
+  ~40%; the owner sees it here. The string model costs less per voice in stock than FM and Voltage, hence
+  the difference by model.
+- **The voice hook is the elephant:** up to 33.7k cycles for one voice's 64-sample difference accumulate
+  (128 MACs of real work). Six voices of a chord would be ~200k, half the budget. The C loop compiles to ~40
+  instructions a sample and every one of its code lines and data lines (side buses, pan table, pan state,
+  all in SDRAM) is cold at the first voice of a block; the worst case likely includes a nested interrupt.
+  The record tap and mix replacement are 3x the emulator, the expected cold-cache factor.
+- **NAND:** a 64 KiB read stalls the main loop 40 ms, a 128 KiB flush 75 ms (both include the interrupts
+  that landed in them). The T3e split cut the per-pass load stall from ~160 ms to 40 ms; flushes should be
+  split the same way (two 64 KiB halves) so no single pass blocks the UI longer than a stock pass.
+- The mismatch detectors stayed 0 through the session; 22 tail writes, 0 errors.
+- The stats need two changes: per-stage sums per window (averages, not only maxima) and a second ring of the
+  heaviest windows by `cb_max`, so a recording or chord window is never lost to the time ring.
+
+### Milestone T4: fit the stereo stages inside the budget on the device (plan)
+
+Order, each step measured on the device with the stats:
+1. Stats v3: per-stage window sums, a heaviest-windows ring, hook calls per block.
+2. The per-voice difference accumulate and the mix full path as Blackfin assembly kernels (dual MAC, a few
+   lines of code each, bit-exact against the C versions in op1emu: the spread-0 regression gate is bit-exact
+   and the full-spread image must stay sample-identical), with their hot data (side buses 1 KiB, pan state, pan
+   table, the record tap's rings and snapshots) in L1 data B: kennel's L1 pool (`kn_l1.c`: the Lander game's
+   sound buffers `0xFF90081C-0xFF906908`, ~24 KB, free when the Lander is off, with its table repointed as
+   kennel does) or the 512 B at `0xFF907E00`.
+3. Flushes in two 64 KiB halves across passes.
+4. If still short of the 0.75 ceiling with six FM voices recorded: instruction-cache way locking for the hot
+   coop code (one or two 4 KB ways), which keeps it resident across the main loop's UI work.
