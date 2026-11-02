@@ -145,7 +145,7 @@ Deterministic scenario `tests/sim/det_chord.txt` (guest-timed `at` events: synth
   (`c2_full_st.wav`): 3 note-ons counted, side rms 49.2, width 0.219. [C]
 - **Device packages:** `tools/build_device_package.sh` builds the `.op1` (re-encrypted L1 with the
   check-key arrangement, round trip `encrypt(decrypt(stock)) == stock` verified; `verify_bootloader`
-  and `pkg_check` pass; only `OP1_vdk.ldr` differs from stock). Not flashed yet.
+  and `pkg_check` pass; only `OP1_vdk.ldr` differs from stock). Spreadfull flashed: PASS.
 
 The earlier wall-time scripts (`cap.txt`, `hear.txt`) are not comparable run to run: the note onset
 lands in a different guest block, and the aligned residue (max 85 LSB) is the stock engine's own
@@ -156,8 +156,8 @@ time-dependent modulation, not a coop difference.
 - [C] Pipeline traced dynamically (above). [C] `coop_voice.h` + `coop_stereo.h` DSP, host tests
   (`tests/host/stereo_test.cc`), tool tests (`tests/tools/test_l1_stereo_insert.py`).
 - [C] **C1 done in the emulator**: takeover wired, spread-0 image sample-identical to stock, full
-  spread produces power-conserving stereo on the stereo output path. Device result pending (owner
-  flashes; `docs/device-tests.md`).
+  spread produces power-conserving stereo on the stereo output path. **Device: PASS** (2026-11-02, spreadfull image flashed by the owner,
+  plays and sounds right; `docs/device-tests.md`).
 - [C] Drums hooked with the same mechanism (hook + accumulate formula in place; a drum-mode stereo
   listen is still to do).
 - [C] C2 model: synth voices draw their pan at the real note-on (`Core::NoteOn` hook, verified: 3

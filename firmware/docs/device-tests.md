@@ -67,7 +67,7 @@ the same on every OP-1, so the public reference dump (Tolsi/op1dumps) is valid f
 decrypts to real code (see `docs/l1-map.md`). The dumper builds (canary/minimal/otp/full) remain
 available for an optional device-vs-emulator cross-check but are not needed for the gate.
 
-## Phase 2 milestone C1/C2: stereo instrument bus — device test (pending, 2026-11-02)
+## Phase 2 milestone C1/C2: stereo instrument bus — device test (PASS, 2026-11-02)
 
 Built by `tools/build_device_package.sh` (sha256 in `build/pkg/`, copies in `C:\Users\byron\Downloads`):
 - `op1_246_coop_c1_spread0.op1` — the regression image: must sound and behave exactly like stock
@@ -85,4 +85,11 @@ image as stock, spreadfull voices spread L/R and total loudness unchanged; UI fp
 `docs/performance.md`). If the device is silent or hangs: the mix thunk's register save set
 (`stereo_thunks.S`) is the first suspect, then the region-C trampoline at `0x01e00000`.
 
-Result: _not yet flashed_.
+**Result (2026-11-02, owner):** `op1_246_coop_c1_spreadfull.op1` (sha256 `6f100465...`) flashed first (the
+owner's call). Boots, plays, \"sounds great\" [C]: the stereo instrument bus, the pan-at-note-on hook
+(region-C trampoline at `0x01e00000`, `Core::NoteOn` callers patched), the replaced mix loop B, the
+LFO2 pre-render thunks (slot off) and the coop payload at region A all run on the device without
+silence, hang or audible artefacts. This is the first coop audio-path image confirmed on hardware.
+Not yet recorded: the spread0 regression image on the device (emulator: stock bit for bit), a
+measured fps/perf check (`docs/performance.md`), and a six-voice chord with an insert FX under
+headphones for clicks. Those stay on the list for the next flash.
