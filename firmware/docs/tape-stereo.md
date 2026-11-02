@@ -315,8 +315,7 @@ tape on the first boot** (recordings lost; back up with co-op first). Pending th
   loop, through `coop_seam_prologue_thunk`) hands the loop an 8-entry pointer table and mirrors the
   valid nibble `W[0x018c17f0]` into bits 4-7; hook A clears bits 4-7 each block so the stock `== 0xf`
   fill decision keeps working. The L1 note-on trampoline (which never fired) gave its 12 bytes to hook B.
-  **Untested**: the deterministic scenarios set no loop (the stock fill returns at once when loop out <=
-  loop in); a loop scenario needs the loop keys in the op1emu key map.
+  Tested in T3c (section 11): the first build faulted on a wrong stack slot in hook B's thunk; fixed.
 - Verified (op1emu): full-spread take in-session and after a power cycle plays with width 0.27 (live 0.27);
   state-mismatch counters 0; spread-0 envelopes equal stock within the boot-timeline shift.
 - Still open: lift/drop/erase/split/join copy one lane; the instrument monitor on the tape page is mono;
@@ -358,6 +357,30 @@ tape on the first boot** (recordings lost; back up with co-op first). Pending th
 - Still open: split/join (frame ranges in tape.db, believed unaffected), erase untested on the device, the
   loop seam path untested (no loop keys in the emulator map), tape.db reset on rebuild, first-boot notice,
   album key inert, stereo meters.
+
+## 11. T3c (2026-11-02): the loop seam path, tested and fixed
+
+- **Loop keys.** The original OP-1 has no loop key: on the tape page the sound keys 1, 2, 3 are loop in,
+  loop out and loop on/off (tape key handler `0x1a589a8`, jump table `0x18fc038` by key code - 6; the
+  codes 0x2d / 0x2e / 0x2f are GPIO bank 5 bits 13-15 = op1emu `s1` / `s2` / `s3`; key code = bank * 16 +
+  bit - 0x30, te-op1-cfw screen-interface.md). Key 1 / 2 set the point at the playhead through
+  `0x1a56ae8` / `0x1a56a70` and turn the loop on (`0xff8029c5` on, `0xff8029c6` effective; a locate clears
+  effective, `0x1a59380` sets it again when the playhead enters the loop). Scenario `tests/sim/det_tape_loop.txt`:
+  chord at 0.8-1.8 s, loop in at 0, loop out at 1.636 s (72141 samples), play 8.5 s.
+- **The bug** [C]: the first seam block faulted (`Data alignment fault PC=ffa07092 ADDR=0166018b`, the
+  emulator then replays the last DMA buffer for ever, which the T3b build heard as a steady tone). Hook B's
+  thunk wrote the 8-entry staging table into `[SP + 76]`, believing `[--SP] = (R7:0, P5:0)` leaves P0 at
+  `[SP]`; the push stores R0 first and P5 last, so `[SP] = P5`, `[SP + 12] = P2`, `[SP + 52] = R0` (checked
+  in the GNU simulator). The table went into P3's slot, P2 kept the trampoline's thunk address, the seam
+  loop read the thunk's first instruction bytes (`0x01660167`) as a buffer pointer, plus twice the offset 18 =
+  the fault address. Fix: `[SP + 80]`.
+- **Verified** (op1emu, full spread): the chord repeats five times in 8.5 s with width 0.25-0.28 on every
+  pass, the largest sample step at the seams no larger than stock's, pass spacing (1.75 / 1.5 s alternating)
+  equal to stock's; the spread-0 image loops the same mono take five times. No fault, counters 0.
+  `C:/Users/byron/Downloads/t3e_loop_full.wav` (Windows path).
+- Package `build/pkg/op1_246_coop_t3c_stereo_tape.op1` (sha256 6b0adf63...): T3b plus this fix.
+- Still open: split/join, erase on the device, tape.db reset on rebuild, first-boot notice, album key
+  inert, stereo meters.
 
 ### 8.2 T3 next (as written before T3)
 

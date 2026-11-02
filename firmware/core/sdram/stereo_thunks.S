@@ -338,7 +338,9 @@ _coop_seam_prologue_thunk:
     CALL _coop_seam_prologue;
     SP += 12;
     P2 = R0;
-    [SP + 76] = P2;                  /* the saved P2 slot: 68 B of DAG/loop/acc pushes above SP, then P0, P1, P2 of (R7:0, P5:0) */
+    [SP + 80] = P2;                  /* the saved P2 slot: 68 B of DAG/loop/acc pushes above SP, then P5, P4, P3, P2 of (R7:0, P5:0)
+                                      * (push multiple stores R0 first and P5 last: P5 at [SP], P2 at [SP + 12], R0 at [SP + 52];
+                                      * checked in the GNU simulator, docs/tape-stereo.md section 11) */
     R3 = [SP++];
     A1.X = R3;
     R3 = [SP++];

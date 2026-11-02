@@ -183,3 +183,7 @@ and quits after 45 s of wall time for the write-back, run 2 `tests/sim/det_tape_
 same NAND, STOPs twice (back to the start marker) and plays. A script line `quit` must follow a `wait`;
 `at MS quit` quits immediately (the `at` queue carries key events only). The tape position is restored
 from `tape.db` at boot, so play without the STOPs starts wherever the last save left it.
+
+**Loop keys (2026-11-02):** the OP-1 has no loop key; on the tape page the sound keys `s1` / `s2` / `s3` are
+loop in / loop out / loop on-off (key codes 0x2d-0x2f). `tests/sim/det_tape_loop.txt` sets a loop round a
+take; the coop images emulate slower than stock, so its tail `wait` is 150 s to capture five passes.
