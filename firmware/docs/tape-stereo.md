@@ -382,6 +382,19 @@ tape on the first boot** (recordings lost; back up with co-op first). Pending th
 - Still open: split/join, erase on the device, tape.db reset on rebuild, first-boot notice, album key
   inert, stereo meters.
 
+## 12. T3c on the device, and the per-voice question (2026-11-02)
+
+- T3c device result: stereo monitor on the tape page, record, lift, drop all work (docs/device-tests.md).
+- On the older T3 package the owner heard a recorded chord played back as the whole chord panned to one
+  position per strike rather than each voice at its own position. In op1emu the per-note right/left ratio of
+  the C4 / E4 / G4 chord is the same live, on tape in session and on tape after a power cycle (0.49 / 0.56 /
+  0.80 live; 0.46 / 0.58 / 0.85-0.93 on tape), and constant across each note's harmonics, so the emulator
+  keeps per-voice placement in both the record and the file path. The device check is pending: the tape file
+  copied in disk mode (frames as written) bisects record from playback; the stats file's `mismatch` counters
+  tell whether the right-lane pass ever diverged on the device.
+- Performance on the device: the tape animation goes choppy while a chord is recorded; the T3d package writes
+  a stats file to measure it (docs/performance.md).
+
 ### 8.2 T3 next (as written before T3)
 
 Held saves while recording (kennel `kn_tape.c`); the loop seam path for 8 lanes (`0xffa070b8`, the

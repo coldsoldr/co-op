@@ -38,6 +38,7 @@ __attribute__((section(".data"))) volatile uint32_t g_coop_tape_stereo_in = 1;  
 
 /* --- counters --- */
 volatile uint32_t g_tape_rec_calls, g_tape_rec_cycles_max, g_tape_state_mismatch, g_tape_gains_calls;
+volatile uint32_t g_tape_rec_cycles_win;
 volatile uint32_t g_tape_rec_side_blocks, g_tape_mono_ptr, g_tape_state_mismatch2, g_tape_mismatch_word;
 
 /* --- state --- */
@@ -144,6 +145,7 @@ extern "C" void coop_tape_record(const int16_t *mono)
     copy_words(TAPE_STATE, g_tape_after, TAPE_STATE_WORDS);
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_tape_rec_cycles_max) g_tape_rec_cycles_max = dt;
+    if (dt > g_tape_rec_cycles_win) g_tape_rec_cycles_win = dt;
 }
 
 /* From coop_tape_gains_thunk, in the tick right after the stock pan law (site 0xffa06de0), with the

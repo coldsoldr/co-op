@@ -183,3 +183,47 @@ device measurement says so.
 
 This is the stock LFO class's own cost (slot 1 pays the same); slot 2 off costs a few loads per voice.
 Worst case (stereo bus full + 12 drum LFO2 voices) stays near 22% of the budget.
+
+## Phase 3: stereo tape, T3c image (op1emu CYCLES, 2026-11-02)
+
+Whole-callback peak (`g_max`) through `tests/sim/det_tape_rec.txt` (a chord recorded from the synth page, then
+played back), three images from the same ELF; the stock chord figure is the 2026-11-01 baseline above.
+
+| Image | Peak cycles/block | % of budget |
+|---|---|---|
+| Stock, chord (baseline) | 74,285 | 12.8% |
+| Coop stages, spread 0, no tape stereo | 89,900 | 15.5% |
+| + stereo tape, spread 0 | 100,222 | 17.3% |
+| + full spread (the device package) | 122,376 | 21.1% |
+
+Stage peaks in the full image: record tap (two stock record passes + ring/state copies) 13,530 (2.3%), mix
+replacement full path 16,107 (2.8%), voice hook 2,554 per panned voice. Main-loop I/O step (coop_tape_io_step,
+instruction-count model, no NAND time): a node load (4 x 128 KiB reads + de-interleave) 811-857k cycles,
+a chunk flush (interleave + 128 KiB write) 419k. Stock's step moves 4 x 64 KiB per node load and 64 KiB per
+flush, but flushes the chunk being recorded on every pass; coop holds a saved node for 1 s.
+
+The owner reports the tape animation goes choppy while a chord is recorded (T3c, device). The emulator cannot
+show the two device-only costs: instruction-cache misses on coop's SDRAM code (every coop stage runs cold each
+block after the main loop evicts it; ~100-190 cycles a line) and NAND time inside the I/O step. Hence:
+
+### The device stats file (T3d)
+
+`core/sdram/coop_stats.cc` writes `/yaffs2/user/coop_stats.txt` from the main loop (the tape I/O step) every
+5 s while nothing is recording: cumulative peaks and a ring of the last twelve 5-second windows. Visible in disk
+mode. Lines are `name value` pairs:
+
+- `cb blocks/max/last`: the whole coop audio callback (CYCLES, device time including cache misses); the
+  ceiling is 435,000 (0.75 of a block).
+- `stages`: per-stage peaks (`rec_max` record tap, `mix_max` mix replacement, `hook_max` voice hook, `lfo2_max`,
+  `master_max`, `fx_max`).
+- `tape`: record calls and the two state-mismatch detectors of the right-lane pass (`mismatch*`, must stay 0);
+  `io`: loads / flushes / held / errors and the step / load / flush peaks; `edits`: lift / drop / erase counts.
+- `win ...`: one line per 5-second window, oldest first: `blocks` (audio blocks in the window), `cb_max`,
+  `rec_max`, `mix_max`, `io_steps` (main-loop passes in the window: the UI rate's ceiling), `io_step_max`,
+  `io_load_max`, `io_flush_max`, `recording` (1 if a take ran in the window).
+
+Reading: a main-thread interval that an audio interrupt lands in includes that interrupt, so an `io_step_max`
+near `cb_max` is the interrupt, not the step (emulator idle: step 47,625 = callback 45,900 + the walk). The
+window lines with `recording 1` are the ones to compare against the idle windows: the `cb_max` difference
+is the audio-side cost of a recorded chord, the `io_steps` drop and `io_load_max` / `io_flush_max` the
+main-thread side. Verified in op1emu: 20 writes, 0 errors, playback unchanged.

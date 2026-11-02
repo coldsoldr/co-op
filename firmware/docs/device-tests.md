@@ -158,4 +158,20 @@ kept, no seam click).
 play: both sides present; a loop around the take (sound keys 1 / 2 on the tape page) plays round with both
 sides and no click; shift+erase (whole tape) works; no clicks or hangs with four tracks playing.
 
+Result (2026-11-02, the owner): **PASS** for the tested items. The stereo image auditions on the tape page;
+recording, lifting and dropping work. **Observed:** the tape animation gets choppy while a chord is recorded
+(performance; see `docs/performance.md`, T3c section). Loops were not reported. A per-voice placement check of
+the recorded take (the owner heard the whole chord panned as a block on the older T3 package) is still to do
+with the tape file (`docs/tape-stereo.md` section 12).
+
+## Phase 3 milestone T3d: stats file for the device — device test (pending, 2026-11-02)
+
+`build/pkg/op1_246_coop_t3d_stereo_tape.op1` (sha256 30650889..., copy in Downloads). T3c plus the stats
+file `/yaffs2/user/coop_stats.txt` (`docs/performance.md`, "The device stats file"). No audio change.
+
+**What to do:** boot, let it sit 10 s, record a chord from the synth page while watching the tape animation,
+stop, play it back from the tape page, stop, wait 15 s. Power off, disk mode, copy to Downloads:
+`coop_stats.txt` (root of the disk) and `tape/track_1.aif` as `coop_track_1.aif` (about 63 MB). If possible
+also a line-out WAV of the tape playback of that chord, and of the same chord played live on the synth page.
+
 Result: _not yet flashed_.

@@ -30,6 +30,7 @@ enum { PATCH_IMM16_LO = 1, PATCH_IMM16_HI = 2 };
 
 /* measurements, in region-A .bss */
 volatile uint32_t g_last, g_max, g_blocks;
+volatile uint32_t g_max_win, g_blocks_win;        /* window peaks for the stats file (coop_stats.cc) */
 
 static inline uint32_t cycles(void)
 {
@@ -53,7 +54,9 @@ extern "C" int CoopAudioCb(int r0, int r1)
     uint32_t dt = cycles() - t0;
     g_last = dt;
     if (dt > g_max) g_max = dt;
+    if (dt > g_max_win) g_max_win = dt;
     g_blocks++;
+    g_blocks_win++;
     return ret;
 }
 

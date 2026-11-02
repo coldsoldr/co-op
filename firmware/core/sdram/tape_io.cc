@@ -268,6 +268,10 @@ static uint32_t g_saved_at[NODE_SLOTS];
 static uint8_t g_saved_once[NODE_SLOTS];
 static uint8_t g_was_recording;
 volatile uint32_t g_tape_io_held;
+volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g_tape_io_flush_cycles_max;   /* CYCLES per step / node load / chunk flush */
+volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g_tape_io_flush_cycles_win, g_tape_io_steps_win;
+extern "C" void coop_stats_tick(int recording);   /* coop_stats.cc */
+static inline void peak(volatile uint32_t *max, volatile uint32_t *win, uint32_t dt) { if (dt > *max) *max = dt; if (dt > *win) *win = dt; }
 
 static inline uint32_t now_cycles(void) { uint32_t v; __asm__ __volatile__("%0 = CYCLES;" : "=d"(v)); return v; }
 static inline int node_slot(const uint8_t *node)
@@ -277,10 +281,21 @@ static inline int node_slot(const uint8_t *node)
 }
 
 /* R0 = mode (0: the main loop's service step, nonzero: the shutdown flush). Returns 1 if it did a chunk. */
+static int io_step(int mode);
 extern "C" int coop_tape_io_step(int mode)
+{
+    uint32_t t0 = now_cycles();
+    int r = io_step(mode);
+    peak(&g_tape_io_step_cycles_max, &g_tape_io_step_cycles_win, now_cycles() - t0);
+    g_tape_io_steps_win++;
+    return r;
+}
+
+static int io_step(int mode)
 {
     coop_tape_clamp_track();
     int recording = RECORDING != 0 && mode == 0;
+    if (mode == 0) coop_stats_tick(recording);
     int flush_all = !recording && g_was_recording;                     /* the take ended (or a forced flush): nothing held */
     g_was_recording = (uint8_t)recording;
     uint32_t now = now_cycles();
@@ -299,20 +314,24 @@ extern "C" int coop_tape_io_step(int mode)
                 uint16_t bits = (uint16_t)((1u << t) | (1u << (TRACKS + t)));   /* both passes set bit t; 4+t is legacy */
                 if (!(*(uint16_t *)(node + NODE_DIRTY) & bits)) continue;
                 *(uint16_t *)(node + NODE_DIRTY) &= (uint16_t)~bits;  /* cleared before the write, as stock */
+                uint32_t f0 = now_cycles();
                 interleave(g_bounce, data + t * LANE_BYTES, data + (TRACKS + t) * LANE_BYTES);
                 if (rw_chunk(1, t, chunk) != 0) g_tape_io_errors++;
                 g_tape_io_flushes++;
+                peak(&g_tape_io_flush_cycles_max, &g_tape_io_flush_cycles_win, now_cycles() - f0);
             }
             return 1;
         }
         if (mode != 0) return 0;
         if (chunk < 0 || node[NODE_VALID]) continue;
         node[NODE_LOADING] = (uint8_t)mode;                            /* 0: a load in progress may be cancelled by setting it */
+        uint32_t l0 = now_cycles();
         for (int t = 0; t < TRACKS; t++) {
             if (rw_chunk(0, t, chunk) != 0) { g_tape_io_errors++; zero(g_bounce, sizeof g_bounce); }
             deinterleave(g_bounce, data + t * LANE_BYTES, data + (TRACKS + t) * LANE_BYTES);
         }
         g_tape_io_loads++;
+        peak(&g_tape_io_load_cycles_max, &g_tape_io_load_cycles_win, now_cycles() - l0);
         if (node[NODE_LOADING] == 0) {
             node[NODE_VALID] = *(int16_t *)(node + NODE_CHUNK) == chunk ? 1 : 0;
         } else {

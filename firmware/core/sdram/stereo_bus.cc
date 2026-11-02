@@ -55,7 +55,7 @@ static int g_side_this_block;                          /* loop B added decimated
 
 /* liveness / perf counters (read from the emulator or a probe) */
 volatile uint32_t g_stereo_blocks, g_stereo_hooks, g_stereo_mixes, g_stereo_side_blocks, g_stereo_note_ons;
-volatile uint32_t g_stereo_hook_cycles_max, g_stereo_mix_cycles_max;
+volatile uint32_t g_stereo_hook_cycles_max, g_stereo_mix_cycles_max, g_stereo_mix_cycles_win;
 
 extern "C" int16_t *g_mix_ramp_ptr;                    /* P1 of loop A / B, stored by coop_mix_thunk */
 int16_t *g_mix_ramp_ptr;
@@ -212,6 +212,7 @@ extern "C" uint32_t coop_mix_entry(uint32_t r0, uint32_t r1, uint32_t r2)
     }
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_stereo_mix_cycles_max) g_stereo_mix_cycles_max = dt;
+    if (dt > g_stereo_mix_cycles_win) g_stereo_mix_cycles_win = dt;
     return ret;
 }
 
