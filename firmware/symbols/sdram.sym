@@ -63,5 +63,12 @@
 # --- tape path (write tracer, record + play, 2026-11-02; docs/tape-stereo.md) ---
 0x01b5ef84  d_tape_play_L           C  600 x int16 L play buffer: 4-track pan mix (L1 0xffa07164) -> resampler (0xffa06194) -> d34
 0x01b5f434  d_tape_play_R           C  600 x int16 R play buffer (0xffa0716c) -> db4
-0x01b5f8f4  d_tape_rec_buf          I  600 x int16 mono record buffer of 0xffa06248 (idle in the traced recording)
+0x01b5f8f4  d_tape_rec_buf          C  600 x int16 mono record buffer: 0xffa06248 writes it (store 0xffa062f6) every block while recording; the overdub loop reads it
 0x02040000  d_big_array_02040000    C  7.94 MB array: NOT the tape cache (0 stores during record + play); role open
+0x01b4ef34  tape_c                  C  tape cache object (L1 P5 base): +0/+4 loop in/out, +8 list head 0x01b4ef3c, +0xc tail, +0x10 fd, +0x14 chunk directory (int32[485]), +0x3a W gain, +0x40 running, +0x44 level ramp, +0x48 4 seam staging buffer pointers
+0x01a54168  tape_cache_init         C  builds 24 nodes (28 B each, 0x1a5e3b0) with 256 KiB data blocks (malloc 0x1a9f348, heap 0), the 1940 B chunk directory and the 4 x 0x4a4 seam buffers (0x01a54124)
+0x01a54d5c  tape_cache_lookup       C  (pos, &dir): chunk = pos >> 15, directory then list search on W[node+6], move-to-front, prefetch chunk-1..chunk+1 via 0x01a54cd4; returns the node (0 = not loaded)
+0x01a54bb4  tape_rec_node_lookup    C  record-side chunk lookup used by l1_tape_record (loop-aware, 0xff8029ec flag); result kept at 0x018c17ec
+0x0107d034  d_tape_cache_nodes      C  24 cache nodes, stride 0x28: B+0 valid, B+2 flush req, W+4 dirty mask (bit/track), W+6 chunk, +0xc start sample, +0x10 data (track t at +t*0x10000), +0x14 next, +0x18 prev
+0x018c17d8  d_tape_rec_state        C  +0 recording byte, +4 record resampler phase, +0x14 record node, +0x18 W seam mask, +0x1c B seam valid
+0x018c1810  d_tape_track_base       C  int32[4] file offsets of the track data in tape_c.raw (filled at mount; kennel TRACK_BASE)

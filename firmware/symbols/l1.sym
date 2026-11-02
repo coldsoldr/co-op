@@ -94,7 +94,12 @@
 0xffa06194  l1_tape_play_resample   C  per block: 16-tap polyphase resampler (coefs 0xff802154, 16 x 64) over the L/R play buffers 0x01b5ef84 / 0x01b5f434 (600 samples each), x gain ramp, writes ALL 64 of d34 (0xffa06232) and db4 (0xffa0622a): the tape play output is already stereo
 0xffa0714c  l1_tape_track_mix       C  LSETUP(0xffa0714c,0xffa0716c): per track L[i] += gL*s (0xffa07164), R[i] += gR*s (0xffa0716c) into the play buffers, gL = W[P0], gR = W[P0+8] per-track gain record; cleared at 0xffa06ede. The 4-mono-track pan mix a stereo track replaces
 0xffa072c4  l1_tape_level           I  in-place per-sample level/one-pole stage on d34/db4 right after the resampler (stores 0xffa0730c L / 0xffa07304 R)
-0xffa06248  l1_tape_rec_resample    I  mono resampler 0xff8029e4 -> 0x01b5f8f4 through the same coefs; did NOT run as the record path in the traced scenario
+0xffa06248  l1_tape_rec_resample    C  (count <= 600, phase): mono 16-tap polyphase resampler, input ring 0xff8029e4 (history) / 0xff802a18 (64 new), coefs 0xff802154, x gain 0x01b4ef6e -> 0x01b5f8f4 (store 0xffa062f6); phase word 0x018c17dc
 0xff802154  d_tape_interp_coefs     C  16 x 64 int16 polyphase interpolation table (written once at boot by 0x01a53ca2)
 0xff8029dc  d_tape_phase            C  tape position/phase words (0xffa06886, 0xffa06a18, 0xffa06388 write them)
 0xffa00f2c  l1_mix_loop_a           C  (addendum) nonzero only while the tape runs: its L/R gains come alive in tape mode
+0xffa067a8  l1_tape_tick            C  0xffa067a8..0xffa0791c, CALL from 0xffa01aca once per block: position/speed, loop seam (297-sample crossfade from the staging buffers), per-track pan law (0xffa06d7e), chunk loop (0xffa06e04..0xffa071d4) with the 4-track mix, resampler call 0xffa07250, level stage 0xffa072c4, bookkeeping
+0xffa06334  l1_tape_record          C  (mono_in): record path, CALL from 0xffa0217a (synth) and 0xffa02dca (drums) with R0 = [SP+0x38]; input ring shift + x level (0xffa06430.., 0xffa064bc/cc), CALL 0xffa06248, overdub W[node.data + (track<<16) + 2*off] += in at 0xffa065de, dirty bit at 0xffa0660e
+0xffa065de  l1_tape_rec_store       C  the record tap chunk store (saturating add, 16-bit): 94k nonzero stores in the traced take
+0xffa070b8  l1_tape_seam_mix        C  LSETUP(0xffa070b8,0xffa070d8): the same 4-track pan mix from the 594-sample seam staging buffers (0x01b4ef7c[t]) inside 297 samples of a loop point
+0xff8029e4  d_tape_rec_ring         C  record input ring: 26 samples of history at 0xff8029e4.., 64 new samples at 0xff802a18..0xff802a96 (x level ramp)
