@@ -178,3 +178,22 @@ The whole insert/master chain is stereo in / stereo out, with insert FX placed a
 so per-voice placement and spread survive the effects. Mono effects are hosted dual-mono. See
 docs/fx-abi.md for the full contract and the 3rd-party porting rules. Until C3, the stock insert FX
 stays on the mid signal (see "coop design").
+
+## Addendum (2026-11-02, T3): registers the code after a replaced loop still reads
+
+The mix thunk replaces INLINE loops, and the stock code after loop B keeps using **P0** (loop B sets
+`P0 = 0x40` for its LSETUP and the code after the loop reads P0 again) and after loop A **P0 = 0x01b4ef6e**
+(the loop reloads it from `[FP-0x4]` every iteration). The C1 thunk never restored P0: the C function
+happened to leave `0x40` in it (GCC used P0 as the count of its own 64-sample loops), so the image was
+bit-exact by accident. When the C code grew (T1), P0 came back different and the tape played a block
+late; a later edit put the coincidence back and looked like a fix. The thunk now sets P0 from
+`g_mix_p0_out` (0x40 after loop B, 0x01b4ef6e after loop A) and R1 as the stock loops leave it (loop B:
+the ramp sign-extended; loop A: .H = the final ramp, .L untouched). Rule for inline-loop replacements:
+list every register the code after the loop reads before reloading it, and set each one explicitly.
+
+Loop A (`0xffa00f2c..0xffa00f86`, the tape-page monitor and the "tape thru" path while the tape runs) is
+replaced too since T3, through the same trampoline: the thunk tells the sites apart by the return address
+the trampoline pushed, and loop A keeps its ramp/meter record at the stack slot `[SP+0x3c]` of the site
+(P1 there is the loop count). Per sample: `L += (m*gL)*ramp`, `R += (m*gR)*ramp`, `meter = max(meter,
+|m*level|)`, `ramp += step`, gL/gR = R0.H/R2.H, step = R0.L, level = W[0x01b4ef6e]; coop adds dL/dR to m.
+Verified sample-identical to stock on the record scenario and the tape-page chord scenario.

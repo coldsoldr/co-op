@@ -49,6 +49,8 @@ class Encodings(unittest.TestCase):
         self.assertEqual(n[6:], call24(si.DRUM_CALL_AT, 0xffa0bfc0))
         s, n = p[si.MIX_SITE]
         self.assertEqual(n, call24(si.MIX_SITE, 0xffa0bfcc) + bytes.fromhex('1520'))
+        s, n = p[si.MIXA_SITE]                                              # loop A: same trampoline, JUMP.S to 0xffa00f88
+        self.assertEqual(n, call24(si.MIXA_SITE, 0xffa0bfcc) + si.jump_s(0xffa00f30, 0xffa00f88))
         s, n = p[si.NOTEON_SITE]
         self.assertEqual(n[:4], bytes.fromhex('0aab1050'))                 # R2 = W[P1+0x18] (X); R0 = R0 + R2
         self.assertEqual(n[4:], call24(si.NOTEON_CALL_AT, 0xffa0bfdc))
@@ -56,7 +58,13 @@ class Encodings(unittest.TestCase):
 
 class TapeStereo(unittest.TestCase):
     THUNKS = {"synth": 1, "drum": 2, "mix": 3, "noteon": 4, "tape_rec": 0x02c01768, "tape_gains": 0x02c017be,
-              "tape_io": 0x02c02838, "tape_mount": 0x02c025a8, "seam": 0x02c01900, "seam_fill": 0x02c01a00}
+              "tape_io": 0x02c02838, "tape_mount": 0x02c025a8, "seam": 0x02c01900, "seam_fill": 0x02c01a00,
+              "lift": 0x02c03000, "drop": 0x02c03100, "erase": 0x02c03200}
+
+    def test_jump_tramp(self):
+        # P0.L = 0x1234; P0.H = 0x2c0; JUMP (P0); three NOPs
+        self.assertEqual(si.build_jump_tramp(0x02c01234).hex(), "08e1341248e1c0025000000000000000")
+        self.assertEqual(len(si.build_jump_tramp(1)), 16)
 
     def test_tramp_plain(self):
         # P2.L = 0x1234; P2.H = 0x2c0; JUMP (P2); NOP  (bfin-elf-as)
@@ -91,7 +99,12 @@ class TapeStereo(unittest.TestCase):
             self.assertEqual(p[site], (call24(site, 0x01996f38), call24(site, si.SDRAM_TRAMP_AT + 32)))
         self.assertEqual(p[si.SEAM_SITE], (bytes.fromhex("0ae17cef4ae1b401"), call24(si.SEAM_SITE, t["seam"]) + bytes.fromhex("00000000")))
         self.assertEqual(p[si.SEAM_FILL_SITE], (bytes.fromhex("09e1844249e1a501"), si.imm_pair_bytes(1, 0x02c01a00)))
-        self.assertEqual(len(p), 2 + 1 + 2 + 4 + 5)
+        for site in si.TAPE_LIFT_CALLERS:
+            self.assertEqual(p[site], (call24(site, 0x01a5485c), call24(site, si.SDRAM_TRAMP_AT + 48)))
+        for site in si.TAPE_DROP_CALLERS:
+            self.assertEqual(p[site], (call24(site, 0x01a549b8), call24(site, si.SDRAM_TRAMP_AT + 64)))
+        self.assertEqual(p[0x0191b9f0], (call24(0x0191b9f0, 0x01a54b08), call24(0x0191b9f0, si.SDRAM_TRAMP_AT + 80)))
+        self.assertEqual(len(p), 2 + 1 + 2 + 4 + 5 + 5)
 
 
 def synthetic_ldr(l1_bytes_at):
@@ -116,6 +129,7 @@ class Guard(unittest.TestCase):
         b = {si.SYNTH_SITE - 2: pad + synth + pad,
              si.DRUM_SITE - 2: pad + drum + pad,
              si.MIX_SITE - 2: pad + mix + b'\0' * 0x30,
+             si.MIXA_SITE - 2: pad + si.MIXA_STOCK + b'\0' * 0x60,
              si.NOTEON_SITE - 2: pad + si.NOTEON_STOCK + pad}
         for site in si.CORE_NOTEON_CALLERS:
             b[site - 2] = pad + call24(site, si.CORE_NOTEON) + pad

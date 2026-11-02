@@ -121,6 +121,10 @@ _coop_core_noteon_thunk:
     .type   _coop_mix_thunk, STT_FUNC
 _coop_mix_thunk:
     [--SP] = RETS;
+    /* the stock loops leave R0 and R2 as they were (loop A: gains/step; loop B: gain); the code after loop A
+     * uses R2.L as the loop B step when its branch skips */
+    [--SP] = R0;
+    [--SP] = R2;
     [--SP] = I0;
     [--SP] = I1;
     [--SP] = I2;
@@ -142,9 +146,23 @@ _coop_mix_thunk:
     P0.H = _g_mix_ramp_ptr;
     P0.L = _g_mix_ramp_ptr;
     [P0] = P1;
+    R3 = [SP + 68];                  /* the RETS the trampoline pushed = the site + 4: tells loop A from loop B */
+    P0.H = _g_mix_site;
+    P0.L = _g_mix_site;
+    [P0] = R3;
+    R3 = [SP + 132];                 /* loop A keeps its ramp/meter record pointer at [SP + 0x3c] of the site (72 B above) */
+    P0.H = _g_mix_a_rec;
+    P0.L = _g_mix_a_rec;
+    [P0] = R3;
     SP += -12;
     CALL _coop_mix_entry;
     SP += 12;
+    R1 = R0;                         /* R1 as the stock loop leaves it (loop B: the ramp; loop A: .H = ramp, .L kept) */
+    /* P0 as the stock loop leaves it: loop B keeps its count 0x40 (the code after it relies on that; a C
+     * clobber of P0 shifted the tape by a block), loop A 0x01b4ef6e */
+    P0.H = _g_mix_p0_out;
+    P0.L = _g_mix_p0_out;
+    P0 = [P0];
     R3 = [SP++];
     A1.X = R3;
     R3 = [SP++];
@@ -163,6 +181,8 @@ _coop_mix_thunk:
     I2 = [SP++];
     I1 = [SP++];
     I0 = [SP++];
+    R2 = [SP++];
+    R0 = [SP++];
     RETS = [SP++];
     RTS;
     .size _coop_mix_thunk, .-_coop_mix_thunk

@@ -172,6 +172,50 @@ static inline void coop_dc_block(coop_dc_state *st, const int16_t *in, int16_t *
 /* ---- replica of the stock mix loop B (0xffa00fae..0xffa00fdc) with the difference buses added ----
  * stock:  v = (M[i] * gain) * ramp;  L[i] = sat(L[i] + v);  R[i] = sat(R[i] + v);  ramp = sat(ramp + step)
  * coop:   vL from sat(M[i] + dL[i]), vR from sat(M[i] + dR[i]).  dL = dR = 0 reproduces stock exactly. */
+/* Stock mix loop A (0xffa00f2c..0xffa00f86: the instrument monitor on the tape page / while the tape runs):
+ * per sample  L[i] += ((m*gL)*ramp),  R[i] += ((m*gR)*ramp),  meter = max(meter, |m*level|),  ramp += step
+ * with ramp = W[rec], meter = W[rec+1], level read from 0x01b4ef6e every sample, all fr16 ops. The coop version
+ * adds the difference buses to m before the gains. Returns the final ramp. */
+static inline int16_t coop_mix_a(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
+                                 const int16_t *dL, const int16_t *dR, int16_t gL, int16_t gR, int16_t step,
+                                 volatile int16_t *rec, const volatile int16_t *level)
+{
+    int16_t ramp = rec[0], meter = rec[1];
+    for (int i = 0; i < COOP_MBLK; i++) {
+        int16_t m = M[i];
+        int16_t lv = coop_fr16_mul(m, *level);
+        if (lv < 0) lv = (int16_t)(lv == -32768 ? 32767 : -lv);
+        if (lv > meter) meter = lv;
+        int16_t vl = coop_fr16_mul(coop_fr16_mul(coop_fr16_add(m, dL[i]), gL), ramp);
+        int16_t vr = coop_fr16_mul(coop_fr16_mul(coop_fr16_add(m, dR[i]), gR), ramp);
+        L[i] = coop_fr16_add(vl, L[i]);
+        R[i] = coop_fr16_add(vr, R[i]);
+        ramp = coop_fr16_add(step, ramp);
+    }
+    rec[0] = ramp; rec[1] = meter;
+    return ramp;
+}
+
+static inline int16_t coop_mix_a_mono(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
+                                      int16_t gL, int16_t gR, int16_t step, volatile int16_t *rec,
+                                      const volatile int16_t *level)
+{
+    int16_t ramp = rec[0], meter = rec[1];
+    for (int i = 0; i < COOP_MBLK; i++) {
+        int16_t m = M[i];
+        int16_t lv = coop_fr16_mul(m, *level);
+        if (lv < 0) lv = (int16_t)(lv == -32768 ? 32767 : -lv);
+        if (lv > meter) meter = lv;
+        int16_t vl = coop_fr16_mul(coop_fr16_mul(m, gL), ramp);
+        int16_t vr = coop_fr16_mul(coop_fr16_mul(m, gR), ramp);
+        L[i] = coop_fr16_add(vl, L[i]);
+        R[i] = coop_fr16_add(vr, R[i]);
+        ramp = coop_fr16_add(step, ramp);
+    }
+    rec[0] = ramp; rec[1] = meter;
+    return ramp;
+}
+
 static inline void coop_mix_b(volatile int16_t *L, volatile int16_t *R, const int16_t *M,
                               const int16_t *dL, const int16_t *dR, int16_t gain,
                               int16_t *ramp_state, int16_t step)

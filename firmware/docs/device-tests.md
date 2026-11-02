@@ -143,3 +143,16 @@ around a stereo take plays without a click or crash; lift still takes one side (
 
 **Result (2026-11-02, owner): boots** (the assert loop is gone: the clamp works on the device). Stereo
 record/play after a power cycle, loops and the rest of the list still to be reported.
+
+## Phase 3 milestone T3b: stereo edits + tape-page monitor — device test (pending, 2026-11-02)
+
+`build/pkg/op1_246_coop_t3b_stereo_tape.op1` (copy in Downloads). Same tape image as T2/T3 (no reformat).
+New: lift/drop/erase keep both channels (`docs/tape-stereo.md` section 10); the instrument monitor on the
+tape page is stereo; mix loops A and B replaced with the register fixes (base image sample-identical to stock
+on the record and tape-page scenarios).
+
+**What to record:** stereo monitor on the tape page; record a spread chord, lift it, drop it elsewhere,
+play: both sides present; shift+erase (whole tape) works; loops around a stereo take (still untested here);
+no clicks or hangs with four tracks playing.
+
+Result: _not yet flashed_.

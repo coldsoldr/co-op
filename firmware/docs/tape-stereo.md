@@ -322,6 +322,43 @@ tape on the first boot** (recordings lost; back up with co-op first). Pending th
 - Still open: lift/drop/erase/split/join copy one lane; the instrument monitor on the tape page is mono;
   tape.db reset on rebuild; first-boot notice; album key inert; a loop test.
 
+## 10. T3b (2026-11-02): stereo lift / drop / erase, the tape-page monitor, and two thunk lessons
+
+- **Edits** (`core/sdram/tape_edit.cc`): `coop_lift` / `coop_drop` / `coop_erase` stand in for the stock file-level
+  edit functions (lift `0x1a5485c` with callers `0x191b89c` and lift-all `0x1a549a0`; drop `0x1a549b8` with
+  callers `0x191b67e` and drop-all `0x1a54aee`; `fast_tape_erase` `0x1a54b08` from `0x191b9f0`) through
+  region-C trampolines 3-5 (`0x01e00030/40/50`). The stock functions read and write the tape FILE in mono at
+  `TRACK_BASE[ch] + pos*2`; with stereo tracks a frame is at `pos*4`. Lift reads the frames, keeps the LEFT
+  samples in the stock clipboard slot (`0x02040010`, sized by the service for `len` samples, so the UI and
+  `tape.db` keep working in frames) and the RIGHT samples in a coop pool (region B `0x02800000`, 4 MB; a
+  longer clip keeps its left side only and drops as mono, `g_edit_mono_fallbacks`), zeroes the frames and
+  invalidates the cache range; drop writes the frames back from both; erase zeroes 485 x 128 KiB per track.
+  These three take their 4th/5th argument on the stack, so their trampolines are plain jumps
+  (`build_jump_tramp`): the CALL-based region-C trampoline shifts stack arguments by 4 (the first build read
+  `hdr` from the wrong slot). Clipboard facts: queue entries of 32 bytes at `0x01aa7130` (16), consumer
+  `0x01aa7330`, producer `0x01aa7334`, command 2 = lift (then `start`, `stop` in frames, `0x3c8fe8` the pool
+  capacity in samples), pushed by `0x191bbd0` from the tape controller; state record `0x01aa7100`
+  (channel, length, has-clip), pool header `0x02040000` (4 slot pointers), data from `0x02040010`.
+- **Tape-page monitor** (mono on the device at T3): mix loop A (`0xffa00f2c..0xffa00f86`) carries the
+  instrument on the tape page and while the tape runs; it is now replaced through the same trampoline as
+  loop B (docs/stereo-bus.md addendum): the thunk tells the sites apart by the return address the trampoline
+  pushed, loop A keeps its ramp/meter record at the stack slot `[SP+0x3c]` of the site (P1 there is the loop
+  count), and coop adds dL/dR before the gains. Verified **sample-identical to stock** on the record scenario
+  and on the tape-page chord scenario with the base image; stereo on the tape page with the full image.
+- **Thunk lessons** (cost most of the day): the stock code after a replaced inline loop keeps using registers
+  the loop did not touch -- P0 (loop B: its count 0x40; loop A: `0x01b4ef6e`) and R2 (loop A: the loop B step
+  when the branch at `0xffa00f8e` skips). The C1 thunk never restored them and was right by the accident of
+  what GCC left in P0; the T1 "a block late" bug was that accident breaking, and its "fix" put it back. The
+  thunk now saves R0/R2 and sets P0 from `g_mix_p0_out`. And the assembler silently swallows a code line
+  placed inside a multi-line comment: keep comments on their own lines in `.S` files (twice today).
+- Verified (op1emu, `det_tape_liftdrop3.txt`): record a spread chord, lift it (left slot + 89,519 nonzero
+  right samples in the coop pool, 6 chunk reads/writes, 0 errors), drop it at the start, play: the dropped
+  clip plays with its width (0.25-0.28) at the original level; the lifted range is silent. Full-spread
+  in-session and power-cycle gates as before. `C:\Users\byron\Downloads\t3_lift_drop_stereo.wav`.
+- Still open: split/join (frame ranges in tape.db, believed unaffected), erase untested on the device, the
+  loop seam path untested (no loop keys in the emulator map), tape.db reset on rebuild, first-boot notice,
+  album key inert, stereo meters.
+
 ### 8.2 T3 next (as written before T3)
 
 Held saves while recording (kennel `kn_tape.c`); the loop seam path for 8 lanes (`0xffa070b8`, the

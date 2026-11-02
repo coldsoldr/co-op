@@ -77,3 +77,12 @@
 0x01996f38  tape_image_mount_and_index  C  (no args; callers 0x199758e, 0x19f0354 ignore the result): indexes the six stock files by name (0x1997c58: tracks 0x18d9eac+0x18*t -> 0x018c1810[t], side_a -> 0xff9002c0, side_b -> 0xff9002c4), recreates the image when one is missing; replaced by coop_tape_mount_and_index (T2)
 0x019971b0  tape_image_open_at_boot     C  builds the image/marker paths (snprintf 0x1a4ccd8 into 0x1aabce4 / 0x1aac934), opens the image (0x1a997f4), tape_set_file_handle 0x1a5404c, marker check 0x19987f8, presize check, fat_disk_bind 0x19761d8, f_mount 0x1998e74
 0x01997c58  tape_image_file_offset      C  (name) -> data offset of a file in the image (the stock index step)
+0x0191b560  audio_clipboard_service C  main loop (0x019F0A2A): pops 32-byte commands from the queue 0x01aa7130 (16 entries, consumer 0x01aa7330, producer 0x01aa7334; jump table 0x018c3ce8, 9 commands; 2 = lift with start/stop in frames), state record 0x01aa7100 (channel, length, has-clip), pool header 0x02040000 (4 slot pointers) + data 0x02040010, capacity 0x3c8fe8 samples
+0x0191bbd0  clipboard_queue_push    C  (entry words) from the tape controller (0x1a5775c, 0x1a57e80, 0x1a58b04)
+0x01a5485c  tape_clips_lift         C  (ch, start, stop, hdr on the stack): per chunk lseek/read of mono samples at TRACK_BASE[ch] + chunk<<16 + off*2 into hdr[ch] + copied*2, zeroes the range from s_zeroes 0x01b4ef8c (64 KiB), then tape_cache_invalidate_clean_range(start, stop); replaced by coop_lift (T3b)
+0x01a54984  tape_clips_lift_all     C  (start, stop, hdr): lift for ch 0..3
+0x01a549b8  tape_clips_drop         C  (src slot, dst ch, pos, len, hdr on the stack): writes len samples from hdr[src] at TRACK_BASE[dst] + pos*2, invalidates (pos, pos+len); replaced by coop_drop
+0x01a54acc  tape_clips_drop_all     C  (pos, len, hdr): drop ch -> ch for 0..3
+0x01a54b08  fast_tape_erase         C  (): invalidate all, 485 x 4 x 64 KiB zero writes (pwrite 0x1a99f9c, progress 0x018c17c8), then 0x1a54020(0xf); replaced by coop_erase
+0x0191c9fc  clipboard_slot_init     C  (slot, &cap): [slot] = 0x02040010, [cap] = 0x3c8fe8
+0x01a29a74  readinterface_track_flag C  (ch): asserts ReadInterface.cpp:471 ch >= 0 && ch < kTapeNumTracks, returns B[0xff8010a0 + ch] == 0; called by the tape screen draw (0x1a5c984) with the current track

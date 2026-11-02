@@ -57,8 +57,17 @@ static int g_side_this_block;                          /* loop B added decimated
 volatile uint32_t g_stereo_blocks, g_stereo_hooks, g_stereo_mixes, g_stereo_side_blocks, g_stereo_note_ons;
 volatile uint32_t g_stereo_hook_cycles_max, g_stereo_mix_cycles_max;
 
-extern "C" int16_t *g_mix_ramp_ptr;                    /* P1 of loop B, stored by coop_mix_thunk */
+extern "C" int16_t *g_mix_ramp_ptr;                    /* P1 of loop A / B, stored by coop_mix_thunk */
 int16_t *g_mix_ramp_ptr;
+extern "C" uint32_t g_mix_site;                         /* the return address of the CALL at the site (loop A 0xffa00f30, loop B 0xffa00fb2) */
+uint32_t g_mix_site;
+extern "C" int16_t *g_mix_a_rec;                        /* loop A: [SP+0x3c] at the site = its ramp/meter record (P1 there is the loop count) */
+int16_t *g_mix_a_rec;
+extern "C" uint32_t g_mix_p0_out;                       /* P0 the thunk restores: the stock loops leave P0 untouched and the code after them uses it */
+uint32_t g_mix_p0_out;
+static int g_side_dec_done;                            /* the difference buses are decimated once per block (both loops use them) */
+#define MIX_A_SITE  0xffa00f30u
+#define VOICE_GAIN_W ((const volatile int16_t *)0x01b4ef6eu)
 
 static inline uint32_t coop_cycles(void)
 {
@@ -88,6 +97,7 @@ extern "C" void coop_stereo_block_start(void)
     g_hb_ramp = *HB_RAMP_W;
     g_rendered_prev = g_rendered_cur;
     g_rendered_cur = 0;
+    g_side_dec_done = 0;
     if (g_side_dirty) {
         for (int i = 0; i < COOP_VBLK; i++) { g_sdL[i] = 0; g_sdR[i] = 0; }
         g_side_dirty = 0;
@@ -154,34 +164,55 @@ extern "C" void coop_drum_voice_hook(uint32_t r7)
     voice_hook(&g_pan_drum, voice, 1u << (16 + voice), 1);
 }
 
-/* Stands in for mix loop B. R0.L = gain, R1.L = ramp (== *g_mix_ramp_ptr), R2.L = step. */
-extern "C" void coop_mix_entry(uint32_t r0, uint32_t r1, uint32_t r2)
+/* The difference buses for this block (decimated + DC-blocked once; both mix loops may ask). 1 = present. */
+static int side_prepare(void)
 {
-    (void)r1;
-    uint32_t t0 = coop_cycles();
-    int16_t gain = (int16_t)r0, step = (int16_t)r2;
-    int16_t *ramp = g_mix_ramp_ptr;
-    g_stereo_mixes++;
-    if (g_side_tail) {
+    if (!g_side_tail) return 0;
+    if (!g_side_dec_done) {
         int16_t hr = (int16_t)g_hb_ramp, hs = (int16_t)(g_hb_ramp >> 16);
         coop_hb_decimate(&g_hbL, g_sdL, g_decL, HB_COEFS, hr, hs);
         coop_hb_decimate(&g_hbR, g_sdR, g_decR, HB_COEFS, hr, hs);
         int32_t c = *DC_COEF_W;
         coop_dc_block(&g_dcL, g_decL, g_decL, c, COOP_MBLK);
         coop_dc_block(&g_dcR, g_decR, g_decR, c, COOP_MBLK);
-        coop_mix_b(MBUS_L, MBUS_R, MONO_BUS64, g_decL, g_decR, gain, ramp, step);
+        g_side_dec_done = 1;
         g_stereo_side_blocks++;
         g_side_this_block = 1;
         if (--g_side_tail == 0) {                      /* the rings are flushed; drop the DC tail */
             coop_hb_init(&g_hbL); coop_hb_init(&g_hbR);
             coop_dc_init(&g_dcL); coop_dc_init(&g_dcR);
         }
+    }
+    return 1;
+}
+
+/* Stands in for mix loop B (R0.L = gain, R1.L = ramp == *g_mix_ramp_ptr, R2.L = step; returns R1 as the stock loop
+ * leaves it: the final ramp sign-extended) and, when g_mix_site says so, for mix loop A (R0.L = step, R0.H = gL,
+ * R2.H = gR, g_mix_ramp_ptr = the ramp/meter record; returns R1 with .H = the final ramp and .L as on entry). */
+extern "C" uint32_t coop_mix_entry(uint32_t r0, uint32_t r1, uint32_t r2)
+{
+    uint32_t t0 = coop_cycles();
+    g_stereo_mixes++;
+    uint32_t ret;
+    if (g_mix_site == MIX_A_SITE) {
+        g_mix_p0_out = 0x01b4ef6eu;                     /* loop A reloads P0 = [FP-0x4] = the sum gain word every iteration */
+        int16_t step = (int16_t)r0, gL = (int16_t)(r0 >> 16), gR = (int16_t)(r2 >> 16);
+        int16_t *rec = g_mix_a_rec;
+        int16_t ramp = side_prepare()
+            ? coop_mix_a(MBUS_L, MBUS_R, MONO_BUS64, g_decL, g_decR, gL, gR, step, rec, VOICE_GAIN_W)
+            : coop_mix_a_mono(MBUS_L, MBUS_R, MONO_BUS64, gL, gR, step, rec, VOICE_GAIN_W);
+        ret = (r1 & 0xffffu) | ((uint32_t)(uint16_t)ramp << 16);
     } else {
-        coop_mix_b_mono(MBUS_L, MBUS_R, MONO_BUS64, gain, ramp, step);
-        g_side_this_block = 0;
+        g_mix_p0_out = 0x40;                            /* loop B: P0 = its LSETUP count, used by the code after it */
+        int16_t gain = (int16_t)r0, step = (int16_t)r2;
+        int16_t *ramp = g_mix_ramp_ptr;
+        if (side_prepare()) coop_mix_b(MBUS_L, MBUS_R, MONO_BUS64, g_decL, g_decR, gain, ramp, step);
+        else { coop_mix_b_mono(MBUS_L, MBUS_R, MONO_BUS64, gain, ramp, step); if (!g_side_dec_done) g_side_this_block = 0; }
+        ret = (uint32_t)(int32_t)*ramp;
     }
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_stereo_mix_cycles_max) g_stereo_mix_cycles_max = dt;
+    return ret;
 }
 
 /* For the stereo tape record tap (tape_stereo.cc), which runs after loop B in the same block: the

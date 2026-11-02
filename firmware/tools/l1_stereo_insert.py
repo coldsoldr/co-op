@@ -52,6 +52,11 @@ DRUM_CALL_AT = 0xffa00902
 MIX_SITE = 0xffa00fae
 MIX_STOCK = bytes.fromhex('a2e01600' '03c8')                      # LSETUP(0xffa00fb2,0xffa00fda) LC0=P0; first body halfword
 MIX_RESUME = 0xffa00fdc                                           # first instruction after loop B
+# mix loop A (0xffa00f2c): the instrument monitor on the tape page / while the tape runs; the same trampoline
+# (the thunk tells the sites apart by the pushed RETS) -> coop_mix_entry runs the loop A replica with dL/dR.
+MIXA_SITE = 0xffa00f2c
+MIXA_STOCK = bytes.fromhex('a2e02d10' '03c8')                     # LSETUP(0xffa00f30,0xffa00f86) LC0=P1; first body halfword
+MIXA_RESUME = 0xffa00f88
 # synth note-on dispatch inside the voice loop (reached from 0xffa00aa6 for a voice with a pending note):
 #   P0 = [P1+0x1c]; R2 = W[P1+0x18] (X); R0 = R0 + R2; CALL (P0)   ->  R2 = ...; R0 = ...; CALL tramp_noteon
 NOTEON_SITE = 0xffa00e2e
@@ -76,6 +81,12 @@ TAPE_IO_STEP = 0x01a54710                                          # tape_cache_
 TAPE_IO_CALLERS = (0x019f0a24, 0x019f0be2)                           # tape_c::service(0) in the main loop, service(1) at shutdown
 TAPE_MOUNT = 0x01996f38                                              # tape_image_mount_and_index
 TAPE_MOUNT_CALLERS = (0x0199758e, 0x019f0354)
+TAPE_LIFT = 0x01a5485c                                               # tape_clips lift (file, mono) -> coop_lift (tramp +48)
+TAPE_LIFT_CALLERS = (0x0191b89c, 0x01a549a0)                         # clipboard service, lift-all
+TAPE_DROP = 0x01a549b8                                               # -> coop_drop (tramp +64)
+TAPE_DROP_CALLERS = (0x0191b67e, 0x01a54aee)                         # clipboard service, drop-all
+TAPE_ERASE = 0x01a54b08                                              # fast_tape_erase -> coop_erase (tramp +80)
+TAPE_ERASE_CALLERS = (0x0191b9f0,)
 SEAM_SITE = 0xffa0706e                                               # P2.L = 0xef7c; P2.H = 0x1b4 before the seam loop (hook B)
 SEAM_STOCK = bytes.fromhex("0ae17cef" "4ae1b401")
 SEAM_FILL_SITE = 0xffa073b8                                          # P1 = 0x01a54284 (the stock seam fill) -> coop_seam_fill
@@ -153,8 +164,12 @@ def site_patches(tramps):
     synth_new = SYNTH_STOCK[2:6] + call24(SYNTH_CALL_AT, t['synth'])
     drum_new = DRUM_STOCK[2:8] + call24(DRUM_CALL_AT, t['drum'])
     mix_new = call24(MIX_SITE, t['mix']) + jump_s(MIX_SITE + 4, MIX_RESUME)
+    mixa_new = call24(MIXA_SITE, t['mix']) + jump_s(MIXA_SITE + 4, MIXA_RESUME)
     assert len(synth_new) == len(SYNTH_STOCK) and len(drum_new) == len(DRUM_STOCK) and len(mix_new) == len(MIX_STOCK)
+    assert len(mixa_new) == len(MIXA_STOCK)
     out = [(SYNTH_SITE, SYNTH_STOCK, synth_new), (DRUM_SITE, DRUM_STOCK, drum_new), (MIX_SITE, MIX_STOCK, mix_new)]
+    if not os.environ.get('COOP_NO_MIXA'):                       # experiment switch: leave loop A stock
+        out.append((MIXA_SITE, MIXA_STOCK, mixa_new))
     if 'noteon' in t:
         noteon_new = NOTEON_STOCK[2:6] + call24(NOTEON_CALL_AT, t['noteon'])
         assert len(noteon_new) == len(NOTEON_STOCK)
@@ -189,6 +204,12 @@ def patch_at(dxe, address, stock, new):
 thunks_global = {}
 
 
+def build_jump_tramp(fn):
+    """16-byte region-C trampoline that does not touch the stack: P0 = fn; JUMP (P0). For replacements of functions
+    that take arguments on the stack (lift: 4, drop: 5): a CALL-based trampoline would shift them by 4."""
+    return imm_pair_bytes(0, fn) + bytes.fromhex('5000') + bytes.fromhex('0000' * 3)
+
+
 def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
     """[(address, stock, new)] for the stereo tape: record CALL sites, the gains hook, the lane constants, and the
     SDRAM callers of tape_cache_io_step / tape_image_mount_and_index retargeted at region-C trampolines 1 and 2."""
@@ -199,6 +220,9 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
     out.append((SEAM_FILL_SITE, SEAM_FILL_STOCK, imm_pair_bytes(1, thunks_global['seam_fill'])))
     out += [(site, call24(site, TAPE_IO_STEP), call24(site, sdram_tramp_at + 16)) for site in TAPE_IO_CALLERS]
     out += [(site, call24(site, TAPE_MOUNT), call24(site, sdram_tramp_at + 32)) for site in TAPE_MOUNT_CALLERS]
+    out += [(site, call24(site, TAPE_LIFT), call24(site, sdram_tramp_at + 48)) for site in TAPE_LIFT_CALLERS]
+    out += [(site, call24(site, TAPE_DROP), call24(site, sdram_tramp_at + 64)) for site in TAPE_DROP_CALLERS]
+    out += [(site, call24(site, TAPE_ERASE), call24(site, sdram_tramp_at + 80)) for site in TAPE_ERASE_CALLERS]
     return out + list(TAPE_BYTE_PATCHES)
 
 
@@ -219,7 +243,10 @@ def thunk_addresses(elf):
             'seam': symbol_address(syms, 'coop_seam_prologue_thunk')[0],
             'seam_fill': symbol_address(syms, 'coop_seam_fill')[0],
             'tape_io': symbol_address(syms, 'coop_tape_io_step')[0],
-            'tape_mount': symbol_address(syms, 'coop_tape_mount_and_index')[0]}
+            'tape_mount': symbol_address(syms, 'coop_tape_mount_and_index')[0],
+            'lift': symbol_address(syms, 'coop_lift')[0],
+            'drop': symbol_address(syms, 'coop_drop')[0],
+            'erase': symbol_address(syms, 'coop_erase')[0]}
 
 
 def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
@@ -245,6 +272,7 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     sdram_blob = build_tramp(thunks['core_noteon'])
     if tape:                                               # +16: tape_cache_io_step, +32: tape_image_mount_and_index
         sdram_blob += build_tramp(thunks['tape_io']) + build_tramp(thunks['tape_mount'])
+        sdram_blob += build_jump_tramp(thunks['lift']) + build_jump_tramp(thunks['drop']) + build_jump_tramp(thunks['erase'])   # +48, +64, +80
     dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, sdram_blob))
     for name, a, b in tramps:
         lines.append('tramp_{} at {:#x} ({} B) -> {:#x}'.format(name, a, len(b), thunks[name]))
