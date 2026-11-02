@@ -249,3 +249,21 @@ write a stereo take across the mono track files. T2 fixes this.
 - **T3.** The seam path (`0xffa070b8` and the SDRAM seam fill `0x1a54284`, 4 x 594-sample staging
   buffers) for 8 lanes; lift/drop/erase/split/join byte math for lane pairs (`src_ch/dst_ch < 4`
   asserts in `tape_c.cpp`); stereo meters in the tape UI; the album key inert.
+
+### 7.5 T2 plan of record (not started; decision for the owner)
+
+Two ways to give the R lanes storage. **(A) Fresh image** (the plan): 8 mono AIFC files, a coop
+mount/index replacing `tape_image_mount_and_index` (stock indexes exactly six names via `0x1997c58`:
+tracks `0x18d9eac` + 0x18*t -> `0x018c1810[t]`, `side_a` -> `0xff9002c0`, `side_b` -> `0xff9002c4`),
+`tools/tape_image.py`, a first-boot rebuild. **(B) Album-sides bridge** (less work, no reformat, keeps
+the user's mono tracks as the L lanes): lane 2t+1 lives in the album storage as a planar mono stream,
+lanes 1/3 at `side_a + {0, 0x1E47F40}`, lanes 5/7 at `side_b + {0, 0x1E47F40}`; the album sides hold
+0xF23FA0 frames, so R lanes have 484 chunks instead of 485 (the last 0.37 s of the tape is mono) and
+chunk 484 of an R lane must be skipped on load (zero) and write. Either way `tape_cache_io_step`
+`0x1a54710` becomes a coop C function (both callers `0x19f0a24` service(0) and `0x19f0be2` service(1)
+retargeted through a region-C trampoline like `Core::NoteOn`): walk the list from the head
+`0x1b4ef3c`, flush request `B[+2]` -> write dirty lanes 0..7 (`lseek 0x1a9a0e4`, `write 0x1a99f84`,
+fd `0x1b4ef44`), else load an invalid node (`W[+6] >= 0`, `B[+0] == 0`) lane by lane (`read
+0x1a99c90`), keeping the `B[+1]` loading flag and the chunk-index re-check of the stock code. Test:
+a two-run emulator scenario on a kept NAND copy (hear.sh needs a NAND_KEEP option): record + stop +
+quit, then boot + play; the stereo take must come back with its width.
