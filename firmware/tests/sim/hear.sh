@@ -17,11 +17,13 @@ EMU="$WORK/op1emu/build/op1emu"
 "$EMU" --help | grep -q -- --audio-dump || { echo "this op1emu lacks --audio-dump; apply tools/op1emu-patches and rebuild"; exit 1; }
 [ -f "$WORK/pristine.bin" ] || { echo "pristine NAND not found: $WORK/pristine.bin"; exit 1; }
 LDR=$(realpath "$LDR"); SCRIPT=$(realpath "$SCRIPT"); OUT=$(realpath -m "$OUT")
-LOG=${LOG:-$WORK/hear.log}
+LOG=${LOG:-${OUT%.wav}.log}
+NAND=$WORK/hear_nand_$$.bin                 # per-run NAND copy: runs may overlap
 
-cp -f "$WORK/pristine.bin" "$WORK/hear_nand.bin"
+cp -f "$WORK/pristine.bin" "$NAND"
+trap 'rm -f "$NAND"' EXIT
 cd "$WORK/op1emu"
-timeout "${TIMEOUT:-600}" ./build/op1emu "$WORK/hear_nand.bin" "$LDR" --headless --deterministic \
+timeout "${TIMEOUT:-600}" ./build/op1emu "$NAND" "$LDR" --headless --deterministic \
     --audio-dump "$OUT" --input-script "$SCRIPT" > "$LOG" 2>&1 || { echo "op1emu failed; see $LOG"; tail -5 "$LOG"; exit 1; }
 grep "Audio dump:" "$LOG" | tail -2
 [ -n "${COPY_TO:-}" ] && cp -f "$OUT" "$COPY_TO/" && echo "copied to $COPY_TO/$(basename "$OUT")"

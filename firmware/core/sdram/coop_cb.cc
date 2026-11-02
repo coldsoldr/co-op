@@ -38,10 +38,17 @@ static inline uint32_t cycles(void)
     return v;
 }
 
+#ifdef COOP_COMBINED
+extern "C" void coop_stereo_block_start(void);   /* stereo bus: per-block reset (core/sdram/stereo_bus.cc) */
+#endif
+
 /* The replacement audio callback: time the stock callback and forward its result. */
 extern "C" int CoopAudioCb(int r0, int r1)
 {
     uint32_t t0 = cycles();
+#ifdef COOP_COMBINED
+    coop_stereo_block_start();
+#endif
     int ret = ((audio_cb_fn)(uintptr_t)FW_AUDIO_CB)(r0, r1);
     uint32_t dt = cycles() - t0;
     g_last = dt;

@@ -157,3 +157,20 @@ under a chord, far under the 0.75 (75%) ceiling. The insert *replaces* the stock
 compressor/level stage (`0xffa04280`, the comp DSP on `0xff801880`), which is exactly item 11 (the
 coop master suite takes over master comp/drive/EQ); it writes only comp state, not meters, so memorize
 is unaffected.
+
+## Milestone C1: stereo instrument bus (op1emu CYCLES, 2026-11-02)
+
+Measured on the full-spread test image (`g_coop_spread=32767`, 3-voice chord, `tests/sim/det_chord.txt`)
+by watching the coop counters (`g_stereo_hook_cycles_max`, `g_stereo_mix_cycles_max`) with the write
+tracer; op1emu's CYCLES is an instruction-count model, so treat these as relative until a device test.
+
+| Stage | Peak cycles/block | % of budget |
+|---|---|---|
+| Voice hook, one panned voice (128-sample difference accumulate) | 2,552 | 0.44% (x6 synth = 2.6%, x12 drums = 5.3%) |
+| Mix replacement, mono fast path (no panned voice) | 1,567 | 0.27% |
+| Mix replacement, full path (2 x decimate + 2 x DC block + stereo mix) | 15,711 | 2.7% |
+
+At spread 0 the hooks return after a table lookup and only the mono fast path runs: the coop image is
+sample-identical to stock and costs ~0.3% of the budget. Worst case (12 panned drum voices + full mix)
+is ~8%, inside the ceiling; the per-voice accumulate is the first candidate for a vector-MAC rewrite if a
+device measurement says so.

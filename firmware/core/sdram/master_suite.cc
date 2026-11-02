@@ -51,6 +51,11 @@
 #define FX_FB_Q31   858993459            /* 0.40 */
 #define FX_MIX_Q31  751619277            /* 0.35 */
 
+/* Image-time controls (inject_app --set-word): bit 0 = run the demo FX delay, bit 1 = run the master
+ * suite. Default 0: the stage is a transparent pass-through, which the stereo-bus regression gate
+ * (coop image == stock image, sample for sample) relies on. */
+__attribute__((section(".data"))) volatile uint32_t g_coop_master_flags = 0;
+
 static coop_master g_master;
 static coop_delay g_fx;
 static int g_inited;
@@ -74,19 +79,21 @@ extern "C" uint32_t coop_master_apply(void)
         coop_delay_set(&g_fx, FX_DELAY_SAMPLES, FX_FB_Q31, FX_MIX_Q31);
         g_inited = 1;
     }
+    uint32_t flags = g_coop_master_flags;
+    if (!(flags & 3u)) return STOCK_GETTER_RESULT;   /* transparent: nothing to do on d34/db4 */
     int32_t L[BLOCK], R[BLOCK];
     for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)MBUS_L[i] << 16; R[i] = (int32_t)MBUS_R[i] << 16; }
 
     /* FX slot 2 (coop stereo FX), in series before the master suite. Timed separately. */
     uint32_t f0 = coop_cycles();
-    coop_delay_process(&g_fx, L, R, BLOCK);
+    if (flags & 1u) coop_delay_process(&g_fx, L, R, BLOCK);
     uint32_t fdt = coop_cycles() - f0;
     if (fdt > g_fx_cycles) g_fx_cycles = fdt;
     g_fx_blocks++;
 
     /* master suite: comp -> drive -> EQ */
     uint32_t t0 = coop_cycles();
-    coop_master_process(&g_master, L, R, BLOCK);
+    if (flags & 2u) coop_master_process(&g_master, L, R, BLOCK);
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_master_cycles) g_master_cycles = dt;
     g_master_blocks++;

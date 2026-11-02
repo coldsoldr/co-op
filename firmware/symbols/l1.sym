@@ -78,3 +78,14 @@
 0xff800e34  d_master_out_L          C  master OUTPUT bus L, 64 x int32: written by 0xffa04280, read by the SPORT TX conversion and the USB stream. NOT "USB only" and NOT always zero (a block-start probe saw it before the stage ran)
 0xff800f34  d_master_out_R          C  master OUTPUT bus R, 64 x int32
 0xff800770  d_sport_tx_ring         C  SPORT TX DMA ring (DMA1, descriptor list at 0xff800b70, START 0xff800770, 128 x 32-bit words per buffer), what the codec plays
+
+# --- decimator / output path, confirmed with the write tracer 2026-11-02 (docs/stereo-bus.md) ---
+0xffa005d4  l1_hb_decimate          C  half-band decimator 128 -> 64: voice bus (P2 = 0xff800bb4, 32-bit words = 2 samples) into even/odd rings 0xff80123c/0xff80127c (L2=L3=0x40), acc = odd[16 back]*0.5 + 32 (W32) MACs over taps 0x0106a6f0, out = (acc>>16)*ramp, ramp word 0xff80107c (.L ramp .H step, written back 0xffa0067e); 64 int16 to 0xff801e50 (store 0xffa0066e). coop replica: coop_hb_decimate
+0xff801e50  d_decim_out             C  64 x int16 decimator output (also the default engine's 128-sample render scratch earlier in the block); the DC blocker's input
+0xff80113c  d_voice_render_out      C  128 x int16 synth/drum render output (R1 of the vtable render; 0xffa009de / 0xffa0068c)
+0xff801d50  d_voice_env             C  128 x int16 per-voice envelope (ADSR output), multiplied with the render in the synth sum. (Earlier "voice gain array" label was this.)
+0xff80107c  d_hb_ramp               C  decimator volume ramp word: .L ramp (0x1000 at boot -> 0x7fff), .H step (0x40, written each block at 0xffa030b8)
+0xffa0140c  l1_sport_mode_test      C  reads the output-mode byte 0x018b621d: 0 -> mono (speaker) conversion 0xffa01698, else stereo conversion 0xffa0142a / 0xffa015f0 (both SPORT words written: 0xffa01642 L, 0xffa01662 R)
+0xffa01698  l1_sport_convert_mono   C  (e34 + f34)/2, soft limit, one word per 8-byte SPORT frame (0xffa0173e): the speaker path; what op1emu runs
+0xffa01636  l1_sport_convert_stereo C  LSETUP(0xffa0163a,0xffa0167e): L -> frame word 0 (0xffa01642), R -> word 1 (0xffa01662), DC offset bit 22
+0xffa0bfb4  l1_coop_tramps          C  coop stereo-bus trampolines (tools/l1_stereo_insert.py): synth +0, drum +12, mix +24 (40 bytes of kennel's free .l1tramp range)

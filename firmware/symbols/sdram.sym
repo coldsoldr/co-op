@@ -43,10 +43,19 @@
 0x01a5e310  fw_tlsf_free            C  TLSF pool free wrapper (memory-map.md)
 
 # --- voice bus / mix path, confirmed dynamically with the op1emu write tracer (docs/stereo-bus.md, 2026-11-01) ---
-0x01967612  decimate_voice_bus_end  C  RTS of the in-place 128->64 decimation filter: reads the voice bus via I0, writes the 64 results over 0xff800bb4..0xff800c32 (stores 0x01967586/0x0196759a/0x019675d2/0x0196760e; LSETUP x31 unrolled x2); 32x16 fractional IIR (A0 += A1 >>> 15)
+0x019674f8  dc_block_voice_bus      C  CORRECTED 2026-11-02 (was "decimate_voice_bus_end"): a 64-sample first-order DC blocker, not a decimator. Reads the decimated 64 at 0xff801e50 (I0), y = sat(sat(y - Xprev) + X) - c*Yq, c = live word 0x01bab53c, state 3 words at 0x01aaac14; writes 64 int16 over 0xff800bb4..0xff800c32 (stores 0x01967586/0x0196759a/0x019675d2/0x0196760e), RTS 0x01967612. coop replica: coop_dc_block
 0x01a66b80  drum_sdram_sample_wr    C  drum engine sample path: one W[I0++] = R3.H store per call into the voice bus (32x16 fractional interpolation before it)
 0x019de5a8  postmix_mono_add        C  LSETUP(0x019de5ac,0x019de5e8): adds one mono term (A0/A1 generator) to d34 (0x019de5d4) and db4 (0x019de5cc) in place after the mix loops; term was zero in play (metronome/click?) [I]
 
 # --- master output path (2026-11-01, write tracer) ---
 0x019d90e8  master_level_getter     C  `R0 = 0xff80187c; RTS`: called via CALL (P1) at 0xffa017ac right before the stock level stage; the coop master stage (coop_master_apply) replaces THIS and returns the same value
 0x019d90f2  master_level_sdram_copy I  an SDRAM copy of the 0xffa04280 level stage (same prologue on 0xff801880); not in the live path
+
+# --- voice path inputs, confirmed with the write tracer 2026-11-02 (docs/stereo-bus.md) ---
+0x01a52040  synth_engine_default    C  the default patch's synth render (sine wavetable 0x0101e5e8): scratch to 0xff801e50 (0x01a520c6), output to R1 = 0xff80113c (0x01a52136..0x01a521d2)
+0x01912252  adsr_fill_env           C  SDRAM ADSR: writes the 128-entry per-voice envelope 0xff801d50 before each synth render (also 0x01912300, 0x01912478 paths)
+0x01b4ef6e  d_voice_sum_gain        C  int16 gain word read by the synth sum (W[P4]), the drum sum (W[P5]) and mix loop B (R0.L): 0x6000 at run time (written once as 0x60000000 at 0x01b4ef6c by 0x01a552c2)
+0x0106a6f0  d_hb_coefs              C  32 x int16 even-phase taps of the L1 half-band decimator (zero in the LDR image: filled at run time; coop reads them live)
+0x01bab53c  d_dc_coef               C  int32 coefficient of the SDRAM DC blocker (run-time value; coop reads it live)
+0x01aaac14  d_dc_state              C  3 state words of the SDRAM DC blocker (X prev, Yq prev, y prev)
+0x018b621d  d_output_mode           C  byte: 0 = speaker (SPORT conversion sums e34+f34 to mono, 0xffa01698), nonzero = headphones/line out (stereo paths 0xffa0142a/0xffa015f0). Set 1 by the event case at 0x019ac964 [I: jack detection]; op1emu leaves it 0

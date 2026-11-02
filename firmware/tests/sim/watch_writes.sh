@@ -20,6 +20,7 @@ SCRIPT=${2:?usage: watch_writes.sh LDR SCRIPT RANGE [RANGE...]}
 shift 2
 [ $# -ge 1 ] || { echo "need at least one RANGE"; exit 1; }
 OUT=${OUT:-$WORK/watch.tsv}
+NAND=$WORK/watch_nand_$$.bin               # per-run NAND copy: runs may overlap
 LOG=${LOG:-$WORK/watch.log}
 EMU="$WORK/op1emu/build/op1emu"
 [ -x "$EMU" ] || { echo "op1emu not built: $EMU"; exit 1; }
@@ -31,9 +32,10 @@ args=()
 for r in "$@"; do args+=(--watch-writes "$r"); done
 [ -n "${WATCH_LOG:-}" ] && args+=(--watch-log "$WATCH_LOG" --watch-from "${WATCH_FROM:-0}")
 
-cp -f "$WORK/pristine.bin" "$WORK/watch_nand.bin"      # op1emu mutates its NAND; never the pristine one
+cp -f "$WORK/pristine.bin" "$NAND"      # op1emu mutates its NAND; never the pristine one
+trap 'rm -f "$NAND"' EXIT
 cd "$WORK/op1emu"                                       # it reads gui/ui.json + otp.bin from its cwd
-timeout "${TIMEOUT:-600}" ./build/op1emu "$WORK/watch_nand.bin" "$LDR" --headless --deterministic \
+timeout "${TIMEOUT:-600}" ./build/op1emu "$NAND" "$LDR" --headless --deterministic \
     "${args[@]}" --watch-out "$OUT" --input-script "$SCRIPT" > "$LOG" 2>&1 || {
   echo "op1emu failed (exit $?); see $LOG"; tail -5 "$LOG"; exit 1; }
 column -t -s $'\t' "$OUT"

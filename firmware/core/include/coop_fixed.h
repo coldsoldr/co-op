@@ -78,4 +78,98 @@ static inline int32_t coop_abs32(int32_t a)
     return a < 0 ? (a == (int32_t)-2147483648LL ? 2147483647 : -a) : a;
 }
 
+/* ---- stock-exact 16-bit fractional ops (Phase 2 milestone C, docs/stereo-bus.md) ----
+ * The stock L1 voice/mix loops use the Blackfin 16-bit fractional ALU in its default mode:
+ * `Rx.L = Ra.L * Rb.L` (signed 1.15 x 1.15, round to nearest, saturate), `Rx.L = Ra.L + Rb.L (S)` and
+ * `Rx.H = Ra.L << 1 (S)`. The coop stages that stand in for stock code must reproduce them bit for
+ * bit, so on the device they ARE those instructions (inline asm; the gcc builtins emit the truncating
+ * (T) multiply, which differs). The host model is the biased-rounding default (RND_MOD = 0):
+ * (a*b + 0x4000) >> 15; the only saturating case is (-1)*(-1). */
+static inline int16_t coop_fr16_mul(int16_t a, int16_t b)
+{
+#ifdef __bfin__
+    int32_t r;
+    __asm__("%0.L = %1.L * %2.L;\n\t%0 = %0.L (X);" : "=&d"(r) : "d"(a), "d"(b));
+    return (int16_t)r;
+#else
+    int32_t p = (int32_t)a * (int32_t)b;
+    if (p == 0x40000000) return 32767;             /* -1 * -1 saturates */
+    return (int16_t)((p + 0x4000) >> 15);          /* biased round to nearest (floor shift) */
+#endif
+}
+
+static inline int16_t coop_fr16_add(int16_t a, int16_t b)   /* Rx.L = Ra.L + Rb.L (S) */
+{
+#ifdef __bfin__
+    int32_t r;
+    __asm__("%0.L = %1.L + %2.L (S);\n\t%0 = %0.L (X);" : "=&d"(r) : "d"(a), "d"(b));
+    return (int16_t)r;
+#else
+    return coop_sat16((int32_t)a + (int32_t)b);
+#endif
+}
+
+static inline int16_t coop_fr16_shl1(int16_t a)             /* Rx.H = Ra.L << 1 (S) */
+{
+#ifdef __bfin__
+    int32_t r;
+    __asm__("%0.L = %1.L << 1 (S);\n\t%0 = %0.L (X);" : "=&d"(r) : "d"(a));
+    return (int16_t)r;
+#else
+    return coop_sat16((int32_t)a << 1);
+#endif
+}
+
+/* 32-bit saturating add/sub: `R = Ra + Rb (S)`. */
+static inline int32_t coop_sadd32(int32_t a, int32_t b)
+{
+#ifdef __bfin__
+    return __builtin_bfin_add_fr1x32(a, b);
+#else
+    return coop_sat32((int64_t)a + (int64_t)b);
+#endif
+}
+static inline int32_t coop_ssub32(int32_t a, int32_t b)
+{
+#ifdef __bfin__
+    return __builtin_bfin_sub_fr1x32(a, b);
+#else
+    return coop_sat32((int64_t)a - (int64_t)b);
+#endif
+}
+
+/* The stock 32x32 -> 1.31 product as the SDRAM DC blocker (0x019674f8) computes it: three MACs on the
+ * 16-bit halves (unsigned lo*lo >> 16, mixed-mode hi*lo and lo*hi, >>> 15) plus the signed hi*hi
+ * fraction, 32-bit saturated. Equals (c*x) >> 31 up to that sequence's own rounding; on the device it
+ * is the same instruction sequence so the coop replica tracks the stock stage exactly. */
+static inline int32_t coop_fr32_mul_stock(int32_t c, int32_t x)
+{
+#ifdef __bfin__
+    int32_t r;
+    __asm__("A1 = %1.L * %2.L (FU);\n\t"
+            "A1 = A1 >> 16;\n\t"
+            "A1 += %1.H * %2.L (M), A0 = %1.H * %2.H;\n\t"
+            "A1 += %2.H * %1.L (M);\n\t"
+            "A1 = A1 >>> 15;\n\t"
+            "%0 = (A0 += A1);"
+            : "=d"(r) : "d"(c), "d"(x) : "A0", "A1");
+    return r;
+#else
+    int32_t cH = c >> 16, xH = x >> 16;
+    uint32_t cL = (uint32_t)c & 0xffffu, xL = (uint32_t)x & 0xffffu;
+    int64_t a1 = (int64_t)((cL * xL) >> 16);
+    a1 += (int64_t)cH * (int64_t)xL;
+    a1 += (int64_t)xH * (int64_t)cL;
+    a1 >>= 15;                                        /* arithmetic */
+    int64_t a0 = ((int64_t)cH * (int64_t)xH) << 1;    /* signed fraction */
+    return coop_sat32(a0 + a1);
+#endif
+}
+
+/* One `A0 += a.L * b.L (W32)` step (host model): signed fraction (product << 1), 32-bit saturated. */
+static inline int32_t coop_mac_w32(int32_t acc, int16_t a, int16_t b)
+{
+    return coop_sat32((int64_t)acc + (((int64_t)a * (int64_t)b) << 1));
+}
+
 #endif

@@ -136,3 +136,28 @@ the stock "global pan" loop proven to write zeros.
 guest time**, not ~20 s; the "20 s" was wall-clock boot in deterministic mode (script `wait` is wall
 time, and the guest ran ~1 s of guest time per wall second here). A chord at ~18 s wall landed at
 ~21-23 s guest. Trust the trace's guest-time columns over script timing.
+
+## Deterministic scenarios, parallel runs, stereo dumps (2026-11-02)
+
+- **Guest-timed input.** The headless script command `at MS` schedules the following `press`/`release`/
+  `tap` lines for guest time MS instead of wall time, so two runs of two images produce frame-aligned
+  audio. `tests/sim/det_chord.txt` is the reference scenario (synth at 30 s, C-E-G at 33-34 s); with it
+  `tools/wav_compare.py A.wav B.wav --skip-seconds 5` compares sample for sample (exit 0 = identical
+  within `--max-diff`). Wall-time scripts (`cap.txt`, `hear.txt`) land the note in a different block each
+  run; `--align THRESH` lines them up on the onset, but the stock engine's own time-dependent
+  modulation still leaves a residue (max 85 LSB seen), so they cannot prove exactness.
+- **Parallel runs.** `tests/sim/hear.sh` and `tests/sim/watch_writes.sh` copy the pristine NAND to a
+  per-process file (`hear_nand_$$.bin`, deleted on exit) and `hear.sh` logs next to its WAV, so several
+  emulator runs can overlap.
+- **Stereo in the dump.** The firmware configures the SPORT with two words per frame and no stereo
+  frame sync, and writes L to word 0 and R to word 1 (`0xffa01642` / `0xffa01662`). op1emu's WAV dump
+  and host playback took "no stereo frame sync" to mean mono and duplicated word 0; the coop patch
+  (`tools/op1emu-patches/0001-write-trace.patch`, second commit) takes word 1 as the right channel.
+  Separately, the firmware only runs its stereo conversion when the output-mode byte `0x018b621d` is
+  nonzero (headphones/line out); op1emu never sets it and the speaker path sums `(e34 + f34) / 2`, so
+  **a stereo check in the emulator needs an image with `g_coop_force_stereo_out=1`** (`stereo_bus.cc`;
+  `tools/build_image.sh OUT.ldr --set-word g_coop_force_stereo_out=1`). Images for the regression gate
+  leave it 0.
+- **One-command images.** `tools/build_image.sh OUT.ldr [--set-word NAME=VALUE ...] [--device OUT_enc.ldr]`
+  runs the whole pipeline (inject, decrypt with the key read from `otp.bin`, master imm patch, stereo
+  insert) and never stores the key.
