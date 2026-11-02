@@ -141,4 +141,5 @@ track clamp. Still mono: lift/drop (one side), the instrument monitor on the tap
 **What to record:** boots without the assert; record stereo, power cycle, play (stereo); a loop (in/out)
 around a stereo take plays without a click or crash; lift still takes one side (known).
 
-Result: _not yet flashed_.
+**Result (2026-11-02, owner): boots** (the assert loop is gone: the clamp works on the device). Stereo
+record/play after a power cycle, loops and the rest of the list still to be reported.
