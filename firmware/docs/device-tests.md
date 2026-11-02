@@ -164,14 +164,17 @@ recording, lifting and dropping work. **Observed:** the tape animation gets chop
 the recorded take (the owner heard the whole chord panned as a block on the older T3 package) is still to do
 with the tape file (`docs/tape-stereo.md` section 12).
 
-## Phase 3 milestone T3d: stats file for the device — device test (pending, 2026-11-02)
+## Phase 3 milestone T3e: stats file + split node loads — device test (pending, 2026-11-02)
 
-`build/pkg/op1_246_coop_t3d_stereo_tape.op1` (sha256 30650889..., copy in Downloads). T3c plus the stats
-file `/yaffs2/user/coop_stats.txt` (`docs/performance.md`, "The device stats file"). No audio change.
+`build/pkg/op1_246_coop_t3e_stereo_tape.op1` (copy in Downloads; sha256 in the commit). Supersedes T3d (not
+flashed). T3c plus: the stats file `/yaffs2/user/coop_stats.txt` (`docs/performance.md`, "The device stats
+file") and node loads split into eight passes of 64 KiB (`docs/performance.md`, T3e), the one main-thread
+change aimed at the choppy tape animation while recording. Same tape image, no reformat.
 
-**What to do:** boot, let it sit 10 s, record a chord from the synth page while watching the tape animation,
-stop, play it back from the tape page, stop, wait 15 s. Power off, disk mode, copy to Downloads:
-`coop_stats.txt` (root of the disk) and `tape/track_1.aif` as `coop_track_1.aif` (about 63 MB). If possible
-also a line-out WAV of the tape playback of that chord, and of the same chord played live on the synth page.
+**What to do:** boot, let it sit 10 s, record a chord from the synth page while watching the tape animation
+(is it smoother than T3c?), stop, play it back from the tape page, stop, wait 15 s. Then power off, disk mode,
+copy to Downloads: `coop_stats.txt` (root of the disk) and `tape/track_1.aif` as `coop_track_1.aif` (about
+63 MB; it bisects the per-voice question of `docs/tape-stereo.md` section 12). If possible also a line-out WAV
+of the tape playback of that chord and of the same chord played live on the synth page.
 
 Result: _not yet flashed_.

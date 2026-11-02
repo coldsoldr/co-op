@@ -229,11 +229,11 @@ extern "C" int coop_tape_mount_and_index(void)
 }
 
 /* ---- chunk I/O: tape_cache_io_step (0x1a54710) with lane pairs ---- */
-static void deinterleave(const uint8_t *src, uint8_t *lane_l, uint8_t *lane_r)
+static void deinterleave_n(const uint8_t *src, uint8_t *lane_l, uint8_t *lane_r, int frames)
 {
     const uint32_t *s = (const uint32_t *)src;
     uint16_t *l = (uint16_t *)lane_l, *r = (uint16_t *)lane_r;
-    for (int i = 0; i < FRAMES_PER_CHUNK; i++) { uint32_t f = s[i]; l[i] = (uint16_t)f; r[i] = (uint16_t)(f >> 16); }
+    for (int i = 0; i < frames; i++) { uint32_t f = s[i]; l[i] = (uint16_t)f; r[i] = (uint16_t)(f >> 16); }
 }
 
 static void interleave(uint8_t *dst, const uint8_t *lane_l, const uint8_t *lane_r)
@@ -245,15 +245,28 @@ static void interleave(uint8_t *dst, const uint8_t *lane_l, const uint8_t *lane_
 
 static inline int32_t chunk_off(int t, int chunk) { return g_coop_track_base[t] + (int32_t)chunk * (FRAMES_PER_CHUNK * 4); }
 
-static int rw_chunk(int write, int t, int chunk)
+/* bytes [at, at + len) of track t's chunk through g_bounce */
+static int rw_bytes(int write, int t, int chunk, int32_t at, int32_t len)
 {
     int fd = CACHE_FD;
-    int32_t off = chunk_off(t, chunk);
+    int32_t off = chunk_off(t, chunk) + at;
     if (chunk < 0 || chunk >= CHUNKS) return -1;
     if (Y_LSEEK(fd, off, 0) != off) return -1;
-    int n = write ? Y_WRITE(fd, g_bounce, sizeof g_bounce) : Y_READ(fd, g_bounce, sizeof g_bounce);
-    return n == (int)sizeof g_bounce ? 0 : -1;
+    int n = write ? Y_WRITE(fd, g_bounce, len) : Y_READ(fd, g_bounce, len);
+    return n == len ? 0 : -1;
 }
+static int rw_chunk(int write, int t, int chunk) { return rw_bytes(write, t, chunk, 0, (int32_t)sizeof g_bounce); }
+
+/* Node loads in eight parts (docs/performance.md, T3e): one part = half a track-chunk = 64 KiB of file, the size the
+ * stock step moves per read, so a main-loop pass blocks no longer than stock's for a load. The lookup requests the
+ * next chunk 0.74 s ahead; eight passes take about 60 ms. The node stays invalid until its last part; the stock
+ * cancel protocol (the audio thread sets NODE_LOADING nonzero) is checked at the end as stock does, and a node whose
+ * chunk changed under us restarts from part 0. */
+#define LOAD_PARTS    (TRACKS * 2)
+#define PART_FRAMES   (FRAMES_PER_CHUNK / 2)
+static uint8_t *g_load_node;
+static int16_t g_load_chunk;
+static int g_load_part;
 
 /* Held saves while recording (kennel kn_tape.c, op1r 49): the stock service step flushes the chunk being recorded
  * on every main-loop pass. A node saved less than HOLD_CYCLES ago keeps its flush request while recording and the
@@ -324,14 +337,26 @@ static int io_step(int mode)
         }
         if (mode != 0) return 0;
         if (chunk < 0 || node[NODE_VALID]) continue;
-        node[NODE_LOADING] = (uint8_t)mode;                            /* 0: a load in progress may be cancelled by setting it */
-        uint32_t l0 = now_cycles();
-        for (int t = 0; t < TRACKS; t++) {
-            if (rw_chunk(0, t, chunk) != 0) { g_tape_io_errors++; zero(g_bounce, sizeof g_bounce); }
-            deinterleave(g_bounce, data + t * LANE_BYTES, data + (TRACKS + t) * LANE_BYTES);
+        if (g_load_node && g_load_node != node && !g_load_node[NODE_VALID]
+            && *(int16_t *)(g_load_node + NODE_CHUNK) == g_load_chunk) {  /* finish the node in progress first */
+            node = g_load_node;
+            data = *(uint8_t **)(node + NODE_DATA);
+            chunk = g_load_chunk;
         }
+        if (node != g_load_node || chunk != g_load_chunk) {
+            g_load_node = node; g_load_chunk = chunk; g_load_part = 0;
+            node[NODE_LOADING] = (uint8_t)mode;                        /* 0: a load in progress may be cancelled by setting it */
+        }
+        int t = g_load_part >> 1, half = g_load_part & 1;
+        int32_t at = half * (PART_FRAMES * 4);
+        uint32_t p0 = now_cycles();
+        if (rw_bytes(0, t, chunk, at, PART_FRAMES * 4) != 0) { g_tape_io_errors++; zero(g_bounce, PART_FRAMES * 4); }
+        deinterleave_n(g_bounce, data + t * LANE_BYTES + half * (LANE_BYTES / 2),
+                       data + (TRACKS + t) * LANE_BYTES + half * (LANE_BYTES / 2), PART_FRAMES);
+        peak(&g_tape_io_load_cycles_max, &g_tape_io_load_cycles_win, now_cycles() - p0);   /* per part: what a pass blocks for */
+        if (++g_load_part < LOAD_PARTS) return 1;
+        g_load_node = 0;
         g_tape_io_loads++;
-        peak(&g_tape_io_load_cycles_max, &g_tape_io_load_cycles_win, now_cycles() - l0);
         if (node[NODE_LOADING] == 0) {
             node[NODE_VALID] = *(int16_t *)(node + NODE_CHUNK) == chunk ? 1 : 0;
         } else {

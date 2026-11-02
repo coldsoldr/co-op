@@ -187,3 +187,5 @@ from `tape.db` at boot, so play without the STOPs starts wherever the last save 
 **Loop keys (2026-11-02):** the OP-1 has no loop key; on the tape page the sound keys `s1` / `s2` / `s3` are
 loop in / loop out / loop on-off (key codes 0x2d-0x2f). `tests/sim/det_tape_loop.txt` sets a loop round a
 take; the coop images emulate slower than stock, so its tail `wait` is 150 s to capture five passes.
+`tests/sim/det_tape_rec_long_quit.txt` records a 4-second take (six chunk boundaries) for a power-cycle run
+followed by `det_tape_play_start.txt`: the file path of every chunk.

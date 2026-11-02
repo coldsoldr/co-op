@@ -227,3 +227,20 @@ near `cb_max` is the interrupt, not the step (emulator idle: step 47,625 = callb
 window lines with `recording 1` are the ones to compare against the idle windows: the `cb_max` difference
 is the audio-side cost of a recorded chord, the `io_steps` drop and `io_load_max` / `io_flush_max` the
 main-thread side. Verified in op1emu: 20 writes, 0 errors, playback unchanged.
+
+### T3e: node loads in eight parts (2026-11-02)
+
+The I/O step loaded a node in one main-loop pass: 4 tracks x 128 KiB of file plus the de-interleave, twice
+the bytes stock moves per pass (4 x 64 KiB) and the longest single block of main-thread work coop added. It now
+loads one part per pass: half a track-chunk, 64 KiB of file plus 16,384 frames de-interleaved, the same read
+size as stock's step. The lookup requests the next chunk 0.74 s ahead and eight passes take about 60 ms, so
+the node is ready long before the head reaches it; the node stays invalid until its last part, the stock cancel
+protocol is honoured at the end, a node whose chunk changed under us restarts from part 0, and a node in
+progress is finished before another is started. Flushes are unchanged (128 KiB per dirty track, held to once a
+second per node while recording, all at once when the take ends; stock writes the recorded chunk on every pass).
+
+Verified in op1emu against the previous image: the record scenario and the power-cycle playback have the same
+level, peak and width (sample positions shift by one block as the main-loop timing changed); a 4-second take
+across six chunk boundaries (`tests/sim/det_tape_rec_long_quit.txt`, then `det_tape_play_start.txt` from the
+file) plays back continuously with the same envelope (within 1%) and width 0.25-0.27 on both images. In the
+stats file `io_load_max` is now per part.

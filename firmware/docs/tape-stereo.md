@@ -392,8 +392,9 @@ tape on the first boot** (recordings lost; back up with co-op first). Pending th
   keeps per-voice placement in both the record and the file path. The device check is pending: the tape file
   copied in disk mode (frames as written) bisects record from playback; the stats file's `mismatch` counters
   tell whether the right-lane pass ever diverged on the device.
-- Performance on the device: the tape animation goes choppy while a chord is recorded; the T3d package writes
-  a stats file to measure it (docs/performance.md).
+- Performance on the device: the tape animation goes choppy while a chord is recorded; the T3e package writes
+  a stats file to measure it and loads nodes in eight 64 KiB parts instead of one 512 KiB pass
+  (docs/performance.md, T3c and T3e sections).
 
 ### 8.2 T3 next (as written before T3)
 
