@@ -31,6 +31,8 @@ enum { PATCH_IMM16_LO = 1, PATCH_IMM16_HI = 2 };
 /* measurements, in region-A .bss */
 volatile uint32_t g_last, g_max, g_blocks;
 volatile uint32_t g_max_win, g_blocks_win;        /* window peaks for the stats file (coop_stats.cc) */
+volatile uint32_t g_cb_sum_win, g_cb_over_win;    /* window sum (average load) and blocks over half the budget */
+#define COOP_CB_OVER 290249u                        /* half of the 580,499-cycle block (docs/performance.md) */
 
 static inline uint32_t cycles(void)
 {
@@ -55,6 +57,8 @@ extern "C" int CoopAudioCb(int r0, int r1)
     g_last = dt;
     if (dt > g_max) g_max = dt;
     if (dt > g_max_win) g_max_win = dt;
+    g_cb_sum_win += dt;
+    if (dt > COOP_CB_OVER) g_cb_over_win++;
     g_blocks++;
     g_blocks_win++;
     return ret;

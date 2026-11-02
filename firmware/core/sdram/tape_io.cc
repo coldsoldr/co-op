@@ -283,6 +283,9 @@ static uint8_t g_was_recording;
 volatile uint32_t g_tape_io_held;
 volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g_tape_io_flush_cycles_max;   /* CYCLES per step / node load / chunk flush */
 volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g_tape_io_flush_cycles_win, g_tape_io_steps_win;
+volatile uint32_t g_tape_io_gap_cycles_max, g_tape_io_gap_cycles_win;   /* end of one step to the start of the next: the rest of a main-loop pass */
+static uint32_t g_step_end;
+static uint8_t g_step_seen;
 extern "C" void coop_stats_tick(int recording);   /* coop_stats.cc */
 static inline void peak(volatile uint32_t *max, volatile uint32_t *win, uint32_t dt) { if (dt > *max) *max = dt; if (dt > *win) *win = dt; }
 
@@ -298,8 +301,11 @@ static int io_step(int mode);
 extern "C" int coop_tape_io_step(int mode)
 {
     uint32_t t0 = now_cycles();
+    if (g_step_seen && mode == 0) peak(&g_tape_io_gap_cycles_max, &g_tape_io_gap_cycles_win, t0 - g_step_end);
     int r = io_step(mode);
-    peak(&g_tape_io_step_cycles_max, &g_tape_io_step_cycles_win, now_cycles() - t0);
+    g_step_end = now_cycles();
+    g_step_seen = 1;
+    peak(&g_tape_io_step_cycles_max, &g_tape_io_step_cycles_win, g_step_end - t0);
     g_tape_io_steps_win++;
     return r;
 }

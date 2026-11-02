@@ -392,9 +392,13 @@ tape on the first boot** (recordings lost; back up with co-op first). Pending th
   keeps per-voice placement in both the record and the file path. The device check is pending: the tape file
   copied in disk mode (frames as written) bisects record from playback; the stats file's `mismatch` counters
   tell whether the right-lane pass ever diverged on the device.
-- Performance on the device: the tape animation goes choppy while a chord is recorded; the T3e package writes
-  a stats file to measure it and loads nodes in eight 64 KiB parts instead of one 512 KiB pass
-  (docs/performance.md, T3c and T3e sections).
+- **Device result (T3e era, 2026-11-02):** `track_1.aif` copied in disk mode holds the recorded chord at
+  32.0-42.5 s with its partials at several distinct right/left ratios (families near 0.8, 1.5 and 2.3, each
+  constant across a note's harmonics), so the record path keeps per-voice placement on the device [C]. The
+  playback side is not yet separately checked on the device (a line-out capture of the playback would do it).
+- Performance on the device: the tape animation goes choppy while a chord is recorded, and only when voices
+  play (recording silence is smooth); the T3f package writes a stats file that separates the audio-side and
+  main-loop causes and loads nodes in eight 64 KiB parts (docs/performance.md, T3c, T3e and T3f sections).
 
 ### 8.2 T3 next (as written before T3)
 

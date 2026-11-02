@@ -177,4 +177,25 @@ copy to Downloads: `coop_stats.txt` (root of the disk) and `tape/track_1.aif` as
 63 MB; it bisects the per-voice question of `docs/tape-stereo.md` section 12). If possible also a line-out WAV
 of the tape playback of that chord and of the same chord played live on the synth page.
 
+Result (2026-11-02, the owner): **no `coop_stats.txt` in the disk root** (whether T3e or still T3c was on the
+device for this run is not recorded; T3c has no writer). The tape files were copied (`track_1..4.aif`). **Lag:**
+recording with nothing playing is smooth; as soon as voices play, the tape animation lags. **Tape file:** the
+recorded chord (32.0-42.5 s of track 1) has its partials at several distinct right/left ratios (families near
+0.8, 1.5 and 2.3, each constant across a note's harmonics), so per-voice placement survives the record path on
+the device (`docs/tape-stereo.md` section 12). The disk-mode export appends a clip table after the SSND chunk
+(track 1: 4 entries, the empty tracks 1), not a coop artefact.
+
+## Phase 3 milestone T3f: stats file v2 (build tag, early write, main-loop gaps) — device test (pending, 2026-11-02)
+
+`build/pkg/op1_246_coop_t3f_stereo_tape.op1` (copy in Downloads; sha256 in the commit). Supersedes T3e. Same
+audio and tape code as T3e; the stats file now names its build, is written once ~1 s after boot and then every
+5 s while not recording, and its windows carry the average load, heavy-block count, voice-hook / side / record
+counts, loads / flushes and the longest main-loop gap (`docs/performance.md`, T3f).
+
+**What to do:** flash, boot, wait 10 s. On the tape page, with the tape stopped, play and hold a chord for
+5 s (does the screen lag?). Then record 10 s of silence, stop. Then record the chord for 5 s, stop. Play it
+back, stop, wait 15 s. Power off, disk mode, copy `coop_stats.txt` from the disk root to Downloads. If the file
+is missing after that, say so: it then means the package did not take, not the stats logic. Note which of the
+three steps lagged.
+
 Result: _not yet flashed_.

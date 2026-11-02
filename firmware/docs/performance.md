@@ -215,18 +215,24 @@ mode. Lines are `name value` pairs:
 - `cb blocks/max/last`: the whole coop audio callback (CYCLES, device time including cache misses); the
   ceiling is 435,000 (0.75 of a block).
 - `stages`: per-stage peaks (`rec_max` record tap, `mix_max` mix replacement, `hook_max` voice hook, `lfo2_max`,
-  `master_max`, `fx_max`).
+  `master_max`, `fx_max`) and the cumulative voice-hook calls / side-bus blocks (T3f).
 - `tape`: record calls and the two state-mismatch detectors of the right-lane pass (`mismatch*`, must stay 0);
-  `io`: loads / flushes / held / errors and the step / load / flush peaks; `edits`: lift / drop / erase counts.
-- `win ...`: one line per 5-second window, oldest first: `blocks` (audio blocks in the window), `cb_max`,
-  `rec_max`, `mix_max`, `io_steps` (main-loop passes in the window: the UI rate's ceiling), `io_step_max`,
-  `io_load_max`, `io_flush_max`, `recording` (1 if a take ran in the window).
+  `io`: loads / flushes / held / errors and the step / gap / load / flush peaks; `edits`: lift / drop / erase counts;
+  `stats`: writes / errors / windows / ticks (main-loop passes seen).
+- `win ...`: one line per 5-second window, oldest first (format 2, T3f): `blocks` (audio blocks in the window),
+  `cb_max`, `cb_sum` (the callback's cycles summed over the window: `cb_sum / (blocks x 580,499)` is the
+  average audio load), `cb_over` (blocks over half the budget), `rec_max`, `mix_max`, `hooks` (voice-hook
+  calls: how many panned voices rendered), `side` (record-tap blocks with a live side bus), `recs` (record
+  calls), `io_steps` (main-loop passes in the window: the UI rate's ceiling), `io_step_max`, `io_gap_max` (the
+  longest interval from the end of one I/O step to the start of the next: the rest of a main-loop pass, i.e.
+  the UI's own work plus the interrupts that landed in it; a choppy animation shows here or in `io_step_max`),
+  `io_load_max`, `io_flush_max`, `loads`, `flushes`, `recording` (1 if a take ran in the window).
 
 Reading: a main-thread interval that an audio interrupt lands in includes that interrupt, so an `io_step_max`
 near `cb_max` is the interrupt, not the step (emulator idle: step 47,625 = callback 45,900 + the walk). The
 window lines with `recording 1` are the ones to compare against the idle windows: the `cb_max` difference
 is the audio-side cost of a recorded chord, the `io_steps` drop and `io_load_max` / `io_flush_max` the
-main-thread side. Verified in op1emu: 20 writes, 0 errors, playback unchanged.
+main-thread side. Verified in op1emu (T3d): 20 writes, 0 errors, playback unchanged.
 
 ### T3e: node loads in eight parts (2026-11-02)
 
@@ -244,3 +250,28 @@ level, peak and width (sample positions shift by one block as the main-loop timi
 across six chunk boundaries (`tests/sim/det_tape_rec_long_quit.txt`, then `det_tape_play_start.txt` from the
 file) plays back continuously with the same envelope (within 1%) and width 0.25-0.27 on both images. In the
 stats file `io_load_max` is now per part.
+
+### T3f: the stats file names its build and measures the main loop's gaps (2026-11-02)
+
+The owner's T3e-era report: no `coop_stats.txt` in the disk root (which package was on the device for that
+run is not known: T3c has no writer), and the lag is specific to voices: recording with nothing playing keeps
+the tape animation smooth, and it starts lagging as soon as voices play. The cycle counter is not the reason
+for a missing file: the Rings probe in `../te-op1-cfw` read 399 MHz from CYCLES on this device without
+enabling it, and kennel's held saves and crash marker depend on it. So T3f makes the file unambiguous and
+makes it answer the voices question directly:
+
+- The first line is `coop_stats 2 build t3f`, and the file is also written once after 64 main-loop passes
+  (the L1 dumper's proven point), so any boot that lasts a few seconds leaves a file naming the build; a
+  missing file after that means the flash, not the window logic.
+- Per window: `cb_sum` and `cb_over` (average load and the number of heavy blocks, not just the peak),
+  `hooks` / `side` / `recs` (were voices panned, was the side bus live, was the tape recording), `loads` /
+  `flushes` (the main-thread I/O that ran), and `io_gap_max` (the longest stretch of the main loop outside
+  our step: the UI's own pass plus the interrupts in it).
+
+What the numbers decide: if the windows with `hooks > 0` show `cb_sum` well above the idle windows (the
+emulator says 21% peak; a 2-4x device factor from cold caches, as Rings and Clouds showed, would put the
+average above the ~40% at which the Rings probe saw the screen starve), the audio side is the cause and the
+levers are the coop code's cache footprint (the combined ELF is 19 KB of text; the per-block hot set must stay
+well inside the 16 KB instruction cache, with the main loop evicting it every block) and the per-voice hook.
+If instead `io_gap_max` / `io_step_max` grow only in the `recording 1` windows with `flushes > 0`, it is the
+128 KiB flush, and flushes get the T3e split treatment. Verified in op1emu (format 2, `tests/sim/det_tape_rec.txt`): 18 writes, 0 errors, 19 windows, the first file at pass 64; audio against the T3e image: same RMS, peak and width (0.2299), the take shifted by one block as the main-loop timing changed.

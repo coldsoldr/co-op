@@ -24,7 +24,7 @@ NAND=$WORK/watch_nand_$$.bin               # per-run NAND copy: runs may overlap
 LOG=${LOG:-$WORK/watch.log}
 EMU="$WORK/op1emu/build/op1emu"
 [ -x "$EMU" ] || { echo "op1emu not built: $EMU"; exit 1; }
-"$EMU" --help | grep -q -- --watch-writes || { echo "this op1emu lacks --watch-writes; apply tools/op1emu-patches and rebuild"; exit 1; }
+"$EMU" --help 2>&1 | grep -c -- --watch-writes >/dev/null || { echo "this op1emu lacks --watch-writes; apply tools/op1emu-patches and rebuild"; exit 1; }   # not grep -q: it closes the pipe early, op1emu gets SIGPIPE and pipefail fails the check
 [ -f "$WORK/pristine.bin" ] || { echo "pristine NAND not found: $WORK/pristine.bin"; exit 1; }
 LDR=$(realpath "$LDR"); SCRIPT=$(realpath "$SCRIPT")
 
