@@ -16,6 +16,9 @@ Self-contained: a new session should be able to continue from here plus the repo
 > **Also done 2026-11-02:** Phase 3 LFO x2 in the emulator (`docs/lfo2.md`, `core/sdram/lfo2.cc`: a
 > second stock-class LFO per voice run from the render thunks; off = stock bit for bit). Device packages
 > for C1 are in `build/pkg/` + Downloads (`tools/build_device_package.sh`), not flashed.
+> Stereo tape research is in `docs/tape-stereo.md` (traced: the L1 play path is already a stereo L/R
+> pair from a 4-track pan mix at `0xffa0714c`; open: the record tap and the chunk cache location;
+> scenarios `tests/sim/det_tape_rec.txt`).
 > **Next:** device flash (spread0 first; `docs/device-tests.md` entry), then stereo tape (Phase 3).
 > Open: C2 UI control (image-time word until the plugin UI), drum note-on dispatch (heuristic for now),
 > stock insert FX stays on the mid until C3, item 11's level-stage mapping.

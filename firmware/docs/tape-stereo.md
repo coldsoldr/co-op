@@ -33,6 +33,53 @@ the code says so far and what still has to be traced.
   produces silence (`stock_tape.wav`, rms 0.7 throughout). Tracing the tape path needs a record-then-
   play scenario (`tests/sim/det_tape_rec.txt`, first attempt in progress) or a NAND with recorded tape.
 
+## Traced on the stock image (op1emu write tracer, record + play scenario, 2026-11-02) [C]
+
+`tests/sim/det_tape_rec.txt` records a C-E-G chord on the current track (REC + PLAY from the synth
+screen, guest 32-36 s), returns to the start (STOP twice) and plays it back (39-43 s): the playback
+carries the chord (`stock_taperec.wav`, rms ~400 at 37.5-39 s WAV time). Per block while the tape runs
+(both recording and playing):
+
+1. master clear (`0xffa06a48`), then **the L1 tape play resampler `0xffa06194`** writes all 64 L and R
+   samples of the master pair (stores `0xffa06232` -> d34, `0xffa0622a` -> db4): one call, two
+   accumulators. Decoded: `R0` = phase (int part = sample index, 6 fractional bits), `R1` = step (tape
+   speed), `R2` -> a gain ramp word; per output a **16-tap polyphase interpolation** with the
+   coefficient table `0xff802154` (16 x 64 int16, written once at boot by `0x01a53ca2`; column
+   `63 - frac`, stride 64) over two SDRAM sample buffers: **`0x01b5ef84` (L, A1 -> d34) and
+   `0x01b5f434` (R, A0 -> db4)**, 600 samples each, then x gain. So the stock L1 play path is already
+   **stereo**. The two buffers are filled, per block and in L1 too, by the **4-track pan mix**: clear
+   at `0xffa06ede` (32-bit, both), then per track the loop `LSETUP(0xffa0714c, 0xffa0716c)`:
+   `s = W[I3++]` (the track's chunk samples), `L[i] = sat(L[i] + gL*s)` (store `0xffa07164`),
+   `R[i] = sat(R[i] + gR*s)` (`0xffa0716c`), `gL = W[P0]`, `gR = W[P0+8]` from a per-track gain record
+   (`P0 += 2` per track). About 130 frames per track per block (the resampler reads ahead at tape
+   speed). This ~60-byte loop (`0xffa07134..0xffa0716e`) is what a stereo track changes: two samples
+   per frame and balance gains instead of pan gains.
+2. `0xffa072c4` (stores `0xffa0730c` L / `0xffa07304` R): an in-place per-sample level/one-pole stage on
+   the pair (tape level / fade) [I].
+3. The instrument then adds through loop A (`0xffa00f76/f7e`, nonzero only while the tape runs: its
+   gains come alive in tape mode) and loop B as before, then post-mix, level stage, output.
+4. **Record.** `0xffa06248` (R0 = count <= 600, R1 = phase) resamples a mono L1 input buffer
+   `0xff8029e4` through the same coefficient table, x gain `0x01b4ef6e`, into `0x01b5f8f4` (`W[I2++]`)
+   -- but that buffer received **no audio stores while recording** in the traced scenario, so this
+   function is not the live record path here (a different mode, e.g. album or a speed != 1 path [I]).
+   The recorded samples land elsewhere (the chunk cache, location being traced); the record tap's
+   writer PC is still to pin. Stock records mono per track; stereo tape needs a stereo tap (the coop
+   difference mix output, i.e. L/R after loop B) and stereo chunks.
+5. The 7.94 MB array at `0x02040000` received **no stores** during recording or playback: it is not the
+   tape cache. Neither did regions A (`0x02c00000`+4 MB), B (`0x02800000`+4 MB) or C (`0x01e00000`+2 MB)
+   over the whole 112 s record-and-play run (0 stores each: the coop payload's and the region-C
+   trampoline's homes are confirmed idle in stock). The 256 KB block at `0x03000000` is the display /
+   graphics working area (L1 writers `0xffa05474..`, `0xffa0880c..`; the clear loop `0xffa06a48` is a
+   generic one used on it as well as on the master pair). So the chunk cache lives inside the loaded
+   `0x01000000..0x01dfffff` image (heap 0/1); pinning it needs a narrower trace (heap table at
+   `0x018e628c`, memory-map.md) or the `tape_c` lookup entry `0x01A54D5C`'s return value. The L1 buffers `0xff802154` (coefficients) and
+   `0xff8029dc..` (tape position/phase words, written by `0xffa06886`, `0xffa06a18`, `0xffa06388`) are
+   tables and state, not audio staging.
+
+Consequence for the design: the L1 play resampler can stay (it is stereo); the work is in the SDRAM
+track mix (4 stereo tracks with level + balance into the two play buffers), the record tap (stereo in,
+two resampler passes or a stereo pass, stereo chunks), the chunk cache/file layout, and the image.
+
 ## Design (from the plan, refined)
 
 1. **Image.** `tools/tape_image.py` writes the FAT16 metadata for 4 stereo AIFC (channels 2,

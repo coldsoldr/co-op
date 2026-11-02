@@ -59,3 +59,9 @@
 0x01bab53c  d_dc_coef               C  int32 coefficient of the SDRAM DC blocker (run-time value; coop reads it live)
 0x01aaac14  d_dc_state              C  3 state words of the SDRAM DC blocker (X prev, Yq prev, y prev)
 0x018b621d  d_output_mode           C  byte: 0 = speaker (SPORT conversion sums e34+f34 to mono, 0xffa01698), nonzero = headphones/line out (stereo paths 0xffa0142a/0xffa015f0). Set 1 by the event case at 0x019ac964 [I: jack detection]; op1emu leaves it 0
+
+# --- tape path (write tracer, record + play, 2026-11-02; docs/tape-stereo.md) ---
+0x01b5ef84  d_tape_play_L           C  600 x int16 L play buffer: 4-track pan mix (L1 0xffa07164) -> resampler (0xffa06194) -> d34
+0x01b5f434  d_tape_play_R           C  600 x int16 R play buffer (0xffa0716c) -> db4
+0x01b5f8f4  d_tape_rec_buf          I  600 x int16 mono record buffer of 0xffa06248 (idle in the traced recording)
+0x02040000  d_big_array_02040000    C  7.94 MB array: NOT the tape cache (0 stores during record + play); role open
