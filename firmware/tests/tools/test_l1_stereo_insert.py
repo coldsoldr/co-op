@@ -55,7 +55,8 @@ class Encodings(unittest.TestCase):
 
 
 class TapeStereo(unittest.TestCase):
-    THUNKS = {"synth": 1, "drum": 2, "mix": 3, "noteon": 4, "tape_rec": 0x02c01768, "tape_gains": 0x02c017be}
+    THUNKS = {"synth": 1, "drum": 2, "mix": 3, "noteon": 4, "tape_rec": 0x02c01768, "tape_gains": 0x02c017be,
+              "tape_io": 0x02c02838, "tape_mount": 0x02c025a8}
 
     def test_tramp_plain(self):
         # P2.L = 0x1234; P2.H = 0x2c0; JUMP (P2); NOP  (bfin-elf-as)
@@ -83,7 +84,11 @@ class TapeStereo(unittest.TestCase):
         self.assertEqual(p[0xffa07138], (bytes.fromhex("00a9"), bytes.fromhex("00aa")))   # W[P0+8] -> W[P0+0x10]
         self.assertEqual(p[0xffa070a6], (bytes.fromhex("0aa9"), bytes.fromhex("0aaa")))
         self.assertEqual(p[0x01a54172], (bytes.fromhex("904a"), bytes.fromhex("984a")))   # BITSET bit 18 -> 19
-        self.assertEqual(len(p), 2 + 1 + 5)
+        for site in si.TAPE_IO_CALLERS:                                      # io step / mount callers -> region-C trampolines
+            self.assertEqual(p[site], (call24(site, 0x01a54710), call24(site, si.SDRAM_TRAMP_AT + 16)))
+        for site in si.TAPE_MOUNT_CALLERS:
+            self.assertEqual(p[site], (call24(site, 0x01996f38), call24(site, si.SDRAM_TRAMP_AT + 32)))
+        self.assertEqual(len(p), 2 + 1 + 4 + 5)
 
 
 def synthetic_ldr(l1_bytes_at):

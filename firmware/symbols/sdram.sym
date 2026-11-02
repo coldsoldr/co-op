@@ -74,3 +74,6 @@
 0x018c1810  d_tape_track_base       C  int32[4] file offsets of the track data in tape_c.raw (filled at mount; kennel TRACK_BASE)
 0x01a54710  tape_cache_io_step      C  per node: load (4 x yaffs_read of 0x10000 at TRACK_BASE[t] + chunk<<16 into data + t*0x10000; count R4 = 4 at 0x1a5476a) or flush (dirty bits t = 0..3, R1 = 4 at 0x1a547e8, yaffs_write at 0x1a54842); T2 patches the counts to 8 and the base table
 0x01a53f7c  tape_record_extent      C  (start, end, lane_mask): marks W[0x018c17f2] |= mask when the recorded range touches a loop seam zone (+-297) and clears W[0x018c17f0] bits (seam stale); called at the end of each record pass
+0x01996f38  tape_image_mount_and_index  C  (no args; callers 0x199758e, 0x19f0354 ignore the result): indexes the six stock files by name (0x1997c58: tracks 0x18d9eac+0x18*t -> 0x018c1810[t], side_a -> 0xff9002c0, side_b -> 0xff9002c4), recreates the image when one is missing; replaced by coop_tape_mount_and_index (T2)
+0x019971b0  tape_image_open_at_boot     C  builds the image/marker paths (snprintf 0x1a4ccd8 into 0x1aabce4 / 0x1aac934), opens the image (0x1a997f4), tape_set_file_handle 0x1a5404c, marker check 0x19987f8, presize check, fat_disk_bind 0x19761d8, f_mount 0x1998e74
+0x01997c58  tape_image_file_offset      C  (name) -> data offset of a file in the image (the stock index step)

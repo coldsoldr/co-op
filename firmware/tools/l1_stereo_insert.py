@@ -72,6 +72,10 @@ TAPE_REC_SITES = (0xffa0217a, 0xffa02dca)                         # CALL 0xffa06
 TAPE_REC_FN = 0xffa06334
 TAPE_GAINS_SITE = 0xffa06de0                                      # P1.L = 0x17f0; P1.H = 0x18c (after the pan law)
 TAPE_GAINS_STOCK = bytes.fromhex("09e1f017" "49e18c01")
+TAPE_IO_STEP = 0x01a54710                                          # tape_cache_io_step
+TAPE_IO_CALLERS = (0x019f0a24, 0x019f0be2)                           # tape_c::service(0) in the main loop, service(1) at shutdown
+TAPE_MOUNT = 0x01996f38                                              # tape_image_mount_and_index
+TAPE_MOUNT_CALLERS = (0x0199758e, 0x019f0354)
 TAPE_BYTE_PATCHES = [                                             # (address, stock, new): lanes 4 -> 8, gR at +0x10
     (0xffa0705a, bytes.fromhex("2468"), bytes.fromhex("4468")),   # seam loop LC1: P4 = 4 -> 8
     (0xffa07106, bytes.fromhex("2268"), bytes.fromhex("4268")),   # main mix LC1: P2 = 4 -> 8
@@ -173,11 +177,14 @@ def patch_at(dxe, address, stock, new):
     raise SystemExit('{:#x} not found in a loaded block'.format(address))
 
 
-def tape_patches(tramps):
-    """[(address, stock, new)] for the stereo tape: record CALL sites, the gains hook, the lane constants."""
+def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
+    """[(address, stock, new)] for the stereo tape: record CALL sites, the gains hook, the lane constants, and the
+    SDRAM callers of tape_cache_io_step / tape_image_mount_and_index retargeted at region-C trampolines 1 and 2."""
     t = {name: a for name, a, _ in tramps}
     out = [(site, call24(site, TAPE_REC_FN), call24(site, t['tape_rec'])) for site in TAPE_REC_SITES]
     out.append((TAPE_GAINS_SITE, TAPE_GAINS_STOCK, call24(TAPE_GAINS_SITE, t['tape_gains']) + bytes.fromhex('00000000')))
+    out += [(site, call24(site, TAPE_IO_STEP), call24(site, sdram_tramp_at + 16)) for site in TAPE_IO_CALLERS]
+    out += [(site, call24(site, TAPE_MOUNT), call24(site, sdram_tramp_at + 32)) for site in TAPE_MOUNT_CALLERS]
     return out + list(TAPE_BYTE_PATCHES)
 
 
@@ -194,7 +201,9 @@ def thunk_addresses(elf):
             'noteon': symbol_address(syms, 'coop_synth_noteon_thunk')[0],
             'core_noteon': symbol_address(syms, 'coop_core_noteon_thunk')[0],
             'tape_rec': symbol_address(syms, 'coop_tape_rec_thunk')[0],
-            'tape_gains': symbol_address(syms, 'coop_tape_gains_thunk')[0]}
+            'tape_gains': symbol_address(syms, 'coop_tape_gains_thunk')[0],
+            'tape_io': symbol_address(syms, 'coop_tape_io_step')[0],
+            'tape_mount': symbol_address(syms, 'coop_tape_mount_and_index')[0]}
 
 
 def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
@@ -216,11 +225,18 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     if len(final) != 1:
         raise SystemExit('expected exactly one FINAL block')
     dxe.insert(final[0], plain_block(tramp_at, blob))
-    dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, build_tramp(thunks['core_noteon'])))
+    sdram_blob = build_tramp(thunks['core_noteon'])
+    if tape:                                               # +16: tape_cache_io_step, +32: tape_image_mount_and_index
+        sdram_blob += build_tramp(thunks['tape_io']) + build_tramp(thunks['tape_mount'])
+    dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, sdram_blob))
     for name, a, b in tramps:
         lines.append('tramp_{} at {:#x} ({} B) -> {:#x}'.format(name, a, len(b), thunks[name]))
     lines.append('sdram tramp at {:#x} (16 B) -> {:#x} for Core::NoteOn callers {}'.format(
         SDRAM_TRAMP_AT, thunks['core_noteon'], ', '.join('{:#x}'.format(s) for s in CORE_NOTEON_CALLERS)))
+    if tape:
+        lines.append('sdram tramp at {:#x} -> {:#x} (tape_cache_io_step callers {}), {:#x} -> {:#x} (mount callers {})'.format(
+            SDRAM_TRAMP_AT + 16, thunks['tape_io'], ', '.join('{:#x}'.format(s) for s in TAPE_IO_CALLERS),
+            SDRAM_TRAMP_AT + 32, thunks['tape_mount'], ', '.join('{:#x}'.format(s) for s in TAPE_MOUNT_CALLERS)))
     return ldr_dump.serialize(dxes), lines
 
 

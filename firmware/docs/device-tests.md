@@ -93,3 +93,24 @@ silence, hang or audible artefacts. This is the first coop audio-path image conf
 Not yet recorded: the spread0 regression image on the device (emulator: stock bit for bit), a
 measured fps/perf check (`docs/performance.md`), and a six-voice chord with an insert FX under
 headphones for clicks. Those stay on the list for the next flash.
+
+## Phase 3 milestone T2: stereo tape — device test (pending, 2026-11-02)
+
+`build/pkg/op1_246_coop_t2_stereo_tape.op1` (copy in `C:\Users\byron\Downloads`): the C1/C2 image plus the
+stereo tape (`docs/tape-stereo.md` sections 7-8): 8-lane cache, stock record function twice per block,
+coop chunk I/O and a coop tape image (four stereo AIFC tracks, no album).
+
+**WARNING: the first boot reformats the tape.** The coop mount finds no `coop_tape.txt` marker and
+rebuilds `tape_c.raw` sparse (a few seconds): every tape recording and the album are gone. Back the tape
+up with co-op (or disk mode) first. Going back to stock later makes stock rebuild its own image on its
+first boot (minutes of zero-fill, the stereo takes gone); nothing else is touched, no factory reset.
+
+Checks: no `te-boot.ldr`, `verify_bootloader.py` PASS, `pkg_check.py` = only `OP1_vdk.ldr` differs,
+L1 round trip verified. Emulator: record + power cycle + play keeps the stereo take (section 8.1).
+
+**What to record:** boots to the tape screen (first boot: a pause while the image is rebuilt); record a
+spread chord on track 1, STOP, power off/on, play: the take is there and stereo on headphones; the tape
+meters move; disk mode shows `tape/track_1..4.aif` as stereo files that open in a DAW; no dropouts
+while recording with 4 tracks playing (the 128 KiB flush per main-loop pass is the thing to watch).
+
+Result: _not yet flashed_.

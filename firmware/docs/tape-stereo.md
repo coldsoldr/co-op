@@ -250,7 +250,56 @@ write a stereo take across the mono track files. T2 fixes this.
   buffers) for 8 lanes; lift/drop/erase/split/join byte math for lane pairs (`src_ch/dst_ch < 4`
   asserts in `tape_c.cpp`); stereo meters in the tape UI; the album key inert.
 
-### 7.5 T2 plan of record (not started; decision for the owner)
+## 8. Milestone T2: the file side (coop image, chunk I/O, power-cycle safe) [C, op1emu]
+
+Implemented 2026-11-02 in `core/sdram/tape_io.cc`; the owner chose the fresh image (option A below).
+
+- **Image.** The stock image file (`/yaffs2/user/tape_c.raw`, 384 MB, kennel's FAT16 layout) now holds
+  **four stereo AIFC tracks** (`/tape/track_1..4.aif`: sowt, 2 channels, 0xF28000 frames, 63.6 MB
+  each, 7761 clusters, data at `0x37070`, `0x3cd9070`, `0x797b070`, `0xb61d070`) and no album. A marker
+  `/yaffs2/user/coop_tape.txt` ("coop_tape 1 stereo4") says the image has this layout.
+- **Mount.** `coop_tape_mount_and_index` replaces `tape_image_mount_and_index` (`0x1996f38`; callers
+  `0x199758e`, `0x19f0354`, both ignore the result) through region-C trampoline 2 (`0x01e00020`). The
+  layout is fixed, so the data offsets are constants: it fills `TRACK_BASE 0x018c1810[4]` and the coop
+  table `g_coop_track_base[4]`, and points the album offsets `0xff9002c0/c4` at tracks 1/2 so the inert
+  album code never reads outside the file. **Without the marker it rebuilds the image sparse** (kennel's
+  `make_tape` + `mount_tape`: unmount, close, reopen with O_TRUNC so the old audio becomes holes, presize,
+  stock boot sector, FATs + directories + headers from `coop_tape_image_meta`, reopen, rebind, remount,
+  write the marker). `g_coop_tape_image=0` disables the rebuild (tables only). The stock `tape.db` is
+  kept (stale clips of the old tape stay as silent clips; a reset is T3's).
+- **Chunk I/O.** `coop_tape_io_step(mode)` replaces `tape_cache_io_step` (`0x1a54710`; callers
+  `0x19f0a24` service(0) and `0x19f0be2` service(1)) through trampoline 1 (`0x01e00010`): the stock
+  list walk and flags (`B+2` flush request, `B+1` loading, `W+4` dirty, chunk re-check), with lane
+  pairs: a chunk of track t is 32,768 interleaved frames (128 KiB) at `base[t] + chunk * 0x20000`,
+  de-interleaved on load into lanes 2t/2t+1 and interleaved from them on flush through a 128 KiB
+  static bounce buffer. Counters `g_tape_mounts/rebuilds/rebuild_err/io_loads/io_flushes/io_errors`.
+- **Going back to stock:** stock's mount misses its six files and rebuilds its own image (minutes of
+  zero-fill on that boot); the stereo recordings are gone, nothing else changes. No factory reset.
+- **Host test** `tests/host/tape_image_test.cc` checks the FAT chains, directories, headers and offsets
+  of the generated metadata (`COOP_HOST` build of `tape_io.cc`).
+
+### 8.1 Verified (op1emu, `NAND_KEEP` in `hear.sh` / `watch_writes.sh`)
+
+| step | result |
+|---|---|
+| first boot of the full-spread image (fresh NAND) | mounts 1, rebuilds 1, rebuild errors 0, base table as computed on the host |
+| `det_tape_rec_quit.txt`: record the spread chord, STOP x2, 45 s for the write-back, quit | loads 11, flushes 418, I/O errors 0 (the stock flush cadence writes the recording chunk on every main-loop pass, 128 KiB each: kennel's held saves are the T3 fix) |
+| second boot on the kept NAND, `det_tape_play_start.txt` (tape, STOP x2, PLAY) | mounts 1, **no rebuild**, loads 25, errors 0; **the take plays back after the power cycle with the live width**: L 748 / R 534 / side 170, width 0.27 vs live 910 / 649 / 209, 0.27 (`C:\Users\byron\Downloads\t2_play_after_reboot.wav`) |
+| spread-0 image, second boot, `det_tape_rec.txt` | envelopes equal to stock within a few percent (live 333/523/435 vs 342/525/425; playback 395/398/249 vs 401/395/242). Not sample-identical any more: the coop mount changes the boot timeline, so the synth oscillators sit at a different phase when the chord lands. The bit-exact gate now needs a scenario keyed to the audio start; T1's in-session gate stays as the record/play reference. |
+
+Device: `build/pkg/op1_246_coop_t2_stereo_tape.op1` (also in Downloads) — **flashing it reformats the
+tape on the first boot** (recordings lost; back up with co-op first). Pending the owner's result in
+`docs/device-tests.md`.
+
+### 8.2 T3 next
+
+Held saves while recording (kennel `kn_tape.c`); the loop seam path for 8 lanes (`0xffa070b8`, the
+SDRAM seam fill `0x1a54284`, 4 x 594-sample staging buffers); lift/drop/erase/split/join for lane
+pairs (`0x1a5485c`, `0x1a549b8`, `0x1a54b08`, `tape_clips_*`; the `TRACK_BASE` users now see stereo
+offsets but copy mono-sized ranges); a tape.db reset on rebuild; stereo meters; the album key inert;
+a one-time first-boot notice.
+
+### 7.5 T2 plan of record as written before T2 (kept for the record; option A was taken)
 
 Two ways to give the R lanes storage. **(A) Fresh image** (the plan): 8 mono AIFC files, a coop
 mount/index replacing `tape_image_mount_and_index` (stock indexes exactly six names via `0x1997c58`:

@@ -174,3 +174,12 @@ looks like a recording hole, and a probe that switches one coop path off through
 coop code also reads (here the lane gain layout) measures the wrong thing. The per-block tape and record
 state words (`0xff802974`, `0xff80298c`, `0x018c17d8`, `0x018c17ec`) compared identical between the
 runs in that case; the recorded values did not, which is what pointed at the record pass itself.
+
+## Power-cycle scenarios (NAND_KEEP)
+
+`NAND_KEEP=/path/nand.bin tests/sim/hear.sh ...` (and `watch_writes.sh`) runs on a persistent NAND copy
+(made from `pristine.bin` when missing, never deleted): run 1 `tests/sim/det_tape_rec_quit.txt` records
+and quits after 45 s of wall time for the write-back, run 2 `tests/sim/det_tape_play_start.txt` boots the
+same NAND, STOPs twice (back to the start marker) and plays. A script line `quit` must follow a `wait`;
+`at MS quit` quits immediately (the `at` queue carries key events only). The tape position is restored
+from `tape.db` at boot, so play without the STOPs starts wherever the last save left it.

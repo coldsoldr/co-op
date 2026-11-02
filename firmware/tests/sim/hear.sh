@@ -5,6 +5,7 @@
 #
 #   tests/sim/hear.sh LDR SCRIPT OUT.wav        # deterministic headless run, 16-bit stereo 44.1 kHz
 #   COPY_TO=/mnt/c/Users/you/Downloads tests/sim/hear.sh ...   # also copy the WAV there to listen
+#   NAND_KEEP=/path/nand.bin tests/sim/hear.sh ...               # keep (and reuse) a NAND copy across runs: power cycles
 #
 # Needs the op1emu work tree from tools/setup_op1emu.sh with tools/op1emu-patches applied (--audio-dump).
 set -euo pipefail
@@ -18,10 +19,14 @@ EMU="$WORK/op1emu/build/op1emu"
 [ -f "$WORK/pristine.bin" ] || { echo "pristine NAND not found: $WORK/pristine.bin"; exit 1; }
 LDR=$(realpath "$LDR"); SCRIPT=$(realpath "$SCRIPT"); OUT=$(realpath -m "$OUT")
 LOG=${LOG:-${OUT%.wav}.log}
-NAND=$WORK/hear_nand_$$.bin                 # per-run NAND copy: runs may overlap
-
-cp -f "$WORK/pristine.bin" "$NAND"
-trap 'rm -f "$NAND"' EXIT
+if [ -n "${NAND_KEEP:-}" ]; then          # a persistent NAND (power-cycle tests): made from pristine if missing, kept
+  NAND=$NAND_KEEP
+  [ -f "$NAND" ] || cp -f "$WORK/pristine.bin" "$NAND"
+else
+  NAND=$WORK/hear_nand_$$.bin               # per-run NAND copy: runs may overlap
+  cp -f "$WORK/pristine.bin" "$NAND"
+  trap 'rm -f "$NAND"' EXIT
+fi
 cd "$WORK/op1emu"
 timeout "${TIMEOUT:-600}" ./build/op1emu "$NAND" "$LDR" --headless --deterministic \
     --audio-dump "$OUT" --input-script "$SCRIPT" > "$LOG" 2>&1 || { echo "op1emu failed; see $LOG"; tail -5 "$LOG"; exit 1; }

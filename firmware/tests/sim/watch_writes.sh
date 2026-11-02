@@ -32,8 +32,12 @@ args=()
 for r in "$@"; do args+=(--watch-writes "$r"); done
 [ -n "${WATCH_LOG:-}" ] && args+=(--watch-log "$WATCH_LOG" --watch-from "${WATCH_FROM:-0}")
 
-cp -f "$WORK/pristine.bin" "$NAND"      # op1emu mutates its NAND; never the pristine one
-trap 'rm -f "$NAND"' EXIT
+if [ -n "${NAND_KEEP:-}" ]; then          # a persistent NAND (power-cycle tests), made from pristine if missing
+  NAND=$NAND_KEEP; [ -f "$NAND" ] || cp -f "$WORK/pristine.bin" "$NAND"
+else
+  cp -f "$WORK/pristine.bin" "$NAND"      # op1emu mutates its NAND; never the pristine one
+  trap 'rm -f "$NAND"' EXIT
+fi
 cd "$WORK/op1emu"                                       # it reads gui/ui.json + otp.bin from its cwd
 timeout "${TIMEOUT:-600}" ./build/op1emu "$NAND" "$LDR" --headless --deterministic \
     "${args[@]}" --watch-out "$OUT" --input-script "$SCRIPT" > "$LOG" 2>&1 || {
