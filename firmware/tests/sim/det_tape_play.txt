@@ -1,0 +1,12 @@
+# Deterministic tape playback: tape screen, play from the current position, stop. Audio appears only if
+# the NAND's tape has recorded content (the factory tape ships with a demo song).
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap tape 300
+at 31000
+tap play 300
+at 40000
+tap stop 300
+wait 50000
+quit

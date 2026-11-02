@@ -1,0 +1,30 @@
+# Deterministic tape record + play: record a chord on the current track from the synth screen
+# (hold REC, press PLAY), stop, return to the start (second STOP), play it back, stop.
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap synth 300
+at 32000
+press rec
+at 32200
+tap play 300
+at 32600
+release rec
+at 33000
+press c4
+press e4
+press g4
+at 34000
+release c4
+release e4
+release g4
+at 36000
+tap stop 300
+at 37000
+tap stop 300
+at 38000
+tap play 300
+at 43000
+tap stop 300
+wait 60000
+quit
