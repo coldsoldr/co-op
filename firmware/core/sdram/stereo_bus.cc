@@ -98,12 +98,16 @@ extern "C" void coop_stereo_block_start(void)
  * through coop_synth_noteon_thunk, which calls this after the engine's note_on with R7 = the voice
  * index: the voice draws a fresh random pan scaled by the spread. Retriggers of a sounding voice get a
  * new position too, which the rendered-last-block heuristic (kept for drums) cannot see. */
+extern "C" void coop_lfo2_trigger_synth(uint32_t voice);   /* second LFO slot (lfo2.cc) */
+extern "C" void coop_lfo2_trigger_drum(uint32_t voice);
+
 extern "C" void coop_synth_note_on_hook(uint32_t voice, uint32_t dispatched)
 {
     if (voice >= COOP_SYNTH_VOICES || !dispatched) return;
     if (!g_inited) stereo_init();
     g_stereo_note_ons++;
     coop_spread_note_on(&g_pan_synth, (int)voice);
+    coop_lfo2_trigger_synth(voice);
 }
 
 /* Common per-voice path: bookkeeping, drum note-on heuristic (a drum voice that was not rendered last
@@ -115,7 +119,10 @@ static void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)
     uint32_t t0 = coop_cycles();
     g_stereo_hooks++;
     g_rendered_cur |= bit;
-    if (is_drum && !(g_rendered_prev & bit)) coop_spread_note_on(pans, voice);
+    if (is_drum && !(g_rendered_prev & bit)) {   /* a drum voice starting: its note-on, as far as we can see */
+        coop_spread_note_on(pans, voice);
+        coop_lfo2_trigger_drum(voice);
+    }
     g_hb_ramp = *HB_RAMP_W;                            /* the stock step for this block is set by now */
     coop_pan_delta d = coop_pan_deltas(pans->pan[voice]);
     if (d.dL == 0 && d.dR == 0) return;                /* centred: nothing beyond the stock sum */

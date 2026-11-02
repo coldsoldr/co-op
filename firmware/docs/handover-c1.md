@@ -13,8 +13,10 @@ Self-contained: a new session should be able to continue from here plus the repo
 > is only visible in the emulator with `g_coop_force_stereo_out=1` (the firmware's speaker path sums to
 > mono; see `docs/emulator.md`). §3/§4 below are history; the pipeline facts in them were corrected in
 > `docs/stereo-bus.md` (the SDRAM "decimator" is a DC blocker; the decimator is L1 `0xffa005d4`).
-> **Next:** device flash of the spread-0 and spread-full images (`--device`), `docs/device-tests.md`
-> entry; then Phase 3 LFO x2 (`docs/lfo2.md` has the traced call sites and the design), stereo tape.
+> **Also done 2026-11-02:** Phase 3 LFO x2 in the emulator (`docs/lfo2.md`, `core/sdram/lfo2.cc`: a
+> second stock-class LFO per voice run from the render thunks; off = stock bit for bit). Device packages
+> for C1 are in `build/pkg/` + Downloads (`tools/build_device_package.sh`), not flashed.
+> **Next:** device flash (spread0 first; `docs/device-tests.md` entry), then stereo tape (Phase 3).
 > Open: C2 UI control (image-time word until the plugin UI), drum note-on dispatch (heuristic for now),
 > stock insert FX stays on the mid until C3, item 11's level-stage mapping.
 >

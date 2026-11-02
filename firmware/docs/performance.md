@@ -174,3 +174,12 @@ At spread 0 the hooks return after a table lookup and only the mono fast path ru
 sample-identical to stock and costs ~0.3% of the budget. Worst case (12 panned drum voices + full mix)
 is ~8%, inside the ceiling; the per-voice accumulate is the first candidate for a vector-MAC rewrite if a
 device measurement says so.
+
+## Phase 3: second LFO slot (op1emu CYCLES, 2026-11-02)
+
+| Stage | Peak cycles/block | % of budget |
+|---|---|---|
+| LFO2 process, stock tremolo class, one voice | 6,974 | 1.2% (x6 synth = 7.2%, x12 drums = 14.4%) |
+
+This is the stock LFO class's own cost (slot 1 pays the same); slot 2 off costs a few loads per voice.
+Worst case (stereo bus full + 12 drum LFO2 voices) stays near 22% of the budget.

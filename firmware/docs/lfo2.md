@@ -1,6 +1,7 @@
 # Second LFO slot (Phase 3, "LFO x2") — design from the traced stock LFO path
 
-Status: design + call-site map, 2026-11-02 [C where marked]. Not implemented yet. Builds on
+Status (2026-11-02): **implemented and verified in op1emu** (`core/sdram/lfo2.cc`, run from the render
+thunks in `stereo_thunks.S`; see "Implemented" at the end). Design + call-site map below. Builds on
 `../te-op1-cfw/docs/lfo-interface.md` (types, objects, vtables, parameters, ranges, presets) and on
 the decrypted L1, which that document could not read.
 
@@ -65,3 +66,23 @@ at Core::NoteOn (already hooked):                         coop:  lfo2[voice]->tr
 - Free L1: 40 of 76 trampoline bytes are used by the stereo bus; three more 12-byte trampolines fit
   exactly (36 B). Beyond that, use the region-C SDRAM trampoline pattern from `l1_stereo_insert.py`
   for SDRAM sites, or claim more L1 (kennel's L1 map).
+
+## Implemented (2026-11-02) [C]
+
+Different from the design above in one respect: instead of rewriting the three L1 LFO sites, slot 2
+runs **inside the coop render thunks**, right before the stock render (`coop_lfo2_pre_render_synth`
+stage 0, `coop_lfo2_pre_render_drum` stage 3; `stereo_thunks.S` saves the render's R0-R2 and P2/P0
+around the C call). At that point the Core has copied the knobs into the scratch and LFO1's stage 0 has
+run, so slot 2 composes with slot 1 and also works when slot 1 is off; the stage-1 (envelope) target is
+not offered. Objects are coop memory initialised exactly as the stock getters do (tremolo
+`0x019cbd88`, value/random getters), methods are the stock vtable entries. Trigger rides on the
+`Core::NoteOn` hook (synth) and the drum first-render heuristic. Controls (image-time words):
+`g_coop_lfo2_type` (0/1/2, 7 = off), `g_coop_lfo2_p01..p67` (int16 pairs), `g_coop_lfo2_active`;
+parameters are clamped to the live stock Ranges table.
+
+Verified with `tests/sim/det_chord.txt`: slot 2 off → sample-identical to stock; tremolo
+(p0 16000, p1 20000, p2 20000, p3 16000) → 4911 process calls (one per rendered voice-block), 3
+triggers, the chord's output changes (rms 1085 vs 513 over the held chord: the stock tremolo's pitch /
+gain modulation at that depth). Cost: ~7.0k cycles per process call (op1emu CYCLES; that is the
+stock tremolo's own cost, 1.2% of the budget per voice). Open: the parameter semantics of each stock
+type on slot 2 (a listening pass with the UI), the fx-LFO stages, drum note-on.

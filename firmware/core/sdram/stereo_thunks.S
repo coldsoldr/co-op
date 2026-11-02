@@ -19,6 +19,18 @@
     .type   _coop_synth_render_thunk, STT_FUNC
 _coop_synth_render_thunk:
     [--SP] = RETS;
+    [--SP] = P2;                     /* the stock render; a C call clobbers P2 */
+    [--SP] = R0;                     /* its arguments */
+    [--SP] = R1;
+    [--SP] = R2;
+    SP += -12;
+    R0 = R7;
+    CALL _coop_lfo2_pre_render_synth; /* second LFO slot, stage 0: knobs / pitch / volume before the render */
+    SP += 12;
+    R2 = [SP++];
+    R1 = [SP++];
+    R0 = [SP++];
+    P2 = [SP++];
     SP += -12;
     CALL (P2);
     R0 = R7;
@@ -35,6 +47,19 @@ _coop_synth_render_thunk:
     .type   _coop_drum_render_thunk, STT_FUNC
 _coop_drum_render_thunk:
     [--SP] = RETS;
+    [--SP] = P0;                     /* the stock render; a C call clobbers P0 */
+    [--SP] = R0;
+    [--SP] = R1;
+    [--SP] = R2;
+    SP += -12;
+    R0 = 12;
+    R0 = R0 - R7;                    /* voice = 12 - R7 */
+    CALL _coop_lfo2_pre_render_drum; /* second LFO slot, stage 3, before the render */
+    SP += 12;
+    R2 = [SP++];
+    R1 = [SP++];
+    R0 = [SP++];
+    P0 = [SP++];
     SP += -12;
     CALL (P0);
     SP += 12;
