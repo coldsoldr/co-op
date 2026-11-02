@@ -208,9 +208,11 @@ block after the main loop evicts it; ~100-190 cycles a line) and NAND time insid
 
 ### The device stats file (T3d)
 
-`core/sdram/coop_stats.cc` writes `/yaffs2/user/coop_stats.txt` from the main loop (the tape I/O step) every
-5 s while nothing is recording: cumulative peaks and a ring of the last twelve 5-second windows. Visible in disk
-mode as `user/coop_stats.txt` (the `user` folder of the drive, like `coop_l1.bin`; not the root). Lines are `name value` pairs:
+`core/sdram/coop_stats.cc` writes its text from the main loop (the tape I/O step) every 5 s while nothing is
+recording: cumulative peaks and a ring of the last twelve 5-second windows. Since T3g it goes into the last
+4 KiB of track 4's audio in the tape image, the one channel disk mode copies (`tape/track_4.aif`, read with
+`tools/tape_tail_stats.py`); the yaffs copy `/yaffs2/user/coop_stats.txt` is **not visible in disk mode** (see
+T3g). Lines are `name value` pairs:
 
 - `cb blocks/max/last`: the whole coop audio callback (CYCLES, device time including cache misses); the
   ceiling is 435,000 (0.75 of a block).
@@ -275,3 +277,28 @@ levers are the coop code's cache footprint (the combined ELF is 19 KB of text; t
 well inside the 16 KB instruction cache, with the main loop evicting it every block) and the per-voice hook.
 If instead `io_gap_max` / `io_step_max` grow only in the `recording 1` windows with `flushes > 0`, it is the
 128 KiB flush, and flushes get the T3e split treatment. Verified in op1emu (format 2, `tests/sim/det_tape_rec.txt`): 18 writes, 0 errors, 19 windows, the first file at pass 64; audio against the T3e image: same RMS, peak and width (0.2299), the take shifted by one block as the main-loop timing changed.
+
+### T3g: the read-back channel is the tape audio (2026-11-02)
+
+T3f on the device: still no file. The owner's point, which the T3d-T3f packages ignored: **disk mode does not
+expose yaffs** [C]. The drive is a FAT the stock disk layer (`src/disk/`) synthesises: `synth/` and `drum/`
+from the patch database and `user/audio/...raw`, `tape/` from the tape image (it even appends the clip table
+from `tape.db` to each track file: `track_1.aif` came back 264 bytes longer than the empty tracks), `album/`
+from the album image. The L1 dumper (Test 64) never ran, so "copy it in disk mode" was never proven; the
+`user/` folder does not exist on the drive. Nothing written to `/yaffs2/user/` can be read back that way.
+
+What disk mode does copy unchanged is the tape audio. So `write_file` now also writes the text (NUL padded to
+4 KiB) into the last 4 KiB of track 4's audio data (`coop_tape_write_tail`, `core/sdram/tape_io.cc`: track 4,
+chunk 484, the final 1024 frames = 23 ms of the tape; audible only if track 4 is played to its very end, and
+erased by recording there). `tools/tape_tail_stats.py track_4.aif` prints it. The `stats` line counts
+`tail_writes` / `tail_errors`. A tape rebuild (first boot of a new image layout) clears it; the next window
+write (5 s) puts it back.
+
+Also from the owner: the lag is worse with the FM and Voltage synth models than with the string model, with
+which the animation looks fine. Those engines cost more per voice in stock, so the lag tracks the total audio
+load, not the tape I/O: the audio-side theory (the coop stages' device cost on top of the engine's) is the
+one the window figures should confirm.
+
+Verified in op1emu (`tests/sim/det_tape_rec.txt`): 19 tail writes, 0 tail errors, audio identical in RMS, peak and
+width (0.2307) to the T3f image. `tools/tape_tail_stats.py` was checked on a synthetic track file with the same
+chunk layout and clip trailer.

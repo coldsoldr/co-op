@@ -198,4 +198,21 @@ back, stop, wait 15 s. Disk mode (shift+COM), copy `user/coop_stats.txt` (the `u
 is missing after that, say so: it then means the package did not take, not the stats logic. Note which of the
 three steps lagged.
 
+Result (2026-11-02, the owner): flashed (T3e before it). **Still no file**, and the `user` folder does not
+exist on the disk-mode drive: yaffs is not exposed in disk mode (the drive is synthesised: `synth/`, `drum/`,
+`tape/`, `album/`). The channel was wrong from T3d on. **Lag:** worse with the FM and Voltage models; with the
+string model the animation looks fine. Disk mode is shift+COM while running (not after a power-off).
+
+## Phase 3 milestone T3g: stats read back through the tape audio — device test (pending, 2026-11-02)
+
+`build/pkg/op1_246_coop_t3g_stereo_tape.op1` (copy in Downloads; sha256 in the commit). Supersedes T3f. Same
+audio and tape code; the stats text is now also written into the last 4 KiB of track 4's audio in the tape
+image (`docs/performance.md`, T3g), which disk mode copies as `tape/track_4.aif`. No reformat.
+
+**What to do:** flash, boot, wait 10 s. On the tape page with the tape stopped, hold a chord for 5 s with the
+FM model (lags?), then with the string model (lags?). Record 10 s of silence, stop. Record the FM chord for
+5 s, stop. Play it back, stop, wait 15 s (the last window has to close and be written while idle). Shift+COM
+into disk mode, copy `tape/track_4.aif` to Downloads (63 MB). I run `tools/tape_tail_stats.py` on it. Note
+which steps lagged.
+
 Result: _not yet flashed_.

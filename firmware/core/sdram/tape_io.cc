@@ -257,6 +257,21 @@ static int rw_bytes(int write, int t, int chunk, int32_t at, int32_t len)
 }
 static int rw_chunk(int write, int t, int chunk) { return rw_bytes(write, t, chunk, 0, (int32_t)sizeof g_bounce); }
 
+/* The read-back channel (docs/performance.md, T3g): disk mode never shows raw yaffs files (the drive is a FAT the
+ * stock disk layer synthesises: synth/, drum/, tape/, album/), but it copies the tape audio bytes as they are. So a
+ * text of up to TAIL_BYTES is written into the last TAIL_BYTES of track 4's audio (the final 23 ms of the tape on
+ * track 4: inaudible unless the tape is played to its very end there) and read back from tape/track_4.aif with
+ * tools/tape_tail_stats.py. Zero padded: the padding is silence. */
+#define TAIL_BYTES 4096
+extern "C" int coop_tape_write_tail(const char *text, int len)
+{
+    if (CACHE_FD < 0 || len < 0) return -1;
+    if (len > TAIL_BYTES) len = TAIL_BYTES;
+    for (int i = 0; i < len; i++) g_bounce[i] = (uint8_t)text[i];
+    zero(g_bounce + len, TAIL_BYTES - len);
+    return rw_bytes(1, TRACKS - 1, CHUNKS - 1, FRAMES_PER_CHUNK * 4 - TAIL_BYTES, TAIL_BYTES);
+}
+
 /* Node loads in eight parts (docs/performance.md, T3e): one part = half a track-chunk = 64 KiB of file, the size the
  * stock step moves per read, so a main-loop pass blocks no longer than stock's for a load. The lookup requests the
  * next chunk 0.74 s ahead; eight passes take about 60 ms. The node stays invalid until its last part; the stock

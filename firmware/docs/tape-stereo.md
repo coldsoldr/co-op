@@ -397,8 +397,9 @@ tape on the first boot** (recordings lost; back up with co-op first). Pending th
   constant across a note's harmonics), so the record path keeps per-voice placement on the device [C]. The
   playback side is not yet separately checked on the device (a line-out capture of the playback would do it).
 - Performance on the device: the tape animation goes choppy while a chord is recorded, and only when voices
-  play (recording silence is smooth); the T3f package writes a stats file that separates the audio-side and
-  main-loop causes and loads nodes in eight 64 KiB parts (docs/performance.md, T3c, T3e and T3f sections).
+  play (recording silence is smooth); the T3g package writes a stats text that separates the audio-side and
+  main-loop causes into the end of track 4's audio (disk mode copies no yaffs file) and loads nodes in eight
+  64 KiB parts (docs/performance.md, T3c, T3e, T3f and T3g sections). Worse with FM and Voltage than string.
 
 ### 8.2 T3 next (as written before T3)
 

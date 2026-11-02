@@ -1,7 +1,8 @@
 /*
  * coop-fw device statistics file: the counters the coop stages keep (per-block cycle peaks, tape I/O work, edits,
- * state-mismatch detectors) written as text to /yaffs2/user/coop_stats.txt by the main loop, so the owner can copy
- * it in disk mode (as user/coop_stats.txt on the drive, the folder coop_l1.bin was in). Nothing else on the device can read our words (docs/performance.md: "a reader for the
+ * state-mismatch detectors) written as text into the last 4 KiB of track 4's audio in the tape image (the one channel disk
+ * mode copies unchanged: tape/track_4.aif, read with tools/tape_tail_stats.py) and to /yaffs2/user/coop_stats.txt (not
+ * visible in disk mode, which is a synthesised FAT). Nothing else on the device can read our words (docs/performance.md: "a reader for the
  * measurement words").
  *
  * Every WINDOW_CYCLES (5 s) coop_stats_tick snapshots the window counters (the *_win words the producers keep:
@@ -20,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "t3f"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "t3g"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       12
 #define FIRST_WRITE_PASSES 64
@@ -37,7 +38,8 @@ extern volatile uint32_t g_tape_io_steps_win;
 extern volatile uint32_t g_edit_lifts, g_edit_drops, g_edit_erases, g_edit_errors, g_edit_mono_fallbacks;
 extern volatile uint32_t g_master_cycles, g_fx_cycles;
 
-volatile uint32_t g_stats_writes, g_stats_errors, g_stats_windows, g_stats_ticks;
+volatile uint32_t g_stats_writes, g_stats_errors, g_stats_windows, g_stats_ticks, g_stats_tail_writes, g_stats_tail_errors;
+extern "C" int coop_tape_write_tail(const char *text, int len);   /* tape_io.cc: the last 4 KiB of track 4's audio */
 
 struct window {
     uint32_t blocks, cb_max, cb_sum, cb_over, rec_max, mix_max, hooks, side, recs;
@@ -80,7 +82,8 @@ static void write_file(void)
     kv("load_max", g_tape_io_load_cycles_max); kv("flush_max", g_tape_io_flush_cycles_max); put("\n");
     put("edits"); kv("lifts", g_edit_lifts); kv("drops", g_edit_drops); kv("erases", g_edit_erases); kv("errors", g_edit_errors);
     kv("mono_fallbacks", g_edit_mono_fallbacks); put("\n");
-    put("stats"); kv("writes", g_stats_writes); kv("errors", g_stats_errors); kv("windows", g_stats_windows); kv("ticks", g_stats_ticks); put("\n");
+    put("stats"); kv("writes", g_stats_writes); kv("errors", g_stats_errors); kv("tail_writes", g_stats_tail_writes);
+    kv("tail_errors", g_stats_tail_errors); kv("windows", g_stats_windows); kv("ticks", g_stats_ticks); put("\n");
     for (uint32_t i = 0; i < WINDOWS; i++) {                           /* oldest first */
         const struct window *w = &g_ring[(g_ring_next + i) % WINDOWS];
         if (!w->blocks && !w->io_steps) continue;
@@ -90,7 +93,9 @@ static void write_file(void)
         kv("io_load_max", w->io_load_max); kv("io_flush_max", w->io_flush_max); kv("loads", w->loads); kv("flushes", w->flushes);
         kv("recording", w->recording); put("\n");
     }
-    int fd = Y_OPEN(STATS_PATH, 0x242, 0x180);                        /* O_RDWR | O_CREAT | O_TRUNC, as the tape marker */
+    g_text[g_len] = 0;
+    if (coop_tape_write_tail(g_text, g_len + 1) == 0) g_stats_tail_writes++; else g_stats_tail_errors++;   /* the channel disk mode copies */
+    int fd = Y_OPEN(STATS_PATH, 0x242, 0x180);                        /* O_RDWR | O_CREAT | O_TRUNC, as the tape marker (not visible in disk mode) */
     if (fd < 0) { g_stats_errors++; return; }
     int ok = Y_WRITE(fd, g_text, g_len) == g_len;
     if (Y_CLOSE(fd) != 0) ok = 0;
