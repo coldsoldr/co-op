@@ -53,7 +53,7 @@ static int g_side_dirty;                               /* dL/dR hold data that m
 static int g_inited;
 
 /* liveness / perf counters (read from the emulator or a probe) */
-volatile uint32_t g_stereo_blocks, g_stereo_hooks, g_stereo_mixes, g_stereo_side_blocks;
+volatile uint32_t g_stereo_blocks, g_stereo_hooks, g_stereo_mixes, g_stereo_side_blocks, g_stereo_note_ons;
 volatile uint32_t g_stereo_hook_cycles_max, g_stereo_mix_cycles_max;
 
 extern "C" int16_t *g_mix_ramp_ptr;                    /* P1 of loop B, stored by coop_mix_thunk */
@@ -94,15 +94,28 @@ extern "C" void coop_stereo_block_start(void)
     g_stereo_blocks++;
 }
 
-/* Common per-voice path: bookkeeping, note-on (C2: a voice that was not rendered last block gets a
- * fresh random pan scaled by the spread), then the difference accumulate if the voice is off centre. */
+/* C2: the Core's note-on dispatch (voice loop, 0xffa00e34 `CALL (P0)`, P0 = *(vtable+0x1c)) runs
+ * through coop_synth_noteon_thunk, which calls this after the engine's note_on with R7 = the voice
+ * index: the voice draws a fresh random pan scaled by the spread. Retriggers of a sounding voice get a
+ * new position too, which the rendered-last-block heuristic (kept for drums) cannot see. */
+extern "C" void coop_synth_note_on_hook(uint32_t voice, uint32_t dispatched)
+{
+    if (voice >= COOP_SYNTH_VOICES || !dispatched) return;
+    if (!g_inited) stereo_init();
+    g_stereo_note_ons++;
+    coop_spread_note_on(&g_pan_synth, (int)voice);
+}
+
+/* Common per-voice path: bookkeeping, drum note-on heuristic (a drum voice that was not rendered last
+ * block gets a fresh random pan scaled by the spread; synth voices get theirs from the note-on hook),
+ * then the difference accumulate if the voice is off centre. */
 static void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)
 {
     if (!g_coop_stereo_enable) return;
     uint32_t t0 = coop_cycles();
     g_stereo_hooks++;
     g_rendered_cur |= bit;
-    if (!(g_rendered_prev & bit)) coop_spread_note_on(pans, voice);
+    if (is_drum && !(g_rendered_prev & bit)) coop_spread_note_on(pans, voice);
     g_hb_ramp = *HB_RAMP_W;                            /* the stock step for this block is set by now */
     coop_pan_delta d = coop_pan_deltas(pans->pan[voice]);
     if (d.dL == 0 && d.dR == 0) return;                /* centred: nothing beyond the stock sum */

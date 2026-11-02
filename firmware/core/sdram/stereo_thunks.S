@@ -48,6 +48,48 @@ _coop_drum_render_thunk:
     RTS;
     .size _coop_drum_render_thunk, .-_coop_drum_render_thunk
 
+/* Entered by JUMP from the note-on trampoline (C2): RETS = 0xffa00e36 (the stock return), P0 = the
+ * engine's note_on (*(vtable+0x1c)), R0/R1/R2 = its args, R7 = voice index. The stock code after the
+ * call jumps straight back into the voice loop and reloads its registers from the frame. */
+    .global _coop_synth_noteon_thunk
+    .type   _coop_synth_noteon_thunk, STT_FUNC
+_coop_synth_noteon_thunk:
+    [--SP] = RETS;
+    SP += -12;
+    CALL (P0);
+    R0 = R7;
+    R1 = 1 (X);
+    CALL _coop_synth_note_on_hook;
+    SP += 12;
+    RETS = [SP++];
+    RTS;
+    .size _coop_synth_noteon_thunk, .-_coop_synth_noteon_thunk
+
+/* Stands in for Core::NoteOn (SDRAM 0x01967854, R0 = voice 0..5, returns 1 when it dispatched the
+ * engine's note_on) at its three callers in VoiceCtl (0x01a8442c, 0x01a848e4, 0x01a8564e; CALL24
+ * patches in the OP1X header, coop_cb.cc). Runs the stock function, then the hook with
+ * (voice, return value), and returns the stock result. */
+    .global _coop_core_noteon_thunk
+    .type   _coop_core_noteon_thunk, STT_FUNC
+_coop_core_noteon_thunk:
+    [--SP] = RETS;
+    [--SP] = R0;
+    SP += -12;
+    P1.H = 0x0196;
+    P1.L = 0x7854;
+    CALL (P1);
+    SP += 12;
+    R1 = R0;
+    R0 = [SP++];
+    [--SP] = R1;
+    SP += -12;
+    CALL _coop_synth_note_on_hook;
+    SP += 12;
+    R0 = [SP++];
+    RETS = [SP++];
+    RTS;
+    .size _coop_core_noteon_thunk, .-_coop_core_noteon_thunk
+
 /* CALLed from the mix trampoline (which saved the site's RETS): R0.L = gain, R1.L = ramp, R2.L = step,
  * P1 = the ramp state (W[P1]). R3 is dead here (loop B clobbered it). */
     .global _coop_mix_thunk

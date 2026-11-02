@@ -66,5 +66,5 @@ extern "C" const struct patch g_patches[] = {
 
 extern "C" __attribute__((section(".op1header"), used))
 const struct header op1_header = {
-    HEADER_MAGIC, 1u, 0, 0, 0, g_patches, 2u, 0u,
+    HEADER_MAGIC, 1u, 0, 0, 0, g_patches, sizeof g_patches / sizeof g_patches[0], 0u,
 };

@@ -115,6 +115,8 @@ trampolines (40 bytes) go into kennel's free L1 range `0xffa0bfb4`, and the SDRA
 | synth render `0xffa00d22..0xffa00d2a` | `P2=[P0+0x14]; R3=W[P0+0x10](X); R0=R0+R3; CALL (P2)` | `R3=W[P0+0x10](X); R0=R0+R3; CALL tramp_synth` — tramp: `P2=[P0+0x14]; JUMP coop_synth_render_thunk` (stock render, then `coop_synth_voice_hook(R7)`) |
 | drum render `0xffa008fc..0xffa00906` | `P0=[P1+0x24]; R1=W[P1+0x20](X); R0=R0+R1; CALL (P0)` | same shape via tramp_drum / `coop_drum_render_thunk` (preserves the render's R0 the caller tests) |
 | mix loop B `0xffa00fae` | `LSETUP(0xffa00fb2,0xffa00fda) LC0=P0; <body>` | `CALL tramp_mix; JUMP.S 0xffa00fdc` — thunk saves the DAG/accumulator state, stores P1 (ramp state) and calls `coop_mix_entry(R0 gain, R1 ramp, R2 step)` |
+| synth note-on, L1 `0xffa00e2e..0xffa00e36` (C2) | `P0=[P1+0x1c]; R2=W[P1+0x18](X); R0=R0+R2; CALL (P0)` | same shape via tramp_noteon / `coop_synth_noteon_thunk` → `coop_synth_note_on_hook(R7, 1)`. The voice loop's own dispatch; it did not fire for played keys in the emulator (kept: same code as Core::NoteOn, another path into it) |
+| synth note-on, SDRAM `Core::NoteOn` `0x01967854` callers `0x01a8442c`, `0x01a848e4`, `0x01a8564e` (C2) | `CALL 0x01967854` | `CALL 0x01e00000` (a 16-byte trampoline in free region C: region A is beyond pcrel24 reach) → `coop_core_noteon_thunk` runs the stock function, then `coop_synth_note_on_hook(voice, result)`, returns the result. **This is the path a played key takes** (3 calls for the 3-note chord). |
 
 The render hooks are as safe as the `CALL (Px)` they replace (everything live across a render is in
 callee-saved registers or memory, and the C hooks honour the ABI; the thunks reserve the ABI's 12-byte
@@ -139,7 +141,11 @@ Deterministic scenario `tests/sim/det_chord.txt` (guest-timed `at` events: synth
   same image at spread 0: **real stereo, power conserved** — L/R rms 127.8 / 101.2 vs 115.3 / 115.3,
   side rms 49.4 vs 0.6 (width 0.22 vs 0.003), L²+R² within 0.1% of the centred pair. Three voices,
   random pans from the C2 model. [C] WAVs: `~/op1emu-work/c1_full_st.wav`, `c1_zero_st.wav` (copies in
-  `C:\Users\byron\Downloads`).
+  `C:\Users\byron\Downloads`). Repeated with the pans assigned by the real `Core::NoteOn` hook
+  (`c2_full_st.wav`): 3 note-ons counted, side rms 49.2, width 0.219. [C]
+- **Device packages:** `tools/build_device_package.sh` builds the `.op1` (re-encrypted L1 with the
+  check-key arrangement, round trip `encrypt(decrypt(stock)) == stock` verified; `verify_bootloader`
+  and `pkg_check` pass; only `OP1_vdk.ldr` differs from stock). Not flashed yet.
 
 The earlier wall-time scripts (`cap.txt`, `hear.txt`) are not comparable run to run: the note onset
 lands in a different guest block, and the aligned residue (max 85 LSB) is the stock engine's own
@@ -154,8 +160,10 @@ time-dependent modulation, not a coop difference.
   flashes; `docs/device-tests.md`).
 - [C] Drums hooked with the same mechanism (hook + accumulate formula in place; a drum-mode stereo
   listen is still to do).
-- [~] C2: spread model and note-on heuristic in place behind `g_coop_spread`; the UI control and a
-  true note-on hook (the vtable `+0x1c` call) are open.
+- [C] C2 model: synth voices draw their pan at the real note-on (`Core::NoteOn` hook, verified: 3
+  note-ons for the 3-note chord), drum voices on their first rendered block (heuristic; the drum
+  note-on dispatch is still to pin), both scaled by `g_coop_spread`. [ ] C2 UI: the spread control is an
+  image-time word until the plugin UI runtime exists (Phase 4); co-op can set it over USB before then.
 - [ ] C3 stereo engines/FX.
 
 ## Drums are pannable too (owner decision, 2026-11-01)

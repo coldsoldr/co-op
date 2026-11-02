@@ -3,6 +3,21 @@
 Written 2026-11-01 for a fresh context. Supersedes `docs/handover-2026-11-01.md` for current state.
 Self-contained: a new session should be able to continue from here plus the repo + memory.
 
+> **Resume point (2026-11-02, milestones C1 + C2 model done in the emulator).** Read
+> `docs/stereo-bus.md` first: the stereo bus is a *difference bus* on top of the untouched stock mono
+> path, wired by `tools/l1_stereo_insert.py` (3 L1 sites + L1 trampolines, plus the SDRAM
+> `Core::NoteOn` callers via a region-C trampoline) with the hooks in `core/sdram/stereo_bus.cc`.
+> Build an image with `tools/build_image.sh OUT.ldr [--set-word g_coop_spread=32767 --set-word
+> g_coop_force_stereo_out=1]`; gate = `tests/sim/hear.sh IMG tests/sim/det_chord.txt out.wav` then
+> `tools/wav_compare.py stock_det.wav out.wav --skip-seconds 5` → identical at spread 0 (proven). Stereo
+> is only visible in the emulator with `g_coop_force_stereo_out=1` (the firmware's speaker path sums to
+> mono; see `docs/emulator.md`). §3/§4 below are history; the pipeline facts in them were corrected in
+> `docs/stereo-bus.md` (the SDRAM "decimator" is a DC blocker; the decimator is L1 `0xffa005d4`).
+> **Next:** device flash of the spread-0 and spread-full images (`--device`), `docs/device-tests.md`
+> entry; then Phase 3 LFO x2 (`docs/lfo2.md` has the traced call sites and the design), stereo tape.
+> Open: C2 UI control (image-time word until the plugin UI), drum note-on dispatch (heuristic for now),
+> stock insert FX stays on the mid until C3, item 11's level-stage mapping.
+>
 > **Resume point (end of 2026-11-01, tree clean at `cc45c51`).** Done today: the op1emu write tracer
 > (`--watch-writes`) and WAV output (`--audio-dump`, `tests/sim/hear.sh`), both as the patch set in
 > `tools/op1emu-patches/`; the stock voice-sum / decimator / mix PCs pinned (§4 resolved,

@@ -66,3 +66,23 @@ the same on every OP-1, so the public reference dump (Tolsi/op1dumps) is valid f
 `l1_decrypt.py check-key` verified it against kennel's `l1_patches.json` pairs, and the full L1
 decrypts to real code (see `docs/l1-map.md`). The dumper builds (canary/minimal/otp/full) remain
 available for an optional device-vs-emulator cross-check but are not needed for the gate.
+
+## Phase 2 milestone C1/C2: stereo instrument bus — device test (pending, 2026-11-02)
+
+Built by `tools/build_device_package.sh` (sha256 in `build/pkg/`, copies in `C:\Users\byron\Downloads`):
+- `op1_246_coop_c1_spread0.op1` — the regression image: must sound and behave exactly like stock
+  (every stock path runs; coop adds hooks that do nothing at spread 0). Emulator: sample-identical.
+- `op1_246_coop_c1_spreadfull.op1` — `g_coop_spread=32767`: each synth note lands at a random stereo
+  position (headphones/line out; the speaker sums to mono by design), drums too per voice.
+
+Both: no `te-boot.ldr`, `verify_bootloader.py` PASS, `pkg_check.py` = only `OP1_vdk.ldr` differs,
+L1 re-encrypted with the check-key arrangement and round-trip verified (`tools/build_image.sh --device`).
+Read `docs/brick-safety.md`; flash spread0 first.
+
+**What to record:** boots to the tape screen; synth + drums play; no clicks/pumping under a 6-note
+chord with an insert FX on (loop B replacement + hooks in the audio path); headphones: spread0 mono
+image as stock, spreadfull voices spread L/R and total loudness unchanged; UI fps unchanged (perf gate,
+`docs/performance.md`). If the device is silent or hangs: the mix thunk's register save set
+(`stereo_thunks.S`) is the first suspect, then the region-C trampoline at `0x01e00000`.
+
+Result: _not yet flashed_.

@@ -19,6 +19,11 @@ R246 L1 and the op1emu write tracer):
       stock:  LSETUP(0xffa00fb2, 0xffa00fda) LC0 = P0; <loop body ...>
       coop:   CALL tramp_mix; JUMP.S 0xffa00fdc          (the stock body stays as dead bytes)
       tramp_mix (16 B):    [--SP] = RETS; P0 = coop_mix_thunk; CALL (P0); RETS = [SP++]; RTS
+  synth note-on dispatch 0xffa00e2e..0xffa00e36 (C2: the voice loop calls *(vtable+0x1c) for a voice
+  with a pending note; R7 = voice index)
+      stock:  P0 = [P1+0x1c]; R2 = W[P1+0x18] (X); R0 = R0 + R2; CALL (P0)
+      coop:   R2 = W[P1+0x18] (X); R0 = R0 + R2; CALL tramp_noteon
+      tramp_noteon (12 B): P0 = [P1+0x1c]; P2 = coop_synth_noteon_thunk; JUMP (P2)
 
 The SDRAM thunk addresses come from the ELF's symbol table (inject_app.read_elf_symbols), so this runs
 after inject_app added the payload and l1_decrypt decrypt-ldr produced the plaintext image. For the
@@ -32,6 +37,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldr_dump                                            # noqa: E402
 from inject_app import call24, plain_block, read_elf_symbols, symbol_address   # noqa: E402
+from l1_insert import build_tramp   # noqa: E402  ([--SP]=RETS; P0=fn; CALL (P0); RETS=[SP++]; RTS)
 
 TRAMP_BASE = 0xffa0bfb4            # kennel's free .l1tramp range, up to 0xffa0c000
 TRAMP_END = 0xffa0c000
@@ -46,6 +52,18 @@ DRUM_CALL_AT = 0xffa00902
 MIX_SITE = 0xffa00fae
 MIX_STOCK = bytes.fromhex('a2e01600' '03c8')                      # LSETUP(0xffa00fb2,0xffa00fda) LC0=P0; first body halfword
 MIX_RESUME = 0xffa00fdc                                           # first instruction after loop B
+# synth note-on dispatch inside the voice loop (reached from 0xffa00aa6 for a voice with a pending note):
+#   P0 = [P1+0x1c]; R2 = W[P1+0x18] (X); R0 = R0 + R2; CALL (P0)   ->  R2 = ...; R0 = ...; CALL tramp_noteon
+NOTEON_SITE = 0xffa00e2e
+NOTEON_STOCK = bytes.fromhex('c8ad' '0aab' '1050' '6000')
+NOTEON_CALL_AT = 0xffa00e32
+# Core::NoteOn (SDRAM 0x01967854, R0 = voice) is the path a played key takes; its three VoiceCtl callers
+# are CALL24s. Region A is beyond pcrel24 reach (+-16 MB) from 0x01a8xxxx, so they call a 16-byte
+# trampoline in free region C (0x01e00000, kennel's core region; nothing in the stock LDR loads
+# 0x01e00000..0x01ffffff) which reaches coop_core_noteon_thunk in region A.
+CORE_NOTEON = 0x01967854
+CORE_NOTEON_CALLERS = (0x01a8442c, 0x01a848e4, 0x01a8564e)
+SDRAM_TRAMP_AT = 0x01e00000
 
 
 def imm_pair_bytes(preg, value):
@@ -78,10 +96,15 @@ def tramp_mix(thunk):
     return bytes.fromhex('6701') + imm_pair_bytes(0, thunk) + bytes.fromhex('6000' '2701' '1000')
 
 
+def tramp_noteon(thunk):
+    # P0 = [P1 + 0x1c]  = c8 ad ;  P2 = thunk ;  JUMP (P2) = 52 00
+    return bytes.fromhex('c8ad') + imm_pair_bytes(2, thunk) + bytes.fromhex('5200')
+
+
 def layout(tramp_at, thunks):
-    """(name, address, bytes) for the three trampolines packed from tramp_at."""
+    """(name, address, bytes) for the trampolines packed from tramp_at."""
     parts = [('synth', tramp_synth(thunks['synth'])), ('drum', tramp_drum(thunks['drum'])),
-             ('mix', tramp_mix(thunks['mix']))]
+             ('mix', tramp_mix(thunks['mix'])), ('noteon', tramp_noteon(thunks['noteon']))]
     out, a = [], tramp_at
     for name, b in parts:
         out.append((name, a, b))
@@ -97,8 +120,11 @@ def site_patches(tramps):
     synth_new = SYNTH_STOCK[2:6] + call24(SYNTH_CALL_AT, t['synth'])
     drum_new = DRUM_STOCK[2:8] + call24(DRUM_CALL_AT, t['drum'])
     mix_new = call24(MIX_SITE, t['mix']) + jump_s(MIX_SITE + 4, MIX_RESUME)
+    noteon_new = NOTEON_STOCK[2:6] + call24(NOTEON_CALL_AT, t['noteon'])
     assert len(synth_new) == len(SYNTH_STOCK) and len(drum_new) == len(DRUM_STOCK) and len(mix_new) == len(MIX_STOCK)
-    return [(SYNTH_SITE, SYNTH_STOCK, synth_new), (DRUM_SITE, DRUM_STOCK, drum_new), (MIX_SITE, MIX_STOCK, mix_new)]
+    assert len(noteon_new) == len(NOTEON_STOCK)
+    return [(SYNTH_SITE, SYNTH_STOCK, synth_new), (DRUM_SITE, DRUM_STOCK, drum_new), (MIX_SITE, MIX_STOCK, mix_new),
+            (NOTEON_SITE, NOTEON_STOCK, noteon_new)]
 
 
 def patch_at(dxe, address, stock, new):
@@ -125,11 +151,18 @@ def patch_at(dxe, address, stock, new):
     raise SystemExit('{:#x} not found in a loaded block'.format(address))
 
 
+def core_noteon_patches(sdram_tramp_at=SDRAM_TRAMP_AT):
+    """[(address, stock, new)] retargeting the Core::NoteOn callers at the region-C trampoline."""
+    return [(site, call24(site, CORE_NOTEON), call24(site, sdram_tramp_at)) for site in CORE_NOTEON_CALLERS]
+
+
 def thunk_addresses(elf):
     syms = read_elf_symbols(elf)
     return {'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
             'drum': symbol_address(syms, 'coop_drum_render_thunk')[0],
-            'mix': symbol_address(syms, 'coop_mix_thunk')[0]}
+            'mix': symbol_address(syms, 'coop_mix_thunk')[0],
+            'noteon': symbol_address(syms, 'coop_synth_noteon_thunk')[0],
+            'core_noteon': symbol_address(syms, 'coop_core_noteon_thunk')[0]}
 
 
 def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE):
@@ -140,7 +173,7 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE):
     dxe = dxes[0]
     tramps = layout(tramp_at, thunks)
     lines = []
-    for address, stock, new in site_patches(tramps):
+    for address, stock, new in site_patches(tramps) + core_noteon_patches():
         patch_at(dxe, address, stock, new)
         lines.append('site {:#x}: {} -> {}'.format(address, stock.hex(), new.hex()))
     blob = b''.join(b for _, _, b in tramps)
@@ -148,8 +181,11 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE):
     if len(final) != 1:
         raise SystemExit('expected exactly one FINAL block')
     dxe.insert(final[0], plain_block(tramp_at, blob))
+    dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, build_tramp(thunks['core_noteon'])))
     for name, a, b in tramps:
         lines.append('tramp_{} at {:#x} ({} B) -> {:#x}'.format(name, a, len(b), thunks[name]))
+    lines.append('sdram tramp at {:#x} (16 B) -> {:#x} for Core::NoteOn callers {}'.format(
+        SDRAM_TRAMP_AT, thunks['core_noteon'], ', '.join('{:#x}'.format(s) for s in CORE_NOTEON_CALLERS)))
     return ldr_dump.serialize(dxes), lines
 
 

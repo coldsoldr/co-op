@@ -16,7 +16,7 @@ $(BUILD)/coop_cb.elf: coop_cb.cc coop_cb.ld | $(BUILD)
 # Combined baseline+suite image: m1's whole-callback timer (CoopAudioCb, imm-seam patched)
 # plus the master suite (coop_master_apply, wired by tools/l1_insert.py), one header, region A.
 combined: $(BUILD)/coop_combined.elf
-STEREO_KEEP := -Wl,--undefined=_coop_synth_render_thunk -Wl,--undefined=_coop_drum_render_thunk -Wl,--undefined=_coop_mix_thunk
+STEREO_KEEP := -Wl,--undefined=_coop_synth_render_thunk -Wl,--undefined=_coop_drum_render_thunk -Wl,--undefined=_coop_mix_thunk -Wl,--undefined=_coop_synth_noteon_thunk -Wl,--undefined=_coop_core_noteon_thunk
 $(BUILD)/coop_combined.elf: coop_cb.cc master_suite.cc stereo_bus.cc stereo_thunks.S coop_cb.ld | $(BUILD)
 	$(BFIN_CXX) $(CXXFLAGS) -DCOOP_COMBINED -I../include coop_cb.cc master_suite.cc stereo_bus.cc stereo_thunks.S $(LDFLAGS) -Wl,--undefined=_coop_master_apply $(STEREO_KEEP) -o $@ -lgcc
 	$(BFIN_BIN)/bfin-elf-size $@

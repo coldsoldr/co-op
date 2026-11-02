@@ -52,6 +52,12 @@ python3 -I "$here/tools/l1_insert.py" "$work/plain.ldr" "$work/master.ldr" \
 python3 -I "$here/tools/l1_stereo_insert.py" "$work/master.ldr" "$OUT" --elf "$ELF"
 echo "# $OUT: plaintext coop image (op1emu); payload $ELF; master stage at $master_fn"
 if [ -n "$device" ]; then
-  python3 -I "$here/tools/l1_decrypt.py" encrypt-ldr "$OUT" "$key" "$device" --patches "$PATCHES"
-  echo "# $device: L1 re-encrypted for the device (package with tools/build_package.py; run verify_bootloader + pkg_check)"
+  # The key arrangement check-key reports for this key (`--swap le --order 1032 --words "<"`; verified:
+  # encrypt(decrypt(stock)) == stock byte for byte, 2026-11-02). --patches cannot auto-pick it here
+  # because the image's L1 is already plaintext (the recorded pairs are encrypted stock bytes).
+  python3 -I "$here/tools/l1_decrypt.py" encrypt-ldr "$OUT" "$key" "$device" --swap le --order 1032 --words '<'
+  # self-check: the device image must decrypt back to exactly the plaintext image we tested
+  python3 -I "$here/tools/l1_decrypt.py" decrypt-ldr "$device" "$key" "$work/roundtrip.ldr" --swap le --order 1032 --words '<' > /dev/null
+  cmp "$work/roundtrip.ldr" "$OUT" || { echo "ERROR: $device does not decrypt back to $OUT; not safe to flash"; exit 1; }
+  echo "# $device: L1 re-encrypted for the device, round trip verified (package with tools/build_device_package.sh)"
 fi
