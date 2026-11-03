@@ -332,3 +332,21 @@ that (8.6%: hooks 15k, record tap 17-20k, mix 17k), the stock engine ~57%. Main 
 longest I/O step 25-44 ms, longest gap outside our step 19-53 ms. Mismatch counters 0; 26 loads, 26 flushes,
 0 errors. The combo was not reported. Reading: DSynth with six voices leaves the main loop a third of the CPU
 on stock too; coop adds nine points. `docs/performance.md`, "T4f on the device: where the lag sits now".
+
+## Phase 4 milestone P1: plugin loader, FX host, SysEx file writes — device test (pending, 2026-11-03)
+
+`build/pkg/op1_246_coop_p1_plugins.op1` (copy in Downloads; sha256 in the commit). T4f plus the plugin system's first
+milestone (`docs/plugins.md`): `.coop` files in `/yaffs2/plugins` are loaded at boot and the first FX plugin drives
+the master insert slot; the SysEx page can install and delete files (`docs/sysex.md`). Without a plugin installed
+the audio is T4f's. `build/plugins/stereo_delay.coop` (copy in Downloads) is the test plugin: the coop stereo delay
+(0.15 s slap echo on everything).
+
+**What to do:**
+1. Flash. Play: it must sound as T4f (no echo). Hello on `tools/coop_sysex.html` says `build p1`.
+2. On the page, choose `stereo_delay.coop` under "Install a plugin", click Install plugin, wait for
+   "Installed ... Power-cycle". Power-cycle. Play: every sound now has a 0.15 s echo (the plugin in the master slot).
+   Read `/yaffs2/user/coop_stats.txt`: the `plugins` line must say `seen 1 loaded 1 failed 0`.
+3. Put `/yaffs2/plugins/stereo_delay.coop` in the path field, click Delete file, power-cycle: the echo is gone.
+4. If anything misbehaves after the install, delete the file (step 3) or, failing that, reflash.
+
+Result: _not yet flashed_.

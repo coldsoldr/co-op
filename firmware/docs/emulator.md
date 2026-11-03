@@ -212,3 +212,10 @@ followed by `det_tape_play_start.txt`: the file path of every chunk.
   `at` events do not block, so a screenshot after an `at` lands at the start of the run; pace with `wait`).
 - `tools/wav_envelope.py` / `wav_compare.py` read the dumps; `scratchpad ppm2png` is not in the repo: the headless
   `screenshot` writes a P6 PPM, which any image viewer opens.
+
+## A NAND with files for the emulator (2026-11-03)
+
+`tools/make_nand.py` builds an op1emu NAND from the stock `.op1` package plus an overlay directory whose tree lands
+at the yaffs root (`overlay/plugins/x.coop` -> `/yaffs2/plugins/x.coop`), through op1emu's `provision_nand.py`
+functions; `docs/plugins.md` has the command. Two NANDs boot on different block boundaries, so compare their dumps
+with `--align`.
