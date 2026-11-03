@@ -49,6 +49,31 @@ DELETE, the host page's Install button): `stereo_delay.coop` goes to `/yaffs2/pl
 and a loaded plugin drives the master slot without any image flag, so the stock-transparent master suite stays
 transparent until a plugin is installed. Package `op1_246_coop_p1_plugins.op1`.
 
+## Milestone P2: FX plugins at the stock positions (2026-11-03)
+
+Kennel 3.1's mechanism (dispatcher.c, kn_boot.c), ported:
+- **The filter type is hijacked.** The stock filter FX object's vtables (mono 0x01910C94 for the synth and drum
+  positions, the stereo master wrapper 0x01910CB4; entry 2 render, entry 3 init) point at `coop_fx_render_mono /
+  init_mono / render_st / init_st` (plugin_host.cc). The selector `params[4] = 0x5300 + n` names plugin n; with no
+  plugin the stock filter runs as before.
+- **Names in the stock FX list.** At boot every loaded plugin gets a `fx_types` row in the factory database (its
+  type name = the id with spaces, `default_params` = the four knob defaults mapped into the filter's ranges, then
+  the selector). The stock list shows the row; the fx_types name compare at 0x019AAD8E is replaced (a JUMP.L to a
+  region-C trampoline -> `coop_fx_name_eq`) so a plugin's name resolves to the filter type, as does a saved sound
+  naming a plugin that is gone (it loads as the filter instead of asserting).
+- **Numbers persist**: a name -> number map in the user database (table `coopplugins`), files take 32..63; a file
+  that disappears keeps its number marked absent, so saved sounds stay valid.
+- **Positions.** 0 synth and 1 drum are mono in stock: the plugin gets L = R = the instrument's mono sum, its
+  output's mono goes on down the stock path and its difference is added to coop's side buses
+  (`coop_stereo_side_rw`), so a stereo effect can make width, but it does not yet see the instrument's per-voice
+  placement (P2b: per-instrument side buses). Position 2 (master) is true stereo in place. One plugin instance per
+  file: selected at two positions at once it shares its state (P2b: instances per position).
+- **Knobs**: the slot's four knob words as stock keeps them, kept inside the filter type's ranges every block
+  (kennel's guard; the stock parameter reader asserts outside them). The core-owned coarse/fine model is P2b.
+- P1's master-insert path is retired (plugins play only when selected).
+
+Emulator (2026-11-03, `tests/sim/det_fx_select.txt` on the plugin NAND): the stock FX list opens with shift + key 3 on the synth page, the blue encoder moves it (8 steps per item), the plugin row is last; selected, the mono dispatch ran 15,083 blocks through the plugin (`plugins ... mono_calls 15083 plugin_blocks 15083`), the chord played, no fault; the plugin page shows the stock filter screen until P3.
+
 ## Next
 
 - P1b: SysEx `FILE_PUT` / `FILE_DELETE` (kennel's devupd framing, 64-byte chunks) so plugins can be installed from

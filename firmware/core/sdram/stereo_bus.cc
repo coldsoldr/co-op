@@ -123,6 +123,7 @@ extern "C" void coop_stereo_block_start(void)
     g_rendered_prev = g_rendered_cur;
     g_rendered_cur = 0;
     g_side_dec_done = 0;
+    g_side_this_block = 0;
     if (g_side_dirty) {
         for (int i = 0; i < COOP_VBLK; i++) { g_sdL[i] = 0; g_sdR[i] = 0; }
         g_side_dirty = 0;
@@ -194,7 +195,7 @@ extern "C" void coop_drum_voice_hook(uint32_t r7)
 /* The difference buses for this block (decimated + DC-blocked once; both mix loops may ask). 1 = present. */
 static int side_prepare(void)
 {
-    if (!g_side_tail) return 0;
+    if (!g_side_tail && !g_side_this_block) return 0;
     if (!g_side_dec_done) {
         int16_t hr = (int16_t)g_hb_ramp, hs = (int16_t)(g_hb_ramp >> 16);
         coop_hb_decimate2(g_hb2, g_sdL, g_sdR, g_decL, g_decR, HB_COEFS, hr, hs);
@@ -241,6 +242,19 @@ extern "C" uint32_t coop_mix_entry(uint32_t r0, uint32_t r1, uint32_t r2)
     if (dt > g_stereo_mix_cycles_win) g_stereo_mix_cycles_win = dt;
     g_stereo_mix_cycles_sum_win += dt;
     return ret;
+}
+
+/* For an FX plugin at a mono position (plugin_host.cc, P2), which runs before the mix: the decimated side buses of
+ * this block (decimated now if voices are panned, else zeroed), marked live so loop B and the record tap take them. */
+extern "C" int coop_stereo_side_rw(int16_t **l, int16_t **r)
+{
+    if (!g_side_dec_done) {
+        if (g_side_tail) side_prepare();
+        else { for (int i = 0; i < COOP_MBLK; i++) { g_decL[i] = 0; g_decR[i] = 0; } g_side_dec_done = 1; }
+    }
+    g_side_this_block = 1;
+    *l = g_decL; *r = g_decR;
+    return 1;
 }
 
 /* For the stereo tape record tap (tape_stereo.cc), which runs after loop B in the same block: the

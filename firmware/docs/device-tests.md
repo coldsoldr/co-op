@@ -349,4 +349,27 @@ the audio is T4f's. `build/plugins/stereo_delay.coop` (copy in Downloads) is the
 3. Put `/yaffs2/plugins/stereo_delay.coop` in the path field, click Delete file, power-cycle: the echo is gone.
 4. If anything misbehaves after the install, delete the file (step 3) or, failing that, reflash.
 
+Result (2026-11-03, the owner): installed over SysEx, power-cycled, **no echo heard**. Stats
+(`docs/device-stats/p1_2026-11-03_sysex.txt`): `plugins seen 1 loaded 1 failed 0`, FX slot peak 8,166 cycles: the
+file install, the loader and the plugin's render all work on the device; what is unproven is the master-insert
+path (`coop_master_apply`, the getter stand-in before the stock level stage), which until now had only the
+emulator's word. Open: a retest with a short pluck on headphones and on the speaker would say whether the echo is
+absent or just quiet. P2 hosts plugins at the stock FX positions instead, the object path the stock master FX
+takes, which is known to reach the output on the device.
+
+## Phase 4 milestone P2: FX plugins at the stock positions — device test (pending, 2026-11-03)
+
+`build/pkg/op1_246_coop_p2_plugins.op1` (copy in Downloads; sha256 in the commit). Supersedes P1. A loaded FX
+plugin now appears **in the stock FX list under its own name** (synth, drum and master positions) and runs when
+selected there; nothing plays until it is selected (`docs/plugins.md`, P2). `stereo_delay.coop` stays the test
+plugin (install as for P1 if it is no longer on the device).
+
+**What to do:**
+1. Flash, power-cycle once more (the plugin's list row is written at the first boot that finds the file).
+2. Synth page, key 4 (the FX page), shift + 4: the FX list should now end with "stereo delay". Pick it, play a
+   short pluck: a 0.15 s echo. Pick "delay" or another stock FX: the stock effect, no echo.
+3. Mixer page, the master FX list: pick "stereo delay" there too and play: the echo on everything, tape included.
+4. Read `/yaffs2/user/coop_stats.txt`: `plugins ... mono_calls / st_calls / plugin_blocks` count the dispatches
+   and the blocks a plugin rendered.
+
 Result: _not yet flashed_.

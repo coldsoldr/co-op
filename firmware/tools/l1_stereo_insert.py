@@ -104,6 +104,15 @@ LANDER_GETTER = 0x019c4ecc                                        # the Lander s
 LANDER_SITES = (0x01a3bdb0, 0x019c35f0, 0x019c369c)                # screen list, LanderController key_down / key_up
 KEYEV_SITE = 0x019c2d3e                                           # KeyHandler dispatch: CALL key_dispatch (code, pressed)
 KEY_DISPATCH = 0x019b6c74
+# --- FX plugins at the stock positions (milestone P2, core/sdram/plugin_host.cc): kennel's filter-type hijack ---
+# The stock filter FX object's vtables: mono (synth / drum positions) at 0x01910C94 and the stereo master wrapper at
+# 0x01910CB4, entry 2 = render, entry 3 = init (kennel make_firmware.py). The fx_types name compare at 0x019AAD8E
+# (`R3 = R0; P1 = R3`) becomes a JUMP.L to a region-C jump trampoline -> coop_fx_name_eq.
+FX_VTABLE_PATCHES = [                                             # (address, stock function, thunk name); entries are
+    (0x01910CA8, 0x019E7934, 'fx_render_mono'), (0x01910CB0, 0x019E780A, 'fx_init_mono'),   # 8 bytes apart in the LDR
+    (0x01910CC8, 0x019E7EE4, 'fx_render_st'), (0x01910CD0, 0x019E78D0, 'fx_init_st')]
+FXNAME_SITE = 0x019aad8e
+FXNAME_STOCK = bytes.fromhex('18300b32')
 SEAM_SITE = 0xffa0706e                                               # P2.L = 0xef7c; P2.H = 0x1b4 before the seam loop (hook B)
 SEAM_STOCK = bytes.fromhex("0ae17cef" "4ae1b401")
 SEAM_FILL_SITE = 0xffa073b8                                          # P1 = 0x01a54284 (the stock seam fill) -> coop_seam_fill
@@ -122,6 +131,14 @@ def imm_pair_bytes(preg, value):
     lo = 0xe108 | preg
     hi = 0xe148 | preg
     return struct.pack('<HHHH', lo, value & 0xffff, hi, (value >> 16) & 0xffff)
+
+
+def jump_l(address, target):
+    """JUMP.L pcrel24 (0xE200 | offset[23:16], offset[15:0], offset = (target - address) / 2)."""
+    off = (target - address) >> 1
+    if not -(1 << 23) <= off < (1 << 23) or (target - address) & 1:
+        raise SystemExit('JUMP.L {:#x} -> {:#x} out of range'.format(address, target))
+    return struct.pack('<HH', 0xE200 | ((off >> 16) & 0xFF), off & 0xFFFF)
 
 
 def jump_s(address, target):
@@ -242,6 +259,10 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
     out += [(site, call24(site, TAPE_ERASE), call24(site, sdram_tramp_at + 80)) for site in TAPE_ERASE_CALLERS]
     if thunks_global.get('sysex_rx'):
         out.append((MIDI_RX_SITE, call24(MIDI_RX_SITE, MIDI_RX_PARSE), call24(MIDI_RX_SITE, sdram_tramp_at + 96)))
+    if thunks_global.get('fx_name_eq'):
+        for addr, stock, name in FX_VTABLE_PATCHES:
+            out.append((addr, struct.pack('<I', stock), struct.pack('<I', thunks_global[name])))
+        out.append((FXNAME_SITE, FXNAME_STOCK, jump_l(FXNAME_SITE, sdram_tramp_at + 128)))
     if thunks_global.get('keyev'):                             # the Lander combo swallowed (the getter sites stay stock:
         out.append((KEYEV_SITE, call24(KEYEV_SITE, KEY_DISPATCH), call24(KEYEV_SITE, sdram_tramp_at + 112)))   # a stub screen hung the boot in op1emu)
     return out + list(TAPE_BYTE_PATCHES)
@@ -287,6 +308,12 @@ def thunk_addresses(elf):
         keyev = symbol_address(syms, 'coop_key_event')[0]
     except Exception:
         keyev = None
+    fxh = {}
+    try:
+        for name in ('fx_name_eq', 'fx_render_mono', 'fx_init_mono', 'fx_render_st', 'fx_init_st'):
+            fxh[name] = symbol_address(syms, 'coop_' + name)[0]
+    except Exception:
+        fxh = {}
     try:
         sine_copy = symbol_address(syms, 'coop_l1_sine_copy')[0]
     except Exception:
@@ -295,7 +322,7 @@ def thunk_addresses(elf):
         sysex_rx = symbol_address(syms, 'coop_sysex_rx_poll')[0]
     except Exception:                                  # an ELF without the SysEx channel
         sysex_rx = None
-    return {'sysex_rx': sysex_rx, 'sine_copy': sine_copy, 'keyev': keyev,'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
+    return {'sysex_rx': sysex_rx, 'sine_copy': sine_copy, 'keyev': keyev, **fxh,'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
             'drum': symbol_address(syms, 'coop_drum_render_thunk')[0],
             'mix': symbol_address(syms, 'coop_mix_thunk')[0],
             'noteon': symbol_address(syms, 'coop_synth_noteon_thunk')[0],
@@ -341,11 +368,16 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
             sdram_blob += build_jump_tramp(thunks['sysex_rx'])                                                             # +96
         if thunks.get('keyev'):
             sdram_blob += build_jump_tramp(thunks['keyev'])                                                                # +112
+        if thunks.get('fx_name_eq'):
+            sdram_blob += build_jump_tramp(thunks['fx_name_eq'])                                                           # +128
     dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, sdram_blob))
     for name, a, b in tramps:
         lines.append('tramp_{} at {:#x} ({} B) -> {:#x}'.format(name, a, len(b), thunks[name]))
     lines.append('sdram tramp at {:#x} (16 B) -> {:#x} for Core::NoteOn callers {}'.format(
         SDRAM_TRAMP_AT, thunks['core_noteon'], ', '.join('{:#x}'.format(s) for s in CORE_NOTEON_CALLERS)))
+    if tape and thunks.get('fx_name_eq'):
+        lines.append('fx plugins: filter vtables -> {:#x}/{:#x} (mono), {:#x}/{:#x} (master); fx_types name compare {:#x} -> tramp {:#x} -> {:#x}'.format(
+            thunks['fx_render_mono'], thunks['fx_init_mono'], thunks['fx_render_st'], thunks['fx_init_st'], FXNAME_SITE, SDRAM_TRAMP_AT + 128, thunks['fx_name_eq']))
     if tape and thunks.get('keyev'):
         lines.append('sdram tramp at {:#x} -> {:#x} (key dispatch caller {:#x}: the Lander combo swallowed)'.format(
             SDRAM_TRAMP_AT + 112, thunks['keyev'], KEYEV_SITE))

@@ -24,7 +24,8 @@ typedef struct coop_fx_t {
     uint32_t magic;                                    /* COOP_FX_MAGIC */
     uint32_t api;                                      /* COOP_PLUGIN_API */
     uint32_t flags;                                    /* 0 (reserved) */
-    /* once after load, main thread, before any render; 0 = ready, else the plugin is left out */
+    /* when a position (slot: 0 synth, 1 drum, 2 master) selects the plugin, from the audio thread, before its first
+     * render there; cheap (reset state, bind buffers); 0 = ready, else the plugin is dropped */
     int (*init)(int slot);
     /* the audio interrupt: l[n], r[n] in place; params[0..3] = the four knobs, Q15 0..32767 */
     void (*render)(int slot, int32_t *l, int32_t *r, const int16_t *params, int n);

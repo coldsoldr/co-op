@@ -81,15 +81,13 @@ extern "C" uint32_t coop_master_apply(void)
         g_inited = 1;
     }
     uint32_t flags = g_coop_master_flags;
-    int plugin = coop_fx_plugin_loaded();           /* a loaded FX plugin runs the slot without the image flag (P1) */
-    if (!(flags & 3u) && !plugin) return STOCK_GETTER_RESULT;   /* transparent: nothing to do on d34/db4 */
+    if (!(flags & 3u)) return STOCK_GETTER_RESULT;   /* transparent: nothing to do on d34/db4 */
     int32_t L[BLOCK], R[BLOCK];
     for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)MBUS_L[i] << 16; R[i] = (int32_t)MBUS_R[i] << 16; }
 
     /* FX slot 2 (coop stereo FX), in series before the master suite. Timed separately. */
     uint32_t f0 = coop_cycles();
-    if (plugin) coop_fx_plugin_render(L, R, BLOCK);
-    else if (flags & 1u) coop_delay_process(&g_fx, L, R, BLOCK);
+    if (flags & 1u) coop_delay_process(&g_fx, L, R, BLOCK);
     uint32_t fdt = coop_cycles() - f0;
     if (fdt > g_fx_cycles) g_fx_cycles = fdt;
     g_fx_blocks++;
