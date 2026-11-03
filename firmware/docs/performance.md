@@ -483,3 +483,12 @@ blocks, `cb max`) sit at the engine switches, stock patch-loading work inside th
 `key_event_hook` rule) and passes everything else on. Kennel's stub screen object (`lander_stub`) was ported first
 and hung the stock boot in op1emu 0.7 s after it ran (kennel's recipe leans on its other screen hooks), so the game's
 screen is still created at boot; it cannot be entered, and its sound table points at size-0 dummies.
+
+### T4e: the decimator pair as one dual-MAC kernel (2026-11-03)
+
+`coop_hb2_state` / `coop_hb_decimate2` in `coop_stereo.h`: the left and right rings interleaved (L in the low half
+of each word, R in the high half), so the 32-tap even-phase FIR runs once for both channels with `A0 += R0.L *
+R2.L, A1 += R0.H * R2.L (W32)` and a 32-bit ring load per tap. Each accumulator does exactly the MAC sequence of
+`coop_hb_fir`, so the output is bit-identical to two `coop_hb_decimate` calls with the same ramp and step
+(`tests/sim/kern_check.cc`, `hb_pair 0` over 3000 blocks). The state lives in the L1 pool like the rest.
+Emulator: the mix stage peak 11,387 cycles (14,284 before: the pair saves a fifth of the instructions; the device gain is a line load per tap instead of two). Gates (one sequential job, docs/emulator.md): the asm pair and its C path give sample-identical images; against T4d the stream is the same shifted by one audio block (the onset lands on the next block boundary; aligned on the onset the residual is at most 2 LSB, the DC blocker settling against the shifted block), and two runs of one image are identical, so the shift is the image timing, not the kernel. Record scenario: same level, peak and width as T4c.

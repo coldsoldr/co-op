@@ -197,3 +197,4 @@ followed by `det_tape_play_start.txt`: the file path of every chunk.
   shifts the end of a run and any wall-timed event. Run gate scenarios sequentially on an idle machine.
 - `tests/sim/run_kern_check.sh` builds `kern_check.cc` for the Blackfin and runs it in the GNU simulator: the T4
   assembly kernels of `coop_stereo.h` against their C references over 3000 random blocks with edge values.
+- A one-block shift between two images ("63 vs 64 at 31.6 s", max diff ~5000) is the onset landing on the next block boundary, not a DSP difference: compare again with `--align 200`; a true kernel difference shows as small diffs from the onset on without the shift. Two runs of one image in one job are identical.

@@ -20,7 +20,12 @@ static int32_t r32(void) { return (int32_t)rnd(); }
 
 int main(void)
 {
-    long bad_synth = 0, bad_drum = 0, bad_a = 0, bad_am = 0, bad_b = 0, bad_bm = 0;
+    long bad_synth = 0, bad_drum = 0, bad_a = 0, bad_am = 0, bad_b = 0, bad_bm = 0, bad_hb = 0;
+    static int32_t sL[COOP_VBLK], sR[COOP_VBLK];
+    static int16_t oL1[COOP_MBLK], oR1[COOP_MBLK], oL2[COOP_MBLK], oR2[COOP_MBLK], coefs[COOP_HB_TAPS];
+    static coop_hb_state hL, hR; static coop_hb2_state h2;
+    coop_hb_init(&hL); coop_hb_init(&hR); coop_hb2_init(&h2);
+    for (int k = 0; k < COOP_HB_TAPS; k++) coefs[k] = r16();
     static int16_t out[COOP_VBLK], env[COOP_VBLK], M[COOP_MBLK], dL16[COOP_MBLK], dR16[COOP_MBLK];
     static int32_t dL1[COOP_VBLK], dR1[COOP_VBLK], dL2[COOP_VBLK], dR2[COOP_VBLK];
     static int16_t L1[COOP_MBLK], R1[COOP_MBLK], L2[COOP_MBLK], R2[COOP_MBLK];
@@ -62,8 +67,15 @@ int main(void)
         coop_mix_b_mono_c(L1, R1, M, gain, &ramp1, step);
         coop_mix_b_mono(L2, R2, M, gain, &ramp2, step);
         if (ramp1 != ramp2 || memcmp(L1, L2, sizeof L1) || memcmp(R1, R2, sizeof R1)) bad_bm++;
+
+        for (int i = 0; i < COOP_VBLK; i++) { sL[i] = (r32() >> 3) * ((i & 15) ? 1 : 3); sR[i] = (r32() >> 3) * ((i & 7) ? 1 : 3); }
+        int16_t hr = r16(), hs = r16();
+        coop_hb_decimate(&hL, sL, oL1, coefs, hr, hs);
+        coop_hb_decimate(&hR, sR, oR1, coefs, hr, hs);
+        coop_hb_decimate2(&h2, sL, sR, oL2, oR2, coefs, hr, hs);
+        if (memcmp(oL1, oL2, sizeof oL1) || memcmp(oR1, oR2, sizeof oR1)) bad_hb++;
     }
-    printf("kernels vs C over 3000 blocks: accum_synth %ld accum_drum %ld mix_a %ld mix_a_mono %ld mix_b %ld mix_b_mono %ld mismatching blocks\n",
-           bad_synth, bad_drum, bad_a, bad_am, bad_b, bad_bm);
-    return (bad_synth | bad_drum | bad_a | bad_am | bad_b | bad_bm) ? 1 : 0;
+    printf("kernels vs C over 3000 blocks: accum_synth %ld accum_drum %ld mix_a %ld mix_a_mono %ld mix_b %ld mix_b_mono %ld hb_pair %ld mismatching blocks\n",
+           bad_synth, bad_drum, bad_a, bad_am, bad_b, bad_bm, bad_hb);
+    return (bad_synth | bad_drum | bad_a | bad_am | bad_b | bad_bm | bad_hb) ? 1 : 0;
 }

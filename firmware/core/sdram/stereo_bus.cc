@@ -44,13 +44,13 @@ __attribute__((section(".data"))) volatile uint32_t g_coop_force_stereo_out = 0;
 /* --- state: the per-block hot data in the L1 pool (coop_l1.h, T4), with region-A .bss as the fallback --- */
 static int32_t s_sdL[COOP_VBLK], s_sdR[COOP_VBLK];
 static int16_t s_decL[COOP_MBLK], s_decR[COOP_MBLK];
-static coop_hb_state s_hbL, s_hbR;
+static coop_hb2_state s_hb2;
 static coop_dc_state s_dcL, s_dcR;
 static coop_spread s_pan_synth, s_pan_drum;
 static int16_t s_sin[65];
 static int32_t *g_sdL = s_sdL, *g_sdR = s_sdR;         /* difference buses, 88.2 kHz */
 static int16_t *g_decL = s_decL, *g_decR = s_decR;     /* after decimation + DC block */
-static coop_hb_state *g_hbL = &s_hbL, *g_hbR = &s_hbR;
+static coop_hb2_state *g_hb2 = &s_hb2;             /* both decimators, rings interleaved (T4e) */
 static coop_dc_state *g_dcL = &s_dcL, *g_dcR = &s_dcR;
 static coop_spread *g_pan_synth = &s_pan_synth, *g_pan_drum = &s_pan_drum;
 static const int16_t *g_sin = coop_sin_q15;            /* the pan law's quarter sine, copied into L1 */
@@ -93,8 +93,7 @@ static void stereo_init(void)
         g_sdR = (int32_t *)coop_l1_or(sizeof s_sdR, s_sdR);
         g_decL = (int16_t *)coop_l1_or(sizeof s_decL, s_decL);
         g_decR = (int16_t *)coop_l1_or(sizeof s_decR, s_decR);
-        g_hbL = (coop_hb_state *)coop_l1_or(sizeof s_hbL, &s_hbL);
-        g_hbR = (coop_hb_state *)coop_l1_or(sizeof s_hbR, &s_hbR);
+        g_hb2 = (coop_hb2_state *)coop_l1_or(sizeof s_hb2, &s_hb2);
         g_dcL = (coop_dc_state *)coop_l1_or(sizeof s_dcL, &s_dcL);
         g_dcR = (coop_dc_state *)coop_l1_or(sizeof s_dcR, &s_dcR);
         g_pan_synth = (coop_spread *)coop_l1_or(sizeof s_pan_synth, &s_pan_synth);
@@ -103,7 +102,7 @@ static void stereo_init(void)
         if (sin_l1) { for (int i = 0; i < 65; i++) sin_l1[i] = coop_sin_q15[i]; g_sin = sin_l1; }
         g_stereo_l1 = g_sdL != s_sdL;
     }
-    coop_hb_init(g_hbL); coop_hb_init(g_hbR);
+    coop_hb2_init(g_hb2);
     coop_dc_init(g_dcL); coop_dc_init(g_dcR);
     coop_spread_init(g_pan_synth, 0);
     coop_spread_init(g_pan_drum, 0);
@@ -198,8 +197,7 @@ static int side_prepare(void)
     if (!g_side_tail) return 0;
     if (!g_side_dec_done) {
         int16_t hr = (int16_t)g_hb_ramp, hs = (int16_t)(g_hb_ramp >> 16);
-        coop_hb_decimate(g_hbL, g_sdL, g_decL, HB_COEFS, hr, hs);
-        coop_hb_decimate(g_hbR, g_sdR, g_decR, HB_COEFS, hr, hs);
+        coop_hb_decimate2(g_hb2, g_sdL, g_sdR, g_decL, g_decR, HB_COEFS, hr, hs);
         int32_t c = *DC_COEF_W;
         coop_dc_block(g_dcL, g_decL, g_decL, c, COOP_MBLK);
         coop_dc_block(g_dcR, g_decR, g_decR, c, COOP_MBLK);
@@ -207,7 +205,7 @@ static int side_prepare(void)
         g_stereo_side_blocks++;
         g_side_this_block = 1;
         if (--g_side_tail == 0) {                      /* the rings are flushed; drop the DC tail */
-            coop_hb_init(g_hbL); coop_hb_init(g_hbR);
+            coop_hb2_init(g_hb2);
             coop_dc_init(g_dcL); coop_dc_init(g_dcR);
         }
     }

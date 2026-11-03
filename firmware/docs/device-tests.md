@@ -299,4 +299,16 @@ op1emu (`tests/sim/det_lander_combo.txt`): boots, plays, the combo swallowed twi
 **What to do:** flash, hold synth + drum + tape + mixer together: nothing should happen (stock would start the
 game). Then use the device as usual; the stats are read the same way (Hello: `build t4d`). No other change.
 
+Result: _superseded by T4e before a run; test the combo there_.
+
+## Milestone T4e: the decimator pair as one dual-MAC kernel — device test (pending, 2026-11-03)
+
+`build/pkg/op1_246_coop_t4e_stereo_tape.op1` (copy in Downloads; sha256 in the commit). Supersedes T4d (its Lander
+change included). One audio-side change: the two half-band decimators of the difference buses run as one kernel
+(`docs/performance.md`, T4e), bit-exact (simulator check and the chord gate). Expected: the mix stage's average
+per block down from ~20k by a few thousand cycles; nothing audible.
+
+**What to do:** as T4d (the four-key combo must do nothing), then a recorded FM chord and the stats over SysEx
+(Hello: `build t4e`). Say whether the tape animation hitches at all now, with FM and with Voltage.
+
 Result: _not yet flashed_.

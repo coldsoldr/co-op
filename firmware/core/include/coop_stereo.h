@@ -227,6 +227,74 @@ static inline void coop_hb_decimate(coop_hb_state *st, const int32_t *in, int16_
     st->w = w;
 }
 
+/* ---- both channels' decimators in one pass (T4e): the two rings interleaved (L in the low half of each word,
+ * R in the high half) so one 32-bit load feeds a dual MAC: A0 (left) and A1 (right) each do exactly the W32 MAC
+ * sequence of coop_hb_fir, so the result is bit-identical to two coop_hb_decimate calls with the same ramp/step.
+ * Verified in tests/sim/kern_check.cc. */
+typedef struct { uint32_t even[COOP_HB_TAPS], odd[COOP_HB_TAPS]; int w; } coop_hb2_state;
+
+static inline void coop_hb2_init(coop_hb2_state *st)
+{
+    for (int i = 0; i < COOP_HB_TAPS; i++) st->even[i] = st->odd[i] = 0;
+    st->w = 0;
+}
+
+static inline void coop_hb_fir2(int32_t acc0, int32_t acc1, const uint32_t *ring, int start, const int16_t *coefs,
+                                int32_t *r0, int32_t *r1)
+{
+#if defined(__bfin__) && !defined(COOP_HB2_NO_ASM)
+    int32_t t0, t2, o0, o1;
+    __asm__ volatile(
+        "A0 = %[a0];\n\t"
+        "A1 = %[a1];\n\t"
+        "B0 = %[base];\n\t"
+        "L0 = 128 (X);\n\t"
+        "I0 = %[start];\n\t"
+        "I2 = %[coefs];\n\t"
+        "P2 = %[cnt];\n\t"
+        "%[t0] = [I0++];\n\t"
+        "%[t2].L = W[I2++];\n\t"
+        "LSETUP (1f, 1f) LC0 = P2;\n\t"
+        "1: A0 += %[t0].L * %[t2].L, A1 += %[t0].H * %[t2].L (W32) || %[t0] = [I0++] || %[t2].L = W[I2++];\n\t"
+        "A0 += %[t0].L * %[t2].L, A1 += %[t0].H * %[t2].L (W32);\n\t"
+        "L0 = 0 (X);\n\t"
+        "%[o0] = A0.W;\n\t"
+        "%[o1] = A1.W;"
+        : [o0] "=d"(o0), [o1] "=d"(o1), [t0] "=&d"(t0), [t2] "=&d"(t2)
+        : [a0] "d"(acc0), [a1] "d"(acc1), [base] "d"(ring), [start] "d"(ring + start), [coefs] "d"(coefs),
+          [cnt] "d"(COOP_HB_TAPS - 1)
+        : "A0", "A1", "I0", "I2", "B0", "L0", "P2", "LC0", "LT0", "LB0", "memory");
+    *r0 = o0; *r1 = o1;
+#else
+    for (int k = 0; k < COOP_HB_TAPS; k++) {
+        uint32_t v = ring[(start + k) & (COOP_HB_TAPS - 1)];
+        acc0 = coop_mac_w32(acc0, coefs[k], (int16_t)(v & 0xffff));
+        acc1 = coop_mac_w32(acc1, coefs[k], (int16_t)(v >> 16));
+    }
+    *r0 = acc0; *r1 = acc1;
+#endif
+}
+
+static inline void coop_hb_decimate2(coop_hb2_state *st, const int32_t *inL, const int32_t *inR,
+                                     int16_t *outL, int16_t *outR, const int16_t *coefs, int16_t ramp, int16_t step)
+{
+    int w = st->w;
+    for (int n = 0; n < COOP_MBLK; n++) {
+        st->even[w] = (uint16_t)coop_sat16(inL[2 * n]) | ((uint32_t)(uint16_t)coop_sat16(inR[2 * n]) << 16);
+        st->odd[w] = (uint16_t)coop_sat16(inL[2 * n + 1]) | ((uint32_t)(uint16_t)coop_sat16(inR[2 * n + 1]) << 16);
+        w = (w + 1) & (COOP_HB_TAPS - 1);                   /* now the oldest slot */
+        uint32_t o = st->odd[(w + 15) & (COOP_HB_TAPS - 1)];
+        int32_t acc0 = (int32_t)(int16_t)(o & 0xffff) << 15;   /* centre tap * 0.5 */
+        int32_t acc1 = (int32_t)(int16_t)(o >> 16) << 15;
+        int32_t r0, r1;
+        coop_hb_fir2(acc0, acc1, st->even, w, coefs, &r0, &r1);
+        outL[n] = coop_fr16_mul((int16_t)(r0 >> 16), ramp);
+        outR[n] = coop_fr16_mul((int16_t)(r1 >> 16), ramp);
+        ramp = coop_fr16_add(step, ramp);
+    }
+    st->w = w;
+}
+
 /* ---- replica of the stock SDRAM DC blocker (0x019674f8..0x01967612) ----
  * y[n] = sat(sat(y[n-1] - X[n-1]) + X[n]) - c*Yq[n-1],  out = y >> 16,  X = in << 16, Yq = out << 16,
  * c = the live coefficient word at 0x01bab53c, products via coop_fr32_mul_stock. */
