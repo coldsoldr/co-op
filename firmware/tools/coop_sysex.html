@@ -36,6 +36,11 @@ Chrome or Edge with Web MIDI; plug the OP-1 in, pick its MIDI port, say hello, t
 <label for="plug">Install a plugin (a .coop file goes to /yaffs2/plugins; power-cycle the OP-1 afterwards)</label>
 <input id="plug" type="file" accept=".coop">
 <div style="margin-top:6px"><button id="install">Install plugin</button></div>
+<h2 style="font-size:16px;margin:18px 0 4px">Second effect slot (S2)</h2>
+<p>A second effect after the instrument effect and after the master effect. It runs whether or not the OP-1's own
+effect is on, and the OP-1 keeps the choice across power cycles. Read the slots first: that also lists the installed plugins.</p>
+<div id="slots"></div>
+<div style="margin-top:6px"><button id="s2read">Read slots</button></div>
 <div id="status">Not connected.</div>
 <pre id="out"></pre>
 <script>
@@ -193,6 +198,65 @@ document.getElementById('del').onclick = async () => {
   try { const r = await send(DELETE, Array.from(new TextEncoder().encode(path))); setStatus(r[0] === 0 ? 'Deleted ' + path : 'Delete: ' + (STATUS[r[0]] || r[0])); }
   catch (err) { setStatus('Delete failed: ' + err.message); }
 };
+
+// ---- S2: the second effect slot (command 0x26: op 0 get, 1 set, 2 plugin list) ----
+const SLOT2 = 0x26;
+const STOCK_FX = ['delay', 'grid', 'punch', 'phone', 'spring', 'filter', 'nitro', 'cwo'];   // the firmware's type numbers
+const SLOT_NAMES = ['Instrument (after the synth / drum effect)', 'Master (after the master effect)'];
+let plugins = [];
+function slotUi() {
+  const box = document.getElementById('slots');
+  box.innerHTML = '';
+  SLOT_NAMES.forEach((title, pos) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin:8px 0';
+    let opts = '<option value="0:0">none</option>' + STOCK_FX.map((n, i) => '<option value="1:' + i + '">' + n + ' (stock)</option>').join('') +
+      plugins.map(p => '<option value="2:' + p.n + '">' + p.name + ' (plugin)</option>').join('');
+    d.innerHTML = '<b>' + title + '</b><br><select id="s2fx' + pos + '">' + opts + '</select>' +
+      [0, 1, 2, 3].map(k => '<label style="display:flex;gap:8px;align-items:center;margin:4px 0">knob ' + (k + 1) +
+        ' <input type="range" min="0" max="100" value="50" id="s2k' + pos + k + '" style="flex:1"><span id="s2v' + pos + k + '">50</span></label>').join('') +
+      '<button id="s2set' + pos + '">Apply</button>';
+    box.appendChild(d);
+    [0, 1, 2, 3].forEach(k => { const r = document.getElementById('s2k' + pos + k); r.oninput = () => { document.getElementById('s2v' + pos + k).textContent = r.value; }; });
+    document.getElementById('s2set' + pos).onclick = () => slotSet(pos);
+  });
+}
+function slotShow(r) {          // r = [status, 10 bytes slot 0, 10 bytes slot 1]
+  for (let pos = 0; pos < 2; pos++) {
+    const e = r.slice(1 + 10 * pos, 11 + 10 * pos);
+    const sel = document.getElementById('s2fx' + pos);
+    sel.value = e[0] + ':' + (e[0] ? e[1] : 0);
+    for (let k = 0; k < 4; k++) {
+      const v = Math.round((e[2 + 2 * k] | (e[3 + 2 * k] << 8)) * 100 / 32767);
+      document.getElementById('s2k' + pos + k).value = v; document.getElementById('s2v' + pos + k).textContent = v;
+    }
+  }
+}
+document.getElementById('s2read').onclick = async () => {
+  if (!outPort || !inPort) { setStatus('Pick a port first.'); return; }
+  try {
+    let r = await send(SLOT2, [2]);
+    if (r[0] !== 0) { setStatus('Plugin list: ' + (STATUS[r[0]] || r[0]) + ' (is an S2 image running?)'); return; }
+    plugins = String.fromCharCode(...r.slice(1)).split(';').filter(Boolean).map(s => { const [n, name] = s.split('='); return { n: +n, name }; });
+    slotUi();
+    r = await send(SLOT2, [0]);
+    if (r[0] !== 0) { setStatus('Read slots: ' + (STATUS[r[0]] || r[0])); return; }
+    slotShow(r);
+    setStatus('Slots read; ' + plugins.length + ' plugin(s) installed.');
+  } catch (err) { setStatus('Read slots failed: ' + err.message + ' (an S2 image answers command 0x26)'); }
+};
+async function slotSet(pos) {
+  const [kind, id] = document.getElementById('s2fx' + pos).value.split(':').map(Number);
+  const knobs = [0, 1, 2, 3].map(k => Math.round(document.getElementById('s2k' + pos + k).value * 32767 / 100));
+  const payload = [1, pos, kind, id, ...knobs.flatMap(v => [v & 0xFF, v >> 8])];
+  try {
+    const r = await send(SLOT2, payload);
+    if (r[0] !== 0) { setStatus('Set slot: ' + (STATUS[r[0]] || r[0]) + (r[0] === 2 ? ' (unknown effect, or no memory for it)' : '')); return; }
+    slotShow(r);
+    setStatus(SLOT_NAMES[pos].split(' (')[0] + ' slot 2: ' + (kind === 0 ? 'none' : kind === 1 ? STOCK_FX[id] : (plugins.find(p => p.n === id) || {}).name) + ', saved on the device.');
+  } catch (err) { setStatus('Set slot failed: ' + err.message); }
+}
+slotUi();
 
 if (navigator.requestMIDIAccess) connect(); else setStatus('This browser has no Web MIDI. Use Chrome or Edge.');
 </script>

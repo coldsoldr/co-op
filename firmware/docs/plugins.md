@@ -107,6 +107,13 @@ share one fixed tank between an instrument position and the master (`docs/stereo
 has no filter row (cwo, delay, grid, nitro, phone, punch, spring, then the plugin rows); the filter type only carries
 plugins.
 
+## S2: the second effect slot (2026-11-03)
+
+Every plugin is relocated five times now: synth, drum and master for slot 1 (P2b), plus instrument slot 2 and master
+slot 2 (`docs/stereo-bus-v2.md`, S2). A plugin in slot 2 gets `init(3)` / `init(4)` and the same `render` call as at
+slot 1, with the four knob words in the filter ranges and `params[4] = 0x5300 + n`. Memory: five times the load size
+(the stereo delay: 5 x 129 KiB of heap 0); a plugin that no longer fits fails to load with "plugin memory full".
+
 ## Next
 
 - P1b: SysEx `FILE_PUT` / `FILE_DELETE` (kennel's devupd framing, 64-byte chunks) so plugins can be installed from

@@ -441,3 +441,30 @@ decimator and DC output equal the stock's sample for sample; full spread equals 
    is coop's new instrument stage; send the stats file).
 
 Result: _not yet flashed_.
+
+## Stereo bus v2 S1 + S3 + S2 together — device test (pending, 2026-11-03)
+
+`build/pkg/op1_246_coop_s2_slots.op1` (copy in Downloads; sha256
+`48e6e2217afb7a9cdeb9ac5ae4ef46b27103b2f27a256e47f0b68508f048107a`). Supersedes the S1 and S3 packages and contains both
+(the S1 and S3 entries above stay as their test plans). New in S2: a second effect slot after the instrument effect
+and after the master effect, chosen on the host page (`tools/coop_sysex.html`, "Second effect slot"). Test plugin:
+`stereo_delay.coop` (Downloads).
+
+**What to do:**
+1. Flash. Hello says `build s2`. Without touching slot 2 everything must sound as S3: run the S1 and S3 checks above
+   (stock effects on the whole stereo sound, drums at the stock level, tape).
+2. Install `stereo_delay.coop` if it is not on the device (Install plugin), power-cycle.
+3. On the page: Read slots. Instrument: **delay (stock)**, Apply. Play the synth: the stock effect you chose on the
+   OP-1 (e.g. phone) and then a delay behind it; with the OP-1's effect off, still the delay. Try **phone** or
+   **punch** in slot 2 with a different stock effect in slot 1.
+4. Master: **stereo delay (plugin)**, Apply. Play: a 0.15 s slap echo on everything, tape included. This is the coop
+   master stand-in that P1's echo went through unheard: if this echo is missing too, say so (the instrument slot
+   working while the master one is silent is the answer we need).
+5. Power-cycle: both slots must come back as set (Read slots shows them; they keep playing).
+6. Set both to none: the sound returns to S3's.
+7. Stats: `plugins ... s2_instr / s2_master` count the blocks each slot rendered, `s2_changes` the changes taken.
+
+Known: the stock delay's echoes are centred; grid or spring in two places at once interfere (one tank); slot 2 has
+no page on the OP-1 yet and is the same for every sound.
+
+Result: _not yet flashed_.

@@ -142,6 +142,34 @@ bus, after the decimator and after the DC block (`g_dbg_acc_bad / dec_bad / dc_b
   phone at the synth position the same levels and width (its details differ).
 - No faults in any scenario (chord, drums, tape record and play, plugin, phone, nitro).
 
+## S2: the second effect slot (2026-11-03)
+
+One second slot after the instrument effect and one after the master effect (`plugin_host.cc`, `coop_slot2_*`).
+- **Where it runs.** The instrument slot from the first mix call of the block (`side_prepare`, stereo_bus.cc): after
+  the stock effect, before the mix and the record tap, on the pair (mid + side). The master slot in the master
+  stand-in at the getter site (master_suite.cc): after the stock master effect (L1 0xffa017e6), before the stock
+  level stage. Both run every block, whether or not the stock slot is on. [C in op1emu]
+- **What it holds.** Nothing, a stock type as its own stereo object (`g_st[1]` instrument, `g_st[2]` master, own
+  delay / cwo line) or a coop plugin as its own relocated instance (`inst[3]`, `inst[4]`: every plugin is now
+  relocated five times). Four knobs as Q15 positions, mapped into the type's ranges from the stock knob range table
+  (0x01de5c50 + type * 0x30: knob i at 3i = min, max, default; knobs 4-7 take their defaults); plugins get the
+  filter ranges, as at slot 1.
+- **Control.** The SysEx host page (`tools/coop_sysex.html`, command 0x26, `docs/sysex.md`); kept in
+  `/yaffs2/user/coop_slot2.bin` and loaded at boot after the plugins. Global, not per sound (the stock sound has no
+  place for it yet); an on-device page and per-sound storage come with the screens (P3).
+- **Threads.** The main thread posts a change and allocates the object and line; the audio thread constructs and
+  renders. A MALLOC from the audio interrupt hung op1emu (the heap lock), and a stock type must not be constructed
+  before the stock has loaded its range row (zero ranges give the delay a zero length; its wrap loop never ends).
+  The slot's buffers are static (the mix context is deep on the interrupt stack).
+- **Limits.** The stock delay is mono inside (centred echoes); grid and spring share one tank between all their
+  stereo instances (slot 1 at an instrument, slot 2, the master). Slot 2 has no stock page: its display state is not
+  copied anywhere.
+
+Emulator (2026-11-03, one job): with no slot 2 the chord and the drums are sample-identical to S3, tape record the
+same energy (one-block onset shift), the plugin scenario within 2 LSB. Instrument slot 2 = stock delay (knobs at
+50 %): the chord tail after the release 235 / 145 / 130 per 100 ms against 106 / 71 / 65 without. Master slot 2 =
+the stereo delay plugin: it rendered every block (37,002) and changes the output. No faults.
+
 ## Steps
 
 1. **RE** (in progress): the stock master FX objects per type (vtable, ctor, size, render/init entries), the master
@@ -151,7 +179,8 @@ bus, after the decimator and after the DC block (`g_dbg_acc_bad / dec_bad / dc_b
    selected type per position; coop instantiates the stock stereo object of that type for the position and runs
    it on the L/R buses (dual-mono inside, as the master does); coop plugins run on the same buses. Gate: v1 full
    image vs v2 with no FX selected, within rounding; a stock filter at the synth position filters everything.
-3. **S2**: the second FX slot per position and on the master; the saved-sound JSON member for it.
+3. **S2** (built, see above): the second FX slot after the instrument effect and after the master effect, set from
+   the SysEx page; the saved-sound JSON member and an on-device page are still to do.
 4. **S3** (built, see above): the stereo pair from the voice hook, coop's decimator and DC block in place of the
    stock mono ones, the drum bus stage per side; the stock per-voice sum still runs, unused.
 

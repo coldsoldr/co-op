@@ -348,9 +348,13 @@ extern "C" void coop_drum_bus(volatile uint32_t *state, int16_t *buf, const int1
 }
 
 /* The side for the mix loops and the record tap. 1 = present (the stage ran this block). */
+extern "C" void coop_slot2_instr(int16_t *mid, int16_t *sl, int16_t *sr);   /* plugin_host.cc, S2 */
+
 static int side_prepare(void)
 {
     if (!g_stage_done) return 0;
+    if (!g_side_this_block) coop_slot2_instr(MONO_BUS64, g_decL, g_decR);   /* S2: the instrument's second slot, once per
+                                                                              block, after the stock effect, before the mix */
     g_side_this_block = 1;
     return 1;
 }

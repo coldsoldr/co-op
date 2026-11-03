@@ -69,7 +69,8 @@ volatile uint32_t g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks;
 const char *volatile g_plugins_last_error;
 char g_plugins_last_name[NAME_MAX];
 
-#define POSITIONS   3                                                     /* 0 synth, 1 drum, 2 master: an instance each (P2b) */
+#define POSITIONS   5                                                     /* 0 synth, 1 drum, 2 master: an instance each (P2b);
+                                                                             S2: 3 instrument slot 2, 4 master slot 2 */
 struct plug { const coop_fx_t *fx; const coop_fx_t *inst[POSITIONS]; char name[16]; int16_t def[4]; };
 static struct plug g_plug[SLOTS];                                          /* by number */
 struct mapent { char name[16]; uint8_t n, present; };
@@ -228,7 +229,7 @@ static const char *load_one(const char *fname, uint8_t *stage)
     if (!n) return "no free plugin number";
     /* one relocated instance per position (P2b): a plugin selected at two positions at once keeps two states */
     const coop_fx_t *inst[POSITIONS];
-    uint8_t *raws[POSITIONS] = { 0, 0, 0 };
+    uint8_t *raws[POSITIONS] = { 0 };
     for (int k = 0; k < POSITIONS; k++) {
         uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN;
         uint8_t *raw = (uint8_t *)MALLOC(cap);
@@ -258,13 +259,15 @@ static const char *load_one(const char *fname, uint8_t *stage)
     return 0;
 }
 
+static void slot2_load(void);                                              /* S2, below */
+
 /* From the tape mount hook (main thread, boot), once. */
 extern "C" void coop_plugins_boot(void)
 {
     if (g_plugins_booted) return;
     g_plugins_booted = 1;
     list_dir();
-    if (!g_n_names) return;
+    if (!g_n_names) { slot2_load(); return; }
     void *udb = DB_HANDLE();
     if (udb) map_load(udb);
     uint8_t *stage = (uint8_t *)MALLOC(FILE_MAX);
@@ -279,6 +282,7 @@ extern "C" void coop_plugins_boot(void)
     for (int i = 0; i < g_map_n; i++)                                      /* files that went away keep their numbers, marked absent */
         if (g_map[i].present && !g_plug[g_map[i].n].fx) { g_map[i].present = 0; g_map_dirty = 1; }
     if (udb && g_map_dirty) map_save(udb);
+    slot2_load();                                                          /* S2: after the plugins it may name */
 }
 
 /* ---- the stock FX list: every plugin name resolves to the filter type (replaces the fx_types name compare) ---- */
@@ -337,7 +341,8 @@ struct st_inst { void *obj; int type; uint8_t *line; uint32_t slots[8]; };
  * slot is copied into the instrument's slot afterwards, so the instrument page follows the knobs and the master's
  * page is untouched (nitro's dials, found by the owner on the device, 2026-11-03). */
 #define FX_SLOTS ((volatile uint32_t *)0xFF801774u)
-static struct st_inst g_st[2];                                            /* [0]: the stock has one instrument FX object for both positions */
+static struct st_inst g_st[3];                                            /* [0]: the stock has one instrument FX object for both
+                                                                             positions; S2: [1] instrument slot 2, [2] master slot 2 */
 static int g_fx_pos;                                                       /* the position of its last init: which instrument bus it processes */
 volatile uint32_t g_fx_stock_stereo_blocks, g_fx_stock_ctor;
 
@@ -379,7 +384,7 @@ static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
     for (int k = 0; k < 8; k++) { master[k] = FX_SLOTS[8 + k]; FX_SLOTS[8 + k] = s->slots[k]; }
     ((st_render_fn)(uintptr_t)vt_entry(g_fx_class[t].st_vt, 0x14))(s->obj, l, r, params);
     for (int k = 0; k < 8; k++) s->slots[k] = FX_SLOTS[8 + k];
-    for (int k = 0; k < 4; k++) FX_SLOTS[4 * (g_fx_pos & 1) + k] = s->slots[k];
+    if (pos == 0) for (int k = 0; k < 4; k++) FX_SLOTS[4 * (g_fx_pos & 1) + k] = s->slots[k];   /* slot 2 has no stock page */
     for (int k = 0; k < 8; k++) FX_SLOTS[8 + k] = master[k];
     if (t == 0) LINE_TABLE[5] = save;
     g_fx_stock_stereo_blocks++;
@@ -471,6 +476,152 @@ extern "C" void coop_fx_render_st(void *self, int16_t *l, int16_t *r, const int1
     fx->render(2, L, R, params, BLOCK);
     for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16(L[i] >> 16); r[i] = coop_sat16(R[i] >> 16); }
     g_fx_plugin_blocks++;
+}
+
+/* ---- S2: the second FX slot, one after the instrument effect and one after the master effect ----
+ * Each holds nothing, a stock type (its own stereo object, g_st[1 + pos]) or a coop plugin (its own relocated
+ * instance, inst[3 + pos]), with four knobs as Q15 positions mapped into the type's ranges. It runs every block,
+ * whether or not the stock slot (slot 1) is on: the instrument one from the mix entry on the stereo pair
+ * (stereo_bus.cc), the master one in the master stand-in before the stock level stage (master_suite.cc).
+ * Chosen from the SysEx host page (coop_sysex.cc, command 0x26), kept in /yaffs2/user/coop_slot2.bin; an on-device
+ * page comes with the screens (P3). A change is posted by the main thread and taken by the audio thread, which
+ * constructs the object (as the stock constructs its effects in the audio thread). */
+#define RANGE_ROW(t) ((const int16_t *)(0x01DE5C50u + (uint32_t)(t) * 0x30u))   /* knob i: min, max, default at 3i */
+#define Y_WRITE      ((int (*)(int, const void *, int))0x01A99F84u)
+#define S2_FILE      "/yaffs2/user/coop_slot2.bin"
+struct slot2 { volatile int kind, id; volatile uint16_t knob[4]; volatile uint32_t req; uint32_t took; int kind_on, id_on; };
+static struct slot2 g_s2[2];
+volatile uint32_t g_s2_blocks[2], g_s2_changes, g_s2_trace;   /* g_s2_trace: debug progress marker */
+
+extern "C" int coop_slot2_set(int pos, int kind, int id, const uint16_t *knob)
+{
+    if (pos < 0 || pos > 1) return 0;
+    if (kind == 1 && (id < 0 || id >= FX_TYPES)) return 0;
+    if (kind == 2 && !fx_index(id)) return 0;
+    if (kind < 0 || kind > 2) return 0;
+    if (kind == 1) {                                                      /* the heap only from here (main thread): a
+                                                                             MALLOC in the audio interrupt hung op1emu */
+        struct st_inst *t = &g_st[1 + pos];
+        if (!t->obj) t->obj = MALLOC(OBJ_BYTES);
+        if ((id == 0 || id == 7) && !t->line) t->line = (uint8_t *)MALLOC(LINE_BYTES);
+        if (!t->obj || ((id == 0 || id == 7) && !t->line)) return 0;
+    }
+    struct slot2 *s = &g_s2[pos];
+    for (int i = 0; i < 4; i++) s->knob[i] = knob[i] > 32767 ? 32767 : knob[i];
+    s->kind = kind; s->id = kind ? id : 0;
+    __asm__ __volatile__("ssync;" ::: "memory");
+    s->req++;
+    return 1;
+}
+
+extern "C" void coop_slot2_get(int pos, uint8_t *out10)
+{
+    struct slot2 *s = &g_s2[pos & 1];
+    out10[0] = (uint8_t)s->kind; out10[1] = (uint8_t)s->id;
+    for (int i = 0; i < 4; i++) { out10[2 + 2 * i] = (uint8_t)s->knob[i]; out10[3 + 2 * i] = (uint8_t)(s->knob[i] >> 8); }
+}
+
+/* the plugin list for the host page: "n=name;" entries */
+extern "C" int coop_plugin_list(char *out, int cap)
+{
+    char *p = out, *end = out + cap - 1;
+    for (int n = 1; n < SLOTS; n++) {
+        if (!g_plug[n].fx) continue;
+        char tmp[24];
+        char *t = snum(tmp, n); *t++ = '='; t = scat(t, g_plug[n].name); *t++ = ';'; *t = 0;
+        int l = slen(tmp);
+        if (p + l > end) break;
+        for (int i = 0; i < l; i++) *p++ = tmp[i];
+    }
+    *p = 0;
+    return (int)(p - out);
+}
+
+/* main thread: save / load the two slots (magic "CS2", version 1, then 10 bytes per slot) */
+extern "C" int coop_slot2_save(void)
+{
+    uint8_t b[24] = { 'C', 'S', '2', 1 };
+    coop_slot2_get(0, b + 4); coop_slot2_get(1, b + 14);
+    int fd = Y_OPEN(S2_FILE, 0x242, 0x180);
+    if (fd < 0) return 0;
+    int ok = Y_WRITE(fd, b, 24) == 24;
+    return (Y_CLOSE(fd) == 0) && ok;
+}
+
+static void slot2_load(void)
+{
+    uint8_t b[24];
+    int fd = Y_OPEN(S2_FILE, 0, 0);
+    if (fd < 0) return;
+    int got = Y_READ(fd, b, 24);
+    Y_CLOSE(fd);
+    if (got != 24 || b[0] != 'C' || b[1] != 'S' || b[2] != '2' || b[3] != 1) return;
+    for (int pos = 0; pos < 2; pos++) {
+        const uint8_t *e = b + 4 + 10 * pos;
+        uint16_t k[4];
+        for (int i = 0; i < 4; i++) k[i] = (uint16_t)(e[2 + 2 * i] | (e[3 + 2 * i] << 8));
+        coop_slot2_set(pos, e[0], e[1], k);
+    }
+}
+
+static int16_t knob_map(int lo, int hi, uint16_t k)
+{
+    if (hi < lo) { int t = lo; lo = hi; hi = t; }
+    return (int16_t)(lo + (int32_t)(((uint32_t)(hi - lo) * (uint32_t)k) >> 15));   /* <= 65535 * 32767: fits 32 bits */
+}
+
+/* audio thread: take a posted change (construct / init), then run the slot on l / r (int16, 64, in place) */
+extern "C" void coop_slot2_render(int pos, int16_t *l, int16_t *r)
+{
+    struct slot2 *s = &g_s2[pos & 1];
+    uint32_t req = s->req;
+    /* The stock fills the knob range table from the factory db during boot (~0.2 s after the audio starts). A stock
+     * type must not run before its row is there: zero ranges give the delay a zero length, and its render's
+     * wrap loop (subtract the length until below it) never ends (op1emu, 2026-11-03: the audio stopped at 2 s). */
+    if (s->kind == 1 && req != s->took) {
+        const int16_t *rg = RANGE_ROW(s->id);
+        if (rg[1] <= rg[0]) return;                                       /* not loaded yet: take the change later */
+    }
+    if (req != s->took) {
+        s->took = req;
+        int kind = s->kind, id = s->id;
+        if (kind != s->kind_on || id != s->id_on) {
+            s->kind_on = 0;
+            if (kind == 1) { g_s2_trace = 2; st_make(1 + pos, id); g_s2_trace = 3; if (g_st[1 + pos].type == id) s->kind_on = 1; }
+            else if (kind == 2 && fx_index(id)) { if (g_plug[id].inst[3 + pos]->init(3 + pos) == 0) s->kind_on = 2; }
+            s->id_on = id;
+            g_s2_changes++;
+        }
+    }
+    g_s2_trace = 4; if (!s->kind_on) return;
+    int16_t p[8];
+    if (s->kind_on == 1) {
+        const int16_t *rg = RANGE_ROW(s->id_on);
+        for (int i = 0; i < 8; i++) p[i] = i < 4 ? knob_map(rg[3 * i], rg[3 * i + 1], s->knob[i]) : rg[3 * i + 2];
+        g_s2_trace = 5; st_render(1 + pos, l, r, p); g_s2_trace = 6;
+    } else {
+        const coop_fx_t *fx = g_plug[s->id_on].inst[3 + pos];
+        for (int i = 0; i < 4; i++) p[i] = knob_map(fx_rng[i][0], fx_rng[i][1], s->knob[i]);
+        p[4] = (int16_t)(MAGIC + s->id_on); p[5] = p[6] = p[7] = 0;
+        static int32_t L[BLOCK], R[BLOCK];                                /* audio thread only, never nested: off the interrupt stack */
+        for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)l[i] << 16; R[i] = (int32_t)r[i] << 16; }
+        fx->render(3 + pos, L, R, p, BLOCK);
+        for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16(L[i] >> 16); r[i] = coop_sat16(R[i] >> 16); }
+    }
+    g_s2_blocks[pos & 1]++; g_s2_trace = 7;
+}
+
+/* the instrument slot 2 on the carrier (mid in the stock bus buffer, side in coop's): from stereo_bus.cc's mix entry */
+extern "C" void coop_slot2_instr(int16_t *mid, int16_t *sl, int16_t *sr)
+{
+    if (!g_s2[0].kind_on && g_s2[0].req == g_s2[0].took) return;
+    static int16_t l[BLOCK], r[BLOCK];                                    /* off the interrupt stack (the mix context is deep) */
+    for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16((int32_t)mid[i] + sl[i]); r[i] = coop_sat16((int32_t)mid[i] + sr[i]); }
+    g_s2_trace = 1; coop_slot2_render(0, l, r); g_s2_trace = 9;
+    for (int i = 0; i < BLOCK; i++) {
+        int32_t m = ((int32_t)l[i] + r[i]) >> 1;
+        mid[i] = (int16_t)m; sl[i] = coop_sat16(l[i] - m); sr[i] = coop_sat16(r[i] - m);
+    }
 }
 
 extern "C" int coop_fx_plugin_loaded(void) { return g_plugins_loaded != 0; }

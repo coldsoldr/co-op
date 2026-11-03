@@ -38,12 +38,16 @@
 #define QN        4
 #define CHUNK     64
 #define PROTOCOL  1
-#define BUILD_TAG "s3"
+#define BUILD_TAG "s2"
 enum { CX_FILE_GET = 0x20, CX_HELLO = 0x21, CX_PUT_BEGIN = 0x22, CX_PUT_DATA = 0x23, CX_PUT_END = 0x24, CX_DELETE = 0x25,
-       CX_REPLY = 0x40, ST_OK = 0, ST_FORMAT = 1, ST_STATE = 2, ST_PATH = 3, ST_SIZE = 4, ST_OFFSET = 5, ST_CRC = 6, ST_IO = 7 };
+       CX_SLOT2 = 0x26, CX_REPLY = 0x40, ST_OK = 0, ST_FORMAT = 1, ST_STATE = 2, ST_PATH = 3, ST_SIZE = 4, ST_OFFSET = 5, ST_CRC = 6, ST_IO = 7 };
 /* FILE_PUT (P1b): BEGIN path -> a file under /yaffs2/plugins or /yaffs2/user is created (truncated); DATA u32 offset +
  * bytes, in order, each acknowledged with the next offset; END u32 total + u32 crc32 (zlib) closes it and checks both.
  * DELETE path. The loader reads /yaffs2/plugins at boot: a new plugin plays after a power cycle. */
+extern "C" int coop_slot2_set(int pos, int kind, int id, const uint16_t *knob);   /* plugin_host.cc, S2 */
+extern "C" void coop_slot2_get(int pos, uint8_t *out10);
+extern "C" int coop_slot2_save(void);
+extern "C" int coop_plugin_list(char *out, int cap);
 static int put_fd = -1;
 static uint32_t put_off, put_crc;
 static int path_ok(const char *p)
@@ -231,6 +235,23 @@ static void handle(const uint8_t *m, int n)
         int closed = Y_CLOSE(put_fd) == 0; put_fd = -1;
         out[0] = !closed ? ST_IO : total != put_off ? ST_SIZE : (~put_crc) != crc ? ST_CRC : ST_OK;
         reply(cmd, seq, out, 1);
+        return;
+    }
+    if (cmd == CX_SLOT2) {
+        /* S2 (plugin_host.cc): op 0 = get -> ST_OK + 10 bytes per slot (kind, id, 4 x u16 knob, Q15);
+         * op 1 = set: pos (0 instrument, 1 master), kind (0 none, 1 stock type, 2 plugin), id, 4 x u16 knob -> saved
+         * to /yaffs2/user/coop_slot2.bin, then the get reply; op 2 = the loaded plugins as "n=name;" text. */
+        if (pn < 1) { out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
+        if (in[0] == 2) { out[0] = ST_OK; int l = coop_plugin_list((char *)out + 1, (int)sizeof out - 1); reply(cmd, seq, out, 1 + l); return; }
+        if (in[0] == 1) {
+            if (pn < 12) { out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
+            uint16_t k[4];
+            for (int i = 0; i < 4; i++) k[i] = (uint16_t)(in[4 + 2 * i] | (in[5 + 2 * i] << 8));
+            if (!coop_slot2_set(in[1], in[2], in[3], k)) { out[0] = ST_STATE; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
+            if (!coop_slot2_save()) { out[0] = ST_IO; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
+        }
+        out[0] = ST_OK; coop_slot2_get(0, out + 1); coop_slot2_get(1, out + 11);
+        reply(cmd, seq, out, 21);
         return;
     }
     out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++;

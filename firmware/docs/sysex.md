@@ -36,3 +36,15 @@ framing matches co-op's `sysex.js` (HDR, pack7/unpack7), so the same commands ca
 
 Built into the T4a package; the emulator has no USB-MIDI, so it only proves the hook does not disturb boot or
 audio. Device test pending (docs/device-tests.md, T4a).
+
+## Second effect slot: `0x26 SLOT2` (S2, 2026-11-03)
+
+Payload byte 0 is the operation:
+- `0` get: reply status + 10 bytes per slot (instrument, master): kind (0 none, 1 stock type, 2 plugin), id (stock
+  type 0 delay, 1 grid, 2 punch, 3 phone, 4 spring, 5 filter, 6 nitro, 7 cwo; or the plugin number), 4 x u16 knob
+  (Q15, little-endian).
+- `1` set: pos (0 instrument, 1 master), kind, id, 4 x u16 knob. Status 2 = unknown effect or no memory for it,
+  7 = the file write failed. Saved to `/yaffs2/user/coop_slot2.bin`; the reply is the get reply.
+- `2` plugin list: status + `n=name;` text for every loaded plugin.
+
+The host page's "Second effect slot" section reads both slots and the plugin list, and applies one slot at a time.
