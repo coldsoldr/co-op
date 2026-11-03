@@ -382,3 +382,43 @@ Emulator (op1emu, CYCLES = instructions): callback peak 117,647 (was 122,410), h
 residency and the smaller code, which only the device can show. Gates (sequential runs, docs/emulator.md): the full-spread T4a image is sample-identical to the full-spread T3g image on the chord scenario (3,491,181 frames from 2 s); the spread-0 tape image was not compared with stock (the tape-stereo image differs from stock on the tape-monitor path by design; the mono kernels are covered by the simulator check and the full-image identity). The record scenario against the
 T3g image: same level, peak and width (0.2307), the usual one-block timing shift. Stats: 19 writes, 19 tail
 writes, 0 errors; the heaviest-windows ring kept the recording window.
+
+### T4a on the device (2026-11-03)
+
+`docs/device-stats/t4a_2026-11-03_sysex.txt`, read over USB-MIDI while the device ran. Windows are 5 s; "chord"
+windows are those with a recorded six-voice FM chord (`hooks` ~6 per block, `recording 1`).
+
+| Figure | T3g | T4a |
+|---|---|---|
+| Voice hook, worst / average per voice | 33,710 / - | 7,552 / 2,800 cycles |
+| Record tap, worst / average per block (chord) | 48,259 / - | 31,800 / 20,000 |
+| Mix replacement, worst / average per block (chord) | 46,389 / - | 26,605 / 20,000 |
+| Callback, worst block | 461,297 (79%) | 514,697 (89%, the first window after boot) |
+| Callback, average in a chord window | - | 49-57% (`cb_over` 3,138 of 3,451 blocks over half the budget) |
+| Callback, average with the tape rolling, no voices | 12.6-15% | 15.1% |
+| Main-loop passes per 5 s, idle / chord | ~600 / 371 | ~600 / 280-377 |
+| Flush, 64 KiB (half) | 75 ms for 128 KiB | 85-173 ms per half under the chord |
+| Node part load, 64 KiB | 40 ms | 22-28 ms |
+| L1 pool | - | taken, 2,976 bytes, stereo and tape state in L1 |
+
+Reading:
+- **The kernels and the L1 move did what they should**: the hook is 4.5x cheaper at its worst and 2,800 cycles
+  on average per voice; the mix and the record tap each average about 20k per block. Coop's own stages under a
+  recorded six-voice FM chord: hooks ~14k + mix 20k + record tap ~13k incremental = about 47k, **8% of the block**.
+- **The load is the stock engine's.** The callback averages 49-57% in those windows, so about 45% is the stock FM
+  engine with six voices plus the tape path (the eight-lane mix loops are in that figure). The emulator's 13% for
+  a stock chord is an instruction count; the device pays cache misses on the engine's own data.
+- **The visible hitch is the flush under that load.** A 64 KiB yaffs write took 85-173 ms per pass with the audio
+  at 55% (35 ms when idle): it is CPU work (page copies and ECC in software), so it stretches by the audio's share.
+  Recording silence stays smooth because the audio is at 15% then. The remedy is smaller parts per pass (T4b),
+  not a faster write.
+- Two main-loop gaps of 0.9-1.4 s outside our step (the window after boot and the one after a take ended) are
+  stock work: the tape database save when a recording stops.
+- Mismatch counters 0; 15 writes, 15 tail writes, 0 errors; 3 lifts.
+
+### T4b: loads and flushes in 16 KiB parts (2026-11-03)
+
+`PARTS_PER_TRACK 4` in `tape_io.cc`: a node loads in 16 passes of 16 KiB, a track-chunk flushes in 4 passes of 16 KiB
+with the same request/dirty protocol as the halves. Expected on the device: the longest stall per pass under a
+heavy chord about 45 ms instead of 173 ms, at the cost of more passes per chunk (a node load still completes in
+~16 passes, well inside the 0.74 s the lookup requests ahead). Verified in op1emu: the record scenario has the same level, peak and width as T4a (the usual one-block timing shift); the 4-second take across six chunk boundaries, recorded, power-cycled and played from the file, matches the T3g run in RMS and width (0.2316), with 25,166 samples differing by at most 13 LSB in one 1.4 s span (-68 dB; the parts land at different moments against the record head).

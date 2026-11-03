@@ -241,4 +241,25 @@ No reformat. The stock Lander game's sounds are silent on this image (its L1 buf
    shift+COM disk mode and `tape/track_4.aif` as before.
 3. Leave the end of track 4 alone (the stats live in its last 46 ms).
 
+Result (2026-11-03, the owner): **PASS for the SysEx channel**: `tools/coop_sysex.html` answered Hello and read
+`/yaffs2/user/coop_stats.txt` off the running device (`docs/device-stats/t4a_2026-11-03_sysex.txt`; the last line
+came back cut because the device rewrites the file every 5 s while the page reads it in 64-byte steps: T4b's page
+restarts a read when the size changes). The owner recorded one section legato (one voice) and then re-recorded the
+chord. Lag not reported separately. Numbers in `docs/performance.md`, "T4a on the device": the voice hook fell from
+33.7k to 7.5k cycles worst and 2.8k average per voice; coop's stages are now about 8% of the block under a recorded
+six-voice FM chord, but the callback averages 55% there (the stock FM engine plus the tape is the rest), and a
+64 KiB flush half took 85-173 ms with the audio at that load. Next: T4b.
+
+## Milestone T4b: loads and flushes in 16 KiB parts — device test (pending, 2026-11-03)
+
+`build/pkg/op1_246_coop_t4b_stereo_tape.op1` (copy in Downloads; sha256 in the commit). Supersedes T4a. One change:
+node loads and chunk flushes move 16 KiB per main-loop pass instead of 64 KiB (`docs/performance.md`, T4b), so
+the longest main-loop stall under a heavy chord should drop from ~170 ms to ~45 ms. The SysEx page restarts a read
+when the file changes underneath.
+
+**What to do:** flash, boot, wait 10 s. Tape page: record the FM chord for 10 s (hold it), stop, play back, stop,
+wait 15 s. Say whether the tape animation still hitches while the chord is recorded, and how it compares with
+T4a. Then read `/yaffs2/user/coop_stats.txt` with `tools/coop_sysex.html` (Hello should say `build t4b`) and save
+it to Downloads.
+
 Result: _not yet flashed_.
