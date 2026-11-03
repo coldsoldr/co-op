@@ -325,4 +325,10 @@ compute-bound"); coop cannot make it cheaper, only keep the main loop's stalls s
 record a DSynth chord for 10 s, play back, stop, wait 15 s. Say whether the animation hitches with DSynth now,
 and with FM. Read `/yaffs2/user/coop_stats.txt` with `tools/coop_sysex.html` (Hello: `build t4f`), save it.
 
-Result: _not yet flashed_.
+Result (2026-11-03, the owner): **FM is smooth while recording; DSynth is still a bit laggy, not unbearable.**
+Stats over SysEx (`docs/device-stats/t4f_2026-11-03_sysex.txt`): the recorded six-voice DSynth chord averages
+65-67% of the block (3,368-3,448 of 3,450 blocks over half the budget, worst 85%); coop's stages are ~50k of
+that (8.6%: hooks 15k, record tap 17-20k, mix 17k), the stock engine ~57%. Main loop under it: 81 passes/s,
+longest I/O step 25-44 ms, longest gap outside our step 19-53 ms. Mismatch counters 0; 26 loads, 26 flushes,
+0 errors. The combo was not reported. Reading: DSynth with six voices leaves the main loop a third of the CPU
+on stock too; coop adds nine points. `docs/performance.md`, "T4f on the device: where the lag sits now".

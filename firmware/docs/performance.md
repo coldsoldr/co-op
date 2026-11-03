@@ -517,3 +517,29 @@ and the riskiest, so it waits for the owner's verdict on T4e.
 16 KiB parts took 19-52 ms per pass under a DSynth chord (the yaffs work stretches with the audio's share); 8 KiB
 halves that. A node load now takes 32 passes, about 0.3 s at the idle pass rate and 0.45 s under a heavy chord,
 still inside the 0.74 s the lookup requests ahead. Verified in op1emu: the record scenario matches T4e in level, peak and width (onset-aligned residual at most 9 LSB, the usual timing shift), and the 4-second take across six chunk boundaries, power-cycled and played from the file, matches the T4b run within 1 LSB.
+
+### T4f on the device: where the lag sits now (2026-11-03)
+
+`docs/device-stats/t4f_2026-11-03_sysex.txt`. FM is smooth while recording; a six-voice DSynth chord recorded is
+"a bit laggy, not unbearable" (the owner).
+
+| Recorded six-voice DSynth chord | T4c (16 KiB parts) | T4f (8 KiB parts) |
+|---|---|---|
+| Callback average / worst | 59% / 105% | 65-67% / 85% |
+| Coop stages per block | ~55k (9.5%) | ~50k (8.6%) |
+| Stock engine + tape | ~50% | ~57% |
+| Longest I/O step per pass | 19-52 ms | 25-44 ms |
+| Longest main-loop gap outside our step | 17-49 ms | 19-53 ms |
+| Main-loop passes per second | 76 | 81 |
+
+The stock DSynth engine with six voices takes about 57% of the block on its own (the 65% here minus coop's 8.6%;
+the difference to T4c is the take itself, more voices sounding at once), so the main loop gets a third of the
+CPU and a UI pass that costs 15 ms of work stretches to 45. That is the hitch. Stock firmware is in the same
+regime nine points lower. The I/O parts no longer matter at 8 KiB: the longest gaps are now the UI's own passes.
+
+Coop's remaining levers against this: the second record pass while rolling without recording (nothing while
+recording), small trims (under 1% each), and instruction-cache way locking for the hot code (one or two 4 KB
+ways of the 16 KB cache; 3-4% of the block at best, and the riskiest change in the project: the cache controller
+written from the ISR in a documented sequence, untestable in the emulator, which has no cache). Everything else
+is the stock engine's arithmetic. The performance work stops here unless the owner wants the way-locking
+experiment.
