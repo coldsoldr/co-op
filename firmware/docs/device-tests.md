@@ -311,4 +311,18 @@ per block down from ~20k by a few thousand cycles; nothing audible.
 **What to do:** as T4d (the four-key combo must do nothing), then a recorded FM chord and the stats over SysEx
 (Hello: `build t4e`). Say whether the tape animation hitches at all now, with FM and with Voltage.
 
+Result: _superseded by T4f before a run_.
+
+## Milestone T4f: 8 KiB I/O parts — device test (pending, 2026-11-03)
+
+`build/pkg/op1_246_coop_t4f_stereo_tape.op1` (copy in Downloads; sha256 in the commit). Supersedes T4e (which it
+includes: the decimator pair, the Lander combo swallowed). One change: node loads and chunk flushes move 8 KiB per
+main-loop pass instead of 16 (`docs/performance.md`, T4f), halving the longest stall under a DSynth chord once more
+(19-52 ms per pass on T4c). DSynth itself is the stock engine's own arithmetic (`docs/performance.md`, "DSynth is
+compute-bound"); coop cannot make it cheaper, only keep the main loop's stalls short.
+
+**What to do:** flash. Hold synth + drum + tape + mixer together: nothing should happen. Then on the tape page
+record a DSynth chord for 10 s, play back, stop, wait 15 s. Say whether the animation hitches with DSynth now,
+and with FM. Read `/yaffs2/user/coop_stats.txt` with `tools/coop_sysex.html` (Hello: `build t4f`), save it.
+
 Result: _not yet flashed_.

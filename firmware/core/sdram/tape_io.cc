@@ -295,7 +295,7 @@ extern "C" int coop_tape_write_tail(const char *text, int len)
  * chunk changed under us restarts from part 0. */
 /* T4b: 16 KiB parts. On the device a 64 KiB yaffs write took 85-173 ms with the audio at 55% (the write is CPU work,
  * so it stretches with the audio load); a quarter keeps every pass's stall near a frame. */
-#define PARTS_PER_TRACK 4
+#define PARTS_PER_TRACK 8                                           /* T4f: 8 KiB parts; 19-52 ms per 16 KiB under a DSynth chord on the device */
 #define LOAD_PARTS    (TRACKS * PARTS_PER_TRACK)
 #define PART_FRAMES   (FRAMES_PER_CHUNK / PARTS_PER_TRACK)
 #define PART_LANE     (LANE_BYTES / PARTS_PER_TRACK)

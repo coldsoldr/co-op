@@ -510,3 +510,10 @@ still do: its own 10% (the second record pass while the tape rolls without recor
 I/O parts are already at 16 KiB. Instruction-cache way locking would keep DSynth's 4 KB of render code resident
 across the main loop (one way of the 16 KB cache), worth at most the per-block refill, ~3-4%; it is the last lever
 and the riskiest, so it waits for the owner's verdict on T4e.
+
+### T4f: 8 KiB I/O parts (2026-11-03)
+
+`PARTS_PER_TRACK 8` in `tape_io.cc`: a node loads in 32 passes of 8 KiB, a track-chunk flushes in 8. On T4c the
+16 KiB parts took 19-52 ms per pass under a DSynth chord (the yaffs work stretches with the audio's share); 8 KiB
+halves that. A node load now takes 32 passes, about 0.3 s at the idle pass rate and 0.45 s under a heavy chord,
+still inside the 0.74 s the lookup requests ahead. Verified in op1emu: the record scenario matches T4e in level, peak and width (onset-aligned residual at most 9 LSB, the usual timing shift), and the 4-second take across six chunk boundaries, power-cycled and played from the file, matches the T4b run within 1 LSB.
