@@ -41,11 +41,63 @@ coop reference (the v1 image's full-spread output, which v2 must reproduce withi
 - The stock mono stages run for nothing until patched out: ~10% of the block (their cost today). Patching them
   out (the decimator call, the DC block, the mono FX dispatch, in L1) is the second step.
 
+## What the stock structure allows (measured 2026-11-03)
+
+Per block the stock calls mix loop A and then mix loop B once each (117,222 hook calls for 58,611 blocks, the site
+marker alternating 0xffa00f30 / 0xffa00fb2), both on the same summed mono bus. So the stock order is: per
+instrument, voices -> sum -> decimate -> that instrument's FX -> added into one mono bus -> DC -> loops A and B into
+the master pair. The instrument FX render (the hijacked vtable entry of P2) is therefore the one place where an
+instrument's signal exists on its own, after decimation and before the sum, and P2b already hands it that
+instrument's side pair there. The v2 path is realised at that point:
+
+- the pair is formed before any effect: `L = mono + dL`, `R = mono + dR` (the mono bus is the dry mid, the side
+  pair the per-voice placement), and every effect, stock or plugin, runs on the pair;
+- the effect's output goes back as the new mono and the new side, so the stock sum, DC block and mix loops carry
+  the processed stereo signal unchanged in form;
+- a stock effect selected at an instrument position runs as the stock *stereo* object of that type (the master's
+  dual-mono implementation), instantiated by coop for that position; the stock mono render of every type becomes
+  a no-op, so the mono bus is never processed on its own again.
+
+Keeping the carrier as mono + difference instead of two plain buses is an implementation choice: it is the same
+stereo signal, it keeps spread 0 bit for bit with stock when no effect runs, and it changes no stock code on the
+carrier. What the owner asked for holds: effects see the whole stereo signal, nothing bypasses them.
+
+## S1 as built (2026-11-03)
+
+- Every stock mono FX vtable's render (+0x14) and init (+0x1c) entry points at `coop_fx_render_mono` /
+  `coop_fx_init_mono` (`tools/l1_stereo_insert.py`, `FX_MONO_CLASSES`), so no stock mono effect runs on the mono
+  bus any more. [C in bytes, I on device]
+- The stock keeps **one** instrument FX object for the synth and drum positions (placement-constructed at
+  0xffb00600, pointer 0x1aaad60) and renders it once per block for the active instrument; its init carries the
+  position. coop keeps one stereo twin to match: on init it constructs the selected type's *stereo* class (the
+  master's) in its own heap object (`st_make`, `plugin_host.cc`), and on render it runs that object on
+  `L = sat(mono + dL)`, `R = sat(mono + dR)` and writes back mono `(l + r) / 2` and the side `l - m`, `r - m`.
+  [C in op1emu]
+- Buffers. The delay and cwo stereo classes take their line from the table at 0x01AB8B94 (`[+0x14]` read per
+  render by delay, `[+8]` cached at construction by cwo); the twin gets its own line (0x2B14C bytes) and the table
+  entry is swapped around the call. punch, phone, filter and nitro are dual-mono: their stereo render calls the
+  stock mono render function directly (not through the vtable), so they need nothing. grid and spring keep a tank at
+  a fixed address in their stereo code (grid 0x01D8C70C, spring 0x01DE1F50 / 0x01DE6248; the mono classes use
+  0x01D0868C and their own), so **the same one of those two types at an instrument and on the master at once shares
+  one tank**: bounded, audible as interference. Planned fix: clones of those two renders retargeted at the mono
+  tanks, which nothing uses now. [I from the disassembly]
+- The stock delay is mono inside: its stereo render sums `g·(L + R)` into one scratch buffer (L1 0xFF801B50)
+  before the line, so its echoes are centred wherever it runs, the master included. Echoes that follow the
+  placement need a stereo delay (the coop `stereo_delay` plugin does it). [I from the disassembly, matches the
+  emulator: the side energy of the S1 delay tail is 16, 2, 0 per 200 ms]
+
+Emulator gates (op1emu, 2026-11-03, sequential runs):
+- **Nothing bypasses the effect.** The chord with stock phone and with stock spring at the synth position: the
+  side signal of the loudest second correlates 0.994 between the two effects on P2b (the side is the dry
+  placement whatever the effect) and 0.185 on S1 (each effect processes it). Spring on S1: mid 859, side 607
+  (P2b: mid 1803, side 250 dry); the reverb is wide now.
+- No faults with delay, phone, spring at the synth position (`det_fx_stock_delay.txt`, `det_fx_stock_phone.txt`).
+
 ## Steps
 
 1. **RE** (in progress): the stock master FX objects per type (vtable, ctor, size, render/init entries), the master
    FX factory, the mono vtables' render entries, the position dispatch tables.
-2. **S1**: per-instrument L/R buses in `stereo_bus.cc` (replacing the pairs of P2b), the mix kernels take L/R
+2. **S1** (built, see above; realised at the insert point instead of new buses): per-instrument L/R buses in `stereo_bus.cc` (replacing the pairs of P2b), the mix kernels take L/R
    directly, the record tap takes L/R; the mono FX dispatch of all stock types made a no-op that records the
    selected type per position; coop instantiates the stock stereo object of that type for the position and runs
    it on the L/R buses (dual-mono inside, as the master does); coop plugins run on the same buses. Gate: v1 full

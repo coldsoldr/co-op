@@ -395,3 +395,26 @@ the synth position lets the dry signal through: the per-voice side signal bypass
 back at the mix, so with any spread the unfiltered stereo part is heard. The owner's recommendation, adopted: a
 native stereo instrument bus from the pan hook on, every FX slot stereo, the stock master effects (already stereo)
 instantiated for the instrument positions, the mono buses dropped. `docs/stereo-bus-v2.md`. P2b is not retested.
+
+## Stereo bus v2 step S1: stock effects in stereo at the instrument positions — device test (pending, 2026-11-03)
+
+`build/pkg/op1_246_coop_s1_plugins.op1` (copy in Downloads; sha256
+`c6ca6f48ac167fb51ba7316b4740542ed47d0d08e30d569e7ffb16e1d80ba60d`). Supersedes P2b. Every effect at the synth and
+drum positions now runs on the instrument's whole stereo signal: a stock effect runs as its stereo (master) class,
+a plugin as before (`docs/stereo-bus-v2.md`, S1). Emulator: with phone or spring at the synth position the side
+signal is processed (correlation of the side between the two effects 0.994 on P2b, 0.185 on S1); with no effect
+chosen the chord is P2b's within 2 LSB; the plugin path is sample-identical.
+
+**What to do:**
+1. Flash. Hello on `tools/coop_sysex.html` says `build s1`. Play with spread up: it must sound as before.
+2. Synth page, FX list (shift + key 3): pick **phone**, then **punch**, then **nitro**, with a wide chord. The whole
+   sound must be processed: no dry part leaking through on either side (the P2b fault). Headphones show it best.
+3. Pick **spring**: the reverb should now be wide, not centred.
+4. Pick **delay**: the echoes are centred. That is the stock delay's design (it sums L and R into one line, on the
+   master too); "stereo delay" (the coop plugin, if installed) keeps the placement.
+5. The drums with a panned kit through phone at the drum position: no dry leak.
+6. Known limit, worth one try: grid or spring on the synth **and** the same type on the master at once interfere
+   (they share one tank in the stock code). Any crash or hang is a fail; odd sound there is expected.
+7. Stats: the `plugins` line has `stock_st_blocks` (blocks a stock effect ran in stereo) and `stock_st_made`.
+
+Result: _not yet flashed_.

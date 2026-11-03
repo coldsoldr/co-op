@@ -300,7 +300,79 @@ extern "C" int coop_fx_name_eq(const char *name, const dstr *s)
     return 0;
 }
 
-/* ---- dispatch at the three positions (the filter vtables point here) ---- */
+/* ---- the stock effects as stereo objects at the instrument positions (stereo bus v2, S1) ----
+ * Every stock mono FX vtable's render / init entries point at coop_fx_render_mono / init_mono (the package tool), so
+ * the stock mono effect never runs on the mono bus. When a stock type is selected at an instrument position, coop
+ * constructs that type's *stereo* object (the master's class: dual-mono inside, or native stereo) in its own memory
+ * and runs it on the instrument's stereo pair. Classes and entries from the stock disassembly (docs/stereo-bus-v2.md,
+ * RE 2026-11-03): type index = the stock name table order (delay 0, grid 1, punch 2, phone 3, spring 4, filter 5,
+ * nitro 6, cwo 7); vtable entries are 8 bytes apart, render at +0x14, init at +0x1c. */
+#define FX_TYPES 8
+#define OBJ_BYTES 0x400                                                   /* every stereo object fits the 0x270 placement gap */
+#define LINE_TABLE ((volatile uint32_t *)0x01AB8B94u)                     /* delay / cwo line buffers: [+0xc] mono delay, [+0x14] stereo delay, [+0] mono cwo, [+8] stereo cwo */
+#define LINE_BYTES 0x2B14Cu                                               /* one line buffer (0x1b0ee48 - 0x1ae3cfc) */
+/* Known S1 limit: the stereo grid and spring classes keep their tank at a fixed address (grid 0x01D8C70C, spring
+ * 0x01DE1F50 / 0x01DE6248, immediates in their render and init; the mono classes use other ones), so the same one of
+ * those two types at an instrument position and on the master at once shares one tank. Bounded (positions live in
+ * the object), audible as interference. Fix planned with S3: clones of those two renders retargeted at the unused
+ * mono tanks. punch, phone, filter and nitro are dual-mono (their stereo render calls the mono render directly). */
+struct fx_class { uint32_t mono_vt, st_ctor, st_vt; };
+static const struct fx_class g_fx_class[FX_TYPES] = {
+    { 0x0190FB6Cu, 0x0197D880u, 0x0190FB8Cu },   /* delay  */
+    { 0x01910204u, 0x019AF25Cu, 0x01910224u },   /* grid   */
+    { 0x01910C1Cu, 0x019E61BCu, 0x01910C3Cu },   /* punch  */
+    { 0x019112F4u, 0x01A1C144u, 0x01911314u },   /* phone  */
+    { 0x019113BCu, 0x01A32F94u, 0x019113DCu },   /* spring */
+    { 0x01910C94u, 0x019E784Cu, 0x01910CB4u },   /* filter */
+    { 0x01910014u, 0x019A6200u, 0x01910034u },   /* nitro  */
+    { 0x0190F574u, 0x0194425Cu, 0x0190F594u },   /* cwo    */
+};
+typedef void (*st_render_fn)(void *, int16_t *, int16_t *, const int16_t *);
+typedef void (*st_init_fn)(void *);
+struct st_inst { void *obj; int type; uint8_t *line; };
+static struct st_inst g_st[2];                                            /* [0]: the stock has one instrument FX object for both positions */
+static int g_fx_pos;                                                       /* the position of its last init: which instrument bus it processes */
+volatile uint32_t g_fx_stock_stereo_blocks, g_fx_stock_ctor;
+
+static int type_of_mono(void *self)
+{
+    uint32_t vt = *(uint32_t *)self;
+    for (int t = 0; t < FX_TYPES; t++) if (g_fx_class[t].mono_vt == vt) return t;
+    return -1;
+}
+static inline uint32_t vt_entry(uint32_t vt, int off) { return *(volatile uint32_t *)(vt + off); }
+
+/* construct (or reconstruct) position pos's stereo object of stock type t */
+static void st_make(int pos, int t)
+{
+    struct st_inst *s = &g_st[pos];
+    if (!s->obj) s->obj = MALLOC(OBJ_BYTES);
+    if (!s->obj) { s->type = -1; return; }
+    if ((t == 0 || t == 7) && !s->line) s->line = (uint8_t *)MALLOC(LINE_BYTES);   /* its own delay line */
+    if ((t == 0 || t == 7) && !s->line) { s->type = -1; return; }
+    uint8_t *o = (uint8_t *)s->obj;
+    for (uint32_t i = 0; i < OBJ_BYTES; i += 4) *(volatile uint32_t *)(o + i) = 0;
+    uint32_t save8 = LINE_TABLE[2];
+    if (t == 7) LINE_TABLE[2] = (uint32_t)(uintptr_t)s->line;              /* cwo caches its line at construction */
+    ((void (*)(void *))(uintptr_t)g_fx_class[t].st_ctor)(s->obj);
+    if (t == 7) LINE_TABLE[2] = save8;
+    ((st_init_fn)(uintptr_t)vt_entry(g_fx_class[t].st_vt, 0x1c))(s->obj);
+    s->type = t;
+    g_fx_stock_ctor++;
+}
+
+static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
+{
+    struct st_inst *s = &g_st[pos];
+    int t = s->type;
+    uint32_t save = LINE_TABLE[5];
+    if (t == 0) LINE_TABLE[5] = (uint32_t)(uintptr_t)s->line;              /* the stereo delay reads its line from the table each render */
+    ((st_render_fn)(uintptr_t)vt_entry(g_fx_class[t].st_vt, 0x14))(s->obj, l, r, params);
+    if (t == 0) LINE_TABLE[5] = save;
+    g_fx_stock_stereo_blocks++;
+}
+
+/* ---- dispatch at the three positions (the mono vtables of every stock type point here) ---- */
 static int fx_index(int n) { return (n > 0 && n < SLOTS && g_plug[n].fx) ? n : 0; }
 
 /* kennel's guard: keep the raw knob words of every slot running a plugin inside the filter type's ranges; the stock
@@ -324,20 +396,35 @@ extern "C" void coop_fx_init_mono(void *self, int pos)
 {
     g_self[pos & 1] = self;
     g_cur[pos & 1] = -1;
-    FILTER_INIT(self, pos);
+    g_fx_pos = pos & 1;
+    int t = type_of_mono(self);                                           /* the stock just constructed this mono object: */
+    if (t >= 0) st_make(0, t);                                            /* its stereo twin (one object serves both positions) */
 }
 
 extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *params)
 {
     g_fx_dispatch_mono++;
     fx_sanitize();
-    int pos = self == g_self[1] ? 1 : 0;
+    (void)self;
+    int pos = g_fx_pos;
     int e = fx_index(params[4] - MAGIC);
-    if (!e) { g_cur[pos] = 0; FILTER_RENDER(self, buf, params); return; }
-    const coop_fx_t *fx = g_plug[e].inst[pos];
-    if (e != g_cur[pos]) { g_cur[pos] = e; if (fx->init(pos) != 0) { g_plug[e].fx = 0; FILTER_RENDER(self, buf, params); return; } }
     int16_t *dL, *dR;
     coop_stereo_side_rw(pos, &dL, &dR);                                  /* this instrument's own side pair (P2b) */
+    if (!e) {                                                             /* a stock type: its stereo object on the pair (S1) */
+        g_cur[pos] = 0;
+        int t = type_of_mono(self);
+        if (t < 0 || g_st[0].type != t) return;                          /* no twin (construction failed): pass through dry */
+        int16_t l[BLOCK], r[BLOCK];
+        for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16((int32_t)buf[i] + dL[i]); r[i] = coop_sat16((int32_t)buf[i] + dR[i]); }
+        st_render(0, l, r, params);
+        for (int i = 0; i < BLOCK; i++) {
+            int16_t m = (int16_t)(((int32_t)l[i] + r[i]) >> 1);
+            buf[i] = m; dL[i] = (int16_t)(l[i] - m); dR[i] = (int16_t)(r[i] - m);
+        }
+        return;
+    }
+    const coop_fx_t *fx = g_plug[e].inst[pos];
+    if (e != g_cur[pos]) { g_cur[pos] = e; if (fx->init(pos) != 0) { g_plug[e].fx = 0; return; } }
     int32_t L[BLOCK], R[BLOCK];
     for (int i = 0; i < BLOCK; i++) {                                     /* the instrument in stereo: mono + its difference */
         L[i] = (int32_t)coop_sat16((int32_t)buf[i] + dL[i]) << 16;

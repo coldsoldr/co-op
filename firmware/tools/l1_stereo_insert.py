@@ -108,9 +108,17 @@ KEY_DISPATCH = 0x019b6c74
 # The stock filter FX object's vtables: mono (synth / drum positions) at 0x01910C94 and the stereo master wrapper at
 # 0x01910CB4, entry 2 = render, entry 3 = init (kennel make_firmware.py). The fx_types name compare at 0x019AAD8E
 # (`R3 = R0; P1 = R3`) becomes a JUMP.L to a region-C jump trampoline -> coop_fx_name_eq.
-FX_VTABLE_PATCHES = [                                             # (address, stock function, thunk name); entries are
-    (0x01910CA8, 0x019E7934, 'fx_render_mono'), (0x01910CB0, 0x019E780A, 'fx_init_mono'),   # 8 bytes apart in the LDR
-    (0x01910CC8, 0x019E7EE4, 'fx_render_st'), (0x01910CD0, 0x019E78D0, 'fx_init_st')]
+# Stereo bus v2 (S1, docs/stereo-bus-v2.md): every stock mono FX type's vtable (entries 8 bytes apart: render at +0x14,
+# init at +0x1c) dispatches to coop, which runs the type's stereo object on the instrument's stereo pair; the stereo
+# master filter's entries carry the plugin path at the master position. (mono vtable, render, init) in the stock
+# name-table order delay, grid, punch, phone, spring, filter, nitro, cwo (RE 2026-11-03).
+FX_MONO_CLASSES = [
+    (0x0190FB6C, 0x0197D8C4, 0x0197D7E8), (0x01910204, 0x019AF338, 0x019AF1B6), (0x01910C1C, 0x019E6260, 0x019E6160),
+    (0x019112F4, 0x01A1BB74, 0x01A1C03E), (0x019113BC, 0x01A326E8, 0x01A32E9A), (0x01910C94, 0x019E7934, 0x019E780A),
+    (0x01910014, 0x019A62A4, 0x019A61BE), (0x0190F574, 0x0194480C, 0x019436FE)]
+FX_VTABLE_PATCHES = [(vt + 0x14, render, 'fx_render_mono') for vt, render, init in FX_MONO_CLASSES] + \
+                    [(vt + 0x1c, init, 'fx_init_mono') for vt, render, init in FX_MONO_CLASSES] + \
+                    [(0x01910CC8, 0x019E7EE4, 'fx_render_st'), (0x01910CD0, 0x019E78D0, 'fx_init_st')]
 FXNAME_SITE = 0x019aad8e
 FXNAME_STOCK = bytes.fromhex('18300b32')
 SEAM_SITE = 0xffa0706e                                               # P2.L = 0xef7c; P2.H = 0x1b4 before the seam loop (hook B)

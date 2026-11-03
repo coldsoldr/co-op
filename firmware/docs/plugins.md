@@ -90,11 +90,29 @@ Emulator (2026-11-03, `tests/sim/det_fx_select.txt` on the plugin NAND): the sto
 
 Emulator (2026-11-03): with no plugin the chord scenario is sample-identical to P2 and the record scenario to T4e (the split is transparent); with the plugin at the synth position (`det_fx_select.txt`) the echo tail after the release keeps its side energy (mid/side 189/45, 84/14, 64/4 per 200 ms against P2's 193/30, 85/5, 64/1): the repeats follow the placement now.
 
+## Stereo bus v2 step S1: stock effects in stereo at the instrument positions (2026-11-03)
+
+The owner found the P2b flaw on the device: a stock effect at the synth position ran on the mono sum while the
+per-voice side signal bypassed it (`docs/stereo-bus-v2.md`). S1 makes every effect at an instrument position, stock
+or plugin, run on the whole stereo pair:
+- all eight stock mono FX vtables (render, init) point at `coop_fx_render_mono` / `coop_fx_init_mono`; the stock
+  mono render no longer runs on the mono bus;
+- a stock type is run as its stereo class (the master's), constructed by coop in its own memory on the position's
+  init (`st_make`), with its own line for delay and cwo; a plugin runs as in P2b;
+- the stats `plugins` line adds `stock_st_blocks` (blocks a stock stereo twin rendered) and `stock_st_made`
+  (constructions); the build tag is `s1`.
+
+Limits: the stock delay sums L and R into its line, so its echoes are centred (as on the master); grid and spring
+share one fixed tank between an instrument position and the master (`docs/stereo-bus-v2.md`). The FX list of R246
+has no filter row (cwo, delay, grid, nitro, phone, punch, spring, then the plugin rows); the filter type only carries
+plugins.
+
 ## Next
 
 - P1b: SysEx `FILE_PUT` / `FILE_DELETE` (kennel's devupd framing, 64-byte chunks) so plugins can be installed from
   `tools/coop_sysex.html` while the device runs; then the device test of P1.
-- P2: FX slots (synth 0, drum 1, master 2 as positions), the core-owned parameter store with coarse/fine, pages,
+- S2: a second FX slot per instrument and on the master; S3: the stock mono stages patched out.
+- Then: the core-owned parameter store with coarse/fine, pages,
   the knob bindings; saved sounds with the `"coop"` JSON member.
 - P3: engines (`coop_engine_t`, 128 samples at 88.2 kHz, stereo or mono-with-flag), LFO and sequencer objects,
   screens through the stock SVG renderer; the L1 and big-buffer leases (`kn_l1.c` model).
