@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "t4c"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "t4d"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       12
 #define TOP           8
@@ -39,7 +39,8 @@ extern volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g
 extern volatile uint32_t g_tape_io_steps_win;
 extern volatile uint32_t g_edit_lifts, g_edit_drops, g_edit_erases, g_edit_errors, g_edit_mono_fallbacks;
 extern volatile uint32_t g_master_cycles, g_fx_cycles;
-extern volatile uint32_t g_l1_state, g_l1_used, g_l1_refused, g_l1_sine_copied;                                 /* l1_pool.cc */
+extern volatile uint32_t g_l1_state, g_l1_used, g_l1_refused, g_l1_sine_copied;
+extern volatile uint32_t g_lander_swallowed;   /* lander_off.cc */                                 /* l1_pool.cc */
 extern "C" int coop_tape_write_tail(const char *text, int len);   /* tape_io.cc: the last 8 KiB of track 4's audio */
 
 volatile uint32_t g_stats_writes, g_stats_errors, g_stats_windows, g_stats_ticks, g_stats_tail_writes, g_stats_tail_errors;
@@ -87,7 +88,7 @@ static void write_file(void)
     put("stages"); kv("rec_max", g_tape_rec_cycles_max); kv("mix_max", g_stereo_mix_cycles_max);
     kv("hook_max", g_stereo_hook_cycles_max); kv("lfo2_max", g_lfo2_cycles_max); kv("master_max", g_master_cycles);
     kv("fx_max", g_fx_cycles); kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
-    put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); put("\n");
+    put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
     put("tape"); kv("rec_calls", g_tape_rec_calls); kv("rec_side_blocks", g_tape_rec_side_blocks);
     kv("mismatch", g_tape_state_mismatch); kv("mismatch2", g_tape_state_mismatch2); kv("mismatch_word", g_tape_mismatch_word);
     kv("seam_fills", g_tape_seam_fills); put("\n");

@@ -455,3 +455,31 @@ L1 code at `0xffa04bc2`), refusing the image if the count differs. The L1 copy i
 on the pool check); with kennel's audit (`kn_l1.h`: the range is read by one Lander function only, through its
 table, never written, never a DMA target) the only effect on the game is silent sound effects. `l1 ... sine 1` in
 the stats. Verified in op1emu (sequential gates): the T4c full image is sample-identical to T4b on the chord scenario (3,407,390 frames from 2 s: every retargeted reader finds the copy in place), and the record scenario matches in level, peak and width.
+
+### T4c on the device (2026-11-03)
+
+`docs/device-stats/t4c_2026-11-03_sysex.txt`; the owner recorded chords with FM, then Voltage, then DSynth, so the
+chord windows map to the engines in that order (seq 6 FM, seq 12-14 Voltage, seq 18-20 DSynth; six voices where
+`hooks` is ~20,700 a window, four where ~13,800).
+
+| Engine, six-voice chord recorded | T4b | T4c |
+|---|---|---|
+| FM, callback average | 51-55% | **38%** |
+| Voltage, callback average | - | 50-64%, one block at 105% |
+| DSynth, callback average | - | 47-59% (four voices) |
+| Coop stages (hooks + mix + record tap) | ~60k (10%) | ~55k (9.5%) |
+| Longest I/O step per pass | 26-53 ms | 19-52 ms |
+
+The sine table in L1 took about 15 points off the FM chord: that was the engine's miss cost, as suspected. Voltage
+and DSynth read other things per sample (their own waveforms or tables in SDRAM), and the pool has about 5 KB
+left below the sine copy, so moving theirs needs first finding them and their sizes (the op1emu profiler build
+can point at the hot engine code, then its pointer constants name the tables). Two blocks of 2.1 M cycles (3.7
+blocks, `cb max`) sit at the engine switches, stock patch-loading work inside the callback.
+
+### T4d: the Lander game unreachable (2026-11-03)
+
+`core/sdram/lander_off.cc`: the KeyHandler dispatch (`CALL 0x019B6C74` at `0x019C2D3E`) goes through
+`coop_key_event`, which swallows the fourth mode key when synth + drum + tape + mixer are all held (kennel's
+`key_event_hook` rule) and passes everything else on. Kennel's stub screen object (`lander_stub`) was ported first
+and hung the stock boot in op1emu 0.7 s after it ran (kennel's recipe leans on its other screen hooks), so the game's
+screen is still created at boot; it cannot be entered, and its sound table points at size-0 dummies.

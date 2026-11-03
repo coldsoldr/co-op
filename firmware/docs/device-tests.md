@@ -282,4 +282,21 @@ chord 10 s, stop, play back, stop, wait 15 s. Then the same with the Voltage mod
 animation hitches, and whether anything sounds different (it must not: the table is a copy). Read
 `/yaffs2/user/coop_stats.txt` with `tools/coop_sysex.html` (Hello: `build t4c`), save to Downloads.
 
+Result (2026-11-03, the owner): FM, Voltage and DSynth chords recorded in that order; stats read over SysEx
+(`docs/device-stats/t4c_2026-11-03_sysex.txt`, `l1 ... sine 1`). Reading the windows in that order
+(`docs/performance.md`, "T4c on the device"): the six-voice FM chord averages **38%** of the block (51-55% on T4b),
+Voltage 50-64% with one block at 105%, DSynth 47-59%. Mismatch counters 0; two blocks of 2.1 M cycles (3.7 blocks)
+at engine switches, stock work. No sound difference reported.
+
+## Milestone T4d: the Lander game unreachable — device test (pending, 2026-11-03)
+
+`build/pkg/op1_246_coop_t4d_stereo_tape.op1` (copy in Downloads; sha256 in the commit). Supersedes T4c. One change:
+the four-mode-key combo that enters the stock Lander game is swallowed (`core/sdram/lander_off.cc`), so the game
+whose sound buffers now hold coop's L1 data can never run. Kennel's stub screen object was tried first and hung the
+boot in op1emu, so the game's screen is still created at boot as stock does; it is simply unreachable. Verified in
+op1emu (`tests/sim/det_lander_combo.txt`): boots, plays, the combo swallowed twice, no fault.
+
+**What to do:** flash, hold synth + drum + tape + mixer together: nothing should happen (stock would start the
+game). Then use the device as usual; the stats are read the same way (Hello: `build t4d`). No other change.
+
 Result: _not yet flashed_.

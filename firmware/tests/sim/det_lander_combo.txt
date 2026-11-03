@@ -1,0 +1,39 @@
+# The removed Lander game (T4d): boot, hold the four mode keys together (the stock combo that enters the game),
+# release, play a chord: the firmware must stay up and make sound (the combo's fourth key is swallowed).
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+press synth
+at 30200
+press drum
+at 30400
+press tape
+at 30600
+press mixer
+at 31600
+release mixer
+release tape
+release drum
+release synth
+at 32500
+tap synth 300
+at 33500
+press c4
+press e4
+press g4
+at 34500
+release c4
+release e4
+release g4
+at 36000
+press synth
+press drum
+press tape
+press mixer
+at 37000
+release synth
+release drum
+release tape
+release mixer
+wait 42000
+quit

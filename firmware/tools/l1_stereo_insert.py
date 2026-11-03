@@ -99,6 +99,11 @@ MIDI_RX_PARSE = 0x019e31a4
 SINE_TABLE = 0x0101e5e8
 SINE_L1 = 0xff902900
 SINE_REFS = 27
+# --- the Lander game removed (milestone T4d, core/sdram/lander_off.cc, kennel's recipe) ---
+LANDER_GETTER = 0x019c4ecc                                        # the Lander screen instance getter
+LANDER_SITES = (0x01a3bdb0, 0x019c35f0, 0x019c369c)                # screen list, LanderController key_down / key_up
+KEYEV_SITE = 0x019c2d3e                                           # KeyHandler dispatch: CALL key_dispatch (code, pressed)
+KEY_DISPATCH = 0x019b6c74
 SEAM_SITE = 0xffa0706e                                               # P2.L = 0xef7c; P2.H = 0x1b4 before the seam loop (hook B)
 SEAM_STOCK = bytes.fromhex("0ae17cef" "4ae1b401")
 SEAM_FILL_SITE = 0xffa073b8                                          # P1 = 0x01a54284 (the stock seam fill) -> coop_seam_fill
@@ -237,6 +242,8 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
     out += [(site, call24(site, TAPE_ERASE), call24(site, sdram_tramp_at + 80)) for site in TAPE_ERASE_CALLERS]
     if thunks_global.get('sysex_rx'):
         out.append((MIDI_RX_SITE, call24(MIDI_RX_SITE, MIDI_RX_PARSE), call24(MIDI_RX_SITE, sdram_tramp_at + 96)))
+    if thunks_global.get('keyev'):                             # the Lander combo swallowed (the getter sites stay stock:
+        out.append((KEYEV_SITE, call24(KEYEV_SITE, KEY_DISPATCH), call24(KEYEV_SITE, sdram_tramp_at + 112)))   # a stub screen hung the boot in op1emu)
     return out + list(TAPE_BYTE_PATCHES)
 
 
@@ -277,6 +284,10 @@ def core_noteon_patches(sdram_tramp_at=SDRAM_TRAMP_AT):
 def thunk_addresses(elf):
     syms = read_elf_symbols(elf)
     try:
+        keyev = symbol_address(syms, 'coop_key_event')[0]
+    except Exception:
+        keyev = None
+    try:
         sine_copy = symbol_address(syms, 'coop_l1_sine_copy')[0]
     except Exception:
         sine_copy = None
@@ -284,7 +295,7 @@ def thunk_addresses(elf):
         sysex_rx = symbol_address(syms, 'coop_sysex_rx_poll')[0]
     except Exception:                                  # an ELF without the SysEx channel
         sysex_rx = None
-    return {'sysex_rx': sysex_rx, 'sine_copy': sine_copy,'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
+    return {'sysex_rx': sysex_rx, 'sine_copy': sine_copy, 'keyev': keyev,'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
             'drum': symbol_address(syms, 'coop_drum_render_thunk')[0],
             'mix': symbol_address(syms, 'coop_mix_thunk')[0],
             'noteon': symbol_address(syms, 'coop_synth_noteon_thunk')[0],
@@ -328,11 +339,16 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
         sdram_blob += build_jump_tramp(thunks['lift']) + build_jump_tramp(thunks['drop']) + build_jump_tramp(thunks['erase'])   # +48, +64, +80
         if thunks.get('sysex_rx'):
             sdram_blob += build_jump_tramp(thunks['sysex_rx'])                                                             # +96
+        if thunks.get('keyev'):
+            sdram_blob += build_jump_tramp(thunks['keyev'])                                                                # +112
     dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, sdram_blob))
     for name, a, b in tramps:
         lines.append('tramp_{} at {:#x} ({} B) -> {:#x}'.format(name, a, len(b), thunks[name]))
     lines.append('sdram tramp at {:#x} (16 B) -> {:#x} for Core::NoteOn callers {}'.format(
         SDRAM_TRAMP_AT, thunks['core_noteon'], ', '.join('{:#x}'.format(s) for s in CORE_NOTEON_CALLERS)))
+    if tape and thunks.get('keyev'):
+        lines.append('sdram tramp at {:#x} -> {:#x} (key dispatch caller {:#x}: the Lander combo swallowed)'.format(
+            SDRAM_TRAMP_AT + 112, thunks['keyev'], KEYEV_SITE))
     if tape and thunks.get('sysex_rx'):
         lines.append('sdram tramp at {:#x} -> {:#x} (midi_rx_parse caller {:#x}: the SysEx file channel)'.format(
             SDRAM_TRAMP_AT + 96, thunks['sysex_rx'], MIDI_RX_SITE))
