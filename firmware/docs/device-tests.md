@@ -390,4 +390,8 @@ so the same plugin at two positions keeps two states.
 hard-left too (and a hard-right note's hard-right). Then the drums with a panned kit through the same plugin at
 the drum position. The master slot as before. Then play without any plugin selected: it must sound as T4f.
 
-Result: _not yet flashed_.
+Result (2026-11-03, the owner, on P2/P2b): **the design is wrong at the instrument positions.** A stock filter at
+the synth position lets the dry signal through: the per-voice side signal bypasses the mono effect and is added
+back at the mix, so with any spread the unfiltered stereo part is heard. The owner's recommendation, adopted: a
+native stereo instrument bus from the pan hook on, every FX slot stereo, the stock master effects (already stereo)
+instantiated for the instrument positions, the mono buses dropped. `docs/stereo-bus-v2.md`. P2b is not retested.
