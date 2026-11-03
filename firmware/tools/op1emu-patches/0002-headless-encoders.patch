@@ -1,0 +1,61 @@
+diff --git a/gui/headless.cpp b/gui/headless.cpp
+index 8fa68f7..de503f6 100644
+--- a/gui/headless.cpp
++++ b/gui/headless.cpp
+@@ -28,6 +28,17 @@ HeadlessFrontend::HeadlessFrontend(const std::string& configPath, int inputFd) {
+             throw std::runtime_error("Invalid GPIO for key: " + name);
+         keys_.emplace(name, Pin{bank, index});
+     }
++    // coop-fw: the encoders, for `turn ENC cw|ccw [STEPS]` (guest-timed, after an `at`): each step advances the
++    // two-pin Gray sequence 0,2,3,1 the GUI's clicks produce, 20 ms apart; four steps are one detent.
++    if (json.contains("encoders")) {
++        for (const auto& [name, enc] : json.at("encoders").items()) {
++            const auto& cw = enc.at("clockwise_gpio");
++            const auto& ccw = enc.at("counter_clockwise_gpio");
++            encoders_.emplace(name, std::make_pair(Pin{cw.at(0).get<int>(), cw.at(1).get<int>()},
++                                                  Pin{ccw.at(0).get<int>(), ccw.at(1).get<int>()}));
++            encoderIndex_.emplace(name, 0);
++        }
++    }
+     inputFd_ = dup(inputFd);
+     if (inputFd_ < 0) throw std::runtime_error("Failed to open headless input");
+ }
+@@ -205,6 +216,24 @@ void HeadlessFrontend::Execute(const std::string& line, Clock::time_point now) {
+         ++sensorVersion_;
+     } else if (command == "at" && args.size() == 2) {
+         guestAtMs_ = Integer(args[1], 0, 86400000, "Guest time");
++    } else if (command == "turn" && (args.size() == 3 || args.size() == 4)) {
++        auto enc = encoders_.find(args[1]);
++        if (enc == encoders_.end()) throw std::runtime_error("Unknown encoder: " + args[1]);
++        if (args[2] != "cw" && args[2] != "ccw") throw std::runtime_error("turn: cw or ccw expected");
++        if (!guestAtMs_) throw std::runtime_error("turn needs a preceding `at` (guest-timed)");
++        const int steps = args.size() == 4 ? int(Integer(args[3], 1, 4096, "Steps")) : 4;
++        static constexpr int kSeq[] = {0, 2, 3, 1};
++        int& index = encoderIndex_[args[1]];
++        const auto [cwBank, cwIndex] = enc->second.first;
++        const auto [ccwBank, ccwIndex] = enc->second.second;
++        for (int k = 0; k < steps; k++) {
++            index = (index + (args[2] == "cw" ? 1 : 3)) % 4;
++            const int value = kSeq[index];
++            const uint64_t at = (uint64_t(*guestAtMs_) + uint64_t(k) * 20) * 1000000;
++            OnKeyAt(cwBank, cwIndex, (value & 2) != 0, at);
++            OnKeyAt(ccwBank, ccwIndex, (value & 1) != 0, at);
++        }
++        LogInfo("Headless input queued at guest %ld ms: turn %s %s %d", *guestAtMs_, args[1].c_str(), args[2].c_str(), steps);
+     } else if (((command == "press" || command == "release") && args.size() == 2) ||
+                (command == "tap" && (args.size() == 2 || args.size() == 3))) {
+         auto key = keys_.find(args[1]);
+diff --git a/gui/headless.h b/gui/headless.h
+index aa777c1..adf4923 100644
+--- a/gui/headless.h
++++ b/gui/headless.h
+@@ -49,6 +49,9 @@ private:
+     void Execute(const std::string& line, Clock::time_point now);
+     using Pin = std::pair<int, int>;
+     std::map<std::string, Pin> keys_;
++    // coop-fw: encoders for `turn ENC cw|ccw [STEPS]`: the two quadrature pins and the Gray-sequence index
++    std::map<std::string, std::pair<Pin, Pin>> encoders_;
++    std::map<std::string, int> encoderIndex_;
+     int inputFd_ = -1;
+     bool eof_ = false;
+     bool shouldClose_ = false;

@@ -198,3 +198,17 @@ followed by `det_tape_play_start.txt`: the file path of every chunk.
 - `tests/sim/run_kern_check.sh` builds `kern_check.cc` for the Blackfin and runs it in the GNU simulator: the T4
   assembly kernels of `coop_stereo.h` against their C references over 3000 random blocks with edge values.
 - A one-block shift between two images ("63 vs 64 at 31.6 s", max diff ~5000) is the onset landing on the next block boundary, not a DSP difference: compare again with `--align 200`; a true kernel difference shows as small diffs from the onset on without the shift. Two runs of one image in one job are identical.
+
+## Selecting a synth engine headless (2026-11-03)
+
+- `tools/op1emu-patches/0002-headless-encoders.patch` adds `turn ENC cw|ccw [STEPS]` to the headless frontend
+  (guest-timed, after an `at`): each step advances the two-pin Gray sequence the GUI's clicks produce, 20 ms apart.
+  The stock engine list (shift + key 1 on the synth page) moves one item per 8 steps, but while it is shown the
+  keys play nothing in the emulator (stock image too) and nothing closes it (key 1, shift, the encoder push, the
+  synth key were tried: `tests/sim/explore_engine*.txt`), so it is no use for a scenario.
+- What works: the eight sound slots (`s1`..`s8`) on the synth page load the factory patches of the pristine NAND
+  with their engines: 1 digital, 2 voltage, 3 pulse, 4 string, **5 dsynth** (`tests/sim/explore_slots.txt`,
+  screenshots). `tests/sim/det_dsynth_chord.txt` / `det_dsynth_stats.txt` play a DSynth chord that way (wall-paced:
+  `at` events do not block, so a screenshot after an `at` lands at the start of the run; pace with `wait`).
+- `tools/wav_envelope.py` / `wav_compare.py` read the dumps; `scratchpad ppm2png` is not in the repo: the headless
+  `screenshot` writes a P6 PPM, which any image viewer opens.

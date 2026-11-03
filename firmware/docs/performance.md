@@ -492,3 +492,21 @@ R2.L, A1 += R0.H * R2.L (W32)` and a 32-bit ring load per tap. Each accumulator 
 `coop_hb_fir`, so the output is bit-identical to two `coop_hb_decimate` calls with the same ramp and step
 (`tests/sim/kern_check.cc`, `hb_pair 0` over 3000 blocks). The state lives in the L1 pool like the rest.
 Emulator: the mix stage peak 11,387 cycles (14,284 before: the pair saves a fifth of the instructions; the device gain is a line load per tap instead of two). Gates (one sequential job, docs/emulator.md): the asm pair and its C path give sample-identical images; against T4d the stream is the same shifted by one audio block (the onset lands on the next block boundary; aligned on the onset the residual is at most 2 LSB, the DC blocker settling against the shifted block), and two runs of one image are identical, so the shift is the image timing, not the kernel. Record scenario: same level, peak and width as T4c.
+
+### DSynth is compute-bound (emulator, 2026-11-03)
+
+Why Voltage and DSynth did not move with the sine table in L1 (T4c). With DSynth selected in op1emu (sound slot 5
+of the factory NAND, `tests/sim/det_dsynth_stats.txt`), a three-voice chord takes the emulated callback from 7.5%
+(tape stopped, no voices) to **24.9%** average: about 34k instructions per voice per block (263 per sample), with
+coop's stages at ~3%. The write tracer puts DSynth's render loop at `0x0197e648..0x0197ebb0` (SDRAM): two
+oscillator streams through I1/I2 into the voice buffer, the sine table (now in L1) and three small ROM tables
+(`0x0106a730`, `0x0106b3cc`, `0x0106b5cc`, a few hundred bytes to 2 KB, cache-resident after the first touch).
+There is no large table left to move: the device's 47-59% at four to six voices is mostly the engine's own
+arithmetic (device/emulator about 1.5-1.8x, the usual cold-cache factor on its 4 KB of SDRAM code and per-voice
+state), and stock firmware pays the same minus coop's ~10%.
+
+So the DSynth hitch is the stock engine's CPU share starving the main loop, with coop's 10% on top. What coop can
+still do: its own 10% (the second record pass while the tape rolls without recording, ~1.7%; small trims), and the
+I/O parts are already at 16 KiB. Instruction-cache way locking would keep DSynth's 4 KB of render code resident
+across the main loop (one way of the 16 KB cache), worth at most the per-block refill, ~3-4%; it is the last lever
+and the riskiest, so it waits for the owner's verdict on T4e.

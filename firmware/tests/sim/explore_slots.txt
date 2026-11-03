@@ -1,0 +1,40 @@
+# The eight synth sound slots of the factory NAND: which engines they hold (wall-paced)
+accel 64 -64 512
+wait-frames 1 300000
+wait 26000
+tap synth 200
+wait 1500
+tap s1 200
+wait 2500
+screenshot /root/op1emu-work/n1.ppm
+tap s2 200
+wait 2500
+screenshot /root/op1emu-work/n2.ppm
+tap s3 200
+wait 2500
+screenshot /root/op1emu-work/n3.ppm
+tap s4 200
+wait 2500
+screenshot /root/op1emu-work/n4.ppm
+tap s5 200
+wait 2500
+screenshot /root/op1emu-work/n5.ppm
+tap s6 200
+wait 2500
+screenshot /root/op1emu-work/n6.ppm
+tap s7 200
+wait 2500
+screenshot /root/op1emu-work/n7.ppm
+tap s8 200
+wait 2500
+screenshot /root/op1emu-work/n8.ppm
+wait 500
+press c4
+press e4
+press g4
+wait 2000
+release c4
+release e4
+release g4
+wait 2000
+quit

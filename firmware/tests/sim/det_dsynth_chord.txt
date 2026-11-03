@@ -1,0 +1,18 @@
+# DSynth chord for the write trace: synth page, sound slot 5 (DSynth in the factory NAND), chord (wall-paced)
+accel 64 -64 512
+wait-frames 1 300000
+wait 26000
+tap synth 200
+wait 1500
+tap s5 200
+wait 3000
+screenshot /root/op1emu-work/p1.ppm
+press c4
+press e4
+press g4
+wait 2500
+release c4
+release e4
+release g4
+wait 3000
+quit
