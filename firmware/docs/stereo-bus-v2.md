@@ -104,3 +104,12 @@ Emulator gates (op1emu, 2026-11-03, sequential runs):
    image vs v2 with no FX selected, within rounding; a stock filter at the synth position filters everything.
 3. **S2**: the second FX slot per position and on the master; the saved-sound JSON member for it.
 4. **S3**: patch out the stock mono stages for the CPU.
+
+## Display slots (2026-11-03, the owner on the first S1 build: nitro's dials did not move)
+
+The stock effects write their page state (the levels and dials) into a table in L1 at 0xFF801774, 16 bytes per
+slot: a mono object into slot = its position (the mono init stores it, nitro at object +0x18), the stereo classes
+into slots 2 and 3 (the master's). The S1 twin wrote the master's slots and the instrument page read a slot nobody
+updated. Fix: the twin runs with slots 2-3 swapped for its own copy and its left slot is copied into the
+instrument's slot after each render (`st_render`). op1emu: nitro's dials follow the encoders as on P2b, the audio
+sample-identical to before the fix (`tests/sim/det_fx_stock_nitro.txt`). [C in op1emu, I on device]

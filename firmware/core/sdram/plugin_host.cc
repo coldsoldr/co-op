@@ -329,7 +329,14 @@ static const struct fx_class g_fx_class[FX_TYPES] = {
 };
 typedef void (*st_render_fn)(void *, int16_t *, int16_t *, const int16_t *);
 typedef void (*st_init_fn)(void *);
-struct st_inst { void *obj; int type; uint8_t *line; };
+struct st_inst { void *obj; int type; uint8_t *line; uint32_t slots[8]; };
+/* Display slots. Every stock effect writes its page state (levels, the animated dials) into a table in L1 at
+ * 0xFF801774, 16 bytes per slot: a mono object into slot [obj + index field] = its position (0 synth, 1 drum, set by
+ * the mono init), a stereo object into slots 2 and 3 (the master's; dual-mono classes set them in their init, native
+ * stereo ones hard-code 0xFF801794). The twin therefore runs with slots 2-3 swapped for its own copy, and its left
+ * slot is copied into the instrument's slot afterwards, so the instrument page follows the knobs and the master's
+ * page is untouched (nitro's dials, found by the owner on the device, 2026-11-03). */
+#define FX_SLOTS ((volatile uint32_t *)0xFF801774u)
 static struct st_inst g_st[2];                                            /* [0]: the stock has one instrument FX object for both positions */
 static int g_fx_pos;                                                       /* the position of its last init: which instrument bus it processes */
 volatile uint32_t g_fx_stock_stereo_blocks, g_fx_stock_ctor;
@@ -358,6 +365,7 @@ static void st_make(int pos, int t)
     if (t == 7) LINE_TABLE[2] = save8;
     ((st_init_fn)(uintptr_t)vt_entry(g_fx_class[t].st_vt, 0x1c))(s->obj);
     s->type = t;
+    for (int k = 0; k < 8; k++) s->slots[k] = 0;
     g_fx_stock_ctor++;
 }
 
@@ -367,7 +375,12 @@ static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
     int t = s->type;
     uint32_t save = LINE_TABLE[5];
     if (t == 0) LINE_TABLE[5] = (uint32_t)(uintptr_t)s->line;              /* the stereo delay reads its line from the table each render */
+    uint32_t master[8];
+    for (int k = 0; k < 8; k++) { master[k] = FX_SLOTS[8 + k]; FX_SLOTS[8 + k] = s->slots[k]; }
     ((st_render_fn)(uintptr_t)vt_entry(g_fx_class[t].st_vt, 0x14))(s->obj, l, r, params);
+    for (int k = 0; k < 8; k++) s->slots[k] = FX_SLOTS[8 + k];
+    for (int k = 0; k < 4; k++) FX_SLOTS[4 * (g_fx_pos & 1) + k] = s->slots[k];
+    for (int k = 0; k < 8; k++) FX_SLOTS[8 + k] = master[k];
     if (t == 0) LINE_TABLE[5] = save;
     g_fx_stock_stereo_blocks++;
 }
@@ -405,7 +418,6 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
 {
     g_fx_dispatch_mono++;
     fx_sanitize();
-    (void)self;
     int pos = g_fx_pos;
     int e = fx_index(params[4] - MAGIC);
     int16_t *dL, *dR;

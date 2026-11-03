@@ -399,7 +399,7 @@ instantiated for the instrument positions, the mono buses dropped. `docs/stereo-
 ## Stereo bus v2 step S1: stock effects in stereo at the instrument positions — device test (pending, 2026-11-03)
 
 `build/pkg/op1_246_coop_s1_plugins.op1` (copy in Downloads; sha256
-`c6ca6f48ac167fb51ba7316b4740542ed47d0d08e30d569e7ffb16e1d80ba60d`). Supersedes P2b. Every effect at the synth and
+`d9f84f1d515fc29434f0b5bba00a009c53360274ffdab2051f76a8676790e8af`, rebuilt with the nitro page fix). Supersedes P2b. Every effect at the synth and
 drum positions now runs on the instrument's whole stereo signal: a stock effect runs as its stereo (master) class,
 a plugin as before (`docs/stereo-bus-v2.md`, S1). Emulator: with phone or spring at the synth position the side
 signal is processed (correlation of the side between the two effects 0.994 on P2b, 0.185 on S1); with no effect
@@ -415,6 +415,8 @@ chosen the chord is P2b's within 2 LSB; the plugin path is sample-identical.
 5. The drums with a panned kit through phone at the drum position: no dry leak.
 6. Known limit, worth one try: grid or spring on the synth **and** the same type on the master at once interfere
    (they share one tank in the stock code). Any crash or hang is a fail; odd sound there is expected.
-7. Stats: the `plugins` line has `stock_st_blocks` (blocks a stock effect ran in stereo) and `stock_st_made`.
+7. Turn the knobs on the nitro, punch and phone pages at the synth position: the dials must follow (fixed after the
+   owner found nitro's blue and orange dials frozen on the first S1 build).
+8. Stats: the `plugins` line has `stock_st_blocks` (blocks a stock effect ran in stereo) and `stock_st_made`.
 
 Result: _not yet flashed_.
