@@ -20,6 +20,11 @@ transport to read any file off the device while it runs.
   - `0x21 HELLO`: reply `"coop"`, u16 protocol (1), the build tag text.
   - `0x20 FILE_GET`: payload u32 offset (LE) + path bytes; reply status, u32 total size (LE), up to 64 bytes from
     the offset. The host walks the file in 64-byte steps (about 1.5 KB/s with one message in flight).
+- File writes (P1b): `0x22 PUT_BEGIN` path (under `/yaffs2/plugins/` or `/yaffs2/user/` only; the plugins directory is
+  created if missing; the file is created and truncated), `0x23 PUT_DATA` u32 offset + up to 64 bytes in order (reply:
+  status, u32 next offset; a wrong offset is status 5), `0x24 PUT_END` u32 total + u32 crc32 (zlib) closes and checks
+  (status 4 size, 6 crc), `0x25 DELETE` path. The host page's "Install plugin" button sends a `.coop` this way; the
+  loader reads the directory at boot, so a power cycle follows.
 - Counters `g_sysex_polls / rx / drop / replies / errors`.
 
 ## Host side: `tools/coop_sysex.html`

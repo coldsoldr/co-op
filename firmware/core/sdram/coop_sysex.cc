@@ -30,13 +30,40 @@
 #define Y_CLOSE   ((int (*)(int))0x01A99908u)
 #define Y_READ    ((int (*)(int, void *, int))0x01A99C90u)
 #define Y_LSEEK   ((int32_t (*)(int, int32_t, int))0x01A9A0E4u)
+#define Y_WRITE   ((int (*)(int, const void *, int))0x01A99F84u)
+#define Y_MKDIR   ((int (*)(const char *, int))0x01A9A886u)        /* 11 stock callers: P0 = R0; LINK (kennel kn_files.c) */
+#define Y_UNLINK  ((int (*)(const char *))0x01A9A3FCu)
 
 #define MAX_MSG   128                                              /* a message we accept (the host sends <= 96) */
 #define QN        4
 #define CHUNK     64
 #define PROTOCOL  1
-#define BUILD_TAG "t4f"
-enum { CX_FILE_GET = 0x20, CX_HELLO = 0x21, CX_REPLY = 0x40, ST_OK = 0, ST_FORMAT = 1, ST_PATH = 3, ST_IO = 7 };
+#define BUILD_TAG "p1"
+enum { CX_FILE_GET = 0x20, CX_HELLO = 0x21, CX_PUT_BEGIN = 0x22, CX_PUT_DATA = 0x23, CX_PUT_END = 0x24, CX_DELETE = 0x25,
+       CX_REPLY = 0x40, ST_OK = 0, ST_FORMAT = 1, ST_STATE = 2, ST_PATH = 3, ST_SIZE = 4, ST_OFFSET = 5, ST_CRC = 6, ST_IO = 7 };
+/* FILE_PUT (P1b): BEGIN path -> a file under /yaffs2/plugins or /yaffs2/user is created (truncated); DATA u32 offset +
+ * bytes, in order, each acknowledged with the next offset; END u32 total + u32 crc32 (zlib) closes it and checks both.
+ * DELETE path. The loader reads /yaffs2/plugins at boot: a new plugin plays after a power cycle. */
+static int put_fd = -1;
+static uint32_t put_off, put_crc;
+static int path_ok(const char *p)
+{
+    static const char *const allowed[] = { "/yaffs2/plugins/", "/yaffs2/user/" };
+    for (int a = 0; a < 2; a++) {
+        const char *q = allowed[a]; int i = 0;
+        while (q[i] && p[i] == q[i]) i++;
+        if (!q[i] && p[i] && p[i] != '/') {
+            for (int k = i; p[k]; k++) if (p[k] == '/' || (p[k] == '.' && p[k + 1] == '.')) return 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+static uint32_t crc_update(uint32_t c, const uint8_t *d, int n)
+{
+    for (int i = 0; i < n; i++) { c ^= d[i]; for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1))); }
+    return c;
+}
 
 volatile uint32_t g_sysex_polls, g_sysex_rx, g_sysex_drop, g_sysex_replies, g_sysex_errors;
 
@@ -168,6 +195,42 @@ static void handle(const uint8_t *m, int n)
         out[1] = (uint8_t)t; out[2] = (uint8_t)(t >> 8); out[3] = (uint8_t)(t >> 16); out[4] = (uint8_t)(t >> 24);
         if (!ok) g_sysex_errors++;
         reply(cmd, seq, out, 5 + got);
+        return;
+    }
+    if (cmd == CX_PUT_BEGIN || cmd == CX_DELETE) {
+        static char path[96];
+        if (pn < 1 || pn >= (int)sizeof path) { out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
+        for (int i = 0; i < pn; i++) path[i] = (char)in[i];
+        path[pn] = 0;
+        if (!path_ok(path)) { out[0] = ST_PATH; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
+        if (cmd == CX_DELETE) { out[0] = Y_UNLINK(path) == 0 ? ST_OK : ST_PATH; reply(cmd, seq, out, 1); return; }
+        if (put_fd >= 0) { Y_CLOSE(put_fd); put_fd = -1; }
+        Y_MKDIR("/yaffs2/plugins", 0x1FF);                  /* exists already: ignored */
+        put_fd = Y_OPEN(path, 0x242, 0x180);                  /* O_RDWR | O_CREAT | O_TRUNC */
+        put_off = 0; put_crc = 0xFFFFFFFFu;
+        out[0] = put_fd >= 0 ? ST_OK : ST_IO; reply(cmd, seq, out, 1);
+        return;
+    }
+    if (cmd == CX_PUT_DATA) {
+        if (put_fd < 0) { out[0] = ST_STATE; reply(cmd, seq, out, 1); return; }
+        if (pn < 4) { out[0] = ST_FORMAT; reply(cmd, seq, out, 1); return; }
+        uint32_t off = (uint32_t)in[0] | ((uint32_t)in[1] << 8) | ((uint32_t)in[2] << 16) | ((uint32_t)in[3] << 24);
+        int n = pn - 4;
+        if (off != put_off) { out[0] = ST_OFFSET; }
+        else if (n && Y_WRITE(put_fd, in + 4, n) != n) { out[0] = ST_IO; Y_CLOSE(put_fd); put_fd = -1; }
+        else { put_crc = crc_update(put_crc, in + 4, n); put_off += (uint32_t)n; out[0] = ST_OK; }
+        out[1] = (uint8_t)put_off; out[2] = (uint8_t)(put_off >> 8); out[3] = (uint8_t)(put_off >> 16); out[4] = (uint8_t)(put_off >> 24);
+        reply(cmd, seq, out, 5);
+        return;
+    }
+    if (cmd == CX_PUT_END) {
+        if (put_fd < 0) { out[0] = ST_STATE; reply(cmd, seq, out, 1); return; }
+        if (pn < 8) { out[0] = ST_FORMAT; reply(cmd, seq, out, 1); return; }
+        uint32_t total = (uint32_t)in[0] | ((uint32_t)in[1] << 8) | ((uint32_t)in[2] << 16) | ((uint32_t)in[3] << 24);
+        uint32_t crc = (uint32_t)in[4] | ((uint32_t)in[5] << 8) | ((uint32_t)in[6] << 16) | ((uint32_t)in[7] << 24);
+        int closed = Y_CLOSE(put_fd) == 0; put_fd = -1;
+        out[0] = !closed ? ST_IO : total != put_off ? ST_SIZE : (~put_crc) != crc ? ST_CRC : ST_OK;
+        reply(cmd, seq, out, 1);
         return;
     }
     out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++;

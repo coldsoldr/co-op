@@ -31,12 +31,16 @@ Chrome or Edge with Web MIDI; plug the OP-1 in, pick its MIDI port, say hello, t
   <button id="hello">Hello</button>
   <button id="read" class="primary">Read file</button>
   <button id="save" disabled>Save as...</button>
+  <button id="del">Delete file</button>
 </div>
+<label for="plug">Install a plugin (a .coop file goes to /yaffs2/plugins; power-cycle the OP-1 afterwards)</label>
+<input id="plug" type="file" accept=".coop">
+<div style="margin-top:6px"><button id="install">Install plugin</button></div>
 <div id="status">Not connected.</div>
 <pre id="out"></pre>
 <script>
 const HDR = [0xF0, 0x00, 0x20, 0x76, 0x7D];
-const FILE_GET = 0x20, HELLO = 0x21, REPLY = 0x40;
+const FILE_GET = 0x20, HELLO = 0x21, PUT_BEGIN = 0x22, PUT_DATA = 0x23, PUT_END = 0x24, DELETE = 0x25, REPLY = 0x40;
 const STATUS = ['ok', 'format', 'state', 'path', 'size', 'offset', 'crc', 'io'];
 let access = null, inPort = null, outPort = null, seq = 1, pending = null, fileBytes = null;
 
@@ -157,6 +161,37 @@ document.getElementById('save').onclick = () => {
   a.download = path.split('/').pop() || 'file.bin';
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(bytes) { let c = 0xFFFFFFFF; for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8); return (~c) >>> 0; }
+const u32 = v => [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF];
+
+document.getElementById('install').onclick = async () => {
+  if (!outPort || !inPort) { setStatus('Pick a port first.'); return; }
+  const f = document.getElementById('plug').files[0];
+  if (!f) { setStatus('Choose a .coop file first.'); return; }
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  const path = '/yaffs2/plugins/' + f.name;
+  try {
+    let r = await send(PUT_BEGIN, Array.from(new TextEncoder().encode(path)));
+    if (r[0] !== 0) { setStatus('Install refused: ' + (STATUS[r[0]] || r[0])); return; }
+    for (let off = 0; off < bytes.length; off += 64) {
+      const chunk = Array.from(bytes.slice(off, off + 64));
+      r = await send(PUT_DATA, [...u32(off), ...chunk]);
+      if (r[0] !== 0) { setStatus('Install failed at ' + off + ': ' + (STATUS[r[0]] || r[0])); return; }
+      setStatus('Installing ' + f.name + ': ' + Math.min(off + 64, bytes.length) + ' / ' + bytes.length + ' bytes');
+    }
+    r = await send(PUT_END, [...u32(bytes.length), ...u32(crc32(bytes))]);
+    setStatus(r[0] === 0 ? 'Installed ' + path + ' (' + bytes.length + ' bytes). Power-cycle the OP-1 to load it.' : 'Install end: ' + (STATUS[r[0]] || r[0]));
+  } catch (err) { setStatus('Install failed: ' + err.message); }
+};
+document.getElementById('del').onclick = async () => {
+  if (!outPort || !inPort) { setStatus('Pick a port first.'); return; }
+  const path = document.getElementById('path').value.trim();
+  if (!confirm('Delete ' + path + ' on the device?')) return;
+  try { const r = await send(DELETE, Array.from(new TextEncoder().encode(path))); setStatus(r[0] === 0 ? 'Deleted ' + path : 'Delete: ' + (STATUS[r[0]] || r[0])); }
+  catch (err) { setStatus('Delete failed: ' + err.message); }
 };
 
 if (navigator.requestMIDIAccess) connect(); else setStatus('This browser has no Web MIDI. Use Chrome or Edge.');
