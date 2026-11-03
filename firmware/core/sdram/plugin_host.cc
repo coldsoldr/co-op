@@ -62,14 +62,15 @@
 
 extern "C" const kn_export coop_exports[];                                /* sdk/coop_exports.cc */
 extern "C" const int coop_exports_count;
-extern "C" int coop_stereo_side_rw(int16_t **l, int16_t **r);            /* stereo_bus.cc: the side buses, live */
+extern "C" int coop_stereo_side_rw(int instr, int16_t **l, int16_t **r);   /* stereo_bus.cc: one instrument's side pair, live */
 
 volatile uint32_t g_plugins_seen, g_plugins_loaded, g_plugins_failed, g_plugins_booted, g_plugins_map_n;
 volatile uint32_t g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks;
 const char *volatile g_plugins_last_error;
 char g_plugins_last_name[NAME_MAX];
 
-struct plug { const coop_fx_t *fx; char name[16]; int16_t def[4]; };
+#define POSITIONS   3                                                     /* 0 synth, 1 drum, 2 master: an instance each (P2b) */
+struct plug { const coop_fx_t *fx; const coop_fx_t *inst[POSITIONS]; char name[16]; int16_t def[4]; };
 static struct plug g_plug[SLOTS];                                          /* by number */
 struct mapent { char name[16]; uint8_t n, present; };
 static struct mapent g_map[MAP_MAX];
@@ -225,22 +226,34 @@ static const char *load_one(const char *fname, uint8_t *stage)
     for (int k = 1; k < SLOTS; k++) if (g_plug[k].fx && seq(g_plug[k].name, in.type_name)) return "another file has the same name";
     int n = number_for(in.type_name);
     if (!n) return "no free plugin number";
-    uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN;
-    uint8_t *raw = (uint8_t *)MALLOC(cap);
-    if (!raw) return "plugin memory full";
-    uint32_t base = ((uint32_t)(uintptr_t)raw + ARENA_ALIGN - 1) & ~(ARENA_ALIGN - 1);
-    uint32_t room = cap - (base - (uint32_t)(uintptr_t)raw), used = 0;
-    if (kn_relocate_far(stage, &in, (uint8_t *)(uintptr_t)base, base, room, coop_exports, coop_exports_count, &err, &used)) { FREE(raw); return err; }
-    const coop_fx_t *fx = (const coop_fx_t *)(uintptr_t)(base + in.entry_offset);
-    if (fx->magic != COOP_FX_MAGIC) { FREE(raw); return "entry object is not a coop FX (magic)"; }
-    if (fx->api != COOP_PLUGIN_API) { FREE(raw); return "entry object built for another API"; }
-    uint32_t text_end = base + in.text_size;
-    uint32_t pi = (uint32_t)(uintptr_t)fx->init, pr = (uint32_t)(uintptr_t)fx->render;
-    if (pi < base || pi >= text_end || pr < base || pr >= text_end || (pi & 1) || (pr & 1)) { FREE(raw); return "callbacks outside the plugin's code"; }
+    /* one relocated instance per position (P2b): a plugin selected at two positions at once keeps two states */
+    const coop_fx_t *inst[POSITIONS];
+    uint8_t *raws[POSITIONS] = { 0, 0, 0 };
+    for (int k = 0; k < POSITIONS; k++) {
+        uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN;
+        uint8_t *raw = (uint8_t *)MALLOC(cap);
+        if (!raw) err = "plugin memory full";
+        else {
+            raws[k] = raw;
+            uint32_t base = ((uint32_t)(uintptr_t)raw + ARENA_ALIGN - 1) & ~(ARENA_ALIGN - 1);
+            uint32_t room = cap - (base - (uint32_t)(uintptr_t)raw), used = 0;
+            if (!kn_relocate_far(stage, &in, (uint8_t *)(uintptr_t)base, base, room, coop_exports, coop_exports_count, &err, &used)) {
+                const coop_fx_t *fx = (const coop_fx_t *)(uintptr_t)(base + in.entry_offset);
+                uint32_t text_end = base + in.text_size;
+                uint32_t pi = (uint32_t)(uintptr_t)fx->init, pr = (uint32_t)(uintptr_t)fx->render;
+                if (fx->magic != COOP_FX_MAGIC) err = "entry object is not a coop FX (magic)";
+                else if (fx->api != COOP_PLUGIN_API) err = "entry object built for another API";
+                else if (pi < base || pi >= text_end || pr < base || pr >= text_end || (pi & 1) || (pr & 1)) err = "callbacks outside the plugin's code";
+                else inst[k] = fx;
+            }
+        }
+        if (err) { for (int j = 0; j <= k; j++) if (raws[j]) FREE(raws[j]); return err; }
+    }
     scopy(g_plug[n].name, in.type_name, 16);
     for (int i = 0; i < 4; i++) g_plug[n].def[i] = in.defaults[i];
+    for (int k = 0; k < POSITIONS; k++) g_plug[n].inst[k] = inst[k];
     __asm__ __volatile__("ssync;" ::: "memory");
-    g_plug[n].fx = fx;                                                    /* selectable from here */
+    g_plug[n].fx = inst[0];                                               /* selectable from here */
     row_ensure(DB_FACTORY(), g_plug[n].name, g_plug[n].def, n);
     return 0;
 }
@@ -321,18 +334,21 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
     int pos = self == g_self[1] ? 1 : 0;
     int e = fx_index(params[4] - MAGIC);
     if (!e) { g_cur[pos] = 0; FILTER_RENDER(self, buf, params); return; }
-    const coop_fx_t *fx = g_plug[e].fx;
+    const coop_fx_t *fx = g_plug[e].inst[pos];
     if (e != g_cur[pos]) { g_cur[pos] = e; if (fx->init(pos) != 0) { g_plug[e].fx = 0; FILTER_RENDER(self, buf, params); return; } }
-    int32_t L[BLOCK], R[BLOCK];
-    for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)buf[i] << 16; R[i] = L[i]; }   /* the instrument's mono sum, dual */
-    fx->render(pos, L, R, params, BLOCK);
     int16_t *dL, *dR;
-    int side = coop_stereo_side_rw(&dL, &dR);
+    coop_stereo_side_rw(pos, &dL, &dR);                                  /* this instrument's own side pair (P2b) */
+    int32_t L[BLOCK], R[BLOCK];
+    for (int i = 0; i < BLOCK; i++) {                                     /* the instrument in stereo: mono + its difference */
+        L[i] = (int32_t)coop_sat16((int32_t)buf[i] + dL[i]) << 16;
+        R[i] = (int32_t)coop_sat16((int32_t)buf[i] + dR[i]) << 16;
+    }
+    fx->render(pos, L, R, params, BLOCK);
     for (int i = 0; i < BLOCK; i++) {
         int16_t l = coop_sat16(L[i] >> 16), r = coop_sat16(R[i] >> 16);
         int16_t m = (int16_t)(((int32_t)l + r) >> 1);
         buf[i] = m;                                                       /* down the stock mono path */
-        if (side) { dL[i] = coop_sat16((int32_t)dL[i] + (l - m)); dR[i] = coop_sat16((int32_t)dR[i] + (r - m)); }
+        dL[i] = (int16_t)(l - m); dR[i] = (int16_t)(r - m);               /* the new side of this instrument */
     }
     g_fx_plugin_blocks++;
 }
@@ -349,7 +365,7 @@ extern "C" void coop_fx_render_st(void *self, int16_t *l, int16_t *r, const int1
     fx_sanitize();
     int e = fx_index(params[4] - MAGIC);
     if (!e) { g_cur[2] = 0; FILTER_ST_RENDER(self, l, r, params); return; }
-    const coop_fx_t *fx = g_plug[e].fx;
+    const coop_fx_t *fx = g_plug[e].inst[2];
     if (e != g_cur[2]) { g_cur[2] = e; if (fx->init(2) != 0) { g_plug[e].fx = 0; FILTER_ST_RENDER(self, l, r, params); return; } }
     int32_t L[BLOCK], R[BLOCK];
     for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)l[i] << 16; R[i] = (int32_t)r[i] << 16; }

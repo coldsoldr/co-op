@@ -66,13 +66,29 @@ Kennel 3.1's mechanism (dispatcher.c, kn_boot.c), ported:
 - **Positions.** 0 synth and 1 drum are mono in stock: the plugin gets L = R = the instrument's mono sum, its
   output's mono goes on down the stock path and its difference is added to coop's side buses
   (`coop_stereo_side_rw`), so a stereo effect can make width, but it does not yet see the instrument's per-voice
-  placement (P2b: per-instrument side buses). Position 2 (master) is true stereo in place. One plugin instance per
-  file: selected at two positions at once it shares its state (P2b: instances per position).
+  placement (fixed in P2b below). Position 2 (master) is true stereo in place. One plugin instance per
+  file: selected at two positions at once it shares its state (fixed in P2b below).
 - **Knobs**: the slot's four knob words as stock keeps them, kept inside the filter type's ranges every block
   (kennel's guard; the stock parameter reader asserts outside them). The core-owned coarse/fine model is P2b.
 - P1's master-insert path is retired (plugins play only when selected).
 
 Emulator (2026-11-03, `tests/sim/det_fx_select.txt` on the plugin NAND): the stock FX list opens with shift + key 3 on the synth page, the blue encoder moves it (8 steps per item), the plugin row is last; selected, the mono dispatch ran 15,083 blocks through the plugin (`plugins ... mono_calls 15083 plugin_blocks 15083`), the chord played, no fault; the plugin page shows the stock filter screen until P3.
+
+## Milestone P2b: per-instrument side buses, an instance per position (2026-11-03)
+
+- `stereo_bus.cc` keeps one difference pair per instrument (synth, drum): the voice hooks accumulate into their
+  instrument's pair, each pair has its own decimator, DC block and tail, and the mix loops and the record tap take
+  the sum (`coop_sat16(synth + drum)`), built once per block after the inserts ran. Spread 0 and no plugin give the
+  same samples as before (the sum of one live pair and a zero pair).
+- `coop_stereo_side_rw(instr, &l, &r)` hands an insert its instrument's decimated pair (zeroed when nothing is
+  panned there). The host builds the plugin's input as `L = sat(mono + dL)`, `R = sat(mono + dR)` and writes the
+  output back as the new mono (`(l + r) / 2`, down the stock path) and the new difference (`l - m`, `r - m`), which
+  replaces the instrument's side: a stereo effect's image survives, including echoes that follow the placement.
+- One relocated instance per position: `plugin_host.cc` relocates each file three times (synth, drum, master), so a
+  plugin selected at two positions at once keeps two states; memory is three times the file's load size (the
+  stereo delay: 3 x 129 KiB of heap 0).
+
+Emulator (2026-11-03): with no plugin the chord scenario is sample-identical to P2 and the record scenario to T4e (the split is transparent); with the plugin at the synth position (`det_fx_select.txt`) the echo tail after the release keeps its side energy (mid/side 189/45, 84/14, 64/4 per 200 ms against P2's 193/30, 85/5, 64/1): the repeats follow the placement now.
 
 ## Next
 

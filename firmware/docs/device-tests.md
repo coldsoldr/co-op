@@ -372,4 +372,22 @@ plugin (install as for P1 if it is no longer on the device).
 4. Read `/yaffs2/user/coop_stats.txt`: `plugins ... mono_calls / st_calls / plugin_blocks` count the dispatches
    and the blocks a plugin rendered.
 
+Result (2026-11-03, the owner): **PASS.** "stereo delay" selectable from the synth FX list: the echo is audible,
+the first note in stereo as before, the repeats mono (equal loudness in both channels), which is the documented P2
+limit (the insert gets L = R = the instrument's mono sum). On the master slot the echoes are true stereo: a hard-left
+note gives hard-left echoes. So the list row, the filter-type dispatch and the stock master path all work on the
+device. P2b (per-instrument side buses) is the fix for the synth slot.
+
+## Phase 4 milestone P2b: per-instrument side buses, one instance per position — device test (pending, 2026-11-03)
+
+`build/pkg/op1_246_coop_p2b_plugins.op1` (copy in Downloads; sha256 in the commit). Supersedes P2. The synth's and
+the drums' per-voice placement now travel on separate side pairs, so an insert at the synth or drum position sees
+its instrument in stereo and its stereo output replaces that instrument's side (`docs/plugins.md`, P2b); the mix and
+the tape take the sum, so with no plugin selected nothing changes. Each plugin file is relocated once per position,
+so the same plugin at two positions keeps two states.
+
+**What to do:** as P2 step 2: "stereo delay" at the synth position, a hard-left note: the echoes should now be
+hard-left too (and a hard-right note's hard-right). Then the drums with a panned kit through the same plugin at
+the drum position. The master slot as before. Then play without any plugin selected: it must sound as T4f.
+
 Result: _not yet flashed_.
