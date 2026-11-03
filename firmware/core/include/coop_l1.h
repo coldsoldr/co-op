@@ -9,6 +9,7 @@ extern "C" {
 #endif
 int coop_l1_state(void);             /* 0 unchecked, 1 pool taken, 2 refused */
 void *coop_l1_alloc(uint32_t bytes);
+void coop_l1_sine_copy(void);        /* the stock sine table into L1 (once; T4c) */
 #ifdef __cplusplus
 }
 #endif

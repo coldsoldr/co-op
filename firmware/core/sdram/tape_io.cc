@@ -212,8 +212,10 @@ static int rebuild_image(void)
 /* Stands in for tape_image_mount_and_index (0x1996f38; the callers ignore the result). */
 extern "C" void coop_tape_clamp_track(void);   /* tape_stereo.cc */
 
+extern "C" void coop_l1_sine_copy(void);          /* l1_pool.cc (T4c): as early as coop runs on the main thread */
 extern "C" int coop_tape_mount_and_index(void)
 {
+    coop_l1_sine_copy();
     g_tape_mounts++;
     coop_tape_clamp_track();
     if (g_coop_tape_image && !marker_ok()) {

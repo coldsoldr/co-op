@@ -20,11 +20,14 @@
 #define L1_FIRST   0xFF90081Cu                  /* entry 0's buffer */
 #define L1_END     0xFF906908u                  /* entry 39's buffer end = the table itself */
 #define L1_POOL    0xFF900820u                  /* first 32-byte line in the range */
-#define L1_LIMIT   0xFF906900u                  /* last line boundary below the table */
+#define L1_LIMIT   0xFF902900u                  /* the bump pool ends where the sine table starts */
+#define SINE_SDRAM ((const uint32_t *)0x0101E5E8u)   /* OP1_SINE_TABLE: 8192 x int16 (kennel op1_plugin.h) */
+#define SINE_L1    ((uint32_t *)0xFF902900u)    /* its L1 copy (tools/l1_stereo_insert.py SINE_L1): 16 KiB to 0xFF906900 */
+#define SINE_WORDS 4096
 #define TAB_PTR    ((volatile uint32_t *)0xFF906908u)
 #define TAB_SIZE   ((volatile uint32_t *)0xFF9069A8u)
 
-volatile uint32_t g_l1_state, g_l1_used, g_l1_refused;
+volatile uint32_t g_l1_state, g_l1_used, g_l1_refused, g_l1_sine_copied;
 static uint32_t l1_dummy[8];                    /* what the Lander's table points at (size 0: never read) */
 static uint32_t l1_next;
 
@@ -39,6 +42,16 @@ static int l1_check_and_take(void)
     if (at != L1_END) return 0;
     for (int i = 0; i < L1_TAB_N; i++) { TAB_SIZE[i] = 0; TAB_PTR[i] = (uint32_t)(uintptr_t)l1_dummy; }
     return 1;
+}
+
+/* The stock engines' sine lookups are retargeted at SINE_L1 by the package (T4c), so the copy must exist before the
+ * first stock audio block: called from coop_stereo_block_start (before the stock callback) and from the tape mount
+ * hook at boot. Unconditional: it does not depend on the pool (the slot is inside the Lander's buffers either way). */
+extern "C" void coop_l1_sine_copy(void)
+{
+    if (g_l1_sine_copied) return;
+    for (int i = 0; i < SINE_WORDS; i++) SINE_L1[i] = SINE_SDRAM[i];
+    g_l1_sine_copied = 1;
 }
 
 extern "C" int coop_l1_state(void)

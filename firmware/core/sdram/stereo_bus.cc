@@ -116,6 +116,7 @@ extern "C" void coop_tape_clamp_track(void);           /* tape_stereo.cc: a save
 
 extern "C" void coop_stereo_block_start(void)
 {
+    coop_l1_sine_copy();                               /* before the stock callback's first block (T4c) */
     if (!g_inited) stereo_init();
     coop_tape_clamp_track();
     if (g_coop_force_stereo_out) *OUTPUT_MODE_B = 1;

@@ -422,3 +422,36 @@ Reading:
 with the same request/dirty protocol as the halves. Expected on the device: the longest stall per pass under a
 heavy chord about 45 ms instead of 173 ms, at the cost of more passes per chunk (a node load still completes in
 ~16 passes, well inside the 0.74 s the lookup requests ahead). Verified in op1emu: the record scenario has the same level, peak and width as T4a (the usual one-block timing shift); the 4-second take across six chunk boundaries, recorded, power-cycled and played from the file, matches the T3g run in RMS and width (0.2316), with 25,166 samples differing by at most 13 LSB in one 1.4 s span (-68 dB; the parts land at different moments against the record head).
+
+### T4b on the device (2026-11-03)
+
+`docs/device-stats/t4b_2026-11-03_sysex.txt`. The 16 KiB parts did what they should on the main loop; the audio side
+is as on T4a.
+
+| Figure | T4a | T4b |
+|---|---|---|
+| Longest I/O step per pass under the recorded FM chord | 85-173 ms (64 KiB flush) | 26 ms, one 53 ms (16 KiB) |
+| Longest main-loop gap outside our step, chord windows | 17-48 ms | 17-26 ms |
+| Node part load | 22-28 ms (64 KiB) | 19-20 ms (16 KiB) |
+| Main-loop passes per 5 s, chord windows | 280-377 | 387-448 |
+| Callback average, recorded FM chord | 49-57% | 51-55% |
+| Callback average, FM chord sounding, tape rolling, not recording | - | 51% |
+| Callback worst block | 89% | 106% (one block over the budget) |
+| Coop stages per block, chord (hooks + mix + record tap) | ~47k (8%) | ~60k (10%: hooks 17k, mix 21k, record tap 22k) |
+
+So the remaining load is the stock engine's: about 41-45% of the block for six FM voices with the tape rolling.
+The owner's observation (FM and Voltage heavy, string fine) points at a specific stock cost: `OP1_SINE_TABLE`,
+8192 x int16 at `0x0101E5E8` in SDRAM, which the FM operators read once per operator per sample (6 voices x 4
+operators x 128 samples = ~3,000 scattered lookups a block through a 16 KB data cache shared with everything
+else). The string model is a physical model and reads no such table.
+
+### T4c: the stock sine table in L1 (2026-11-03)
+
+`l1_pool.cc`: `coop_l1_sine_copy` copies the 16 KiB table to `0xFF902900..0xFF906900` (the upper part of the Lander
+buffers; the bump pool now ends at `0xFF902900`), once, from `coop_stereo_block_start` before the stock callback's
+first block and from the tape mount hook at boot. `tools/l1_stereo_insert.py` (`sine_patches`) scans every loaded
+block for `Px.L = 0xe5e8; Px.H = 0x0101` and retargets the pair at the copy: 27 references (26 in SDRAM code, one in
+L1 code at `0xffa04bc2`), refusing the image if the count differs. The L1 copy is unconditional (it does not depend
+on the pool check); with kennel's audit (`kn_l1.h`: the range is read by one Lander function only, through its
+table, never written, never a DMA target) the only effect on the game is silent sound effects. `l1 ... sine 1` in
+the stats. Verified in op1emu (sequential gates): the T4c full image is sample-identical to T4b on the chord scenario (3,407,390 frames from 2 s: every retargeted reader finds the copy in place), and the record scenario matches in level, peak and width.

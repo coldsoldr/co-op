@@ -262,4 +262,24 @@ wait 15 s. Say whether the tape animation still hitches while the chord is recor
 T4a. Then read `/yaffs2/user/coop_stats.txt` with `tools/coop_sysex.html` (Hello should say `build t4b`) and save
 it to Downloads.
 
+Result (2026-11-03, the owner): stats read over SysEx (`docs/device-stats/t4b_2026-11-03_sysex.txt`; the owner's
+verdict on the animation not yet given). The main-loop side is fixed: the longest stall per pass under the recorded
+FM chord is 26 ms (one 53 ms), the longest gap outside our step 17-26 ms, against 85-173 ms and 48 ms on T4a; loads
+19-20 ms per 16 KiB. The audio side is unchanged, as expected: 51-55% average during the chord (also 51% with the
+chord sounding and the tape only rolling), coop's stages about 10% of the block, one block over the budget
+(613,634 cycles = 106%). Mismatch counters 0. Numbers in `docs/performance.md`, "T4b on the device".
+
+## Milestone T4c: the stock sine table in L1 — device test (pending, 2026-11-03)
+
+`build/pkg/op1_246_coop_t4c_stereo_tape.op1` (copy in Downloads; sha256 in the commit). Supersedes T4b. One change,
+aimed at the stock engine's own cost: the firmware's 16 KiB sine table (`OP1_SINE_TABLE`, read per sample by the FM
+and other engines) is copied into L1 data B at the first audio block and every stock reader (27 pointer constants)
+is retargeted at the copy (`docs/performance.md`, T4c). The emulator cannot show the gain (no cache model); the
+device can. If the FM chord's average load falls from ~53%, this was the stock engine's miss cost.
+
+**What to do:** flash, boot, wait 10 s. Tape page: hold an FM chord 5 s with the tape stopped, then record the FM
+chord 10 s, stop, play back, stop, wait 15 s. Then the same with the Voltage model if convenient. Say whether the
+animation hitches, and whether anything sounds different (it must not: the table is a copy). Read
+`/yaffs2/user/coop_stats.txt` with `tools/coop_sysex.html` (Hello: `build t4c`), save to Downloads.
+
 Result: _not yet flashed_.

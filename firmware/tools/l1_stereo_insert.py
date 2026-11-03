@@ -92,6 +92,13 @@ TAPE_ERASE_CALLERS = (0x0191b9f0,)
 # coop_sysex_rx_poll, which runs the stock parser itself. Only when the ELF has the symbol.
 MIDI_RX_SITE = 0x019e3cc8
 MIDI_RX_PARSE = 0x019e31a4
+# --- the stock sine table in L1 (milestone T4c, docs/performance.md) ---
+# OP1_SINE_TABLE (8192 x int16 at 0x0101E5E8, SDRAM) is read per sample by the FM and other engines; the device
+# pays a cache miss on nearly every lookup. coop copies it to L1 data B (l1_pool.cc, coop_l1_sine_copy) and every
+# `Px.L = 0xe5e8; Px.H = 0x0101` pair in the loaded code (27: 26 in SDRAM, one in L1) is retargeted at the copy.
+SINE_TABLE = 0x0101e5e8
+SINE_L1 = 0xff902900
+SINE_REFS = 27
 SEAM_SITE = 0xffa0706e                                               # P2.L = 0xef7c; P2.H = 0x1b4 before the seam loop (hook B)
 SEAM_STOCK = bytes.fromhex("0ae17cef" "4ae1b401")
 SEAM_FILL_SITE = 0xffa073b8                                          # P1 = 0x01a54284 (the stock seam fill) -> coop_seam_fill
@@ -233,6 +240,35 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
     return out + list(TAPE_BYTE_PATCHES)
 
 
+def sine_patches(dxe):
+    """Retarget every `Px.L = lo; Px.H = hi` pair that names SINE_TABLE at SINE_L1, in every loaded non-FILL block.
+    Returns report lines; refuses the image when the count is not SINE_REFS (a different stock image)."""
+    lines = []
+    found = 0
+    for b in dxe:
+        loaded = ldr_dump.loaded_bytes(b)
+        if loaded is None or b['flags'] & 0x0100:
+            continue
+        payload = bytearray(b['payload'])
+        i = 0
+        while i + 8 <= len(payload):
+            lo, hi = payload[i], payload[i + 4]
+            if (payload[i + 1] == 0xe1 and payload[i + 5] == 0xe1 and 0xe108 <= (lo | 0xe100) <= 0xe10d
+                    and hi == lo + 0x40 and payload[i + 2:i + 4] == bytes.fromhex('e8e5')
+                    and payload[i + 6:i + 8] == bytes.fromhex('0101')):
+                payload[i + 2:i + 4] = struct.pack('<H', SINE_L1 & 0xffff)
+                payload[i + 6:i + 8] = struct.pack('<H', SINE_L1 >> 16)
+                lines.append('sine ref {:#x}: P{} -> {:#x}'.format(b['target'] + i, lo & 7, SINE_L1))
+                found += 1
+                i += 8
+            else:
+                i += 2
+        b['payload'] = bytes(payload)
+    if found != SINE_REFS:
+        raise SystemExit('sine table references: found {}, expected {}'.format(found, SINE_REFS))
+    return lines
+
+
 def core_noteon_patches(sdram_tramp_at=SDRAM_TRAMP_AT):
     """[(address, stock, new)] retargeting the Core::NoteOn callers at the region-C trampoline."""
     return [(site, call24(site, CORE_NOTEON), call24(site, sdram_tramp_at)) for site in CORE_NOTEON_CALLERS]
@@ -241,10 +277,14 @@ def core_noteon_patches(sdram_tramp_at=SDRAM_TRAMP_AT):
 def thunk_addresses(elf):
     syms = read_elf_symbols(elf)
     try:
+        sine_copy = symbol_address(syms, 'coop_l1_sine_copy')[0]
+    except Exception:
+        sine_copy = None
+    try:
         sysex_rx = symbol_address(syms, 'coop_sysex_rx_poll')[0]
     except Exception:                                  # an ELF without the SysEx channel
         sysex_rx = None
-    return {'sysex_rx': sysex_rx,'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
+    return {'sysex_rx': sysex_rx, 'sine_copy': sine_copy,'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
             'drum': symbol_address(syms, 'coop_drum_render_thunk')[0],
             'mix': symbol_address(syms, 'coop_mix_thunk')[0],
             'noteon': symbol_address(syms, 'coop_synth_noteon_thunk')[0],
@@ -275,6 +315,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     for address, stock, new in patches:
         patch_at(dxe, address, stock, new)
         lines.append('site {:#x}: {} -> {}'.format(address, stock.hex(), new.hex()))
+    if tape and thunks.get('sine_copy'):
+        lines += sine_patches(dxe)
     blob = b''.join(b for _, _, b in tramps)
     final = [i for i, b in enumerate(dxe) if b['flags'] & 0x8000]
     if len(final) != 1:
