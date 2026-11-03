@@ -80,6 +80,29 @@ static inline void coop_side_accum_drum_c(int32_t *dL, int32_t *dR, const int16_
     }
 }
 
+/* ---- S3 (stereo bus v2): the full per-voice contribution into the instrument's stereo pair ----
+ * L += v + v*(gL-1), R += v + v*(gR-1): the stock per-voice value v placed by the pan law, so a centred voice adds v
+ * to both sides (with every voice centred L = R = the stock bus, before saturation). */
+static inline void coop_pair_accum_synth_c(int32_t *L, int32_t *R, const int16_t *out,
+                                           const int16_t *env, int16_t gain, coop_pan_delta d)
+{
+    for (int i = 0; i < COOP_VBLK; i++) {
+        int16_t v = coop_fr16_mul(coop_fr16_mul(out[i], env[i]), gain);
+        L[i] += v + (((int32_t)v * d.dL) >> 15);
+        R[i] += v + (((int32_t)v * d.dR) >> 15);
+    }
+}
+
+static inline void coop_pair_accum_drum_c(int32_t *L, int32_t *R, const int16_t *out,
+                                          int16_t gain, coop_pan_delta d)
+{
+    for (int i = 0; i < COOP_VBLK; i++) {
+        int16_t v = coop_fr16_shl1(coop_fr16_mul(out[i], gain));
+        L[i] += v + (((int32_t)v * d.dL) >> 15);
+        R[i] += v + (((int32_t)v * d.dR) >> 15);
+    }
+}
+
 #ifdef __bfin__
 /* Blackfin kernels (T4). Register budget: the pointers travel in a small argument block whose address is in P5
  * (an explicit register variable, so the asm can use P0-P2 and I0-I2 freely), pairs of 16-bit parameters share
@@ -155,9 +178,86 @@ static inline void coop_side_accum_drum(int32_t *dL, int32_t *dR, const int16_t 
         : "a"(ap), [n] "i"(COOP_VBLK), [g] "d"((int32_t)gain), [pans] "d"(pans)
         : "I0", "P0", "P1", "LC0", "LT0", "LB0", "memory");
 }
+/* S3: the same kernels with the v term added (L += v + v*dL >>> 15): coop_pair_accum_*_c */
+static inline void coop_pair_accum_synth(int32_t *dL, int32_t *dR, const int16_t *out,
+                                         const int16_t *env, int16_t gain, coop_pan_delta d)
+{
+    uint32_t pans = ((uint32_t)(uint16_t)d.dR << 16) | (uint16_t)d.dL;
+    const void *args[4] = { out, env, dL, dR };
+    register const void **ap __asm__("P5") = args;
+    int32_t t0, t1, t2, t4, t6;
+    __asm__ volatile(
+        "%[t0] = [P5 + 0];\n\t"
+        "I0 = %[t0];\n\t"
+        "%[t0] = [P5 + 4];\n\t"
+        "I1 = %[t0];\n\t"
+        "P0 = [P5 + 8];\n\t"
+        "P1 = [P5 + 12];\n\t"
+        "%[t0] = %[n] (X);\n\t"
+        "LC0 = %[t0];\n\t"
+        "LSETUP (1f, 2f) LC0;\n\t"
+        "1: %[t0].L = W[I0++];\n\t"
+        "%[t1].L = W[I1++];\n\t"
+        "%[t2].L = %[t0].L * %[t1].L;\n\t"
+        "%[t2].L = %[t2].L * %[g].L;\n\t"
+        "%[t4] = %[t2].L * %[pans].L (IS);\n\t"
+        "%[t6] = %[t2].L * %[pans].H (IS);\n\t"
+        "%[t4] >>>= 15;\n\t"
+        "%[t6] >>>= 15;\n\t"
+        "%[t2] = %[t2].L (X);\n\t"
+        "%[t4] = %[t4] + %[t2];\n\t"
+        "%[t6] = %[t6] + %[t2];\n\t"
+        "%[t0] = [P0];\n\t"
+        "%[t0] = %[t0] + %[t4];\n\t"
+        "[P0++] = %[t0];\n\t"
+        "%[t1] = [P1];\n\t"
+        "%[t1] = %[t1] + %[t6];\n\t"
+        "2: [P1++] = %[t1];"
+        : [t0] "=&d"(t0), [t1] "=&d"(t1), [t2] "=&d"(t2), [t4] "=&d"(t4), [t6] "=&d"(t6)
+        : "a"(ap), [n] "i"(COOP_VBLK), [g] "d"((int32_t)gain), [pans] "d"(pans)
+        : "I0", "I1", "P0", "P1", "LC0", "LT0", "LB0", "memory");
+}
+
+static inline void coop_pair_accum_drum(int32_t *dL, int32_t *dR, const int16_t *out,
+                                        int16_t gain, coop_pan_delta d)
+{
+    uint32_t pans = ((uint32_t)(uint16_t)d.dR << 16) | (uint16_t)d.dL;
+    const void *args[3] = { out, dL, dR };
+    register const void **ap __asm__("P5") = args;
+    int32_t t0, t1, t2, t4, t6;
+    __asm__ volatile(
+        "%[t0] = [P5 + 0];\n\t"
+        "I0 = %[t0];\n\t"
+        "P0 = [P5 + 4];\n\t"
+        "P1 = [P5 + 8];\n\t"
+        "%[t0] = %[n] (X);\n\t"
+        "LC0 = %[t0];\n\t"
+        "LSETUP (1f, 2f) LC0;\n\t"
+        "1: %[t0].L = W[I0++];\n\t"
+        "%[t2].L = %[t0].L * %[g].L;\n\t"
+        "%[t2].L = %[t2].L << 1 (S);\n\t"
+        "%[t4] = %[t2].L * %[pans].L (IS);\n\t"
+        "%[t6] = %[t2].L * %[pans].H (IS);\n\t"
+        "%[t4] >>>= 15;\n\t"
+        "%[t6] >>>= 15;\n\t"
+        "%[t2] = %[t2].L (X);\n\t"
+        "%[t4] = %[t4] + %[t2];\n\t"
+        "%[t6] = %[t6] + %[t2];\n\t"
+        "%[t0] = [P0];\n\t"
+        "%[t0] = %[t0] + %[t4];\n\t"
+        "[P0++] = %[t0];\n\t"
+        "%[t1] = [P1];\n\t"
+        "%[t1] = %[t1] + %[t6];\n\t"
+        "2: [P1++] = %[t1];"
+        : [t0] "=&d"(t0), [t1] "=&d"(t1), [t2] "=&d"(t2), [t4] "=&d"(t4), [t6] "=&d"(t6)
+        : "a"(ap), [n] "i"(COOP_VBLK), [g] "d"((int32_t)gain), [pans] "d"(pans)
+        : "I0", "P0", "P1", "LC0", "LT0", "LB0", "memory");
+}
 #else
 #define coop_side_accum_synth coop_side_accum_synth_c
 #define coop_side_accum_drum  coop_side_accum_drum_c
+#define coop_pair_accum_synth coop_pair_accum_synth_c
+#define coop_pair_accum_drum  coop_pair_accum_drum_c
 #endif
 
 /* ---- replica of the stock L1 half-band decimator (0xffa005d4..0xffa00682) ----
@@ -275,8 +375,8 @@ static inline void coop_hb_fir2(int32_t acc0, int32_t acc1, const uint32_t *ring
 #endif
 }
 
-static inline void coop_hb_decimate2(coop_hb2_state *st, const int32_t *inL, const int32_t *inR,
-                                     int16_t *outL, int16_t *outR, const int16_t *coefs, int16_t ramp, int16_t step)
+static inline int16_t coop_hb_decimate2(coop_hb2_state *st, const int32_t *inL, const int32_t *inR,
+                                        int16_t *outL, int16_t *outR, const int16_t *coefs, int16_t ramp, int16_t step)
 {
     int w = st->w;
     for (int n = 0; n < COOP_MBLK; n++) {
@@ -293,6 +393,7 @@ static inline void coop_hb_decimate2(coop_hb2_state *st, const int32_t *inL, con
         ramp = coop_fr16_add(step, ramp);
     }
     st->w = w;
+    return ramp;                                            /* the ramp the stock decimator writes back (0xffa0067e) */
 }
 
 /* ---- replica of the stock SDRAM DC blocker (0x019674f8..0x01967612) ----

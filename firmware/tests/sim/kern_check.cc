@@ -20,7 +20,7 @@ static int32_t r32(void) { return (int32_t)rnd(); }
 
 int main(void)
 {
-    long bad_synth = 0, bad_drum = 0, bad_a = 0, bad_am = 0, bad_b = 0, bad_bm = 0, bad_hb = 0;
+    long bad_psynth = 0, bad_pdrum = 0, bad_synth = 0, bad_drum = 0, bad_a = 0, bad_am = 0, bad_b = 0, bad_bm = 0, bad_hb = 0;
     static int32_t sL[COOP_VBLK], sR[COOP_VBLK];
     static int16_t oL1[COOP_MBLK], oR1[COOP_MBLK], oL2[COOP_MBLK], oR2[COOP_MBLK], coefs[COOP_HB_TAPS];
     static coop_hb_state hL, hR; static coop_hb2_state h2;
@@ -40,6 +40,14 @@ int main(void)
         coop_side_accum_drum_c(dL1, dR1, out, gain, d);
         coop_side_accum_drum(dL2, dR2, out, gain, d);
         if (memcmp(dL1, dL2, sizeof dL1) || memcmp(dR1, dR2, sizeof dR1)) bad_drum++;
+        for (int i = 0; i < COOP_VBLK; i++) { dL1[i] = dL2[i] = r32() >> 4; dR1[i] = dR2[i] = r32() >> 4; }
+        coop_pair_accum_synth_c(dL1, dR1, out, env, gain, d);                   /* S3: the pair kernels */
+        coop_pair_accum_synth(dL2, dR2, out, env, gain, d);
+        if (memcmp(dL1, dL2, sizeof dL1) || memcmp(dR1, dR2, sizeof dR1)) bad_psynth++;
+        for (int i = 0; i < COOP_VBLK; i++) { dL1[i] = dL2[i] = r32() >> 4; dR1[i] = dR2[i] = r32() >> 4; }
+        coop_pair_accum_drum_c(dL1, dR1, out, gain, d);
+        coop_pair_accum_drum(dL2, dR2, out, gain, d);
+        if (memcmp(dL1, dL2, sizeof dL1) || memcmp(dR1, dR2, sizeof dR1)) bad_pdrum++;
 
         for (int i = 0; i < COOP_MBLK; i++) { M[i] = r16(); dL16[i] = r16(); dR16[i] = r16(); L1[i] = L2[i] = r16(); R1[i] = R2[i] = r16(); }
         int16_t gL = r16(), gR = r16(), step = r16(), level = r16();
@@ -75,7 +83,7 @@ int main(void)
         coop_hb_decimate2(&h2, sL, sR, oL2, oR2, coefs, hr, hs);
         if (memcmp(oL1, oL2, sizeof oL1) || memcmp(oR1, oR2, sizeof oR1)) bad_hb++;
     }
-    printf("kernels vs C over 3000 blocks: accum_synth %ld accum_drum %ld mix_a %ld mix_a_mono %ld mix_b %ld mix_b_mono %ld hb_pair %ld mismatching blocks\n",
-           bad_synth, bad_drum, bad_a, bad_am, bad_b, bad_bm, bad_hb);
-    return (bad_synth | bad_drum | bad_a | bad_am | bad_b | bad_bm | bad_hb) ? 1 : 0;
+    printf("kernels vs C over 3000 blocks: pair_synth %ld pair_drum %ld accum_synth %ld accum_drum %ld mix_a %ld mix_a_mono %ld mix_b %ld mix_b_mono %ld hb_pair %ld mismatching blocks\n",
+           bad_psynth, bad_pdrum, bad_synth, bad_drum, bad_a, bad_am, bad_b, bad_bm, bad_hb);
+    return (bad_psynth | bad_pdrum | bad_synth | bad_drum | bad_a | bad_am | bad_b | bad_bm | bad_hb) ? 1 : 0;
 }

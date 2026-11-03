@@ -420,3 +420,24 @@ chosen the chord is P2b's within 2 LSB; the plugin path is sample-identical.
 8. Stats: the `plugins` line has `stock_st_blocks` (blocks a stock effect ran in stereo) and `stock_st_made`.
 
 Result: _not yet flashed_.
+
+## Stereo bus v2 step S3: the stereo pair from the voice on — device test (pending, 2026-11-03)
+
+`build/pkg/op1_246_coop_s3_stereo.op1` (copy in Downloads; sha256
+`414eff29f87170773bcb29614adfc9cdde1ba2fd8a0a7fd49707f9e21cd04c64`). Supersedes S1 (includes it). Each voice goes into
+one stereo pair right after its render; coop's stereo decimator and DC block replace the stock mono ones; in drum
+mode the stock drum bus stage runs on each side (`docs/stereo-bus-v2.md`, S3). Emulator: at spread 0 the bus,
+decimator and DC output equal the stock's sample for sample; full spread equals S1 within 1 LSB.
+
+**What to do:**
+1. Flash. Hello on `tools/coop_sysex.html` says `build s3`. Play synth chords and drums: the level and tone must
+   be as on S1 (and as stock with the spread at 0). Drums especially: the same loudness and punch as before.
+2. Drums with an effect (phone, punch) and the synth together while on the drum page: the whole sound goes through
+   the effect, both instruments (the stock has one instrument effect, the selected instrument's, on everything).
+3. A hard-panned drum hit: its level shaping (the stock drum bus stage) now acts on its own side only. Listen for
+   anything odd in the drum dynamics with a wide kit.
+4. Record to tape and play back: as S1.
+5. Animation while playing a dense DSynth or FM chord: should be no worse than S1 (stats `stages ... stage_max`
+   is coop's new instrument stage; send the stats file).
+
+Result: _not yet flashed_.

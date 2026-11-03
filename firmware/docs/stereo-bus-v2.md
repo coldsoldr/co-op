@@ -93,6 +93,55 @@ Emulator gates (op1emu, 2026-11-03, sequential runs):
   (P2b: mid 1803, side 250 dry); the reverb is wide now.
 - No faults with delay, phone, spring at the synth position (`det_fx_stock_delay.txt`, `det_fx_stock_phone.txt`).
 
+## S3: the stereo pair from the voice on (2026-11-03, the owner: "why not get rid of the mono buses")
+
+**The stock structure, traced (op1emu write tracer, stock image).** There is one voice bus, not one per instrument.
+Per block the stock clears 0xff800bb4 (128 x int16 at 88.2 kHz), renders each voice and adds it to the bus (synth
+and drums alike), runs **in drum mode** a drum bus stage on the summed bus (0x01a66922, called from L1 0xffa02364:
+128 samples in place, two state words in the object it is handed plus the global 0x01dfc80c, a rectifier inside: a
+level / dynamics stage; it halves a single hit), decimates (0xffa005d4) and DC-blocks (0x019674f8) back into the
+first 64 samples, runs **the active instrument's effect** on that buffer in place (the phone render writes it at
+0x01a1bf34 once per block), and mixes it (loop B; loop A on the tape page). One effect object serves both
+instruments because one effect runs on everything: the selected instrument's. So S1's two side pairs were never
+the stock's shape (the drums' side bypassed the synth's effect); S3 has one pair. [C in op1emu]
+
+The decimator + DC pair is called from three L1 sites (0xffa01eb4, 0xffa02456 in the drum path, 0xffa02888), each
+`CALL 0xffa005d4; P1 = 0x019674f8; CALL (P1)` (14 bytes). [C in bytes]
+
+**What coop does now.**
+- The voice hooks add each voice's whole contribution into one 88.2 kHz pair: `L += v + v*(gL-1)`,
+  `R += v + v*(gR-1)` (`coop_pair_accum_synth/drum`, asm verified bit-exact against C in the GNU simulator), with
+  v exactly the stock per-voice value (synth `(out*env)*gain`, drums `sat(2*(out*gain))`). The drum hook no
+  longer skips a voice whose render returned 0: the stock only sets a flag there and sums it anyway.
+- Drum mode: the drum bus stage call is retargeted (`coop_drumbus_thunk` -> `coop_drum_bus`) and the stock stage
+  runs on L and on R, the right side with its own copy of the three state words. Per side, unlinked.
+- The three decimator + DC sites become an inline far call (`[--SP] = RETS; P0 = coop_instr_thunk; CALL (P0);
+  RETS = [SP++]`, 14 bytes; the free L1 trampoline range is full in the tape build) -> `coop_instr_stage`: the
+  pair decimator with the stock ramp word (written back as the stock decimator does), the DC block on both sides,
+  then mid `(L + R) >> 1` into the stock bus buffer and the side `L - mid`, `R - mid` into coop's buffers. The
+  thunk saves the DAG, loop and accumulator registers (one site keeps M1 across the pair) and runs the stock pair
+  when `g_coop_stereo_enable` is 0.
+- The effect dispatch, the mix loops and the record tap are unchanged: they take mid + side, which is the pair
+  exactly (`sat(mid + side) = L`). The mid in the stock buffer is what the stock meters read.
+- Still running and unused: the stock per-voice sum into the mono bus (its result is overwritten by the mid).
+  Patching it out is a small saving left for later (about 0.4k cycles per sounding voice [I]).
+
+**Debug aid.** `--set-word g_coop_dbg_cmp=1` (op1emu, spread 0): the thunk also runs the stock decimator and DC on
+the stock bus, the drum stage runs on a third state copy, and the stage compares coop with stock at the 88.2 kHz
+bus, after the decimator and after the DC block (`g_dbg_acc_bad / dec_bad / dc_bad`, first mismatch in
+`g_dbg_*_first`). It found the drum bus stage (coop's drums came out exactly twice the stock's).
+
+**Emulator gates (2026-11-03, sequential, `--align 200`).** 
+- Debug comparison at spread 0 (`g_coop_dbg_cmp=1`): coop's 88.2 kHz bus, decimator output and DC output equal
+  the stock's in every block of the chord (50,018 blocks) and the drum scenario (38,127 blocks, 18,380 drum bus
+  stage calls).
+- Spread 0 against T4a's spread 0 (the established coop reference, itself within 1 LSB of stock): chord and drums
+  within 1 LSB (different images shift by a fraction of a block); drums: the same energy and peak as stock
+  (RMS 60.0, peak 2597 in both; before the drum bus stage was found, coop's drums were exactly twice as loud).
+- Full spread against S1 in the same job: chord and tape record within 1 LSB, the coop plugin within 2 LSB, stock
+  phone at the synth position the same levels and width (its details differ).
+- No faults in any scenario (chord, drums, tape record and play, plugin, phone, nitro).
+
 ## Steps
 
 1. **RE** (in progress): the stock master FX objects per type (vtable, ctor, size, render/init entries), the master
@@ -103,7 +152,8 @@ Emulator gates (op1emu, 2026-11-03, sequential runs):
    it on the L/R buses (dual-mono inside, as the master does); coop plugins run on the same buses. Gate: v1 full
    image vs v2 with no FX selected, within rounding; a stock filter at the synth position filters everything.
 3. **S2**: the second FX slot per position and on the master; the saved-sound JSON member for it.
-4. **S3**: patch out the stock mono stages for the CPU.
+4. **S3** (built, see above): the stereo pair from the voice hook, coop's decimator and DC block in place of the
+   stock mono ones, the drum bus stage per side; the stock per-voice sum still runs, unused.
 
 ## Display slots (2026-11-03, the owner on the first S1 build: nitro's dials did not move)
 

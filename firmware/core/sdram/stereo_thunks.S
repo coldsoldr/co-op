@@ -65,6 +65,7 @@ _coop_drum_render_thunk:
     SP += 12;
     [--SP] = R0;
     SP += -12;
+    R1 = R0;                         /* active: the stock sums the voice only when the render returned nonzero */
     R0 = R7;
     CALL _coop_drum_voice_hook;
     SP += 12;
@@ -186,6 +187,99 @@ _coop_mix_thunk:
     RETS = [SP++];
     RTS;
     .size _coop_mix_thunk, .-_coop_mix_thunk
+
+/* S3 (docs/stereo-bus-v2.md): CALLed from the inline far call that replaces `CALL 0xffa005d4` (the stock decimator)
+ * + `P1 = 0x019674f8; CALL (P1)` (the stock DC block) at 0xffa01eb4, 0xffa02456, 0xffa02888:
+ *     [--SP] = RETS; P0 = coop_instr_thunk; CALL (P0); RETS = [SP++]
+ * The stock pair clobbers R0-R2, P0-P2 and the DAG / loop / accumulator registers, and the site at 0xffa02888 keeps
+ * M1 across it, so everything compiled code may touch besides R0-R3 / P0-P2 is saved; L0-L3 are zeroed for the C
+ * code (the ABI assumes linear addressing). g_coop_stereo_enable = 0 runs the stock pair instead. */
+    .global _coop_instr_thunk
+    .type   _coop_instr_thunk, STT_FUNC
+_coop_instr_thunk:
+    [--SP] = RETS;
+    [--SP] = ASTAT;
+    [--SP] = I0; [--SP] = I1; [--SP] = I2; [--SP] = I3;
+    [--SP] = B0; [--SP] = B1; [--SP] = B2; [--SP] = B3;
+    [--SP] = L0; [--SP] = L1; [--SP] = L2; [--SP] = L3;
+    [--SP] = M0; [--SP] = M1; [--SP] = M2; [--SP] = M3;
+    [--SP] = LC0; [--SP] = LT0; [--SP] = LB0;
+    [--SP] = LC1; [--SP] = LT1; [--SP] = LB1;
+    R3 = A0.W; [--SP] = R3; R3 = A0.X; [--SP] = R3;
+    R3 = A1.W; [--SP] = R3; R3 = A1.X; [--SP] = R3;
+    L0 = 0 (X); L1 = 0 (X); L2 = 0 (X); L3 = 0 (X);
+    P1.H = _g_coop_stereo_enable;
+    P1.L = _g_coop_stereo_enable;
+    R0 = [P1];
+    CC = R0 == 0;
+    IF CC JUMP 1f;
+    SP += -12;
+    P1.H = _g_coop_dbg_cmp;          /* debug (op1emu): also run the stock pair, coop_instr_stage compares */
+    P1.L = _g_coop_dbg_cmp;
+    R0 = [P1];
+    CC = R0 == 0;
+    IF CC JUMP 3f;
+    CALL _coop_dbg_pre;
+    P1.H = 0xffa0;
+    P1.L = 0x05d4;
+    CALL (P1);
+    P1.H = 0x0196;
+    P1.L = 0x74f8;
+    CALL (P1);
+3:  CALL _coop_instr_stage;
+    SP += 12;
+    JUMP 2f;
+1:  SP += -12;
+    P1.H = 0xffa0;                   /* the stock pair, as the site had it */
+    P1.L = 0x05d4;
+    CALL (P1);
+    P1.H = 0x0196;
+    P1.L = 0x74f8;
+    CALL (P1);
+    SP += 12;
+2:  R3 = [SP++]; A1.X = R3; R3 = [SP++]; A1.W = R3;
+    R3 = [SP++]; A0.X = R3; R3 = [SP++]; A0.W = R3;
+    LB1 = [SP++]; LT1 = [SP++]; LC1 = [SP++];
+    LB0 = [SP++]; LT0 = [SP++]; LC0 = [SP++];
+    M3 = [SP++]; M2 = [SP++]; M1 = [SP++]; M0 = [SP++];
+    L3 = [SP++]; L2 = [SP++]; L1 = [SP++]; L0 = [SP++];
+    B3 = [SP++]; B2 = [SP++]; B1 = [SP++]; B0 = [SP++];
+    I3 = [SP++]; I2 = [SP++]; I1 = [SP++]; I0 = [SP++];
+    ASTAT = [SP++];
+    RETS = [SP++];
+    RTS;
+    .size _coop_instr_thunk, .-_coop_instr_thunk
+
+/* S3: the drum path's bus stage call at 0xffa02364 (`P1 = 0x01a66922; CALL (P1)`, R0 = state, R1 = bus, R2 = params)
+ * is retargeted here (P1's immediates). The stock callee is compiled C; the L1 code after the call reloads what it
+ * uses, but the DAG / loop / accumulator state is saved as for the instrument stage, to be safe. */
+    .global _coop_drumbus_thunk
+    .type   _coop_drumbus_thunk, STT_FUNC
+_coop_drumbus_thunk:
+    [--SP] = RETS;
+    [--SP] = ASTAT;
+    [--SP] = I0; [--SP] = I1; [--SP] = I2; [--SP] = I3;
+    [--SP] = B0; [--SP] = B1; [--SP] = B2; [--SP] = B3;
+    [--SP] = L0; [--SP] = L1; [--SP] = L2; [--SP] = L3;
+    [--SP] = M0; [--SP] = M1; [--SP] = M2; [--SP] = M3;
+    [--SP] = LC1; [--SP] = LT1; [--SP] = LB1;
+    R3 = A0.W; [--SP] = R3; R3 = A0.X; [--SP] = R3;
+    R3 = A1.W; [--SP] = R3; R3 = A1.X; [--SP] = R3;
+    L0 = 0 (X); L1 = 0 (X); L2 = 0 (X); L3 = 0 (X);
+    SP += -12;
+    CALL _coop_drum_bus;
+    SP += 12;
+    R3 = [SP++]; A1.X = R3; R3 = [SP++]; A1.W = R3;
+    R3 = [SP++]; A0.X = R3; R3 = [SP++]; A0.W = R3;
+    LB1 = [SP++]; LT1 = [SP++]; LC1 = [SP++];
+    M3 = [SP++]; M2 = [SP++]; M1 = [SP++]; M0 = [SP++];
+    L3 = [SP++]; L2 = [SP++]; L1 = [SP++]; L0 = [SP++];
+    B3 = [SP++]; B2 = [SP++]; B1 = [SP++]; B0 = [SP++];
+    I3 = [SP++]; I2 = [SP++]; I1 = [SP++]; I0 = [SP++];
+    ASTAT = [SP++];
+    RETS = [SP++];
+    RTS;
+    .size _coop_drumbus_thunk, .-_coop_drumbus_thunk
 
 /* ---- stereo tape (tape_stereo.cc) ---- */
 

@@ -57,6 +57,19 @@ MIX_RESUME = 0xffa00fdc                                           # first instru
 MIXA_SITE = 0xffa00f2c
 MIXA_STOCK = bytes.fromhex('a2e02d10' '03c8')                     # LSETUP(0xffa00f30,0xffa00f86) LC0=P1; first body halfword
 MIXA_RESUME = 0xffa00f88
+# S3 (stereo bus v2, docs/stereo-bus-v2.md): the stock decimator + DC block call pairs, 14 bytes each:
+#   CALL 0xffa005d4; P1.L = 0x74f8; P1.H = 0x0196; CALL (P1)
+# become an inline far call to coop_instr_thunk (no L1 trampoline: the tape build fills the free L1 range):
+#   [--SP] = RETS; P0.L = lo; P0.H = hi; CALL (P0); RETS = [SP++]
+# The code after each site reloads P0 / P1 / P2 from its frame (and M1, which the thunk preserves).
+DECIM_FN = 0xffa005d4
+DC_TAIL = bytes.fromhex('09e1f874' '49e19601' '6100')            # P1.L = 0x74f8; P1.H = 0x196; CALL (P1)
+INSTR_SITES = (0xffa01eb4, 0xffa02456, 0xffa02888)
+# The drum path's bus stage (0x01a66922: an in-place 128-sample dynamics / level stage on the summed bus, between the
+# voices and the decimator): `P1.L = 0x6922; P1.H = 0x01a6` before `CALL (P1)` at 0xffa02364 -> coop_drumbus_thunk,
+# which runs it on each side of the pair.
+DRUMBUS_SITE = 0xffa0235c
+DRUMBUS_FN = 0x01a66922
 # synth note-on dispatch inside the voice loop (reached from 0xffa00aa6 for a voice with a pending note):
 #   P0 = [P1+0x1c]; R2 = W[P1+0x18] (X); R0 = R0 + R2; CALL (P0)   ->  R2 = ...; R0 = ...; CALL tramp_noteon
 NOTEON_SITE = 0xffa00e2e
@@ -155,6 +168,21 @@ def jump_s(address, target):
     if not -(1 << 11) <= off < (1 << 11) or (target - address) & 1:
         raise SystemExit('JUMP.S {:#x} -> {:#x} out of range'.format(address, target))
     return struct.pack('<H', 0x2000 | (off & 0xfff))
+
+
+def instr_patches(thunk):
+    """[(address, stock, new)] for the three decimator + DC call pairs (S3)."""
+    out = []
+    for site in INSTR_SITES:
+        stock = call24(site, DECIM_FN) + DC_TAIL
+        new = bytes.fromhex('6701') + imm_pair_bytes(0, thunk) + bytes.fromhex('6000' '2701')
+        assert len(stock) == len(new) == 14
+        out.append((site, stock, new))
+    return out
+
+
+def drumbus_patch(thunk):
+    return (DRUMBUS_SITE, imm_pair_bytes(1, DRUMBUS_FN), imm_pair_bytes(1, thunk))
 
 
 def tramp_synth(thunk):
@@ -323,6 +351,11 @@ def thunk_addresses(elf):
     except Exception:
         fxh = {}
     try:
+        instr = symbol_address(syms, 'coop_instr_thunk')[0]
+        drumbus = symbol_address(syms, 'coop_drumbus_thunk')[0]
+    except Exception:                                  # an ELF before S3
+        instr = drumbus = None
+    try:
         sine_copy = symbol_address(syms, 'coop_l1_sine_copy')[0]
     except Exception:
         sine_copy = None
@@ -330,7 +363,7 @@ def thunk_addresses(elf):
         sysex_rx = symbol_address(syms, 'coop_sysex_rx_poll')[0]
     except Exception:                                  # an ELF without the SysEx channel
         sysex_rx = None
-    return {'sysex_rx': sysex_rx, 'sine_copy': sine_copy, 'keyev': keyev, **fxh,'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
+    return {'instr': instr, 'drumbus': drumbus, 'sysex_rx': sysex_rx, 'sine_copy': sine_copy, 'keyev': keyev, **fxh,'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
             'drum': symbol_address(syms, 'coop_drum_render_thunk')[0],
             'mix': symbol_address(syms, 'coop_mix_thunk')[0],
             'noteon': symbol_address(syms, 'coop_synth_noteon_thunk')[0],
@@ -356,6 +389,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     thunks_global.update(thunks)
     lines = []
     patches = site_patches(tramps) + core_noteon_patches()
+    if thunks.get('instr'):
+        patches += instr_patches(thunks['instr']) + [drumbus_patch(thunks['drumbus'])]
     if tape:
         patches += tape_patches(tramps)
     for address, stock, new in patches:

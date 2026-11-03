@@ -111,7 +111,9 @@ plugins.
 
 - P1b: SysEx `FILE_PUT` / `FILE_DELETE` (kennel's devupd framing, 64-byte chunks) so plugins can be installed from
   `tools/coop_sysex.html` while the device runs; then the device test of P1.
-- S2: a second FX slot per instrument and on the master; S3: the stock mono stages patched out.
+- S3 (built): the instrument bus is a true stereo pair from the voice hook (`docs/stereo-bus-v2.md`). One
+  instrument effect runs on both instruments, as in the stock.
+- S2: a second FX slot per instrument and on the master.
 - Then: the core-owned parameter store with coarse/fine, pages,
   the knob bindings; saved sounds with the `"coop"` JSON member.
 - P3: engines (`coop_engine_t`, 128 samples at 88.2 kHz, stereo or mono-with-flag), LFO and sequencer objects,
