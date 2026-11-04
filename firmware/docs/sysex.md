@@ -48,3 +48,11 @@ Payload byte 0 is the operation:
 - `2` plugin list: status + `n=name;` text for every loaded plugin.
 
 The host page's "Second effect slot" section reads both slots and the plugin list, and applies one slot at a time.
+
+## Test runner: `0x27 RUN` (p5b, 2026-11-04)
+
+Payload byte 0 is the operation: `0` status, `1` start (then the path of a CRUN file under `/yaffs2/user/`, which the
+host first writes with PUT), `2` abort. Every reply is the status byte (start: 0, or 2 when the runner refused the
+file) and 12 bytes: state (0 idle, 1 armed, 2 running, 3 done, 4 stopped, 5 error), u32 block, u16 event index,
+u16 events, sections closed, error (1 open, 2 format, 3 too many events, 4 bad event, 5 busy), the run file written.
+An image without the runner answers 1 (format). The host page's "Run a test" section drives it; docs/test-runner.md.

@@ -584,6 +584,48 @@ cwo 322 k a block (p3m 448 k), one cwo 305 k (p3m about 394 k); the chord alone 
 Not yet rewritten (same as before within run-to-run spread): punch 78 k, phone 49 k, spring 47 k, nitro 46 k, grid
 36 k, delay 29 k. [C]
 
+## Performance 5b (p5b): the p5a image plus the test runner — device test (pending, 2026-11-04)
+
+p5b is p5a (below) plus the test runner (`docs/test-runner.md`). The page plays the p5a test on the OP-1, records it
+from your interface and fetches the results, so the device and op1emu get the same inputs. **Flash p5b instead of
+p5a**; the p5a steps below stay as the manual fallback.
+
+- `build/pkg/op1_246_coop_p5b_perf.op1` (sha256 `f6e756b19e2b4b07a463e790f9b72437465754dd9c0be49f0f6fc93d3a2f8c46`):
+  everything on. **Flash this one.**
+- `build/pkg/op1_246_coop_p5b_safe.op1` (sha256 `62299fb35d1ec2f18c06a78d3c80b4e23dfac5eaf71674d8e6fc929a865383f2`):
+  p5a's eight new switches at 0, the runner in. Only if perf misbehaves.
+
+Both pass `tools/verify_bootloader.py` (te-boot.ldr absent) and `pkg_check` (only OP1_vdk.ldr differs). Copies in
+Downloads.
+
+Steps:
+1. Flash `op1_246_coop_p5b_perf.op1` through the te-boot menu. Play a few notes by hand: it should behave as p5a.
+2. Wiring: OP-1 USB to the computer; the OP-1's headphone or line out into the audio interface input. Set the OP-1
+   volume to where you usually play, and the interface gain so the loudest chord peaks well below clipping (the
+   runner's start click is about half as loud as the loudest music).
+3. The test assumes the factory sound slots on the synth page (s1 digital, s2 voltage, s3 pulse, s4 drwave, s5 dsynth,
+   s6 fm, s7 phase, s8 sampler). It changes s5's effect (it ends on spring) and turns effect knobs, so save any sound
+   you care about first. The drum part plays whatever kit is loaded.
+4. Open `tools/coop_sysex.html` in Chrome or Edge, pick the OP-1 port, press **Hello**: it must say `build p5b`.
+5. **Run a test**: choose `tests/sim/run_p5a.txt`, press **List inputs** (allow the microphone permission), pick
+   the interface input, press **Run test**. It takes about 3 min 15 s. Hands off the OP-1; watch the screen: the FX
+   list should scroll and the effects change as in op1emu. **Stop** ends it early and releases every key.
+6. Save the three files it offers (`p5a_<date>.wav`, `_run.txt`, `_stats.txt`) and send them over. I compare the
+   recording with op1emu's run of the same script (`tools/run_compare.py`) and read the per-section costs.
+
+What to report besides the files: anything that sounded wrong, a key that stayed down, the page stopping with an
+error, or the screen doing something the script did not ask for.
+
+op1emu (2026-11-04): `tests/sim/run_emu.sh tests/sim/run_p5a.txt tests/sim/idle_200s.txt`. The runner played all
+1,566 events and 15 sections with no fault. Each effect section shows its effect: `fx1_punch` n 8144, `fx1_phone`
+8364, `fx1_nitro` 8474, `fx1_grid` 8584, `fx1_spring` 9756, `fx1_delay` 10417; the small counts of other effects are
+the list previewing rows while it scrolls. Engine costs per render as p5a: voltage 8391, phase 5818, dsynth 18612,
+digital 7100, pulse 16502, drwave 9641, fm 5867, sampler 6874. Level A (op1emu input) vs B (runner): RMS 453.5 vs
+455.4. `run_compare.py` on a simulated recording (gain 0.4, 0.7 s late, noise, +100 ppm clock) found both clicks, got
++100 ppm, and gave 0.0 dB in every section.
+
+Result: pending.
+
 ## Performance 5 (p5a): six effects and two engines in assembly, per-engine cost — device test (pending, 2026-11-04)
 
 Two packages (copies in Downloads), build tag `p5a`; the stats file's new `switches` line says which one ran.

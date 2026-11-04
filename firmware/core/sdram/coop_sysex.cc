@@ -38,9 +38,9 @@
 #define QN        4
 #define CHUNK     64
 #define PROTOCOL  1
-#define BUILD_TAG "p5a"
+#define BUILD_TAG "p5b"
 enum { CX_FILE_GET = 0x20, CX_HELLO = 0x21, CX_PUT_BEGIN = 0x22, CX_PUT_DATA = 0x23, CX_PUT_END = 0x24, CX_DELETE = 0x25,
-       CX_SLOT2 = 0x26, CX_REPLY = 0x40, ST_OK = 0, ST_FORMAT = 1, ST_STATE = 2, ST_PATH = 3, ST_SIZE = 4, ST_OFFSET = 5, ST_CRC = 6, ST_IO = 7 };
+       CX_SLOT2 = 0x26, CX_RUN = 0x27, CX_REPLY = 0x40, ST_OK = 0, ST_FORMAT = 1, ST_STATE = 2, ST_PATH = 3, ST_SIZE = 4, ST_OFFSET = 5, ST_CRC = 6, ST_IO = 7 };
 /* FILE_PUT (P1b): BEGIN path -> a file under /yaffs2/plugins or /yaffs2/user is created (truncated); DATA u32 offset +
  * bytes, in order, each acknowledged with the next offset; END u32 total + u32 crc32 (zlib) closes it and checks both.
  * DELETE path. The loader reads /yaffs2/plugins at boot: a new plugin plays after a power cycle. */
@@ -48,6 +48,10 @@ extern "C" int coop_slot2_set(int pos, int kind, int id, const uint16_t *knob); 
 extern "C" void coop_slot2_get(int pos, uint8_t *out10);
 extern "C" int coop_slot2_save(void);
 extern "C" int coop_plugin_list(char *out, int cap);
+extern "C" int coop_runner_start(const char *path);                 /* coop_runner.cc, p5b */
+extern "C" void coop_runner_abort(void);
+extern "C" void coop_runner_status(uint8_t *out12);
+extern "C" void coop_runner_service(void);
 static int put_fd = -1;
 static uint32_t put_off, put_crc;
 static int path_ok(const char *p)
@@ -254,6 +258,25 @@ static void handle(const uint8_t *m, int n)
         reply(cmd, seq, out, 21);
         return;
     }
+    if (cmd == CX_RUN) {
+        /* p5b test runner (coop_runner.cc, docs/test-runner.md): op 0 = status, op 1 = start + the CRUN file's path
+         * (under /yaffs2/user/), op 2 = abort. Every reply: status (start: 0 ok, else the runner's error in byte 1
+         * with ST_STATE), then 12 bytes: state, u32 block, u16 event, u16 events, sections, error, written. */
+        if (pn < 1) { out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
+        out[0] = ST_OK;
+        if (in[0] == 1) {
+            static char path[96];
+            int pl = pn - 1;
+            if (pl < 1 || pl >= (int)sizeof path) { out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
+            for (int i = 0; i < pl; i++) path[i] = (char)in[1 + i];
+            path[pl] = 0;
+            if (!path_ok(path)) { out[0] = ST_PATH; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
+            if (coop_runner_start(path)) out[0] = ST_STATE;
+        } else if (in[0] == 2) coop_runner_abort();
+        coop_runner_status(out + 1);
+        reply(cmd, seq, out, 13);
+        return;
+    }
     out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++;
 }
 
@@ -264,4 +287,5 @@ extern "C" void coop_sysex_service(void)
         handle(q[qr % QN], qlen[qr % QN]);
         qr++;
     }
+    coop_runner_service();                                         /* p5b: format run sections, write the run file */
 }

@@ -40,6 +40,7 @@
 /* What the stock getter at 0x019d90e8 returns; 0xffa04280 receives it in R0 (see the header comment). */
 #define STOCK_GETTER_RESULT 0xff80187cu
 extern "C" void coop_slot2_render(int pos, int16_t *l, int16_t *r);   /* plugin_host.cc, S2 */
+extern "C" void coop_runner_click(int16_t *l, int16_t *r);            /* coop_runner.cc, p5b */
 
 /* Milestone B, FX slot 2: a coop stereo feedback delay in series before the master suite. Its delay
  * line lives high in free SDRAM region A (0x02d00000), above our ~5 KB payload at the region base.
@@ -85,6 +86,7 @@ extern "C" uint32_t coop_master_apply(void)
     uint32_t m0 = coop_cycles();
     coop_slot2_render(1, (int16_t *)MBUS_L, (int16_t *)MBUS_R);   /* S2: the master's second slot, after the stock master
                                                                      effect (0xffa017e6), before the level stage */
+    coop_runner_click((int16_t *)MBUS_L, (int16_t *)MBUS_R);      /* p5b: the test runner's alignment click, if due */
     uint32_t flags = g_coop_master_flags;
     if (!(flags & 3u)) { coop_cost_add(COOP_COST_MASTER, coop_cycles() - m0); return STOCK_GETTER_RESULT; }   /* transparent */
     int32_t L[BLOCK], R[BLOCK];

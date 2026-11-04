@@ -1,0 +1,24 @@
+# Probe (runner work, 2026-11-04): which s_knob_acc index and sign each encoder turn gives, and the key codes of the
+# encoder pushes in s_key_queue. One turn per encoder 1 s apart, then each push.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+turn enc1 cw 2
+at 27000
+turn enc2 cw 2
+at 28000
+turn enc3 cw 2
+at 29000
+turn enc4 cw 2
+at 30000
+turn enc1 ccw 2
+at 31000
+tap enc1 200
+at 32000
+tap enc2 200
+at 33000
+tap enc3 200
+at 34000
+tap enc4 200
+wait 30000
+quit

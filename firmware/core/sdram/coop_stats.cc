@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p5a"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p5b"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -67,12 +67,14 @@ static int g_len;
 
 static inline uint32_t now_cycles(void) { uint32_t v; __asm__ __volatile__("%0 = CYCLES;" : "=d"(v)); return v; }
 
-static void put(const char *s) { while (*s && g_len < (int)sizeof g_text - 1) g_text[g_len++] = *s++; }
+static char *g_out = g_text;                                    /* where put() writes: g_text, or a run-file buffer */
+static int g_cap = (int)sizeof g_text;
+static void put(const char *s) { while (*s && g_len < g_cap - 1) g_out[g_len++] = *s++; }
 static void putn(uint32_t v)
 {
     char b[12]; int i = 0;
     do { b[i++] = (char)('0' + v % 10); v /= 10; } while (v);
-    while (i && g_len < (int)sizeof g_text - 1) g_text[g_len++] = b[--i];
+    while (i && g_len < g_cap - 1) g_out[g_len++] = b[--i];
 }
 static void kv(const char *k, uint32_t v) { put(" "); put(k); put(" "); putn(v); }
 
@@ -116,9 +118,10 @@ extern "C" void coop_eng_block_end(void)
     if (g_eng_blk[0]) { coop_cost_add(COOP_COST_SYNTH, g_eng_blk[0]); g_eng_blk[0] = 0; }
     if (g_eng_blk[1]) { coop_cost_add(COOP_COST_DRUM, g_eng_blk[1]); g_eng_blk[1] = 0; }
 }
+static const struct coop_cost *g_cost_src = g_coop_cost;          /* the live table, or a run section's copy */
 static void put_cost(const char *name, int i)               /* name avg max n: cycles per call */
 {
-    const struct coop_cost *c = &g_coop_cost[i];
+    const struct coop_cost *c = &g_cost_src[i];
     if (!c->n) return;
     put(" "); put(name); putn((uint32_t)(c->sum / c->n)); put("/"); putn(c->max); put("/"); putn(c->n);
 }
@@ -144,14 +147,8 @@ static const char *eng_name(uint32_t fn)
     return "?";
 }
 
-static void write_file(void)
+static void put_cost_lines(void)                             /* the "cost" and "engines" lines from g_cost_src */
 {
-    g_len = 0;
-    put("coop_stats 3 build " STATS_BUILD "\n");
-    put("cb"); kv("blocks", g_blocks); kv("max", g_max); kv("last", g_last); kv("cycles", now_cycles()); put("\n");
-    put("stages"); kv("rec_max", g_tape_rec_cycles_max); kv("mix_max", g_stereo_mix_cycles_max);
-    kv("hook_max", g_stereo_hook_cycles_max); kv("stage_max", g_stereo_stage_cycles_max); kv("stage_calls", g_stereo_stage_calls); kv("lfo2_max", g_lfo2_cycles_max); kv("master_max", g_master_cycles);
-    kv("fx_max", g_fx_cycles); kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
     put("cost avg/max/n");                                   /* per call; slot 1's stock effect by type (stereo class) */
     put_cost("stage=", COOP_COST_STAGE); put_cost("s2_instr=", COOP_COST_S2I); put_cost("s2_master=", COOP_COST_S2M);
     put_cost("master=", COOP_COST_MASTER); put_cost("fx1_plugin=", COOP_COST_PLUG);
@@ -165,10 +162,48 @@ static void write_file(void)
         put_cost(eng_name(g_coop_eng_fn[i]), COOP_COST_ENG + i);
     }
     put("\n");
-    put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
+}
+
+static void put_switches(void)
+{
     put("switches"); kv("dsynth", g_coop_fast_dsynth); kv("stage", g_coop_fast_stage); kv("cwo", g_coop_fast_cwo);   /* the image's g_coop_fast_* words */
     kv("punch", g_coop_fast_punch); kv("phone", g_coop_fast_phone); kv("nitro", g_coop_fast_nitro); kv("grid", g_coop_fast_grid);
     kv("spring", g_coop_fast_spring); kv("delay", g_coop_fast_delay); kv("voltage", g_coop_fast_voltage); kv("phase", g_coop_fast_phase); put("\n");
+}
+
+/* The run file (coop_runner.cc, main loop): its header, then one block of lines per section. */
+extern "C" int coop_stats_run_header(char *out, int cap, const char *script, uint32_t events, uint32_t blocks, uint32_t state, uint32_t lost)
+{
+    g_out = out; g_cap = cap; g_len = 0;
+    put("coop_run 1 build " STATS_BUILD " script "); put(script); put("\n");
+    put("run"); kv("events", events); kv("blocks", blocks); kv("state", state); kv("lost_sections", lost); put("\n");
+    put_switches();
+    int n = g_len;
+    g_out = g_text; g_cap = (int)sizeof g_text; g_len = 0;
+    return n;
+}
+
+extern "C" int coop_stats_run_section(char *out, int cap, const char *name, const struct coop_cost *cost, uint32_t blocks, uint64_t cb_sum, uint32_t cb_max)
+{
+    g_out = out; g_cap = cap; g_len = 0; g_cost_src = cost;
+    put("section "); put(name); kv("blocks", blocks); kv("cb_avg", blocks ? (uint32_t)(cb_sum / blocks) : 0); kv("cb_max", cb_max); put("\n");
+    put_cost_lines();
+    int n = g_len;
+    g_out = g_text; g_cap = (int)sizeof g_text; g_len = 0; g_cost_src = g_coop_cost;
+    return n;
+}
+
+static void write_file(void)
+{
+    g_out = g_text; g_cap = (int)sizeof g_text; g_len = 0; g_cost_src = g_coop_cost;
+    put("coop_stats 3 build " STATS_BUILD "\n");
+    put("cb"); kv("blocks", g_blocks); kv("max", g_max); kv("last", g_last); kv("cycles", now_cycles()); put("\n");
+    put("stages"); kv("rec_max", g_tape_rec_cycles_max); kv("mix_max", g_stereo_mix_cycles_max);
+    kv("hook_max", g_stereo_hook_cycles_max); kv("stage_max", g_stereo_stage_cycles_max); kv("stage_calls", g_stereo_stage_calls); kv("lfo2_max", g_lfo2_cycles_max); kv("master_max", g_master_cycles);
+    kv("fx_max", g_fx_cycles); kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
+    put_cost_lines();
+    put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
+    put_switches();
     put("plugins"); kv("seen", g_plugins_seen); kv("loaded", g_plugins_loaded); kv("failed", g_plugins_failed);
     kv("mono_calls", g_fx_dispatch_mono); kv("st_calls", g_fx_dispatch_st); kv("plugin_blocks", g_fx_plugin_blocks); kv("stock_st_blocks", g_fx_stock_stereo_blocks); kv("stock_st_made", g_fx_stock_ctor); kv("s2_instr", g_s2_blocks[0]); kv("s2_master", g_s2_blocks[1]); kv("s2_changes", g_s2_changes); kv("tanks", g_tank_bound); kv("tank_short", g_tank_short); kv("ui_opens", g_ui_opens); kv("ui_applies", g_ui_applies);
     if (g_plugins_last_error) { put(" last "); put(g_plugins_last_name); put(": "); put(g_plugins_last_error); }
@@ -200,6 +235,8 @@ static void write_file(void)
     if (Y_CLOSE(fd) != 0) ok = 0;
     if (ok) g_stats_writes++; else g_stats_errors++;
 }
+
+extern "C" void coop_stats_write_now(void) { write_file(); }    /* coop_runner.cc: after a run (main loop) */
 
 static void keep_if_heavy(const struct window *w)
 {

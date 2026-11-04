@@ -135,9 +135,11 @@ static void pair_clear(void)
 extern "C" void coop_tape_clamp_track(void);           /* tape_stereo.cc: a saved track word >= 4 trips a stock assert */
 
 extern "C" void coop_eng_block_end(void);          /* coop_stats.cc: the previous block's per-engine render sums */
+extern "C" void coop_runner_block(void);           /* coop_runner.cc (p5b): this block's scripted keys and turns */
 extern "C" void coop_stereo_block_start(void)
 {
     coop_eng_block_end();
+    coop_runner_block();                               /* after the render sums close: a mark's section includes them */
     coop_l1_sine_copy();                               /* before the stock callback's first block (T4c) */
     if (!g_inited) stereo_init();
     coop_tape_clamp_track();

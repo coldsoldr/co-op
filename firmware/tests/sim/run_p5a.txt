@@ -1,0 +1,407 @@
+# The p5a device test (docs/device-tests.md "Performance 5") as a test-runner scenario (p5b, docs/test-runner.md):
+# tools/coop_sysex.html "Run a test" plays it on the OP-1 and records the audio; tests/sim/run_emu.sh plays it in
+# op1emu. Factory sound slots assumed (s1 digital, s2 voltage, s3 pulse, s4 drwave, s5 dsynth, s6 fm, s7 phase,
+# s8 sampler: the engines line names what really played). Each #@mark starts a section of the run file. The six
+# effects are picked on s5 through the stock FX list, which clamps at its top: 56 steps ccw reach the first row
+# from anywhere, then 8 steps per row (cwo delay grid nitro phone punch spring). The test leaves s5 on spring.
+#@name p5a
+#@tail 6000
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+#@mark voltage6
+tap s2 200
+at 29000
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 36000
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 31000
+turn enc1 cw 16
+at 33000
+turn enc1 ccw 16
+at 39500
+#@mark phase6
+tap s7 200
+at 41000
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 48000
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 43000
+turn enc1 cw 16
+at 45000
+turn enc1 ccw 16
+at 51000
+#@mark dsynth6
+tap s5 200
+at 52500
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 58500
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 60500
+#@mark punch
+tap t1 200
+at 61000
+tap t3 200
+at 62000
+press shift
+at 62200
+tap t3 200
+at 62700
+release shift
+at 63500
+turn enc1 ccw 56
+at 64900
+turn enc1 cw 40
+at 66500
+tap seq 200
+at 67500
+tap synth 200
+at 69000
+press c4
+press e4
+press g4
+at 75000
+release c4
+release e4
+release g4
+at 69500
+turn enc1 cw 16
+at 72000
+turn enc1 ccw 16
+at 70100
+turn enc2 cw 16
+at 72600
+turn enc2 ccw 16
+at 70700
+turn enc3 cw 16
+at 73200
+turn enc3 ccw 16
+at 71300
+turn enc4 cw 16
+at 73800
+turn enc4 ccw 16
+at 77500
+#@mark phone
+tap t1 200
+at 78000
+tap t3 200
+at 79000
+press shift
+at 79200
+tap t3 200
+at 79700
+release shift
+at 80500
+turn enc1 ccw 56
+at 81900
+turn enc1 cw 32
+at 83500
+tap seq 200
+at 84500
+tap synth 200
+at 86000
+press c4
+press e4
+press g4
+at 92000
+release c4
+release e4
+release g4
+at 86500
+turn enc1 cw 16
+at 89000
+turn enc1 ccw 16
+at 87100
+turn enc2 cw 16
+at 89600
+turn enc2 ccw 16
+at 87700
+turn enc3 cw 16
+at 90200
+turn enc3 ccw 16
+at 88300
+turn enc4 cw 16
+at 90800
+turn enc4 ccw 16
+at 94500
+#@mark nitro
+tap t1 200
+at 95000
+tap t3 200
+at 96000
+press shift
+at 96200
+tap t3 200
+at 96700
+release shift
+at 97500
+turn enc1 ccw 56
+at 98900
+turn enc1 cw 24
+at 100500
+tap seq 200
+at 101500
+tap synth 200
+at 103000
+press c4
+press e4
+press g4
+at 109000
+release c4
+release e4
+release g4
+at 103500
+turn enc1 cw 16
+at 106000
+turn enc1 ccw 16
+at 104100
+turn enc2 cw 16
+at 106600
+turn enc2 ccw 16
+at 104700
+turn enc3 cw 16
+at 107200
+turn enc3 ccw 16
+at 105300
+turn enc4 cw 16
+at 107800
+turn enc4 ccw 16
+at 111500
+#@mark grid
+tap t1 200
+at 112000
+tap t3 200
+at 113000
+press shift
+at 113200
+tap t3 200
+at 113700
+release shift
+at 114500
+turn enc1 ccw 56
+at 115900
+turn enc1 cw 16
+at 117500
+tap seq 200
+at 118500
+tap synth 200
+at 120000
+press c4
+press e4
+press g4
+at 126000
+release c4
+release e4
+release g4
+at 120500
+turn enc1 cw 16
+at 123000
+turn enc1 ccw 16
+at 121100
+turn enc2 cw 16
+at 123600
+turn enc2 ccw 16
+at 121700
+turn enc3 cw 16
+at 124200
+turn enc3 ccw 16
+at 122300
+turn enc4 cw 16
+at 124800
+turn enc4 ccw 16
+at 128500
+#@mark spring
+tap t1 200
+at 129000
+tap t3 200
+at 130000
+press shift
+at 130200
+tap t3 200
+at 130700
+release shift
+at 131500
+turn enc1 ccw 56
+at 132900
+turn enc1 cw 48
+at 134500
+tap seq 200
+at 135500
+tap synth 200
+at 137000
+press c4
+press e4
+press g4
+at 143000
+release c4
+release e4
+release g4
+at 137500
+turn enc1 cw 16
+at 140000
+turn enc1 ccw 16
+at 138100
+turn enc2 cw 16
+at 140600
+turn enc2 ccw 16
+at 138700
+turn enc3 cw 16
+at 141200
+turn enc3 ccw 16
+at 139300
+turn enc4 cw 16
+at 141800
+turn enc4 ccw 16
+at 148000
+#@mark delay
+tap t1 200
+at 148500
+tap t3 200
+at 149500
+press shift
+at 149700
+tap t3 200
+at 150200
+release shift
+at 151000
+turn enc1 ccw 56
+at 152400
+turn enc1 cw 8
+at 154000
+tap seq 200
+at 155000
+tap synth 200
+at 156500
+press c4
+press e4
+press g4
+at 162500
+release c4
+release e4
+release g4
+at 157000
+turn enc1 cw 16
+at 159500
+turn enc1 ccw 16
+at 157600
+turn enc2 cw 16
+at 160100
+turn enc2 ccw 16
+at 158200
+turn enc3 cw 16
+at 160700
+turn enc3 ccw 16
+at 158800
+turn enc4 cw 16
+at 161300
+turn enc4 ccw 16
+at 167500
+#@mark digital
+tap s1 200
+at 169000
+press c4
+press e4
+press g4
+at 172500
+release c4
+release e4
+release g4
+at 174000
+#@mark pulse
+tap s3 200
+at 175500
+press c4
+press e4
+press g4
+at 179000
+release c4
+release e4
+release g4
+at 180500
+#@mark drwave
+tap s4 200
+at 182000
+press c4
+press e4
+press g4
+at 185500
+release c4
+release e4
+release g4
+at 187000
+#@mark fm
+tap s6 200
+at 188500
+press c4
+press e4
+press g4
+at 192000
+release c4
+release e4
+release g4
+at 193500
+#@mark sampler
+tap s8 200
+at 195000
+press c4
+press e4
+press g4
+at 198500
+release c4
+release e4
+release g4
+at 200000
+#@mark drum
+tap drum 200
+at 201500
+tap c4 100
+at 201900
+tap e4 100
+at 202300
+tap d4 100
+at 202700
+tap e4 100
+at 203100
+tap c4 100
+at 203500
+tap e4 100
+at 203900
+tap d4 100
+at 204300
+tap f4 100
+at 206200
+tap synth 200
+wait 200000
+quit
