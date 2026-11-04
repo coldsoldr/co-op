@@ -43,6 +43,9 @@ static inline uint32_t cycles(void)
 
 #ifdef COOP_COMBINED
 extern "C" void coop_stereo_block_start(void);   /* stereo bus: per-block reset (core/sdram/stereo_bus.cc) */
+#include "coop_cost.h"                             /* the slow-block profiler marks */
+extern "C" void coop_slow_keep(uint32_t dt);       /* coop_stats.cc */
+extern "C" volatile uint32_t g_coop_slow_th;
 #endif
 
 /* The replacement audio callback: time the stock callback and forward its result. */
@@ -50,10 +53,17 @@ extern "C" int CoopAudioCb(int r0, int r1)
 {
     uint32_t t0 = cycles();
 #ifdef COOP_COMBINED
+    g_mk_n = 0;
+    coop_mark_at(0x01, t0);
     coop_stereo_block_start();
+    coop_mark(0x02);
 #endif
     int ret = ((audio_cb_fn)(uintptr_t)FW_AUDIO_CB)(r0, r1);
     uint32_t dt = cycles() - t0;
+#ifdef COOP_COMBINED
+    coop_mark(0x03);
+    if (dt > g_coop_slow_th) coop_slow_keep(dt);
+#endif
     g_last = dt;
     if (dt > g_max) g_max = dt;
     if (dt > g_max_win) g_max_win = dt;

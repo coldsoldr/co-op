@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p5d"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p5e"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -99,6 +99,9 @@ static uint32_t g_eng_last;                                       /* the entry t
  * synth and drum engine of a session. */
 extern "C" void coop_eng_cost(uint32_t fn, uint32_t dt, int drum)
 {
+    uint32_t now = coop_cost_now();
+    coop_mark_at(0x10 + (drum & 1), now - dt);                     /* the render's start (the thunk read CYCLES there) */
+    coop_mark_at(0x18 + (drum & 1), now);
     g_eng_blk[drum & 1] += dt;
     uint32_t i = g_eng_last;
     if (g_coop_eng_fn[i] != fn) {
@@ -118,6 +121,30 @@ extern "C" void coop_eng_block_end(void)
     if (g_eng_blk[0]) { coop_cost_add(COOP_COST_SYNTH, g_eng_blk[0]); g_eng_blk[0] = 0; }
     if (g_eng_blk[1]) { coop_cost_add(COOP_COST_DRUM, g_eng_blk[1]); g_eng_blk[1] = 0; }
 }
+/* The slow-block profiler (coop_cost.h): the marks of the current block, and copies of the last SLOW_KEEP blocks
+ * that ran over g_coop_slow_th cycles plus the worst one since boot. */
+volatile uint32_t g_mk_n, g_mk_lost;
+uint32_t g_mk[COOP_MK_N][2];
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_slow_th = 1000000; }   /* ~1.7 blocks */
+#define SLOW_KEEP 4
+struct slow { uint32_t dt, block, n, lost; uint32_t mk[COOP_MK_N][2]; };
+static struct slow g_slow[SLOW_KEEP + 1];                          /* [SLOW_KEEP]: the worst */
+static uint32_t g_slow_next, g_slow_count;
+static void slow_copy(struct slow *d, uint32_t dt)
+{
+    uint32_t n = g_mk_n;
+    d->dt = dt; d->block = g_blocks; d->n = n; d->lost = g_mk_lost;
+    for (uint32_t i = 0; i < n; i++) { d->mk[i][0] = g_mk[i][0]; d->mk[i][1] = g_mk[i][1]; }
+}
+/* From CoopAudioCb (the audio interrupt) when a block ran over the threshold. */
+extern "C" void coop_slow_keep(uint32_t dt)
+{
+    slow_copy(&g_slow[g_slow_next % SLOW_KEEP], dt);
+    g_slow_next++; g_slow_count++;
+    if (dt > g_slow[SLOW_KEEP].dt) slow_copy(&g_slow[SLOW_KEEP], dt);
+    g_mk_lost = 0;
+}
+
 static const struct coop_cost *g_cost_src = g_coop_cost;          /* the live table, or a run section's copy */
 static void put_cost(const char *name, int i)               /* name avg max n: cycles per call */
 {
@@ -164,6 +191,46 @@ static void put_cost_lines(void)                             /* the "cost" and "
     put("\n");
 }
 
+static void puthex2(uint32_t v) { char b[3] = { "0123456789abcdef"[(v >> 4) & 15], "0123456789abcdef"[v & 15], 0 }; put(b); }
+static void put_slow(const char *tag, const struct slow *w)        /* marks in time order, cycles after the callback start */
+{
+    if (!w->dt) return;
+    put(tag); kv("cb", w->dt); kv("block", w->block); kv("marks", w->n); kv("lost", w->lost); put(":");
+    uint32_t t0 = w->n ? w->mk[0][1] : 0, last = 0;
+    for (uint32_t i = 0; i < w->n; i++) if (w->mk[i][0] == 0x01) t0 = w->mk[i][1];
+    static uint8_t done[COOP_MK_N];
+    for (uint32_t i = 0; i < w->n; i++) done[i] = 0;
+    for (uint32_t k = 0; k < w->n; k++) {                          /* selection by time: render starts are recorded late */
+        uint32_t best = COOP_MK_N, bt = 0;
+        for (uint32_t i = 0; i < w->n; i++)
+            if (!done[i] && (best == COOP_MK_N || w->mk[i][1] - t0 < bt)) { best = i; bt = w->mk[i][1] - t0; }
+        done[best] = 1;
+        put(" "); puthex2(w->mk[best][0]); put("@"); putn(bt);
+        if (bt - last > 200000u) put("!");                         /* a gap of more than 200 k cycles before this mark */
+        last = bt;
+    }
+    put("\n");
+}
+
+/* p5e: the cache set-up, to judge the memory-bound effects. BF52x core MMRs (Blackfin HRM, memory chapter):
+ * DMEM_CONTROL 0xFFE00004, DCPLB_ADDR0..15 0xFFE00100, DCPLB_DATA0..15 0xFFE00200; IMEM_CONTROL 0xFFE01004,
+ * ICPLB_ADDR0..15 0xFFE01100, ICPLB_DATA0..15 0xFFE01200. A snapshot: a CPLB miss handler may swap entries. Also where
+ * the big buffers sit (slot 1's delay / cwo line and spring tank: plugin_host.cc). */
+extern "C" uint32_t coop_fx_buffers(uint32_t *out4);               /* plugin_host.cc */
+static void puthex8(uint32_t v) { char b[9]; for (int d = 0; d < 8; d++) b[d] = "0123456789abcdef"[(v >> (28 - 4 * d)) & 15]; b[8] = 0; put(b); }
+static void put_cplb(void)
+{
+    volatile uint32_t *const dmem = (volatile uint32_t *)0xFFE00004u, *const imem = (volatile uint32_t *)0xFFE01004u;
+    put("cplb dmem "); puthex8(*dmem); put(" imem "); puthex8(*imem); put("\n");
+    put("dcplb");
+    for (int i = 0; i < 16; i++) { put(" "); puthex8(((volatile uint32_t *)0xFFE00100u)[i]); put("/"); puthex8(((volatile uint32_t *)0xFFE00200u)[i]); }
+    put("\nicplb");
+    for (int i = 0; i < 16; i++) { put(" "); puthex8(((volatile uint32_t *)0xFFE01100u)[i]); put("/"); puthex8(((volatile uint32_t *)0xFFE01200u)[i]); }
+    uint32_t b[4] = { 0, 0, 0, 0 };
+    coop_fx_buffers(b);
+    put("\nbuffers line1 "); puthex8(b[0]); put(" tank_spring1 "); puthex8(b[1]); put(" st_obj1 "); puthex8(b[2]); put(" text "); puthex8(b[3]); put("\n");
+}
+
 static void put_switches(void)
 {
     put("switches"); kv("dsynth", g_coop_fast_dsynth); kv("stage", g_coop_fast_stage); kv("cwo", g_coop_fast_cwo);   /* the image's g_coop_fast_* words */
@@ -204,6 +271,10 @@ static void write_file(void)
     put_cost_lines();
     put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
     put_switches();
+    put_cplb();
+    put("slow"); kv("count", g_slow_count); kv("threshold", g_coop_slow_th); put("\n");
+    put_slow("slow_worst", &g_slow[SLOW_KEEP]);
+    for (uint32_t i = 0; i < SLOW_KEEP; i++) put_slow("slow_recent", &g_slow[(g_slow_next + i) % SLOW_KEEP]);
     put("plugins"); kv("seen", g_plugins_seen); kv("loaded", g_plugins_loaded); kv("failed", g_plugins_failed);
     kv("mono_calls", g_fx_dispatch_mono); kv("st_calls", g_fx_dispatch_st); kv("plugin_blocks", g_fx_plugin_blocks); kv("stock_st_blocks", g_fx_stock_stereo_blocks); kv("stock_st_made", g_fx_stock_ctor); kv("s2_instr", g_s2_blocks[0]); kv("s2_master", g_s2_blocks[1]); kv("s2_changes", g_s2_changes); kv("tanks", g_tank_bound); kv("tank_short", g_tank_short); kv("ui_opens", g_ui_opens); kv("ui_applies", g_ui_applies);
     if (g_plugins_last_error) { put(" last "); put(g_plugins_last_name); put(": "); put(g_plugins_last_error); }

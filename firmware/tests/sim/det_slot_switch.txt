@@ -1,0 +1,38 @@
+# Sound-slot changes for the slow-block profiler (p5e): the device showed ~2.04 M-cycle callback blocks right after a
+# change to s4 (drwave) and to s2. Synth page, s3 chord, s4, chord, s2, chord, s4 again. Guest-timed.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap s3 200
+at 29000
+press c4
+press e4
+at 31000
+release c4
+release e4
+at 32000
+tap s4 200
+at 33500
+press c4
+press e4
+at 35500
+release c4
+release e4
+at 36500
+tap s2 200
+at 38000
+press c4
+press e4
+at 40000
+release c4
+release e4
+at 41000
+tap s4 200
+at 42500
+press c4
+at 44000
+release c4
+wait 60000
+quit

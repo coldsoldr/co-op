@@ -77,6 +77,7 @@ static inline uint32_t coop_cycles(void)
 #include "coop_cost.h"
 extern "C" uint32_t coop_master_apply(void)
 {
+    coop_mark(0x50);
     if (!g_inited) {
         coop_master_init(&g_master);    /* transparent until params are set */
         coop_delay_init(&g_fx, FXB_L, FXB_R, FXB_LEN);

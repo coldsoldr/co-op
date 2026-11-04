@@ -30,4 +30,22 @@ static inline void coop_cost_add(int i, uint32_t dt)
     c->sum += dt; c->n++;
     if (dt > c->max) c->max = dt;
 }
+
+/* The slow-block profiler (p5e): every coop hook inside the audio callback leaves (id, CYCLES); CoopAudioCb resets
+ * the list each block and keeps it when the block ran over g_coop_slow_th cycles (coop_stats.cc prints the kept
+ * ones as "slow" lines). The largest gap between two marks is where a long block spent its time. Ids:
+ * 0x01 callback start, 0x02 block start done, 0x03 the stock callback returned; 0x10/0x11 a synth / drum voice render
+ * start, 0x18/0x19 its end; 0x20 synth note-on, 0x21 synth voice hook, 0x22 drum voice hook; 0x30/0x31 the S3 stage;
+ * 0x34/0x35 the mix entry; 0x38/0x39 the tape record tap; 0x40/0x41 the stock mono FX init (coop_fx_init_mono);
+ * 0x42/0x43 st_make; 0x44/0x45 the mono FX render; 0x46/0x47 the stereo FX render; 0x48/0x49 FX 2 instrument,
+ * 0x4a/0x4b FX 2 master; 0x50/0x51 the master stand-in. */
+#define COOP_MK_N 64
+extern volatile uint32_t g_mk_n, g_mk_lost;
+extern uint32_t g_mk[COOP_MK_N][2];
+static inline void coop_mark_at(uint32_t id, uint32_t t)
+{
+    uint32_t n = g_mk_n;
+    if (n < COOP_MK_N) { g_mk[n][0] = id; g_mk[n][1] = t; g_mk_n = n + 1; } else g_mk_lost++;
+}
+static inline void coop_mark(uint32_t id) { coop_mark_at(id, coop_cost_now()); }
 #endif

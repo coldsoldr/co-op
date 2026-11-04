@@ -164,6 +164,7 @@ extern "C" void coop_lfo2_trigger_drum(uint32_t voice);
 
 extern "C" void coop_synth_note_on_hook(uint32_t voice, uint32_t dispatched)
 {
+    coop_mark(0x20);
     if (voice >= COOP_SYNTH_VOICES || !dispatched) return;
     if (!g_inited) stereo_init();
     g_stereo_note_ons++;
@@ -338,6 +339,7 @@ static void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)
 /* R7 at the synth render call = voice index 0..5 (0xffa009c2 zeroes it, 0xffa00da0 increments). */
 extern "C" void coop_synth_voice_hook(uint32_t r7)
 {
+    coop_mark(0x21);
     if (r7 >= COOP_SYNTH_VOICES) return;
     voice_hook(g_pan_synth, (int)r7, 1u << r7, 0);
 }
@@ -346,6 +348,7 @@ extern "C" void coop_synth_voice_hook(uint32_t r7)
  * voice's done flag (0xffa00906..0xffa0090c): the stock sums the voice either way, so the hook does too. */
 extern "C" void coop_drum_voice_hook(uint32_t r7, uint32_t active)
 {
+    coop_mark(0x22);
     (void)active;
     if (r7 == 0 || r7 > COOP_DRUM_VOICES) return;
     int voice = COOP_DRUM_VOICES - (int)r7;
@@ -385,6 +388,7 @@ extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_sta
 extern "C" void coop_instr_stage(void)
 {
     uint32_t t0 = coop_cycles();
+    coop_mark_at(0x30, t0);
     if (!g_inited) stereo_init();
     g_stereo_stage_calls++;
     int dbg = g_coop_dbg_cmp != 0;
@@ -504,6 +508,7 @@ static int side_prepare(void)
 extern "C" uint32_t coop_mix_entry(uint32_t r0, uint32_t r1, uint32_t r2)
 {
     uint32_t t0 = coop_cycles();
+    coop_mark_at(0x34, t0);
     g_stereo_mixes++;
     uint32_t ret;
     if (g_mix_site == MIX_A_SITE) {

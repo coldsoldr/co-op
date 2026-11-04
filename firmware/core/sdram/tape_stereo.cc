@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include "coop_l1.h"
 #include "coop_stereo.h"
+#include "coop_cost.h"
 
 #define STOCK_RECORD    ((void (*)(const int16_t *))0xffa06334u)   /* l1_tape_record(mono_in) */
 #define TAPE_TRACK      ((volatile int32_t *)0xff802964u)          /* selected track (kennel TAPE_TRACK) */
@@ -111,6 +112,7 @@ extern "C" void coop_tape_clamp_track(void)
 extern "C" void coop_tape_record(const int16_t *mono)
 {
     uint32_t t0 = coop_cycles();
+    coop_mark_at(0x38, t0);
     g_tape_rec_calls++;
     if (!g_bufs_inited) tape_bufs_init();
     coop_tape_clamp_track();

@@ -388,15 +388,35 @@ static uint32_t tank_alloc(uint32_t size, uint32_t rem8)                  /* mai
     return a;
 }
 
+/* A delay / cwo line, zeroed (p5d device test: the first delay selection crackled with the heap's old bytes; the stock
+ * init never clears a line, the stock lines start zero from boot). Main thread, except the fallback in st_make. */
+static uint8_t *line_alloc(void)
+{
+    uint8_t *p = (uint8_t *)MALLOC(LINE_BYTES);
+    if (p) for (uint32_t i = 0; i < LINE_BYTES; i += 4) *(volatile uint32_t *)(p + i) = 0;
+    return p;
+}
+
 #ifdef COOP_SPRING_CHECK
 static uint32_t g_spring_shadow_tank;                                     /* the lockstep check's tank (below) */
 #endif
 static void tanks_boot(void)
 {
     if (!g_tank_spring_own[0]) g_tank_spring_own[0] = tank_alloc(SPRING_TANK, 2);
+    if (!g_st[0].line) g_st[0].line = line_alloc();                      /* slot 1's delay / cwo line, zeroed off the audio path */
 #ifdef COOP_SPRING_CHECK
     if (!g_spring_shadow_tank) g_spring_shadow_tank = tank_alloc(SPRING_TANK, 2);
 #endif
+}
+
+/* p5e stats (coop_stats.cc put_cplb): where slot 1's big buffers live, to read against the CPLB table. */
+extern "C" uint32_t coop_fx_buffers(uint32_t *out4)
+{
+    out4[0] = (uint32_t)(uintptr_t)g_st[0].line;
+    out4[1] = g_tank_spring_own[0];
+    out4[2] = (uint32_t)(uintptr_t)g_st[0].obj;
+    out4[3] = (uint32_t)(uintptr_t)&coop_fx_buffers;
+    return 4;
 }
 
 static void tank_bind(int i, void *obj, int t)
@@ -412,12 +432,19 @@ static void tank_bind(int i, void *obj, int t)
 }
 
 /* construct (or reconstruct) position pos's stereo object of stock type t */
+static void st_make_body(int pos, int t);
 static void st_make(int pos, int t)
+{
+    coop_mark(0x42);
+    st_make_body(pos, t);
+    coop_mark(0x43);
+}
+static void st_make_body(int pos, int t)
 {
     struct st_inst *s = &g_st[pos];
     if (!s->obj) s->obj = MALLOC(OBJ_BYTES);
     if (!s->obj) { s->type = -1; return; }
-    if ((t == 0 || t == 7) && !s->line) s->line = (uint8_t *)MALLOC(LINE_BYTES);   /* its own delay line */
+    if ((t == 0 || t == 7) && !s->line) s->line = line_alloc();          /* its own line (normally made at boot / by slot2_set) */
     if ((t == 0 || t == 7) && !s->line) { s->type = -1; return; }
 #ifdef COOP_DELAY_CHECK
     if (t == 0 && !g_delay_line) g_delay_line = (uint32_t *)MALLOC(LINE_BYTES);
@@ -626,15 +653,18 @@ static void fx_sanitize(void)
 
 extern "C" void coop_fx_init_mono(void *self, int pos)
 {
+    coop_mark(0x40);
     g_self[pos & 1] = self;
     g_cur[pos & 1] = -1;
     g_fx_pos = pos & 1;
     int t = type_of_mono(self);                                           /* the stock just constructed this mono object: */
     if (t >= 0) st_make(0, t);                                            /* its stereo twin (one object serves both positions) */
+    coop_mark(0x41);
 }
 
 extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *params)
 {
+    coop_mark(0x44);
     g_fx_dispatch_mono++;
     fx_sanitize();
     int pos = g_fx_pos;
@@ -683,6 +713,7 @@ extern "C" void coop_fx_init_st(void *self)
 
 extern "C" void coop_fx_render_st(void *self, int16_t *l, int16_t *r, const int16_t *params)
 {
+    coop_mark(0x46);
     g_fx_dispatch_st++;
     fx_sanitize();
     int e = fx_index(params[4] - MAGIC);
@@ -721,7 +752,7 @@ extern "C" int coop_slot2_set(int pos, int kind, int id, const uint16_t *knob)
                                                                              MALLOC in the audio interrupt hung op1emu */
         struct st_inst *t = &g_st[1 + pos];
         if (!t->obj) t->obj = MALLOC(OBJ_BYTES);
-        if ((id == 0 || id == 7) && !t->line) t->line = (uint8_t *)MALLOC(LINE_BYTES);
+        if ((id == 0 || id == 7) && !t->line) t->line = line_alloc();
         if (!t->obj || ((id == 0 || id == 7) && !t->line)) return 0;
         if (id == 4 && !g_tank_spring_own[1 + pos]) g_tank_spring_own[1 + pos] = tank_alloc(SPRING_TANK, 2);
         if (id == 1 && pos == 1 && !g_tank_grid_heap) g_tank_grid_heap = tank_alloc(GRID_TANK, 4);   /* the instrument's is a mono one */
@@ -798,7 +829,9 @@ static void slot2_render(int pos, int16_t *l, int16_t *r);
 extern "C" void coop_slot2_render(int pos, int16_t *l, int16_t *r)
 {
     uint32_t c0 = coop_cost_now();
+    coop_mark_at(0x48 + 2 * (pos & 1), c0);
     slot2_render(pos, l, r);
+    coop_mark(0x49 + 2 * (pos & 1));
     if (g_s2[pos & 1].kind_on) coop_cost_add(pos ? COOP_COST_S2M : COOP_COST_S2I, coop_cost_now() - c0);
 }
 static void slot2_render(int pos, int16_t *l, int16_t *r)

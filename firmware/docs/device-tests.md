@@ -584,6 +584,38 @@ cwo 322 k a block (p3m 448 k), one cwo 305 k (p3m about 394 k); the chord alone 
 Not yet rewritten (same as before within run-to-run spread): punch 78 k, phone 49 k, spring 47 k, nitro 46 k, grid
 36 k, delay 29 k. [C]
 
+## Performance 5e (p5e): the delay crackle fixed, the slow-block profiler, the cache table — device test (pending, 2026-11-04)
+
+p5d plus three things:
+- **Delay crackle:** coop's own stereo delay / cwo line (176 KB) came from the heap uncleared; the stock init never
+  clears a line (stock's lines start zero from boot). Slot 1's line is now made and zeroed at boot on the main
+  thread, slot 2's when it is chosen (main thread), and the audio-side fallback zeroes too.
+- **Slow-block profiler:** every coop hook in the audio callback leaves a timestamped mark; a block over 1 M cycles
+  keeps its marks, and the stats file prints `slow count`, `slow_worst` and the last four `slow_recent` timelines
+  (`id@cycles` from the callback start, `!` after a gap over 200 k; ids in `core/include/coop_cost.h`). The ~2 M-cycle
+  blocks after sound-slot changes do not happen in op1emu (`tests/sim/det_slot_switch.txt`: worst 169 k), so only the
+  device can say where they are.
+- **Cache table:** `cplb`, `dcplb`, `icplb` lines (the CPLB registers) and `buffers` (where slot 1's line, spring tank
+  and object live). op1emu shows the firmware's set-up: heap 0 (the effect buffers) and coop's code cacheable,
+  write-back.
+
+- `build/pkg/op1_246_coop_p5e_perf.op1` (sha256 `82ea77b836b52c83d1038f035067560f46c9f3167c3d45b91f9d7f7dc41bdf81`).
+  **Flash this one.**
+- `build/pkg/op1_246_coop_p5e_safe.op1` (sha256 `77e9f34214ccbc92441b40551bc39dd6171a583dcfe4f738cfea859d0326c937`):
+  p5a's eight switches at 0.
+
+Both pass `verify_bootloader` and `pkg_check`; copies in Downloads. op1emu: `run_p5a.txt` both ways, no fault,
+levels equal, callback +0.2 k per block for the marks.
+
+Steps:
+1. Flash p5e perf. Select delay on a sound for the first time and play: no crackle.
+2. Run the automatic test (`run_p5a.txt`; Hello says `build p5e`), then switch sound slots by hand a few times (s1..s8),
+   noting any dropout you hear.
+3. Read `coop_stats.txt` (or keep the test's `_stats.txt`) after that and send it: the `slow` lines locate the long
+   blocks.
+
+Result: pending.
+
 ## Performance 5d (p5d): the spring crash fixed (second try) — device test (PASS, 2026-11-04)
 
 p5c crashed exactly as p5b did (below). p5d takes the P-register stores out of spring's two accumulator-shift
@@ -630,7 +662,14 @@ DSynth, `docs/performance.md`) and the op1emu saving:
 | S3 stage (p4b) | 11.3 k | 15 k | -25 % | |
 
 The p3m figures were not taken under the same knob settings (punch's cost grows with its stage count), so the rows
-are rough; a p5d safe run of the same script gives the exact stock figures. Engines per voice render on the device:
+are rough. **The p5d safe run of the same script (owner, 2026-11-04, `docs/device-stats/p5d_safe_2026-11-04_*`)
+gives the exact device figures, rewrite vs stock under identical input:** phase 7.5 k vs 16.3 k per voice render
+(-54 %), phone 30.2 k vs 46.6 k (-35 %), grid 28.8 k vs 37.1 k (-22 %), spring 38.8 k vs 46.7 k (-17 %), delay
+23.2 k vs 25.4 k (-9 %), punch 71.5 k vs 76.5 k (-7 %), nitro 44.8 k vs 46.3 k (-3 %); dsynth (both p4b) 21.5 k /
+21.3 k. The callback averages are not comparable between the two runs (the sounds' effects and FX 2 differed at the
+start of each). The safe run also had a ~1.99 M-cycle block in the drwave section: the long blocks are not the
+rewrites'. The owner heard dropouts, and on the first delay selection "a loud crackling that echoes out": coop's own
+stereo delay line came from the heap uncleared (fixed in p5e). Engines per voice render on the device:
 dsynth 22.9 k, drwave 16.0 k, digital 10.2 k, fm 10.0 k, sampler 9.8 k, phase 7.5 k (op1emu: 18.6, 9.6, 7.1, 5.9,
 6.9, 5.8 k).
 
