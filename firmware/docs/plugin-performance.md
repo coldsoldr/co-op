@@ -16,6 +16,10 @@ performance.
 - Measure every plugin on the device: the stats file's `cost` line gives average / peak / calls per stage
   (`fx1_plugin=` for a plugin at slot 1, `s2_instr=` / `s2_master=` for slot 2). The emulator counts instructions,
   not stalls: device figures are typically 10-35 % higher than op1emu's for code with memory traffic.
+- The `engines` line (p5a) gives the same for every synth and drum engine, per voice render, and `synth=` / `drum=`
+  per block: a synth plugin's voice is measured against the stock engines it sits next to.
+- Find the waste before rewriting: `tools/loopscan.py` lists every loop of a function and its callees with the CALLs
+  and frame accesses inside. A CALL in a per-sample loop, or tens of frame accesses per pass, is the first target.
 
 ## Rules for the per-sample loop
 
