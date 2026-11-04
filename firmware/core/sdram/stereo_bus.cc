@@ -216,6 +216,40 @@ extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_nit
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_grid = 1; }
 /* performance: the rewritten stock spring stereo loop (spring_fast.S); 0 runs the stock loop (A/B, kill switch) */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_spring = 1; }
+/* performance: the rewritten stock Voltage voice loop (voltage_fast.S); 0 runs the stock loop (A/B, kill switch) */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_voltage = 1; }
+#ifdef COOP_VOLTAGE_CHECK
+/* Test builds only (EXTRA_CXXFLAGS=-DCOOP_VOLTAGE_CHECK): voltage_fast.S in lockstep with the stock loop, per voice
+ * render (the synth render thunk sends the Voltage render here). The stock render runs first with g_coop_fast_voltage
+ * = 0 on a copy of the voice (the 0x34 bytes the render touches) and of the output block, then for real with 1; any
+ * difference in the voice, the output or the 32-sample display copy (0x01DF6154) counts in g_voltage_check_bad. Both
+ * runs read the same pitch words (L1 0xFF801950; the render only reads them). g_voltage_hit_calls counts the rewrite's
+ * runs (voltage_fast.S). */
+extern "C" { volatile uint32_t g_voltage_check_calls, g_voltage_check_bad, g_voltage_check_first, g_voltage_hit_calls; }
+static uint32_t g_voltage_shadow[0x34 / 4];
+static int16_t g_voltage_out[128], g_voltage_disp[32];
+typedef void (*voltage_render_fn)(void *, int16_t *, const int16_t *);
+extern "C" void coop_voltage_check(void *self, int16_t *out, const int16_t *params)
+{
+    const uint32_t *o = (const uint32_t *)self;
+    volatile int16_t *disp = (volatile int16_t *)0x01DF6154u;
+    for (int k = 0; k < 0x34 / 4; k++) g_voltage_shadow[k] = o[k];
+    uint32_t save = g_coop_fast_voltage;
+    g_coop_fast_voltage = 0;
+    ((voltage_render_fn)0x01A49BF4u)(g_voltage_shadow, g_voltage_out, params);
+    for (int k = 0; k < 32; k++) g_voltage_disp[k] = disp[k];
+    g_coop_fast_voltage = 1;
+    uint32_t hits = g_voltage_hit_calls;
+    ((voltage_render_fn)0x01A49BF4u)(self, out, params);
+    g_coop_fast_voltage = save;
+    int bad = g_voltage_hit_calls != hits + 1;
+    for (int k = 0; k < 0x34 / 4; k++) if (g_voltage_shadow[k] != o[k]) bad = 1;
+    for (int k = 0; k < 128; k++) if (g_voltage_out[k] != out[k]) bad = 1;
+    for (int k = 0; k < 32; k++) if (g_voltage_disp[k] != disp[k]) bad = 1;
+    g_voltage_check_calls++;
+    if (bad) { if (!g_voltage_check_bad) g_voltage_check_first = g_voltage_check_calls; g_voltage_check_bad++; }
+}
+#endif
 static void voice_sum_stock(int is_drum, int16_t gain)
 {
     int16_t *bus = MONO_BUS64;

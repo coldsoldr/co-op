@@ -35,6 +35,12 @@ _coop_synth_render_thunk:
     R3 = CYCLES;                     /* R3 is no argument and was already clobbered by the C call above */
     [--SP] = R3;
     SP += -12;
+#ifdef COOP_VOLTAGE_CHECK
+    P1.L = 0x9bf4; P1.H = 0x01a4;    /* test builds: the Voltage render runs through the lockstep check */
+    CC = P2 == P1;
+    P1.L = _coop_voltage_check; P1.H = _coop_voltage_check;
+    IF CC P2 = P1;
+#endif
     CALL (P2);
     R1 = CYCLES;
     SP += 12;

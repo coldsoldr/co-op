@@ -257,6 +257,13 @@ NITRO_LOOP_STOCK = bytes.fromhex('b2e0ef20')
 SPRING_LOOP_SITE = 0x01a3310a
 SPRING_LOOP_STOCK = bytes.fromhex('a2e0c532')
 
+# Performance (2026-11-04): the stock Voltage voice render (0x01A49BF4, Slump.cpp) loop 0x01A49CBA..0x01A49ED0 (128
+# samples, 111 instructions each) becomes coop_voltage_loop (voltage_fast.S), back at 0x01A49ED2. The only way in is its
+# LSETUP at 0x01A49CB6, which becomes the JUMP.L (coop_voltage_loop_near sets LT0 / LB0 / LC0 by hand when
+# g_coop_fast_voltage = 0).
+VOLTAGE_LOOP_SITE = 0x01a49cb6
+VOLTAGE_LOOP_STOCK = bytes.fromhex('a2e00d11')
+
 
 def tank_patches(thunks):
     return [(site, stock, jump_l(site, thunks[name]) + bytes.fromhex('00000000')) for site, stock, name in TANK_SITES]
@@ -491,6 +498,10 @@ def thunk_addresses(elf):
         tanks['spring_loop'] = symbol_address(syms, 'coop_spring_loop_near')[0]
     except Exception:
         pass
+    try:                                              # performance: the Voltage voice loop
+        tanks['voltage_loop'] = symbol_address(syms, 'coop_voltage_loop_near')[0]
+    except Exception:
+        pass
     try:                                               # the voice hook can stand in for the stock voice sum
         tanks['voice_sum'] = symbol_address(syms, 'g_coop_voice_sum_own')[0]
     except Exception:
@@ -551,6 +562,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
         patches.append((NITRO_LOOP_SITE, NITRO_LOOP_STOCK, jump_l(NITRO_LOOP_SITE, thunks['nitro_loop'])))
     if thunks.get('spring_loop'):
         patches.append((SPRING_LOOP_SITE, SPRING_LOOP_STOCK, jump_l(SPRING_LOOP_SITE, thunks['spring_loop'])))
+    if thunks.get('voltage_loop'):
+        patches.append((VOLTAGE_LOOP_SITE, VOLTAGE_LOOP_STOCK, jump_l(VOLTAGE_LOOP_SITE, thunks['voltage_loop'])))
     if tape:
         patches += tape_patches(tramps)
     for address, stock, new in patches:

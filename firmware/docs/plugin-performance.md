@@ -137,5 +137,22 @@ performance.
 - **A lockstep check for an effect with a large memory** (spring's tank, 58 KB): run the stock on a shadow object with a
   shadow copy of its memory, compare the whole memory after. When the memory is looked up from the object (coop's tank
   map), point the lookup's default at the shadow for the stock call.
+- **Pair identical chains in the dual MAC, also in a mono engine** (Voltage, 2026-11-04): two waveshapers with the same
+  instruction sequence on different inputs (f(|s4|) and f(|s3|); f(s2) and f(w)) run as one, the inputs in the two
+  halves of one register: dual 16 x 16 multiplies (`R1.H = R2.H * R5.H, R1.L = R2.H * R5.L`), vector add / subtract
+  with (S), one ABS (V); each half keeps the stock's operands and modes. Load the two inputs straight into the halves
+  (`R5.H = W[P5]`, `R5.L = W[P2]`). 111 packets a sample became 64 with this and the stream / rotation tricks above.
+- **The output store rotated without a peeled pass**: run the output pointer circular over the output block (B0 = out,
+  L0 = its length, I0 = its last element); the first pass's rotated store writes the last element, the stores after
+  wrap to the start, and the one store after the loop rewrites the last element. Set L0 = 0 before the stock code
+  after the loop uses I0.
+- **A simulator check against the stock instructions themselves** (`tests/sim/run_voltage_check.sh`): transcribe the
+  stock function from the disassembly (in a temp directory, never into the repo), its data addresses as test arrays and
+  the replaced LSETUP as the JUMP.L to the `.near` stub, and run it with the switch at 0 and 1 on random state. This
+  tests the rewrite and the switch-off path before op1emu, in seconds. **bfin-elf-run gets one case wrong**: it
+  commits a dsp32 ALU result (add, subtract, ABS) before a store in the same packet reads the register (multiplies and
+  shifts it defers), so `R0 = ABS R3 (V) || W[P4 + 0x1c] = R0` stores the ABS result there and the old R0 on the hardware
+  and in op1emu (which read every register of a packet first). Split such packets in the transcription, and in your own code never
+  store a register in the packet whose ALU op writes it.
 - **Assembler:** bfin gas does not substitute a macro parameter written directly before `]` (`[P4 + \off]` is a syntax
   error); write `[P4 + \off\()]`.

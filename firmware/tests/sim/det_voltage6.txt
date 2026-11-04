@@ -1,0 +1,24 @@
+# Performance A/B: Voltage (factory sound slot 2), a six-note chord held 10 s (all six voices), no effect. Guest-timed,
+# so two images compare sample-exact (tools/wav_compare.py) and their per-block cycles line up.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap s2 200
+at 30000
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 40000
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+wait 60000
+quit

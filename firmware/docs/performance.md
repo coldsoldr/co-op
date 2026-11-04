@@ -736,6 +736,50 @@ samples) and measured:
    still sit one packet before their use (DAG stalls on the device, not in op1emu). [C in op1emu, the device figure
    pending]
 
+11. **Voltage's voice loop** (`core/sdram/voltage_fast.S`; switch `g_coop_fast_voltage`, 1 by default). Voltage (Slump.cpp)
+   renders each voice with `render(this, out, params)` at `0x01A49BF4` (vtable + 0x14; no CALL or jump in the image
+   targets it), 128 samples at 88.2 kHz into a 16-bit buffer, then every fourth sample into a display buffer. The setup
+   (LINK 0x2c, seven registers: FP = SP + 0x48) leaves the per-block values in the frame and runs one LC0 loop
+   `0x01A49CBA..0x01A49ED0`: 111 instructions a sample (the scan table's "~105"), 24 frame accesses, two conditional
+   branches, and four sine lookups (not six): s1 from phase 1 alone, s2 / s3 / s4 phase-modulated by their own last
+   values (this[0x18], [0x20], [8]), each index moved from a data register into a P register right before the address
+   add and the load. Per sample, the pitch word d ([I1++], L1 `0xFF801950`) and d times a per-block K (the stock 32 x 32
+   multiply) detune four phase accumulators; the waveshapers f(x) = u + 0.5 u, u = x - 0x2667 x x x, of |s4| and |s3| are
+   XORed, scaled by params[0] and shaped again, mixed with 0.125 f(s2) and a decaying level this[0x28] (halved when phase
+   1 wraps, reduced by f(|s4|) K28) into a one-pole low-pass this[0x24]; y = 0.5 s1 + z.H, out = (y >>> 1) + (y_prev >>>
+   1). The only way into the loop is its LSETUP (`0x01A49CB6`), which becomes a JUMP.L to a 50-byte `.near` stub (switch
+   0: LT0 / LB0 / LC0 by hand, then the stock loop); the rewrite (480 bytes, region A) returns to `0x01A49ED2`, which reads
+   only R6.L, R7, P1 = out and `[SP+0x24]`. Every multiply, add, shift and saturation on the signal is the stock's with
+   its operands and modes; what changed: the index as `(T + 0x2000) + 2 * (v >>> 19)` (one shift for the stock's three
+   ops); the waveshapers of |s4| and |s3| as one pair in the dual MAC (s4 high, s3 low: one ABS (V), three dual
+   multiplies, a vector subtract and add with (S)), f(s2) with f(w) and their 0.125 / 0.25 scales the same way, 0.5 h28
+   with 0.5 s1, K40 h8 with K40 h20; the seven per-block values as a circular stream in the third slot (I3 / B3 / L3
+   below the stock frame); h8 and h28 through I2 walking between this + 8 and this + 0x28 (M2 = 0x20); the wrap halving
+   as a conditional move with CC held from the compare (the stock stores a flag byte, reloads it and branches over the
+   halving); the output store rotated into the next pass's first packet, with I0 circular over the output (B0 = out, L0
+   = 256) from out + 254, so the first pass's store lands on out[127] and the one after the loop rewrites it. **64
+   packets a sample against 111.** Not reproduced: the loop's frame scratch (`[SP+0x1c]`, `[SP+0x34]`, `[SP+0x44]`) and
+   its stores to the caller's argument homes (`[FP+8]`, `B[FP+0xc]`, `W[FP+0xe]`, `[FP+0x10]`), dead after the loop.
+   op1emu, Voltage (factory sound slot 2; the only engine heard, so cost index 15) with a six-note chord
+   (`tests/sim/det_voltage6.txt`, from 31 s): **14,371 -> 8,391 emulator cycles per voice render (-42 %)**, the callback
+   155.6 k -> 119.7 k per block (-23 %); with the four engine knobs turned during the chord and notes played on and off
+   (`det_voltage_knobs.txt`) the same per-render figures (no data-dependent branch but the rare wrap). Levels equal second
+   by second (largest difference 0.20 % in det_voltage6, 0.36 % with the knobs); the ab_switch pair differs from frame 1 (-218 /
+   -219, op1emu's two-state run-to-run variation), but in a second job **the fast det_voltage6 run is identical to one of
+   two stock runs over all 3,821,838 frames** (the two stock runs differ from each other the same way). The proof is the
+   lockstep build (`EXTRA_CXXFLAGS=-DCOOP_VOLTAGE_CHECK`: the synth render thunk sends the Voltage render to
+   `coop_voltage_check` in `stereo_bus.cc`, which runs the stock loop on a copy of the voice (0x34 bytes) and of the
+   output, then the rewrite on the real ones, and compares voice, output and display copy): **0 differences in 42,024
+   (det_voltage6) and 50,295 (knobs) voice renders**, every one through the rewrite (`g_voltage_hit_calls`). Before
+   op1emu, a simulator check against the stock instructions themselves (`tests/sim/run_voltage_check.sh STOCK_DIS`: the
+   stock render transcribed from the disassembly into a temp directory; random voices, tables, parameters and full-range
+   pitch words, both Kf cases, wraps and saturations): 0 differences in 2,400 renders, once one stock packet the
+   simulator gets wrong was split (`R0 = ABS R3 (V) || W[P4 + 0x1c] = R0` stores s3, the old R0, on the hardware and in
+   op1emu; bfin-elf-run stores the ABS result). Region C `.near`: +0x32 bytes (the section is 0x324 now). Each lookup's
+   P register is now set 3 or more packets before its address add and the add sits 2 or more packets before the load
+   (the stock loads in the packet after the add), so the DAG stalls the scan pointed at should shrink on the device too
+   (not measured: op1emu counts none). [C in op1emu and the simulator, the device figure pending]
+
 Correction (2026-11-04): the T4f device test already measured the six-voice DSynth chord at 65-67 % of the block
 (the stock engine about 57 %, coop 8.6 %). There is no "base cost" regression since T4: the engine itself is the
 cost, which is why its loops are the lever.
