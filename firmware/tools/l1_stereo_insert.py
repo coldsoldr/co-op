@@ -238,6 +238,11 @@ PHONE_CAPTURE_STOCK = bytes.fromhex('a2e02e00')
 # at coop; with g_coop_fast_punch = 0 coop jumps to the untouched stock render.
 PUNCH_ST_RENDER_ENTRY = 0x01910c50
 PUNCH_ST_RENDER = 0x019e662c
+# Performance (2026-11-04): the stock grid stereo render (0x019AF83C) loop 0x019AF932..0x019AFCC8 (353 instructions, 88
+# frame accesses per sample) becomes coop_grid_loop (grid_fast.S). The only way into the loop is its LSETUP at
+# 0x019AF92E, which becomes the JUMP.L (coop_grid_loop_near sets LT0 / LB0 / LC0 by hand when g_coop_fast_grid = 0).
+GRID_LOOP_SITE = 0x019af92e
+GRID_LOOP_STOCK = bytes.fromhex('a2e0cd01')
 
 
 def tank_patches(thunks):
@@ -457,6 +462,10 @@ def thunk_addresses(elf):
         tanks['phone_capture'] = symbol_address(syms, 'coop_phone_capture_near')[0]
     except Exception:
         pass
+    try:                                               # performance: the grid stereo loop
+        tanks['grid_loop'] = symbol_address(syms, 'coop_grid_loop_near')[0]
+    except Exception:
+        pass
     try:                                              # performance: the punch stereo render
         tanks['punch_st'] = symbol_address(syms, 'coop_punch_render_st')[0]
     except Exception:
@@ -513,6 +522,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     if thunks.get('phone_loop'):
         patches.append((PHONE_LOOP_SITE, PHONE_LOOP_STOCK, jump_l(PHONE_LOOP_SITE, thunks['phone_loop'])))
         patches.append((PHONE_CAPTURE_SITE, PHONE_CAPTURE_STOCK, jump_l(PHONE_CAPTURE_SITE, thunks['phone_capture'])))
+    if thunks.get('grid_loop'):
+        patches.append((GRID_LOOP_SITE, GRID_LOOP_STOCK, jump_l(GRID_LOOP_SITE, thunks['grid_loop'])))
     if thunks.get('punch_st'):
         patches.append((PUNCH_ST_RENDER_ENTRY, struct.pack('<I', PUNCH_ST_RENDER), struct.pack('<I', thunks['punch_st'])))
     if tape:
