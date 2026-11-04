@@ -449,6 +449,33 @@ static void phone_check(uint8_t *obj, int16_t *io, const int16_t *params)
 }
 #endif
 
+#ifdef COOP_NITRO_CHECK
+/* Test builds only (EXTRA_CXXFLAGS=-DCOOP_NITRO_CHECK): nitro_fast.S in lockstep with the stock loops, as phone_check:
+ * each mono half (0x3c bytes) runs first on a copy of its object and I/O block with g_coop_fast_nitro = 0, then for
+ * real with 1; any difference in the object or the output counts in g_nitro_check_bad. Both runs write the same values
+ * to the L1 buffer 0xFF801B50 and the display slots. g_nitro_hit_calls counts the rewrite's runs (nitro_fast.S). */
+extern "C" volatile uint32_t g_coop_fast_nitro;
+extern "C" { volatile uint32_t g_nitro_check_calls, g_nitro_check_bad, g_nitro_check_first, g_nitro_hit_calls; }
+static uint32_t g_nitro_shadow[0x3c / 4];
+static int16_t g_nitro_buf[64];
+typedef void (*nitro_mono_fn)(void *, int16_t *, const int16_t *);
+static void nitro_check(uint8_t *obj, int16_t *io, const int16_t *params)
+{
+    const uint32_t *o = (const uint32_t *)obj;
+    for (int k = 0; k < 0x3c / 4; k++) g_nitro_shadow[k] = o[k];
+    for (int k = 0; k < 64; k++) g_nitro_buf[k] = io[k];
+    g_coop_fast_nitro = 0;
+    ((nitro_mono_fn)0x019A62A4u)(g_nitro_shadow, g_nitro_buf, params);
+    g_coop_fast_nitro = 1;
+    ((nitro_mono_fn)0x019A62A4u)(obj, io, params);
+    int bad = 0;
+    for (int k = 0; k < 0x3c / 4; k++) if (g_nitro_shadow[k] != o[k]) bad = 1;
+    for (int k = 0; k < 64; k++) if (g_nitro_buf[k] != io[k]) bad = 1;
+    g_nitro_check_calls++;
+    if (bad) { if (!g_nitro_check_bad) g_nitro_check_first = g_nitro_check_calls; g_nitro_check_bad++; }
+}
+#endif
+
 static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
 {
     struct st_inst *s = &g_st[pos];
@@ -460,6 +487,9 @@ static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
     for (int k = 0; k < 8; k++) { master[k] = FX_SLOTS[8 + k]; FX_SLOTS[8 + k] = s->slots[k]; }
 #ifdef COOP_PHONE_CHECK
     if (t == 3) { phone_check((uint8_t *)s->obj + 4, l, params); phone_check((uint8_t *)s->obj + 0x90, r, params); } else
+#endif
+#ifdef COOP_NITRO_CHECK
+    if (t == 6) { nitro_check((uint8_t *)s->obj + 4, l, params); nitro_check((uint8_t *)s->obj + 0x40, r, params); } else
 #endif
     ((st_render_fn)(uintptr_t)vt_entry(g_fx_class[t].st_vt, 0x14))(s->obj, l, r, params);
     for (int k = 0; k < 8; k++) s->slots[k] = FX_SLOTS[8 + k];

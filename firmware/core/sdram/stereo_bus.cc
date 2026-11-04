@@ -208,6 +208,8 @@ extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_dsy
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_cwo = 1; }
 /* performance: the rewritten stock phone output loop (phone_fast.S); 0 runs the stock loop (A/B, kill switch) */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_phone = 1; }
+/* performance: the rewritten stock nitro mono render loops (nitro_fast.S); 0 runs the stock loops (A/B, kill switch) */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_nitro = 1; }
 static void voice_sum_stock(int is_drum, int16_t gain)
 {
     int16_t *bus = MONO_BUS64;

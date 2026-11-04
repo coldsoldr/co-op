@@ -93,3 +93,17 @@ performance.
   test build that runs the stock code on a copy of the object and I/O block and the rewrite on the real ones, every
   block, and counts differences (`-DCOOP_PHONE_CHECK` in `plugin_host.cc`, with hit counters on the rare paths in
   the assembly); shared buffers both runs write with the same values are fine.
+- **Compute a shared lookup once.** nitro's second loop starts each sample with S(s) of its state and ends it with
+  S(y_3) for the output, and the state is y_3: the same lookup twice. Look for a value a loop recomputes at the top
+  from what it produced at the bottom.
+- **Cheap table-lookup bookkeeping** (nitro, an interpolated 16-bit table read 6 times a sample): a reversed index
+  `base - 2 * (v >>> 20)` is `(base - 2) + 2 * ~(v >>> 20)` (no subtract), the 4-bit fraction `(v.H & 0xf) << 11` is
+  `v.H << 12 >> 1` on the half, and `a * f + b * (1 - f)` summed in one accumulator (`A0 = ...; Rn = (A0 += ...)`)
+  equals the two saturated products added with saturation when neither product can saturate (only 0x8000 * 0x8000
+  does). A 32-bit result from MAC0 goes to an even register, from MAC1 to an odd one.
+- **Rotate a loop so its last store rides in the next pass's first packet** (`R4 = R0 >>> 20 || NOP || [I1++] = R2`):
+  a packet may carry a P / FP load in the first slot and an I-register store in the second. Peel the first pass's part
+  before the LSETUP. A sign-extended input sample shifted left can come through an I-register half load followed by an
+  integer multiply by a power of two (`R2 = R2.L * R7.L (IS)`), which frees the P slot.
+- **Assembler:** bfin gas does not substitute a macro parameter written directly before `]` (`[P4 + \off]` is a syntax
+  error); write `[P4 + \off\()]`.

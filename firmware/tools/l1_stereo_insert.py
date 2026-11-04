@@ -233,6 +233,13 @@ PHONE_LOOP_STOCK = bytes.fromhex('b2e04421')
 PHONE_CAPTURE_SITE = 0x01a1bbfc
 PHONE_CAPTURE_STOCK = bytes.fromhex('a2e02e00')
 
+# Performance (2026-11-04): the stock nitro mono render (0x019A62A4, called twice by the stereo render 0x019A684C) loops
+# 0x019A64A8..0x019A6682 and 0x019A6698..0x019A67F6 become coop_nitro_loop (nitro_fast.S), back at 0x019A67F8. The only
+# way into them is loop 1's LSETUP at 0x019A64A4, which becomes the JUMP.L (coop_nitro_loop_near sets LT1 / LB1 / LC1
+# by hand when g_coop_fast_nitro = 0; loop 2's LSETUP stays stock).
+NITRO_LOOP_SITE = 0x019a64a4
+NITRO_LOOP_STOCK = bytes.fromhex('b2e0ef20')
+
 
 def tank_patches(thunks):
     return [(site, stock, jump_l(site, thunks[name]) + bytes.fromhex('00000000')) for site, stock, name in TANK_SITES]
@@ -451,6 +458,10 @@ def thunk_addresses(elf):
         tanks['phone_capture'] = symbol_address(syms, 'coop_phone_capture_near')[0]
     except Exception:
         pass
+    try:                                               # performance: the nitro mono render loops
+        tanks['nitro_loop'] = symbol_address(syms, 'coop_nitro_loop_near')[0]
+    except Exception:
+        pass
     try:                                               # the voice hook can stand in for the stock voice sum
         tanks['voice_sum'] = symbol_address(syms, 'g_coop_voice_sum_own')[0]
     except Exception:
@@ -503,6 +514,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     if thunks.get('phone_loop'):
         patches.append((PHONE_LOOP_SITE, PHONE_LOOP_STOCK, jump_l(PHONE_LOOP_SITE, thunks['phone_loop'])))
         patches.append((PHONE_CAPTURE_SITE, PHONE_CAPTURE_STOCK, jump_l(PHONE_CAPTURE_SITE, thunks['phone_capture'])))
+    if thunks.get('nitro_loop'):
+        patches.append((NITRO_LOOP_SITE, NITRO_LOOP_STOCK, jump_l(NITRO_LOOP_SITE, thunks['nitro_loop'])))
     if tape:
         patches += tape_patches(tramps)
     for address, stock, new in patches:
