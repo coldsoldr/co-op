@@ -111,5 +111,20 @@ performance.
   a packet may carry a P / FP load in the first slot and an I-register store in the second. Peel the first pass's part
   before the LSETUP. A sign-extended input sample shifted left can come through an I-register half load followed by an
   integer multiply by a power of two (`R2 = R2.L * R7.L (IS)`), which frees the P slot.
+- **More delay lines than I registers: pointers in the frame, wraps between segments** (spring, nine lines, 18 read /
+  write heads). The stock recomputed each head from an index every sample, with a compare for each wrap (19
+  instructions a line). Keep the heads as addresses in frame slots, load / post-increment / store them in the parallel
+  slots, and cut the block where the first head would reach its line's end: when every line is longer than the block,
+  each head wraps at most once a block, so the cut costs one pass over the heads per segment (about 2 segments a
+  block), and inside a segment there is no compare at all. 393 packets a sample became 162.
+- **Stores rotated into the next pass's first packets must be done once more after the loop**, and skipped on the first
+  pass: enter the loop body after them (set LT0 / LB0 / LC0 by hand, replay the skipped packets' other work, jump in;
+  op1emu runs this). spring's first version flushed the outputs but forgot a pointer store riding there.
+- **High-half loads and stores with post-increment**: there is no `W[P0++] = R0.H` or `R0.H = W[P0++]`; with a P
+  register holding 2, `W[P0 ++ P5] = R0.H` and `R0.H = W[P1 ++ P5]` are 16-bit and go in a parallel slot. An I
+  register parked on a halfword constant or a state word (`R1.H = W[I2]`) gives slot-3 loads that leave the P slot free.
+- **A lockstep check for an effect with a large memory** (spring's tank, 58 KB): run the stock on a shadow object with a
+  shadow copy of its memory, compare the whole memory after. When the memory is looked up from the object (coop's tank
+  map), point the lookup's default at the shadow for the stock call.
 - **Assembler:** bfin gas does not substitute a macro parameter written directly before `]` (`[P4 + \off]` is a syntax
   error); write `[P4 + \off\()]`.
