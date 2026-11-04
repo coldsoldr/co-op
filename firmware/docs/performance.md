@@ -574,3 +574,20 @@ samples) and measured:
    read-before-start branch forced on both sides (test-only byte patches) and with all four cwo knobs turned during
    the chord. [C in op1emu, the device figure pending]
 4. The other effects by cost (punch next). 5. The base cost left (cache pressure from coop code).
+
+2. **coop's S3 stage in assembly** (`coop_stage.S`; switch `g_coop_fast_stage`): the decimator with its rings
+   circular for the whole block, the pair clear, both DC blockers and the mid / side split in one loop. Bit-exact
+   with the C path (`tests/sim/kern_check.cc`, 3000 random blocks, state carried on); op1emu 11,571 -> 6,697 emulator
+   cycles per block (-42 %), audio identical over a 50 s six-voice run. [C in the simulator and op1emu]
+3. **DSynth's oscillator loop: withdrawn.** A rewrite (2026-11-04) hoisted a gain it took for loop-invariant;
+   `W[SP+0x72]` is the high half of `[FP-0x14]` (FP = SP + 0x84 in this frame), which the loop rewrites every
+   sample, so the gain follows the previous sample. The plain DSynth A/B passed because that value had settled;
+   DSynth with cwo came out 22 % quieter and the bisect found it. Done right, the gain stays in the loop and the
+   saving (1.2 % at best) is gone, so the loop stays stock. Lesson: check every frame halfword load for
+   aliasing against the loop's own stores, and A/B each rewrite in more than one scenario.
+4. cwo's loop (in progress). 5. The other effects by cost: punch, phone, nitro, spring, grid and delay are already
+   compiled hardware loops without per-sample calls; a rewrite gains less there.
+
+Correction (2026-11-04): the T4f device test already measured the six-voice DSynth chord at 65-67 % of the block
+(the stock engine about 57 %, coop 8.6 %). There is no "base cost" regression since T4: the engine itself is the
+cost, which is why its loops are the lever.

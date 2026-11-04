@@ -562,3 +562,19 @@ Expected: the six-voice chord about 45 k cycles a block cheaper than on p3m (mor
 missed the cache). [I until the file]
 
 Result: _not yet flashed_.
+
+## Performance 2-4: S3 stage and cwo in assembly — device test (pending, 2026-11-04)
+
+`build/pkg/op1_246_coop_p4b_perf.op1` (copy in Downloads; sha256
+`d7bf49312b65603c0b4e13c028b0c81a4ab4fe146f3b8d08b6de2c9933b78b06`). Supersedes p4a: the DSynth voice loop, coop's S3
+stage in assembly and the stock stereo cwo loop in assembly (`docs/performance.md`). Build tag `p4b`. (The DSynth
+oscillator rewrite was withdrawn before packaging: it was wrong for a gain that follows the previous sample.)
+
+op1emu, six voices: DSynth alone 238 k -> 189 k emulator cycles per block (-21 %); DSynth with cwo at the synth
+290 k -> 215 k (-26 %); the sound level the same second by second in both, faults none.
+
+**What to do** (each about 15 s with a held six-note DSynth chord): effect off, FX 2 off; cwo at the synth; cwo in
+instrument FX 2; cwo on the master. Listen for any change in DSynth's or cwo's sound against p3a / stock (there
+should be none), turn cwo's knobs while it plays, feel the UI. Copy `coop_stats.txt`.
+
+Result: _not yet flashed_.
