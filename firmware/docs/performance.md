@@ -909,3 +909,33 @@ same scenario: phone fast on both sides (only the punch word flipped) 1.32 %; **
 (second 46 came out 630 in one stock run and 715 in another). So that tail is op1emu's run-to-run variation acting on
 phone's time-periodic capture state, the fast runs fall inside the stock spread, and the lockstep check (0
 differences) stands as the proof. `tests/sim/ab_switch.sh` takes `AB_EXTRA="--set-word NAME=V ..."` for such controls.
+
+## p5a: what the run changed, in one table (op1emu, 2026-11-04)
+
+Every rewrite has its switch word (default 1; 0 runs the stock code), its numbered entry under "The DSynth lag and
+the rewrite programme", and was re-checked on the merged build. op1emu counts one cycle per issued packet; device
+figures add stalls and cache misses (the p4b rewrites came out 32-34 % cheaper on the device for 42-48 % in op1emu).
+
+| Code | Switch | Per call, stock -> fast (op1emu) | Change | Proof |
+|---|---|---|---|---|
+| punch (stereo render) | `g_coop_fast_punch` | 66,921 -> 49,458 | -26 % | identical samples (merged build) |
+| phone (mono render x2) | `g_coop_fast_phone` | 28,932 -> 14,061 | -51 % | lockstep 0 / ~89 k calls; A/B inside the stock spread |
+| nitro (mono render x2) | `g_coop_fast_nitro` | 38,605 -> 31,728 | -18 % | identical samples (merged build); lockstep 0 |
+| grid (stereo loop) | `g_coop_fast_grid` | 19,199 -> 11,187 | -42 % | identical samples (agent, two scenarios); levels 0.28 % merged |
+| spring (stereo loop) | `g_coop_fast_spring` | 27,807 -> 13,601 | -51 % | identical samples (merged build); lockstep 0 incl. the tank |
+| delay (stereo loop) | `g_coop_fast_delay` | 17,924 -> 11,758 | -34 % | identical samples (agent); lockstep 0 |
+| Voltage voice render | `g_coop_fast_voltage` | 14,371 -> 8,391 | -42 % | identical samples (merged build); lockstep 0 / ~92 k renders; simulator |
+| Phase voice render | `g_coop_fast_phase` | 10,286 -> 5,835 | -43 % | matches a stock run over all frames; lockstep 0 / ~92 k; simulator |
+
+Whole image, every switch off against every switch on (`tests/sim/ab_images.sh`): six-voice DSynth with cwo 84.9 k ->
+64.9 k emulator cycles per block on average from 34 s (idle seconds included), six-voice Voltage 160.5 k -> 119.7 k;
+no faults, levels within 0.14 % and 0.00 % second by second.
+
+**Engine ranking** (`tests/sim/eng_rank.sh`, op1emu cycles per voice render, six-note chord per factory sound slot,
+before the Phase rewrite): s5 dsynth 18,616 (its voice loop already rewritten), s3 pulse 16,505 (render in L1 code,
+0xFFA04B88), s7 phase 10,272, s4 drwave 9,642, s2 voltage 8,391 (rewritten), s8 sampler 7,191, s1 digital 7,101, s6 fm
+5,867. The device's `engines` line will give the real ranking (FM and DSynth pay more on the device for their data).
+
+Not done, in order of expected value: DSynth's remaining loops (its oscillator loop stays stock, step 3), pulse (its
+render is L1 code: a patch there goes through the decrypted L1 image), drwave, the dual-mono zero-side shortcut
+(waits for the spread decision), filter (not reachable from the stock FX list).
