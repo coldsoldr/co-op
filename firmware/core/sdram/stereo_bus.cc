@@ -285,6 +285,13 @@ extern "C" void coop_dbg_pre(void)
 
 static inline uint32_t dbg_word(int i, int32_t a, int32_t b) { return ((uint32_t)i << 24) | (((uint32_t)a & 0xfff) << 12) | ((uint32_t)b & 0xfff); }
 
+struct coop_stage_io {                                                 /* coop_stage.S IO_* offsets */
+    int32_t *vL, *vR; coop_hb2_state *hb; const int16_t *coefs; uint32_t ramp_step; coop_dc_state *dcL, *dcR; int32_t c;
+    int16_t *mid, *sl, *sr, *pL, *pR;
+};
+extern "C" int coop_stage_asm(struct coop_stage_io *io);
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_stage = 1; }   /* 0: the C path (A/B) */
+
 extern "C" void coop_instr_stage(void)
 {
     uint32_t t0 = coop_cycles();
@@ -300,6 +307,19 @@ extern "C" void coop_instr_stage(void)
         }
         for (int i = 0; i < COOP_VBLK; i++)
             if (coop_sat16(g_vL[i]) != s_dbg_bus[i]) { if (!g_dbg_acc_bad) g_dbg_acc_first = dbg_word(i, g_vL[i], s_dbg_bus[i]); g_dbg_acc_bad++; break; }
+    }
+    if (!dbg && g_coop_fast_stage) {                                   /* performance step 2: the same stage in assembly
+                                                                          (coop_stage.S; tests/sim/kern_check.cc) */
+        struct coop_stage_io io = { g_vL, g_vR, g_hb2, HB_COEFS, *HB_RAMP_W, g_dcL, g_dcR, *DC_COEF_W,
+                                    MONO_BUS64, g_decL, g_decR, g_pL, g_pR };
+        *(volatile int16_t *)HB_RAMP_W = (int16_t)coop_stage_asm(&io);
+        g_pair_dirty = 0;
+        g_stage_done = 1;
+        g_stereo_side_blocks++;
+        uint32_t dta = coop_cycles() - t0;
+        if (dta > g_stereo_stage_cycles_max) g_stereo_stage_cycles_max = dta;
+        coop_cost_add(COOP_COST_STAGE, dta);
+        return;
     }
     uint32_t rw = dbg ? s_dbg_ramp : *HB_RAMP_W;
     int16_t ramp = coop_hb_decimate2(g_hb2, g_vL, g_vR, g_pL, g_pR, HB_COEFS, (int16_t)rw, (int16_t)(rw >> 16));

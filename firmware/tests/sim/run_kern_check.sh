@@ -6,5 +6,5 @@ BIN=${BFIN_BIN:-$HOME/op1-toolchain/bfin/bin}
 HERE="$(cd "$(dirname "$0")" && pwd)"
 OUT=$(mktemp -d)
 "$BIN/bfin-elf-g++" -O2 -std=c++17 -mcpu=bf524 -msim -I"$HERE/../../core/include" \
-    "$HERE/kern_check.cc" -o "$OUT/kern_check"
+    "$HERE/kern_check.cc" "$HERE/../../core/sdram/coop_stage.S" -o "$OUT/kern_check"
 "$BIN/bfin-elf-run" "$OUT/kern_check"
