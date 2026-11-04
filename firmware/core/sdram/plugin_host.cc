@@ -318,6 +318,9 @@ extern "C" int coop_fx_name_eq(const char *name, const dstr *s)
 #define OBJ_BYTES 0x400                                                   /* every stereo object fits the 0x270 placement gap */
 #define LINE_TABLE ((volatile uint32_t *)0x01AB8B94u)                     /* delay / cwo line buffers: [+0xc] mono delay, [+0x14] stereo delay, [+0] mono cwo, [+8] stereo cwo */
 #define LINE_BYTES 0x2B14Cu                                               /* one line buffer (0x1b0ee48 - 0x1ae3cfc) */
+#ifdef COOP_DELAY_CHECK
+static uint32_t *g_delay_line;                                            /* delay_check's copy of the line */
+#endif
 /* The stereo grid and spring classes keep their tank at a fixed address (grid 0x01D8C70C, spring 0x01DE6252); every
  * coop object of those two types gets its own (tank_bind below; the S1 note's 0x01DE1F50 was a misread L1 table).
  * punch, phone, filter and nitro are dual-mono (their stereo render calls the mono render directly). */
@@ -407,6 +410,9 @@ static void st_make(int pos, int t)
     if (!s->obj) { s->type = -1; return; }
     if ((t == 0 || t == 7) && !s->line) s->line = (uint8_t *)MALLOC(LINE_BYTES);   /* its own delay line */
     if ((t == 0 || t == 7) && !s->line) { s->type = -1; return; }
+#ifdef COOP_DELAY_CHECK
+    if (t == 0 && !g_delay_line) g_delay_line = (uint32_t *)MALLOC(LINE_BYTES);
+#endif
     uint8_t *o = (uint8_t *)s->obj;
     for (uint32_t i = 0; i < OBJ_BYTES; i += 4) *(volatile uint32_t *)(o + i) = 0;
     uint32_t save8 = LINE_TABLE[2];
@@ -476,6 +482,50 @@ static void nitro_check(uint8_t *obj, int16_t *io, const int16_t *params)
 }
 #endif
 
+#ifdef COOP_DELAY_CHECK
+/* Test builds only (EXTRA_CXXFLAGS=-DCOOP_DELAY_CHECK): delay_fast.S in lockstep with the stock loop. The stereo render
+ * runs first on copies of the object's positions, both I/O blocks and the whole line with g_coop_fast_delay = 0, then
+ * for real with 1; any difference in the positions, the outputs or the line counts in g_delay_check_bad, and the first
+ * is described in g_delay_diag: [0] call, [1..3] positions before, [4] first differing output (0x101..3: a position),
+ * [5] / [6] stock / fast (L low, R high), [7] first differing line word, [8] / [9] its values, [10] / [11] the knobs. */
+extern "C" volatile uint32_t g_coop_fast_delay;
+extern "C" { volatile uint32_t g_delay_check_calls, g_delay_check_bad, g_delay_diag[12]; }
+static uint32_t g_delay_shadow[0x400 / 4];
+static int16_t g_delay_l[64], g_delay_r[64];
+static void delay_check(struct st_inst *s, int16_t *l, int16_t *r, const int16_t *params, st_render_fn fn)
+{
+    uint32_t *o = (uint32_t *)s->obj, *line = (uint32_t *)s->line;
+    if (!g_delay_line) { fn(s->obj, l, r, params); return; }
+    for (int k = 0; k < 0x400 / 4; k++) g_delay_shadow[k] = o[k];
+    for (int k = 0; k < 64; k++) { g_delay_l[k] = l[k]; g_delay_r[k] = r[k]; }
+    for (uint32_t k = 0; k < LINE_BYTES / 4; k++) g_delay_line[k] = line[k];
+    LINE_TABLE[5] = (uint32_t)(uintptr_t)g_delay_line;
+    g_coop_fast_delay = 0;
+    fn(g_delay_shadow, g_delay_l, g_delay_r, params);
+    LINE_TABLE[5] = (uint32_t)(uintptr_t)s->line;
+    g_coop_fast_delay = 1;
+    uint32_t a = o[1], b = o[2], c = o[3];
+    fn(s->obj, l, r, params);
+    int bad = 0, n = -1; uint32_t x = 0, y = 0;
+    for (int k = 3; k >= 1; k--) if (g_delay_shadow[k] != o[k]) { bad = 1; n = 0x100 + k; x = g_delay_shadow[k]; y = o[k]; }
+    for (int k = 63; k >= 0; k--) if (g_delay_l[k] != l[k] || g_delay_r[k] != r[k]) {
+        bad = 1; n = k; x = (uint16_t)g_delay_l[k] | (uint32_t)g_delay_r[k] << 16; y = (uint16_t)l[k] | (uint32_t)r[k] << 16; }
+    int ln = -1;
+    for (uint32_t k = 0; k < LINE_BYTES / 4; k++) if (g_delay_line[k] != line[k]) { bad = 1; if (ln < 0) ln = (int)k; }
+    g_delay_check_calls++;
+    if (bad) {
+        if (!g_delay_check_bad) {
+            g_delay_diag[1] = a; g_delay_diag[2] = b; g_delay_diag[3] = c; g_delay_diag[4] = (uint32_t)n;
+            g_delay_diag[5] = x; g_delay_diag[6] = y; g_delay_diag[7] = (uint32_t)ln;
+            g_delay_diag[8] = ln >= 0 ? g_delay_line[ln] : 0; g_delay_diag[9] = ln >= 0 ? line[ln] : 0;
+            g_delay_diag[10] = *(const uint32_t *)params; g_delay_diag[11] = *(const uint32_t *)(params + 2);
+            g_delay_diag[0] = g_delay_check_calls;
+        }
+        g_delay_check_bad++;
+    }
+}
+#endif
+
 static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
 {
     struct st_inst *s = &g_st[pos];
@@ -487,6 +537,9 @@ static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
     for (int k = 0; k < 8; k++) { master[k] = FX_SLOTS[8 + k]; FX_SLOTS[8 + k] = s->slots[k]; }
 #ifdef COOP_PHONE_CHECK
     if (t == 3) { phone_check((uint8_t *)s->obj + 4, l, params); phone_check((uint8_t *)s->obj + 0x90, r, params); } else
+#endif
+#ifdef COOP_DELAY_CHECK
+    if (t == 0) delay_check(s, l, r, params, (st_render_fn)(uintptr_t)vt_entry(g_fx_class[t].st_vt, 0x14)); else
 #endif
 #ifdef COOP_NITRO_CHECK
     if (t == 6) { nitro_check((uint8_t *)s->obj + 4, l, params); nitro_check((uint8_t *)s->obj + 0x40, r, params); } else

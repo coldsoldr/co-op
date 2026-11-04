@@ -124,3 +124,22 @@ performance.
   integer multiply by a power of two (`R2 = R2.L * R7.L (IS)`), which frees the P slot.
 - **Assembler:** bfin gas does not substitute a macro parameter written directly before `]` (`[P4 + \off]` is a syntax
   error); write `[P4 + \off\()]`.
+- **A stub's scratch registers are not stock state.** A `.near` stub that tests its switch word through a register
+  (delay's uses P2) has overwritten that register by the time the rewrite runs; take the value from where the stock keeps
+  it too (delay: the table in `[SP+0x38]`). delay's first version read the table from P2, i.e. from its own code, and
+  every simulator test passed because the harness jumped straight into the rewrite: **a harness enters through the stub**
+  (or clobbers the stub's registers before it jumps).
+- **A harness that runs the stock loop's own bytes.** For a stock loop with no C reference, `tests/sim`-style harnesses
+  can run both: extract the loop's bytes from the stock ELF at test time (never commit them), `.include` them after an
+  LSETUP of the same counter, give both the same fake frame, registers and random state, and compare the outputs, the
+  object and the line. 3000 random blocks (lines of 1..44100 words) showed the half-register difference below at once; the lockstep build
+  in op1emu then found the stub bug the harness could not see.
+- **Two writes to one register's halves in one packet.** The stock delay has `R1.L = R1.L * R0.H || R1.H = W[P2 ++ P3]`.
+  op1emu merges the two halves (as the hardware presumably does [I]); the GNU simulator keeps the load's whole-register write,
+  so `R1.L` stays unmultiplied there. Keep such a stock packet as it is in a rewrite: it then matches the stock under
+  either rule. Do not write new ones.
+- **A 32 x 32 multiply by `c << 16`** (a 16-bit coefficient placed in the high half) has two zero terms; what is left is
+  one dual MAC with the mixed-mode half on MAC1, `A1 = c.H * x.L (M), A0 = c.H * x.H`, then `A1 = A1 >>> 15` and
+  `R = (A0 += A1)`: 3 instructions against 6, the same bits (delay: 16 of them a sample).
+- **op1emu `--watch-writes LO+LEN` reads LEN as hex** (`+48` is 72 bytes), and the `(range)` label on a logged store can
+  name the wrong range: filter the log by address. `--watch-out` gives each writer's store count and last value.

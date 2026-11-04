@@ -697,6 +697,42 @@ samples) and measured:
    loop's tank accesses are unchanged in number, so the cache misses that make up much of the device cost stay).
    [C in op1emu, the device figure pending]
 
+10. **delay's stereo loop** (`core/sdram/delay_fast.S`; switch `g_coop_fast_delay`, 1 by default). delay is a varispeed
+   tape: a line of L 32-bit words (L = 44100 >> (k0 >>> 11), coop's own line per object through the line table) and three
+   16.16 positions in the object, A (read), B (clear) and C (write), stepping together by 2 max(k1, 0x21) and wrapping at
+   L << 16. The stereo render `0x0197DC42` reduces the positions, writes the mono input (k3 / 2)(inL + inR) to the L1
+   buffer `0xFF801B50`, then runs LC1 `0x0197DD4A..0x0197DF7A` (64 samples, about 266 instructions a sample with its two
+   LC0 loops): a 7-tap interpolating FIR read at A (table `0x0106A730`, the one phone uses, built at boot), both outputs
+   dry + that tap's high half, the feedback u = sat(sat(2 M(t, k2 << 16)) + m), w = M(u, k1' << 16), line[B] = 0, and the
+   same FIR scattered at C (line[C + k] = sat(sat(line + M(w, c0 << 16)) + M(w, c1 << 16))). The only way into the loop is
+   its LSETUP (`0x0197DD46`), which becomes a JUMP.L to a 60-byte `.near` stub (switch 0, or a line not word-aligned:
+   LT1 / LB1 / LC1 by hand, then the stock loop); the rewrite (836 bytes, region A) returns to `0x0197DF7C`, which reads
+   only `[SP+0x20]` / `[SP+0x24]`. What changed: both FIRs unrolled with the table and line loads in the parallel slots,
+   the line circular (B1 / L1) for the whole block, ten per-block constants a circular stream in the third slot (I3), the
+   positions' integer parts turned into addresses as (int + line / 4) << 2 and 31 - ph as (~A << 16) >> 27, and every
+   32 x 32 multiply (16 a sample, all by a value whose low half is 0) as one dual MAC, a shift and the add instead of six
+   instructions. The stock order of every memory access that can alias is kept (A's reads, out L, in R, out R, the clear,
+   each C + k read before its write and after C + k - 1's), so a shared I/O buffer and a line shorter than 7 words still
+   behave. Read taps 1..6 keep the stock's packet `R1.L = R1.L * R0.H || R1.H = W[P2 ++ P3]`, which writes both halves of
+   R1: op1emu merges them, the GNU simulator keeps the load's write (the multiply is lost there), so only that packet as
+   it is matches the stock under both. **137 packets a sample against about 266.** Bit-exactness in the GNU simulator: a
+   harness that runs the stock loop's own bytes (extracted from the stock ELF at test time, not committed) and the
+   rewrite on the same frame, registers and random state, 3000 blocks with lines of 1..44,100 words, steps, knobs and
+   positions random: 0 differences. op1emu, stock delay at the synth with a chord (`det_fx_stock_delay`, from 34 s):
+   **17,924 -> 11,758 emulator cycles per call (-34 %)**, the callback 63.6 k -> 57.4 k, **the samples identical over the
+   whole run**; with all four knobs turned during and after the chord (`det_fx_stock_delay_knobs`, from 41 s): 17,923 ->
+   11,758, the callback 137.8 k -> 131.7 k, levels equal second by second (0.00 %), samples differing from 2.97 s (before
+   the effect is selected: op1emu's run-to-run variation) by up to 316. The proof there is the lockstep build
+   (`EXTRA_CXXFLAGS=-DCOOP_DELAY_CHECK`, `plugin_host.cc delay_check`: the stock render on copies of the object, both I/O
+   blocks and the whole line, the rewrite on the real ones, every block): **0 differences in 38,136
+   (det_fx_stock_delay_knobs, to 94.7 s) and 37,627 (det_fx_stock_delay, to 89 s) calls** (the whole-line copy slows op1emu, so
+   those runs used the scenarios with the final waits stretched, to reach past the knob turns). That build also found the one real bug of
+   the first version: the stub tests its switch through P2, the stock's table pointer, so the rewrite read its
+   coefficients from its own code; the simulator harness had jumped straight into the rewrite and could not see it (the
+   table now comes from `[SP+0x38]`). Not exercised in op1emu: the unaligned-line fallback, a shared I/O buffer. Region C
+   `.near`: 0x2FC bytes used. The device figure is pending (stock 29 k; the line traffic, 22 SDRAM words a sample, is
+   unchanged, so the cache misses stay). [C in op1emu, the device figure pending]
+
 Correction (2026-11-04): the T4f device test already measured the six-voice DSynth chord at 65-67 % of the block
 (the stock engine about 57 %, coop 8.6 %). There is no "base cost" regression since T4: the engine itself is the
 cost, which is why its loops are the lever.
