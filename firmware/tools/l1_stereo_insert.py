@@ -232,6 +232,12 @@ PHONE_LOOP_STOCK = bytes.fromhex('b2e04421')
 # Its capture loop 0x01A1BC00..0x01A1BC58 the same way: the LSETUP at 0x01A1BBFC jumps to coop_phone_capture_near.
 PHONE_CAPTURE_SITE = 0x01a1bbfc
 PHONE_CAPTURE_STOCK = bytes.fromhex('a2e02e00')
+# Performance (2026-11-04): the stock punch stereo render (0x019E662C, dual-mono: two CALLs of the mono render
+# 0x019E6260) becomes coop_punch_render_st (punch_fast.S, both channels in one pass). Its only way in is the stereo
+# class vtable's render entry (0x01910C3C + 0x14; no CALL or jump in the image targets 0x019E662C), which is pointed
+# at coop; with g_coop_fast_punch = 0 coop jumps to the untouched stock render.
+PUNCH_ST_RENDER_ENTRY = 0x01910c50
+PUNCH_ST_RENDER = 0x019e662c
 
 
 def tank_patches(thunks):
@@ -451,6 +457,10 @@ def thunk_addresses(elf):
         tanks['phone_capture'] = symbol_address(syms, 'coop_phone_capture_near')[0]
     except Exception:
         pass
+    try:                                              # performance: the punch stereo render
+        tanks['punch_st'] = symbol_address(syms, 'coop_punch_render_st')[0]
+    except Exception:
+        pass
     try:                                               # the voice hook can stand in for the stock voice sum
         tanks['voice_sum'] = symbol_address(syms, 'g_coop_voice_sum_own')[0]
     except Exception:
@@ -503,6 +513,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     if thunks.get('phone_loop'):
         patches.append((PHONE_LOOP_SITE, PHONE_LOOP_STOCK, jump_l(PHONE_LOOP_SITE, thunks['phone_loop'])))
         patches.append((PHONE_CAPTURE_SITE, PHONE_CAPTURE_STOCK, jump_l(PHONE_CAPTURE_SITE, thunks['phone_capture'])))
+    if thunks.get('punch_st'):
+        patches.append((PUNCH_ST_RENDER_ENTRY, struct.pack('<I', PUNCH_ST_RENDER), struct.pack('<I', thunks['punch_st'])))
     if tape:
         patches += tape_patches(tramps)
     for address, stock, new in patches:

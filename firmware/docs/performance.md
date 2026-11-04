@@ -573,7 +573,33 @@ samples) and measured:
    variation splits two stock runs from the chord on, too), also with the fast-moving-delay branch and the
    read-before-start branch forced on both sides (test-only byte patches) and with all four cwo knobs turned during
    the chord. [C in op1emu, the device figure pending]
-4. The other effects by cost (punch next). 5. The base cost left (cache pressure from coop code).
+4. **punch's stereo render, both channels in one pass** (`coop_punch_render_st`, core/sdram/punch_fast.S; switch
+   `g_coop_fast_punch`, 1 by default). The stock stereo render `0x019E662C` is dual-mono: two CALLs of the mono render
+   `0x019E6260` (this + 4 / left, this + 0xD4 / right), each a 64-sample outer loop around a serial chain of N =
+   W[params + 4] >> 10 waveshaper stages (an interpolated sine-table lookup, a 32 x 32 multiply, the A / B history
+   at mono this + 4 / + 0x64). Entry: the stereo class vtable's render entry (`0x01910C50`, the only way in: no CALL
+   or jump in the image targets `0x019E662C`) points at coop, which jumps to the untouched stock render when the
+   switch is 0, when a display slot is -1 (the stock asserts there), when both buffers are the same, or when N is
+   outside 1..24 (the knob's range is exactly 0x600..0x6200, N 1..24, op1emu). No region-C code (0 bytes), 0x502
+   bytes in region A. One loop for both channels: each stage of the left chain interleaved with the right's (34
+   packets per stage pair, stock 2 x 22), the history A as a circular buffer (I0 / I1, L = 4N), the per-block
+   values in registers or frame slots, and the lookup of A[N-1] done once per sample (the output's lookup is the
+   next sample's first one). The arithmetic is the stock's with its operands, order and modes; rewritten forms that
+   give the same bits: the table address as `~(v >>> 20)` from a base 4097 entries up, the weight as
+   `(v.H << 12) >> 1` in 16 bits, the two interpolation products summed in A0 + A1 (neither can saturate), x * p6 as
+   one 16 x 16 product and the output product without the stock's two zero terms. The table base is read at run time
+   from the stock's own immediates (`0x019E636A / 6E`), so the package's L1 sine retarget carries over. op1emu, stock
+   punch at the synth with a chord (`det_fx_stock_punch.txt`, N 19): **66.9 k -> 49.5 k emulator cycles per call
+   (-26 %)**, the callback 112.6 k -> 95.1 k per block (-15.5 %); samples identical over the whole run. With the
+   knobs turned during the chord (`det_fx_stock_punch_knobs.txt`: white swept N 19 -> 1 -> 24 -> 10, the other
+   three moving): the fast run is sample-identical to one of three stock runs (the stock runs differ among
+   themselves from the first knob turn: op1emu's run-to-run variation moves knob events by blocks), levels within
+   0.04 % of the ab_switch stock run. A first version took the weight as `(v << 12) >> 17`, which keeps bits 5..19
+   of v, not 16..19: 1-2 LSB of DC in quiet passages (the level check passed), found because the fast run matched
+   no stock run. Not exercised in op1emu: the fallback cases (slot -1, shared buffers, N outside 1..24). The device
+   figure is pending (stock 78 k; the lookups' DAG stalls are what the interleave is for, which op1emu does not
+   model). [C in op1emu, the device figure pending]
+5. The other effects by cost. 6. The base cost left (cache pressure from coop code).
 
 2. **coop's S3 stage in assembly** (`coop_stage.S`; switch `g_coop_fast_stage`): the decimator with its rings
    circular for the whole block, the pair clear, both DC blockers and the mid / side split in one loop. Bit-exact

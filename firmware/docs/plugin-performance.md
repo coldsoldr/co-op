@@ -93,3 +93,9 @@ performance.
   test build that runs the stock code on a copy of the object and I/O block and the rewrite on the real ones, every
   block, and counts differences (`-DCOOP_PHONE_CHECK` in `plugin_host.cc`, with hit counters on the rare paths in
   the assembly); shared buffers both runs write with the same values are fine.
+- A whole function reached only through a vtable needs no region-C stub: point the vtable entry at the rewrite (a
+  data patch, any address) and jump to the untouched stock function for the switch-off and unusual cases (punch).
+- When an A/B is not identical, run the stock image two or three times: op1emu's variation gives several stock
+  outcomes, and the rewrite is right only if it matches one of them sample for sample. The level check is not
+  enough: it weighs loud seconds, and punch's first version (a shift pair that kept extra bits) passed it while 1-2
+  LSB of DC off in every quiet second. Work every bit-field trick through bit by bit.
