@@ -815,6 +815,46 @@ samples) and measured:
    table now comes from `[SP+0x38]`). Not exercised in op1emu: the unaligned-line fallback, a shared I/O buffer. Region C
    `.near`: 0x2FC bytes used. The device figure is pending (stock 29 k; the line traffic, 22 SDRAM words a sample, is
    unchanged, so the cache misses stay). [C in op1emu, the device figure pending]
+12. **Phase's voice loop** (`core/sdram/phase_fast.S`; switch `g_coop_fast_phase`, 1 by default). Phase (Pd.cpp) renders
+   each voice with `render(this, out, params)` at `0x01A0BC5C` (vtable + 0x14; no CALL or jump in the image targets it), 128
+   samples at 88.2 kHz, then adds to the global `0x01DE4B8C` (kept: the rewrite returns before it). The setup (LINK 0x24,
+   seven registers: FP = SP + 0x40) runs one LC0 loop `0x01A0BCE4..0x01A0BD5A` whose body is split: part A in the loop
+   range, part B out of line at `0x01A0BD88..0x01A0BE80`, run when the flag B[this + 0x14] is set, which branches back to
+   the loop's last instruction (a NOP); that is the scan's "software loop". Part A: s = T[ph1 >>> 19 + 4096], ph1 += d (the
+   pitch word), t = s * p2, out = t >>> 1, gH = sat(t + 0x4000); when ph1 wraps, ph2 is reset (to ph1, or to 0x80000000 when
+   p3 >>> 10 is not 0), the count this[0x18] cleared and the flag set. Part B: ph2 += sat(sat(d + M(sat(d << 2), p0^2 << 16))
+   + M(M(sat(d << 8), (ph1 >>> 1) + 0x40000000), p3sq)) (M the stock 32 x 32 multiply), out = T[ph2] * h * h * h * gH with
+   h = sat(0x7fff - p1 * gl); each ph2 wrap counts, and the flag clears when the count passes p3 >>> 10. The stock spends
+   30 instructions a sample on part A and 82 with part B, wraps not counted. The only way into the loop is its LSETUP
+   (`0x01A0BCE0`), which becomes a JUMP.L to a 50-byte `.near` stub (switch 0: LT0 / LB0 / LC0 by hand, then the stock
+   loop); the rewrite (0x132 bytes, region A) returns to `0x01A0BD5C`, which reads only P2 = this, P0 = out and the
+   voice. Every multiply, add, shift and saturation on the signal is the stock's with its operands and modes. What changed:
+   the index as `(T + 0x2000) + 2 * (v >>> 19)`; ph1 / ph2 stored and reloaded in the parallel slots (ph1 for the next pass
+   in the loop's last packet, beside the output store through I1), which also removes the old / new register copies the
+   wrap compares need; the per-block values in the parallel slots from two frame words the setup packs (p1 : p2 and
+   0x7fff : p0^2); the flag in P4 (one `CC = P4 == 0` a sample, written back after the loop); the two wraps and the count out
+   of line, without the stock's flag bytes in the frame; M(sat(d << 2), p0^2 << 16) without its two zero terms; and the
+   stock's separate gl = sat((ph1.H >>> 1) + 0x4000) taken as q.H of q = sat((ph1 >>> 1) + 0x40000000) (neither can
+   overflow, so the bits are the same). **13 packets a sample when the flag is 0 and 45 when it is 1, against 30 and 82.**
+   Not reproduced: the frame flag bytes `B[SP+0x50/0x51]` and the stores to the caller's argument homes `[FP+8]`,
+   `[FP+0xc]`, dead after the loop. op1emu, Phase (factory sound slot 7, the only engine heard: cost index 15) with a
+   six-note chord (`tests/sim/det_phase6.txt`, from 31 s): **10,286 -> 5,835 emulator cycles per voice render (-43 %)**, the
+   callback 131.0 k -> 104.3 k per block (-20 %); with the four knobs turned and notes played on and off
+   (`det_phase_knobs.txt`) the same per-render figures in the measured window. det_phase6: the ab_switch pair differs from
+   frame 0 (-182 / -181, op1emu's two-state run-to-run variation), levels within 0.09 %; in a second job **the fast run is
+   identical to one of two stock runs over all 3,330,887 frames** (the two stock runs differ from each other the same way).
+   Knobs: levels within 0.00 % second by second, samples differing (stock runs without the cost watch differ from each other
+   too). The proof is the lockstep build (`EXTRA_CXXFLAGS=-DCOOP_PHASE_CHECK`: the synth render thunk sends the Phase render
+   to `coop_phase_check` in `stereo_bus.cc`, which runs the stock loop on a copy of the voice (28 bytes) and the output,
+   puts the global accumulator back, then runs the rewrite on the real ones and compares voice, output and accumulator):
+   **0 differences in 42,006 (det_phase6) and 50,368 (knobs) voice renders**, every one through the rewrite, with 5,244 /
+   6,420 ph1 wraps, 47,215 / 55,642 ph2 wraps and 254 / 5,769 renders starting with the flag 0. Before op1emu, the simulator
+   check against the stock instructions (`tests/sim/run_phase_check.sh STOCK_DIS`, `phase_transcribe.py`, `phase_check.cc`:
+   random voices, flags, counts, sine tables, parameters with p3 >>> 10 zero / positive / negative, full-range and small
+   pitch words): 0 differences in 3,600 renders (93,003 ph1 wraps, 48,879 ph2 wraps); three deliberate one-instruction
+   mutations of the rewrite each failed it (60 to 2,993 bad renders). No packet of the stock needed splitting for
+   bfin-elf-run (its one ALU-and-store packet stores the half the ALU op leaves alone). Region C `.near`: +0x32 bytes (0x356
+   now). [C in op1emu and the simulator, the device figure pending]
 
 Correction (2026-11-04): the T4f device test already measured the six-voice DSynth chord at 65-67 % of the block
 (the stock engine about 57 %, coop 8.6 %). There is no "base cost" regression since T4: the engine itself is the
