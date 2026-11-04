@@ -954,3 +954,13 @@ Lessons for the next rewrites:
   the arithmetic.
 - New lead: blocks of ~2.04 M cycles (3.5 blocks, an audible dropout) right after a sound-slot change, twice in the
   run and once before it. Find what runs in the audio callback then.
+
+## p5e/p5f: the dropouts after a sound change (2026-11-04) [C device for the cause, op1emu for the fix]
+
+The p5e slow-block profiler (marks in every coop hook of the audio callback, `core/include/coop_cost.h`) caught four
+1.97-1.99 M-cycle blocks on the device, all spending ~1.88 M cycles in `st_make`: coop's stereo twin of the stock
+effect, built in the audio interrupt from the stock's effect init when a sound loads, whose stock init clears the
+effect's SDRAM buffers. p5f builds the twin on the main thread (sequence-numbered request and publish, dry until
+ready, no interrupt masking). Lesson for coop code: nothing that touches more than a few KB of SDRAM belongs in the
+audio interrupt, construction included; the emulator cannot show it (op1emu's worst block for the same change was
+169 k).

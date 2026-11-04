@@ -38,7 +38,7 @@
 #define QN        4
 #define CHUNK     64
 #define PROTOCOL  1
-#define BUILD_TAG "p5e"
+#define BUILD_TAG "p5f"
 enum { CX_FILE_GET = 0x20, CX_HELLO = 0x21, CX_PUT_BEGIN = 0x22, CX_PUT_DATA = 0x23, CX_PUT_END = 0x24, CX_DELETE = 0x25,
        CX_SLOT2 = 0x26, CX_RUN = 0x27, CX_REPLY = 0x40, ST_OK = 0, ST_FORMAT = 1, ST_STATE = 2, ST_PATH = 3, ST_SIZE = 4, ST_OFFSET = 5, ST_CRC = 6, ST_IO = 7 };
 /* FILE_PUT (P1b): BEGIN path -> a file under /yaffs2/plugins or /yaffs2/user is created (truncated); DATA u32 offset +
@@ -52,6 +52,7 @@ extern "C" int coop_runner_start(const char *path);                 /* coop_runn
 extern "C" void coop_runner_abort(void);
 extern "C" void coop_runner_status(uint8_t *out12);
 extern "C" void coop_runner_service(void);
+extern "C" void coop_fx_service(void);                             /* plugin_host.cc */
 static int put_fd = -1;
 static uint32_t put_off, put_crc;
 static int path_ok(const char *p)
@@ -288,4 +289,5 @@ extern "C" void coop_sysex_service(void)
         qr++;
     }
     coop_runner_service();                                         /* p5b: format run sections, write the run file */
+    coop_fx_service();                                             /* p5e: build slot 1's stereo effect off the audio path */
 }

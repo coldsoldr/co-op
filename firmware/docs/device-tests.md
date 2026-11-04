@@ -584,7 +584,32 @@ cwo 322 k a block (p3m 448 k), one cwo 305 k (p3m about 394 k); the chord alone 
 Not yet rewritten (same as before within run-to-run spread): punch 78 k, phone 49 k, spring 47 k, nitro 46 k, grid
 36 k, delay 29 k. [C]
 
-## Performance 5e (p5e): the delay crackle fixed, the slow-block profiler, the cache table — device test (pending, 2026-11-04)
+## Performance 5f (p5f): no effect construction in the audio interrupt — device test (pending, 2026-11-04)
+
+p5e's profiler put every long block inside `st_make` (below). In p5f the audio interrupt only posts the type of the
+stereo twin it needs, with a sequence number; the main loop (`coop_fx_service`, every pass) builds the twin and
+publishes the number it built; the render uses the twin only while that number is the latest, and passes the
+instrument through dry until then. FX 2 still builds in the interrupt when it is changed (rare: the page or the
+on-device FX 2 page); the same change can follow.
+
+- `build/pkg/op1_246_coop_p5f_perf.op1` (sha256 `02bffbb312d5a6a388fb67f422f9c905bee462948be46dae3955264de4fe5781`).
+  **Flash this one.**
+- `build/pkg/op1_246_coop_p5f_safe.op1` (sha256 `29e5d25e56d38277d673b41968c114a4afe62c218b0bf4d47f9df36c9abb055f`).
+
+Both pass `verify_bootloader` and `pkg_check`; copies in Downloads. op1emu (`run_p5a.txt` both ways): no fault, levels
+equal, every effect section ran its effect as before (punch 8144 ... delay 10414 renders), 52 twins built on the main
+thread with 68 dry blocks in all (about 1.3 blocks, 2 ms, per change), the Voltage section's worst block 169 k ->
+130 k.
+
+Steps: flash p5f perf; switch sound slots s1..s8 by hand several times and listen for dropouts; select delay once
+(clean, as in p5e); run the automatic test; send `coop_stats.txt`. Expected: `slow count 0` (or only blocks without
+`42@...43`), `st0_builds` counting the effect constructions. Recording: the interface is ASIO-only, so untick
+"record audio" and record channels 5/6 in the DAW while the test runs; `tools/run_compare.py` takes any WAV that
+holds the runner's start and end clicks.
+
+Result: pending.
+
+## Performance 5e (p5e): the delay crackle fixed, the slow-block profiler, the cache table — device test (done, 2026-11-04)
 
 p5d plus three things:
 - **Delay crackle:** coop's own stereo delay / cwo line (176 KB) came from the heap uncleared; the stock init never
@@ -614,7 +639,14 @@ Steps:
 3. Read `coop_stats.txt` (or keep the test's `_stats.txt`) after that and send it: the `slow` lines locate the long
    blocks.
 
-Result: pending.
+**Result (owner, 2026-11-04): the profiler found the dropouts.** Files `docs/device-stats/p5e_2026-11-04_*`. Four
+slow blocks (1.97-1.99 M cycles; one in the test's drwave section, three while the owner switched slots by hand), all
+with the same timeline: `40@~20k 42@~22k 43@~1.90M! 41`. That is `st_make`, coop's stereo twin of the stock effect,
+built inside the audio interrupt from the stock's effect init when a sound loads: ~1.88 M cycles, the stock init of
+the stereo class clearing the effect's buffers in SDRAM. Fixed in p5f (the twin is built on the main thread). The
+device's cache table matches op1emu's: heap 0 and coop's code cacheable, write-back (`dcplb` entries `0x0003109f` /
+`0x0003109d`). The page lists no inputs of the owner's interface: it is ASIO-only (input on channels 5/6), which
+browsers cannot open.
 
 ## Performance 5d (p5d): the spring crash fixed (second try) — device test (PASS, 2026-11-04)
 

@@ -651,6 +651,18 @@ static void fx_sanitize(void)
         }
 }
 
+/* p5e: slot 1's stereo twin is built on the main thread. The stock constructs its effects in the audio interrupt, and
+ * so did st_make: the stock init of the stereo class clears the effect's buffers (grid's 270 KB tank, spring's 58 KB),
+ * which on the device took ~1.9 M cycles, a 3.5-block dropout after every sound change that built one (the p5e
+ * profiler: all four slow blocks between marks 0x42 and 0x43). Now the interrupt posts the type with a new sequence
+ * number; coop_fx_service (main loop) builds the twin and then publishes the number it built; the render uses the
+ * twin only while the published number is the latest request, and passes the instrument through dry until then
+ * (a few ms after a sound change). No interrupt masking needed: the interrupt never touches g_st[0] while the
+ * numbers differ, and the main thread never touches it while they match. */
+static volatile uint32_t g_st0_req_seq, g_st0_pub_seq;
+static volatile int g_st0_req_type = -1;
+volatile uint32_t g_st0_builds, g_st0_dry_blocks;
+
 extern "C" void coop_fx_init_mono(void *self, int pos)
 {
     coop_mark(0x40);
@@ -658,8 +670,21 @@ extern "C" void coop_fx_init_mono(void *self, int pos)
     g_cur[pos & 1] = -1;
     g_fx_pos = pos & 1;
     int t = type_of_mono(self);                                           /* the stock just constructed this mono object: */
-    if (t >= 0) st_make(0, t);                                            /* its stereo twin (one object serves both positions) */
+    if (t >= 0) { g_st0_req_type = t; g_st0_req_seq = g_st0_req_seq + 1; }   /* its stereo twin, built by the main loop */
     coop_mark(0x41);
+}
+
+/* Main loop (coop_sysex_service, every pass): build a requested twin. */
+extern "C" void coop_fx_service(void)
+{
+    uint32_t seq = g_st0_req_seq;
+    if (seq == g_st0_pub_seq) return;
+    int t = g_st0_req_type;                                               /* read after seq: a newer request only makes
+                                                                             this build stale, and the numbers say so */
+    st_make(0, t);
+    g_st0_builds++;
+    __asm__ __volatile__("ssync;" ::: "memory");
+    g_st0_pub_seq = seq;
 }
 
 extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *params)
@@ -674,7 +699,8 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
     if (!e) {                                                             /* a stock type: its stereo object on the pair (S1) */
         g_cur[pos] = 0;
         int t = type_of_mono(self);
-        if (t < 0 || g_st[0].type != t) return;                          /* no twin (construction failed): pass through dry */
+        if (t < 0 || g_st0_pub_seq != g_st0_req_seq || g_st[0].type != t) { g_st0_dry_blocks++; return; }   /* no twin yet
+                                                                             (being built) or none (failed): dry */
         uint32_t c0 = coop_cost_now();
         int16_t l[BLOCK], r[BLOCK];
         for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16((int32_t)buf[i] + dL[i]); r[i] = coop_sat16((int32_t)buf[i] + dR[i]); }
