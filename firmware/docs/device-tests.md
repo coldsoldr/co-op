@@ -584,7 +584,32 @@ cwo 322 k a block (p3m 448 k), one cwo 305 k (p3m about 394 k); the chord alone 
 Not yet rewritten (same as before within run-to-run spread): punch 78 k, phone 49 k, spring 47 k, nitro 46 k, grid
 36 k, delay 29 k. [C]
 
-## Performance 5b (p5b): the p5a image plus the test runner — device test (pending, 2026-11-04)
+## Performance 5c (p5c): p5b with the spring crash fixed — device test (pending, 2026-11-04)
+
+p5b crashed when the FX list reached spring (below). p5c moves the offending load into its own packet; the build now
+runs `tools/asm_lint.py`, and the test script closes the FX list with the synth key instead of SEQ + synth.
+
+- `build/pkg/op1_246_coop_p5c_perf.op1` (sha256 `33f8a0884f48aa8909ebd96d86feccd79458bf0b5b009071309bb9be5ae4278b`):
+  everything on. **Flash this one.**
+- `build/pkg/op1_246_coop_p5c_safe.op1` (sha256 `6c0aeb4c6a0b06aefc5e861508b6f6a3bff827f960b2ea1bfe08d677c9a0ad06`):
+  p5a's eight new switches at 0. Only if perf misbehaves.
+
+Both pass `verify_bootloader` (te-boot.ldr absent) and `pkg_check` (only OP1_vdk.ldr differs); copies in Downloads.
+
+Steps:
+1. Flash p5c perf. **By hand first:** on s5 (DSynth), open the FX list (shift + T3) and scroll slowly through every
+   effect to the bottom and back, a chord held; then pick spring and play. This is the move that crashed p5b.
+2. Then the automatic test exactly as p5b's steps 2-6 below (Hello must say `build p5c`; script
+   `tests/sim/run_p5a.txt`, the new version). The sequencer must stay off throughout.
+
+op1emu (2026-11-04, the new script on the fixed image, `run_emu.sh ... p5c`): every effect section ran its effect
+(punch 8144, phone 8364, nitro 8474, grid 8584, spring 9756, delay 10417 renders), no fault, A and B levels equal
+(RMS 344.9 / 344.9). The effect sections' callback average fell from ~147 k to ~113 k cycles: the SEQ tap had started
+the sequencer in op1emu too. Spring costs 13,662 cycles per call (13,598 before: the one added cycle per sample).
+
+Result: pending.
+
+## Performance 5b (p5b): the p5a image plus the test runner — device test (FAIL, 2026-11-04)
 
 p5b is p5a (below) plus the test runner (`docs/test-runner.md`). The page plays the p5a test on the OP-1, records it
 from your interface and fetches the results, so the device and op1emu get the same inputs. **Flash p5b instead of
@@ -616,6 +641,22 @@ Steps:
 What to report besides the files: anything that sounded wrong, a key that stayed down, the page stopping with an
 error, or the screen doing something the script did not ask for.
 
+**Result (2026-11-04, owner): FAIL, a crash in the spring rewrite.** The runner worked: it played the test until the
+first effect change. Two faults:
+- **The sequencer came on.** The script closed the FX list with SEQ then the synth key (a habit of the op1emu
+  scenarios); on the device SEQ starts the sequencer. Fixed in the script: the synth key alone closes the list (the
+  owner: T1-T4 or the synth key close it).
+- **Crash, SEQSTAT 0x22 (illegal instruction combination), RETX `0x02C03868`**, when the FX list scrolled past punch.
+  Also reproduced by hand. The address is `lp_entry` in `spring_fast.S`, the first packet of spring's sample loop:
+  `A1 = A1 >> 16 || [FP - F_W9] = P0 || R1.H = W[I2]`. A P-register store in slot 2 beside a load in slot 3: the
+  device refuses it, op1emu runs it (op1emu raises 0x22 only for slots that fail to decode). The stock code has about
+  860 parallel P-register stores, all with NOP beside them. The row after punch is spring, whose preview runs that
+  loop at once; that is why "scrolling past punch" crashed. Call stack on the screen: `CoopAudioCb` (0x02C0003E) ->
+  the stock callback -> the FX render; the frame at 0x02C0E458 is `coop_ui_frame` on the UI side.
+  Fix: the load moved to its own packet (one cycle per sample); `tools/asm_lint.py` flags the pattern (it finds only
+  this packet in the p5b sources). The lockstep build (`-DCOOP_SPRING_CHECK`, det_fx_stock_spring_knobs) gives
+  0 differences in 8,933 calls. Re-test in p5c.
+
 op1emu (2026-11-04): `tests/sim/run_emu.sh tests/sim/run_p5a.txt tests/sim/idle_200s.txt`. The runner played all
 1,566 events and 15 sections with no fault. Each effect section shows its effect: `fx1_punch` n 8144, `fx1_phone`
 8364, `fx1_nitro` 8474, `fx1_grid` 8584, `fx1_spring` 9756, `fx1_delay` 10417; the small counts of other effects are
@@ -624,7 +665,7 @@ digital 7100, pulse 16502, drwave 9641, fm 5867, sampler 6874. Level A (op1emu i
 455.4. `run_compare.py` on a simulated recording (gain 0.4, 0.7 s late, noise, +100 ppm clock) found both clicks, got
 +100 ppm, and gave 0.0 dB in every section.
 
-Result: pending.
+Result: see above (FAIL, fixed in p5c).
 
 ## Performance 5 (p5a): six effects and two engines in assembly, per-engine cost — device test (pending, 2026-11-04)
 

@@ -186,3 +186,12 @@ performance.
 - **Check whether two stock results are one.** Phase computes sat((ph1.H >>> 1) + 0x4000) and, a few instructions on,
   sat((ph1 >>> 1) + 0x40000000); neither can overflow, so the first is the second's high half. Prove the range before
   sharing, as for hoisting (rule 4).
+
+## The emulator accepts packets the device refuses (p5b crash, 2026-11-04)
+
+op1emu raises EXCAUSE 0x22 (illegal instruction combination) only when a parallel slot fails to decode. The device
+also refuses combinations that decode cleanly: a P-register store in slot 2 beside a load in slot 3
+(`A1 = A1 >> 16 || [FP - 0x64] = P0 || R1.H = W[I2]`) crashed the OP-1 with SEQSTAT 0x22 the first time spring ran,
+after every emulator gate had passed. The stock compiler's ~860 parallel P-register stores all have NOP beside them.
+Rule for hand-written packets: copy combinations the stock code uses; `tools/asm_lint.py` (run by the build) flags
+the known bad one. A plugin's assembly should go through the same lint.

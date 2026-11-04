@@ -263,7 +263,8 @@ lp_top:
     R6 = -R4 (S) || P1 = [FP - F_T1] || W[I0++] = R1.L;
     A1 = R6.L * R7.L (FU) || P3 = [FP - F_W2] || W[I1++] = R1.H;
 lp_entry:
-    A1 = A1 >> 16 || [FP - F_W9] = P0 || R1.H = W[I2];                  /* g4 */
+    A1 = A1 >> 16 || [FP - F_W9] = P0 || NOP;     /* a P-register store with a load beside it is illegal on the */
+    R1.H = W[I2];                                 /* device (EXCAUSE 0x22, p5b test 2026-11-04; op1emu takes it): g4 */
     A1 += R6.H * R7.L (M), A0 = R6.H * R7.H || P0 = [FP - F_W1] || R1.L = W[I3];   /* h0 */
     A1 += R7.H * R6.L (M);
     A1 = A1 >>> 15;

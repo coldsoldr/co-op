@@ -16,7 +16,8 @@ L += ['# The p5a device test (docs/device-tests.md "Performance 5") as a test-ru
       '# op1emu. Factory sound slots assumed (s1 digital, s2 voltage, s3 pulse, s4 drwave, s5 dsynth, s6 fm, s7 phase,',
       '# s8 sampler: the engines line names what really played). Each #@mark starts a section of the run file. The six',
       '# effects are picked on s5 through the stock FX list, which clamps at its top: 56 steps ccw reach the first row',
-      '# from anywhere, then 8 steps per row (cwo delay grid nitro phone punch spring). The test leaves s5 on spring.',
+      '# from anywhere, then 8 steps per row (cwo delay grid nitro phone punch spring); the synth key closes it (p5b used',
+      '# SEQ + synth, which starts the sequencer on the device). The test leaves s5 on spring.',
       '#@name p5a', '#@tail 6000',
       'accel 64 -64 512', 'wait-frames 1 300000']
 at(t); L.append('tap synth 200')
@@ -39,8 +40,7 @@ for row, fx in ((6, 'punch'), (5, 'phone'), (4, 'nitro'), (3, 'grid'), (7, 'spri
     at(t + 2200); L.append('release shift')
     at(t + 3000); L.append('turn enc1 ccw 56')
     at(t + 4400); L.append('turn enc1 cw %d' % (8 * (row - 1)))
-    at(t + 6000); L.append('tap seq 200')
-    at(t + 7000); L.append('tap synth 200')
+    at(t + 6000); L.append('tap synth 200')                  # closes the list (T1-T4 do too); SEQ would start the sequencer
     s = t + 8500
     chord(CHORD3, s, 6000)
     for k, enc in enumerate(('enc1', 'enc2', 'enc3', 'enc4')):

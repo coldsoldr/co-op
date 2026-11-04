@@ -3,7 +3,8 @@
 # op1emu. Factory sound slots assumed (s1 digital, s2 voltage, s3 pulse, s4 drwave, s5 dsynth, s6 fm, s7 phase,
 # s8 sampler: the engines line names what really played). Each #@mark starts a section of the run file. The six
 # effects are picked on s5 through the stock FX list, which clamps at its top: 56 steps ccw reach the first row
-# from anywhere, then 8 steps per row (cwo delay grid nitro phone punch spring). The test leaves s5 on spring.
+# from anywhere, then 8 steps per row (cwo delay grid nitro phone punch spring); the synth key closes it (p5b used
+# SEQ + synth, which starts the sequencer on the device). The test leaves s5 on spring.
 #@name p5a
 #@tail 6000
 accel 64 -64 512
@@ -85,8 +86,6 @@ turn enc1 ccw 56
 at 64900
 turn enc1 cw 40
 at 66500
-tap seq 200
-at 67500
 tap synth 200
 at 69000
 press c4
@@ -128,8 +127,6 @@ turn enc1 ccw 56
 at 81900
 turn enc1 cw 32
 at 83500
-tap seq 200
-at 84500
 tap synth 200
 at 86000
 press c4
@@ -171,8 +168,6 @@ turn enc1 ccw 56
 at 98900
 turn enc1 cw 24
 at 100500
-tap seq 200
-at 101500
 tap synth 200
 at 103000
 press c4
@@ -214,8 +209,6 @@ turn enc1 ccw 56
 at 115900
 turn enc1 cw 16
 at 117500
-tap seq 200
-at 118500
 tap synth 200
 at 120000
 press c4
@@ -257,8 +250,6 @@ turn enc1 ccw 56
 at 132900
 turn enc1 cw 48
 at 134500
-tap seq 200
-at 135500
 tap synth 200
 at 137000
 press c4
@@ -300,8 +291,6 @@ turn enc1 ccw 56
 at 152400
 turn enc1 cw 8
 at 154000
-tap seq 200
-at 155000
 tap synth 200
 at 156500
 press c4
