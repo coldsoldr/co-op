@@ -584,7 +584,40 @@ cwo 322 k a block (p3m 448 k), one cwo 305 k (p3m about 394 k); the chord alone 
 Not yet rewritten (same as before within run-to-run spread): punch 78 k, phone 49 k, spring 47 k, nitro 46 k, grid
 36 k, delay 29 k. [C]
 
-## Performance 5c (p5c): p5b with the spring crash fixed — device test (pending, 2026-11-04)
+## Performance 5d (p5d): the spring crash fixed (second try) — device test (pending, 2026-11-04)
+
+p5c crashed exactly as p5b did (below). p5d takes the P-register stores out of spring's two accumulator-shift
+packets.
+
+- `build/pkg/op1_246_coop_p5d_perf.op1` (sha256 `f48a1844d7dfc01383bdaaeb38b06813bc966172ce7a9881191c7e476032f059`):
+  everything on. **Flash this one.**
+- `build/pkg/op1_246_coop_p5d_safe.op1` (sha256 `a77282a63690ac841a43a817433745b0b640a54367885fc0016363095c036b72`):
+  p5a's eight new switches at 0. Only if perf misbehaves.
+
+Both pass `verify_bootloader` (te-boot.ldr absent) and `pkg_check` (only OP1_vdk.ldr differs); copies in Downloads.
+Steps as p5c's below: by hand through the FX list first, then the automatic test (Hello says `build p5d`). If
+**List inputs** does not show the interface, send the status line and the device list it prints
+(docs/test-runner.md, "The page cannot see the audio interface").
+
+What changed: in p5c the crash packet was `A1 = A1 >> 16 || [FP - 0x64] = P0 || NOP` (the load already moved out),
+same RETX `0x02C03868`, SEQSTAT `0xC022` (EXCAUSE 0x22), so slot 3 was not the cause. What the stock code never does
+is pair a parallel P-register store with a shift: its ~860 parallel P stores sit beside ALU or multiply instructions
+only, and GCC's own MAC + P-store packet in coop_master_apply has run on the device every block since the first
+build. Spring had two such packets (`A1 = A1 >> 16`, `A1 = A1 >>> 15`); both stores are now plain instructions
+(+2 cycles per sample). `tools/asm_lint.py` flags P stores beside shifts (both packets in p5c, nothing in p5d).
+Lockstep (`-DCOOP_SPRING_CHECK`, det_fx_stock_spring_knobs): 0 differences in 8,713 calls.
+
+Risk left: the other seven p5a rewrites have never run on the device (the test always stopped at spring). They use
+some slot combinations the stock never does, all with D registers (none is a P store); two of those kinds already
+run in the p4b cwo rewrite. A crash photo's RETX names the packet, as it did here.
+
+Result: pending.
+
+## Performance 5c (p5c): p5b with the spring crash fixed — device test (FAIL, 2026-11-04)
+
+**Result (owner, 2026-11-04): FAIL.** Selecting spring (or scrolling past punch) crashed again: SEQSTAT 0xC022,
+RETX `0x02C03868`, the same packet with the load moved out (`A1 = A1 >> 16 || [FP - 0x64] = P0 || NOP`); see p5d.
+The page did not list the audio interface (microphone permission granted); p5d's page reports what the browser sees.
 
 p5b crashed when the FX list reached spring (below). p5c moves the offending load into its own packet; the build now
 runs `tools/asm_lint.py`, and the test script closes the FX list with the synth key instead of SEQ + synth.

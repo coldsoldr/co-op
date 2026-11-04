@@ -263,8 +263,11 @@ lp_top:
     R6 = -R4 (S) || P1 = [FP - F_T1] || W[I0++] = R1.L;
     A1 = R6.L * R7.L (FU) || P3 = [FP - F_W2] || W[I1++] = R1.H;
 lp_entry:
-    A1 = A1 >> 16 || [FP - F_W9] = P0 || NOP;     /* a P-register store with a load beside it is illegal on the */
-    R1.H = W[I2];                                 /* device (EXCAUSE 0x22, p5b test 2026-11-04; op1emu takes it): g4 */
+    /* The device refuses a parallel P-register store beside an accumulator shift (EXCAUSE 0x22 here in p5b and p5c,
+     * 2026-11-04; op1emu runs it; the stock code never pairs them, tools/asm_lint.py): three plain instructions. */
+    A1 = A1 >> 16;
+    [FP - F_W9] = P0;
+    R1.H = W[I2];                                                       /* g4 */
     A1 += R6.H * R7.L (M), A0 = R6.H * R7.H || P0 = [FP - F_W1] || R1.L = W[I3];   /* h0 */
     A1 += R7.H * R6.L (M);
     A1 = A1 >>> 15;
@@ -283,7 +286,8 @@ lp_entry:
     R4.H = R4.H + R1.H (S) || R6.L = W[P0] || NOP;                      /* old1 */
     R4.L = R4.H + R4.L (S) || R6.H = W[P1 ++ P5] || NOP;                /* tC; tap1 */
     A1 = R1.L * R7.L (M), A0 = R1.L * R7.H || [FP - F_TC] = R4 || NOP;
-    A1 = A1 >>> 15 || [FP - F_T1] = P1 || NOP;
+    A1 = A1 >>> 15;                                                     /* (no P store beside a shift: see lp_entry) */
+    [FP - F_T1] = P1;
     R1 = (A0 += A1) || P1 = [FP - F_T2] || NOP;                         /* M(x1) */
     R1 = R0 + R1 (S);
     R0 = -R0 (S);

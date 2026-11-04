@@ -89,3 +89,16 @@ through punch / phone / nitro / grid / spring / delay with all four knobs turned
 effect (the section's fx1 counter is the large one), the engine costs equal p5a's, A and B have the same level
 (RMS 453.5 vs 455.4), no fault. `tools/run_compare.py` checked on a simulated recording of B: clicks found, the
 +100 ppm clock offset measured, 0.0 dB in every section.
+
+## The page cannot see the audio interface
+
+**List inputs** reports in the status line how many inputs the browser found and why, and prints every device the
+browser reports in the box below; send that text if the interface is missing. The first entry, "the browser's
+default input", always records from whatever Windows has set as the default recording device, so setting the
+interface as the default in Windows (Sound settings, Input) is a workaround. If the browser gives a file:// page no
+media devices at all, serve the page from localhost (a secure context) instead:
+
+```
+wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw/tools && python3 -m http.server 8765'
+```
+then open `http://localhost:8765/coop_sysex.html` in Chrome or Edge.

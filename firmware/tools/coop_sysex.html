@@ -389,14 +389,38 @@ $('rscript').onchange = async () => {
       (blocks * 64 / 44100).toFixed(1) + ' s.';
   } catch (err) { $('rinfo').textContent = 'Script error: ' + err.message; }
 };
-$('rlist').onclick = async () => {
+// The input list. Every step reports into the status line and the box below, so a missing interface can be told
+// apart from a refused permission or a browser without media devices.
+async function listInputs() {
+  const sel = $('rin');
+  sel.innerHTML = '<option value="">(the browser\'s default input)</option>';
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus('This browser gives the page no audio inputs (navigator.mediaDevices missing). Use Chrome or Edge; ' +
+      'if it is already Chrome, open the page from a local web server instead of the file (see docs/test-runner.md).');
+    return;
+  }
+  let note = '';
   try {
-    const s = await navigator.mediaDevices.getUserMedia({ audio: true });   // the labels need a permission first
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });   // the device names need a permission first
+    note = 'permission granted, test stream from "' + (s.getAudioTracks()[0] || {}).label + '"';
     s.getTracks().forEach(t => t.stop());
-    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
-    $('rin').innerHTML = devs.map(d => '<option value="' + d.deviceId + '">' + (d.label || d.deviceId) + '</option>').join('');
-  } catch (err) { setStatus('Audio inputs: ' + err.message); }
-};
+  } catch (err) { note = 'microphone permission failed: ' + err.name + ' ' + err.message; }
+  let all = [];
+  try { all = await navigator.mediaDevices.enumerateDevices(); } catch (err) { note += '; enumerateDevices failed: ' + err.message; }
+  const ins = all.filter(d => d.kind === 'audioinput');
+  for (const d of ins) {
+    const o = document.createElement('option');
+    o.value = d.deviceId; o.textContent = d.label || ('input ' + d.deviceId.slice(0, 8) + ' (no name: permission missing)');
+    sel.appendChild(o);
+  }
+  if (ins.length) sel.selectedIndex = 1;
+  setStatus(ins.length + ' audio input(s) found; ' + note + '.');
+  $('out').textContent = 'Devices the browser reports (kind: label):\n' +
+    all.map(d => '  ' + d.kind + ': ' + (d.label || '(no label)') + (d.deviceId === 'default' ? '  [default]' : '')).join('\n');
+}
+$('rlist').onclick = listInputs;
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener)
+  navigator.mediaDevices.addEventListener('devicechange', () => { if ($('rin').options.length > 1) listInputs(); });
 
 // Recording: an AudioWorklet copies the input's samples; the WAV is 16-bit stereo at the context's rate.
 const REC_WORKLET = 'class R extends AudioWorkletProcessor { process(inp) { const c = inp[0]; if (c && c.length) ' +
