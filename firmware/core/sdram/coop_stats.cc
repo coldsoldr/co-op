@@ -42,6 +42,8 @@ extern volatile uint32_t g_edit_lifts, g_edit_drops, g_edit_erases, g_edit_error
 extern volatile uint32_t g_master_cycles, g_fx_cycles;
 extern volatile uint32_t g_l1_state, g_l1_used, g_l1_refused, g_l1_sine_copied;
 extern volatile uint32_t g_lander_swallowed;   /* lander_off.cc */
+extern "C" volatile uint32_t g_coop_fast_dsynth, g_coop_fast_stage, g_coop_fast_cwo, g_coop_fast_punch, g_coop_fast_phone,
+    g_coop_fast_nitro, g_coop_fast_grid, g_coop_fast_spring, g_coop_fast_delay, g_coop_fast_voltage, g_coop_fast_phase;   /* stereo_bus.cc */
 extern volatile uint32_t g_plugins_seen, g_plugins_loaded, g_plugins_failed, g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks, g_fx_stock_stereo_blocks, g_fx_stock_ctor, g_s2_blocks[2], g_s2_changes, g_tank_bound, g_tank_short, g_ui_opens, g_ui_applies;   /* plugin_host.cc */
 extern const char *volatile g_plugins_last_error;
 extern char g_plugins_last_name[];                                 /* l1_pool.cc */
@@ -164,6 +166,9 @@ static void write_file(void)
     }
     put("\n");
     put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
+    put("switches"); kv("dsynth", g_coop_fast_dsynth); kv("stage", g_coop_fast_stage); kv("cwo", g_coop_fast_cwo);   /* the image's g_coop_fast_* words */
+    kv("punch", g_coop_fast_punch); kv("phone", g_coop_fast_phone); kv("nitro", g_coop_fast_nitro); kv("grid", g_coop_fast_grid);
+    kv("spring", g_coop_fast_spring); kv("delay", g_coop_fast_delay); kv("voltage", g_coop_fast_voltage); kv("phase", g_coop_fast_phase); put("\n");
     put("plugins"); kv("seen", g_plugins_seen); kv("loaded", g_plugins_loaded); kv("failed", g_plugins_failed);
     kv("mono_calls", g_fx_dispatch_mono); kv("st_calls", g_fx_dispatch_st); kv("plugin_blocks", g_fx_plugin_blocks); kv("stock_st_blocks", g_fx_stock_stereo_blocks); kv("stock_st_made", g_fx_stock_ctor); kv("s2_instr", g_s2_blocks[0]); kv("s2_master", g_s2_blocks[1]); kv("s2_changes", g_s2_changes); kv("tanks", g_tank_bound); kv("tank_short", g_tank_short); kv("ui_opens", g_ui_opens); kv("ui_applies", g_ui_applies);
     if (g_plugins_last_error) { put(" last "); put(g_plugins_last_name); put(": "); put(g_plugins_last_error); }

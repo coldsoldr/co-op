@@ -583,3 +583,50 @@ normal.** Cost line (cycles per call, device): cwo at the synth 60.5 k (p3m 92.3
 cwo 322 k a block (p3m 448 k), one cwo 305 k (p3m about 394 k); the chord alone about 245 k (42 %) by subtraction.
 Not yet rewritten (same as before within run-to-run spread): punch 78 k, phone 49 k, spring 47 k, nitro 46 k, grid
 36 k, delay 29 k. [C]
+
+## Performance 5 (p5a): six effects and two engines in assembly, per-engine cost — device test (pending, 2026-11-04)
+
+Two packages (copies in Downloads), build tag `p5a`; the stats file's new `switches` line says which one ran.
+
+- `build/pkg/op1_246_coop_p5a_perf.op1` (sha256 `b29c7732742d13d6ae1ae429ebb1618a900e0cade2567f9b7a274d0edcd286f8`):
+  everything on. **Flash this one.**
+- `build/pkg/op1_246_coop_p5a_safe.op1` (sha256 `f914fae7b9d734857e4c8a96b2a742d58bce0e6890b9dadf8ef1a5c34d0c4f8a`): the
+  same image with this run's eight new switches at 0 (p4b's DSynth / S3 stage / cwo rewrites stay on). Only if the
+  perf package misbehaves: it tells a p5a rewrite apart from anything else.
+
+Both pass `tools/verify_bootloader.py` (te-boot.ldr absent) and `pkg_check` (only OP1_vdk.ldr differs from stock).
+Supersedes p4b. What is new (`docs/performance.md`, "p5a: what the run changed"; op1emu per call, stock -> fast):
+
+| Switch | What | op1emu |
+|---|---|---|
+| `g_coop_fast_punch` | punch, both channels in one pass | -26 % |
+| `g_coop_fast_phone` | phone's two loops | -51 % |
+| `g_coop_fast_nitro` | nitro's two loops | -18 % |
+| `g_coop_fast_grid` | grid's sample loop | -42 % |
+| `g_coop_fast_spring` | spring's sample loop (segments between line wraps) | -51 % |
+| `g_coop_fast_delay` | delay's sample loop | -34 % |
+| `g_coop_fast_voltage` | Voltage's voice loop | -42 % per voice |
+| `g_coop_fast_phase` | Phase's voice loop | -43 % per voice |
+
+Every one is sample-identical to stock in op1emu or, where op1emu's run-to-run variation splits runs, passed a
+lockstep build (stock and rewrite on the same state every block / voice, 0 differences). Also new: the stats file's
+`engines` line (cycles per voice render for each engine, and `synth=` / `drum=` per block), 24 time windows (was
+12), the heaviest windows first, and the `switches` line.
+
+**What to do** (each about 15 s with a held six-note chord; DSynth is factory sound 5, Voltage 2, Phase 7):
+1. Voltage, no effect; then Phase, no effect. Listen for any change in the sound; turn the four engine knobs while
+   it plays; feel the UI (Voltage was the laggy one).
+2. DSynth with each stock effect at the synth in turn: punch, phone, nitro, grid, spring, delay (and cwo for
+   comparison). Turn all four effect knobs while it plays. Listen for clicks, dropouts, a changed tone or level,
+   anything stuck. spring and delay: let the tail ring out after releasing the chord.
+3. One effect at the master as well (spring), and one in FX 2 (punch) if time allows.
+4. Play a few other engines briefly (FM, DSynth, a drum kit) so the `engines` line ranks them on the device.
+5. Copy `coop_stats.txt` over SysEx (`tools/coop_sysex.html`); the tape tail keeps only the first 8 KiB.
+
+**Device-only questions** (op1emu cannot answer them): the real saving per effect (op1emu counts instructions, not
+stalls; p4b's rewrites gave about two-thirds of their op1emu saving on the device); spring's segments enter its
+hardware loop mid-body (legal on the BF524, proven in op1emu only); delay keeps one stock packet that loads one half
+of a register while multiplying into the other (kept exactly as stock, so it behaves as stock whatever the hardware
+does).
+
+Result: (pending)
