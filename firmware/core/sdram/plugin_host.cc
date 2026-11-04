@@ -569,6 +569,9 @@ extern "C" void coop_slot2_get(int pos, uint8_t *out10)
     for (int i = 0; i < 4; i++) { out10[2 + 2 * i] = (uint8_t)s->knob[i]; out10[3 + 2 * i] = (uint8_t)(s->knob[i] >> 8); }
 }
 
+/* the slot 2 page (coop_ui.cc): a loaded plugin's name by number, 0 if none */
+extern "C" const char *coop_plugin_name(int n) { return fx_index(n) ? g_plug[n].name : 0; }
+
 /* the plugin list for the host page: "n=name;" entries */
 extern "C" int coop_plugin_list(char *out, int cap)
 {

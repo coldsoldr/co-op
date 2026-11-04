@@ -115,6 +115,10 @@ SINE_REFS = 27
 # --- the Lander game removed (milestone T4d, core/sdram/lander_off.cc, kennel's recipe) ---
 LANDER_GETTER = 0x019c4ecc                                        # the Lander screen instance getter
 LANDER_SITES = (0x01a3bdb0, 0x019c35f0, 0x019c369c)                # screen list, LanderController key_down / key_up
+UI_FRAME_SITE = 0x019b2690                                         # gfx_render_frame: CALL screens_update -> coop_ui_frame (P3a)
+UI_FRAME_FN = 0x01a3bb20
+UI_KNOB_SITE = 0x019c2e94                                          # KeyHandler encoder step: CALL 0x019b6c0c -> coop_ui_knob
+UI_KNOB_FN = 0x019b6c0c
 KEYEV_SITE = 0x019c2d3e                                           # KeyHandler dispatch: CALL key_dispatch (code, pressed)
 KEY_DISPATCH = 0x019b6c74
 # --- FX plugins at the stock positions (milestone P2, core/sdram/plugin_host.cc): kennel's filter-type hijack ---
@@ -329,6 +333,9 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
         for addr, stock, name in FX_VTABLE_PATCHES:
             out.append((addr, struct.pack('<I', stock), struct.pack('<I', thunks_global[name])))
         out.append((FXNAME_SITE, FXNAME_STOCK, jump_l(FXNAME_SITE, sdram_tramp_at + 128)))
+    if thunks_global.get('ui_frame'):                          # P3a: the slot 2 page (coop_ui.cc)
+        out.append((UI_FRAME_SITE, call24(UI_FRAME_SITE, UI_FRAME_FN), call24(UI_FRAME_SITE, sdram_tramp_at + 144)))
+        out.append((UI_KNOB_SITE, call24(UI_KNOB_SITE, UI_KNOB_FN), call24(UI_KNOB_SITE, sdram_tramp_at + 160)))
     if thunks_global.get('keyev'):                             # the Lander combo swallowed (the getter sites stay stock:
         out.append((KEYEV_SITE, call24(KEYEV_SITE, KEY_DISPATCH), call24(KEYEV_SITE, sdram_tramp_at + 112)))   # a stub screen hung the boot in op1emu)
     return out + list(TAPE_BYTE_PATCHES)
@@ -385,6 +392,11 @@ def thunk_addresses(elf):
         drumbus = symbol_address(syms, 'coop_drumbus_thunk')[0]
     except Exception:                                  # an ELF before S3
         instr = drumbus = None
+    ui = {}
+    try:                                               # P3a: the slot 2 page
+        ui = {'ui_frame': symbol_address(syms, 'coop_ui_frame')[0], 'ui_knob': symbol_address(syms, 'coop_ui_knob')[0]}
+    except Exception:
+        ui = {}
     tanks = {}
     try:                                               # clean-up after S2: own grid / spring tanks
         for name in ('tank_grid_render', 'tank_grid_init', 'tank_spring_render', 'tank_spring_init'):
@@ -403,7 +415,7 @@ def thunk_addresses(elf):
         sysex_rx = symbol_address(syms, 'coop_sysex_rx_poll')[0]
     except Exception:                                  # an ELF without the SysEx channel
         sysex_rx = None
-    return {'instr': instr, 'drumbus': drumbus, 'sysex_rx': sysex_rx, 'sine_copy': sine_copy, 'keyev': keyev, **fxh, **tanks, 'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
+    return {'instr': instr, 'drumbus': drumbus, 'sysex_rx': sysex_rx, 'sine_copy': sine_copy, 'keyev': keyev, **fxh, **tanks, **ui, 'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
             'drum': symbol_address(syms, 'coop_drum_render_thunk')[0],
             'mix': symbol_address(syms, 'coop_mix_thunk')[0],
             'noteon': symbol_address(syms, 'coop_synth_noteon_thunk')[0],
@@ -457,6 +469,10 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
             sdram_blob += build_jump_tramp(thunks['keyev'])                                                                # +112
         if thunks.get('fx_name_eq'):
             sdram_blob += build_jump_tramp(thunks['fx_name_eq'])                                                           # +128
+        if thunks.get('ui_frame'):
+            if len(sdram_blob) != 144:
+                raise SystemExit('region-C trampolines: the slot 2 page needs +144 / +160 (have {})'.format(len(sdram_blob)))
+            sdram_blob += build_jump_tramp(thunks['ui_frame']) + build_jump_tramp(thunks['ui_knob'])                    # +144, +160
     dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, sdram_blob))
     for name, a, b in tramps:
         lines.append('tramp_{} at {:#x} ({} B) -> {:#x}'.format(name, a, len(b), thunks[name]))

@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "s2c"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p3a"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       12
 #define TOP           8
@@ -34,7 +34,7 @@ extern volatile uint32_t g_stereo_stage_cycles_max, g_stereo_stage_calls;   /* s
 extern volatile uint32_t g_lfo2_cycles_max;
 extern volatile uint32_t g_tape_rec_calls, g_tape_rec_cycles_max, g_tape_rec_cycles_win, g_tape_rec_cycles_sum_win, g_tape_rec_side_blocks, g_tape_l1;
 extern volatile uint32_t g_tape_state_mismatch, g_tape_state_mismatch2, g_tape_mismatch_word, g_tape_seam_fills;
-extern volatile uint32_t g_tape_io_loads, g_tape_io_flushes, g_tape_io_held, g_tape_io_errors;
+extern volatile uint32_t g_tape_io_loads, g_tape_io_flushes, g_tape_io_held, g_tape_io_guarded, g_tape_io_errors;
 extern volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g_tape_io_flush_cycles_max, g_tape_io_gap_cycles_max;
 extern volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g_tape_io_flush_cycles_win, g_tape_io_gap_cycles_win;
 extern volatile uint32_t g_tape_io_steps_win;
@@ -42,7 +42,7 @@ extern volatile uint32_t g_edit_lifts, g_edit_drops, g_edit_erases, g_edit_error
 extern volatile uint32_t g_master_cycles, g_fx_cycles;
 extern volatile uint32_t g_l1_state, g_l1_used, g_l1_refused, g_l1_sine_copied;
 extern volatile uint32_t g_lander_swallowed;   /* lander_off.cc */
-extern volatile uint32_t g_plugins_seen, g_plugins_loaded, g_plugins_failed, g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks, g_fx_stock_stereo_blocks, g_fx_stock_ctor, g_s2_blocks[2], g_s2_changes, g_tank_bound, g_tank_short;   /* plugin_host.cc */
+extern volatile uint32_t g_plugins_seen, g_plugins_loaded, g_plugins_failed, g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks, g_fx_stock_stereo_blocks, g_fx_stock_ctor, g_s2_blocks[2], g_s2_changes, g_tank_bound, g_tank_short, g_ui_opens, g_ui_applies;   /* plugin_host.cc */
 extern const char *volatile g_plugins_last_error;
 extern char g_plugins_last_name[];                                 /* l1_pool.cc */
 extern "C" int coop_tape_write_tail(const char *text, int len);   /* tape_io.cc: the last 8 KiB of track 4's audio */
@@ -94,13 +94,13 @@ static void write_file(void)
     kv("fx_max", g_fx_cycles); kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
     put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
     put("plugins"); kv("seen", g_plugins_seen); kv("loaded", g_plugins_loaded); kv("failed", g_plugins_failed);
-    kv("mono_calls", g_fx_dispatch_mono); kv("st_calls", g_fx_dispatch_st); kv("plugin_blocks", g_fx_plugin_blocks); kv("stock_st_blocks", g_fx_stock_stereo_blocks); kv("stock_st_made", g_fx_stock_ctor); kv("s2_instr", g_s2_blocks[0]); kv("s2_master", g_s2_blocks[1]); kv("s2_changes", g_s2_changes); kv("tanks", g_tank_bound); kv("tank_short", g_tank_short);
+    kv("mono_calls", g_fx_dispatch_mono); kv("st_calls", g_fx_dispatch_st); kv("plugin_blocks", g_fx_plugin_blocks); kv("stock_st_blocks", g_fx_stock_stereo_blocks); kv("stock_st_made", g_fx_stock_ctor); kv("s2_instr", g_s2_blocks[0]); kv("s2_master", g_s2_blocks[1]); kv("s2_changes", g_s2_changes); kv("tanks", g_tank_bound); kv("tank_short", g_tank_short); kv("ui_opens", g_ui_opens); kv("ui_applies", g_ui_applies);
     if (g_plugins_last_error) { put(" last "); put(g_plugins_last_name); put(": "); put(g_plugins_last_error); }
     put("\n");
     put("tape"); kv("rec_calls", g_tape_rec_calls); kv("rec_side_blocks", g_tape_rec_side_blocks);
     kv("mismatch", g_tape_state_mismatch); kv("mismatch2", g_tape_state_mismatch2); kv("mismatch_word", g_tape_mismatch_word);
     kv("seam_fills", g_tape_seam_fills); put("\n");
-    put("io"); kv("loads", g_tape_io_loads); kv("flushes", g_tape_io_flushes); kv("held", g_tape_io_held); kv("errors", g_tape_io_errors);
+    put("io"); kv("loads", g_tape_io_loads); kv("flushes", g_tape_io_flushes); kv("held", g_tape_io_held); kv("guarded", g_tape_io_guarded); kv("errors", g_tape_io_errors);
     kv("step_max", g_tape_io_step_cycles_max); kv("gap_max", g_tape_io_gap_cycles_max);
     kv("load_max", g_tape_io_load_cycles_max); kv("flush_max", g_tape_io_flush_cycles_max); put("\n");
     put("edits"); kv("lifts", g_edit_lifts); kv("drops", g_edit_drops); kv("erases", g_edit_erases); kv("errors", g_edit_errors);

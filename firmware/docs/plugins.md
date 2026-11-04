@@ -133,6 +133,11 @@ slot 1, with the four knob words in the filter ranges and `params[4] = 0x5300 + 
   held at boot skips the file: `docs/brick-safety.md` first). The web app then installs the core as it installs
   plugins; only a change to the stock hook sites still needs a flash. Opus 2 works this way (a patched core, then
   plugin files), and its patcher builds the package in the browser from the owner's own stock file. [I]
+  hundekraft 3.1.4 does it another way: its USB update (kennel `devupd/du_fw.c`) sends a binary patch made against
+  the firmware already installed (`/yaffs2/OP1_vdk.ldr`, checked by size and CRC32); the OP-1 applies it, checks the
+  result is an R246 OP1_vdk, writes it to flash itself with a journal and rollback, and only then reboots. So the
+  owner needs the `.op1` once, then only a cable. coop already has a SysEx file channel, so either route fits; the
+  loader keeps flash writes rare, the patch route keeps one image. [I]
 - Lessons from the other two firmwares for P3 (from their sources and docs, not measured here) [I]:
   - hundekraft (kennel 3.1): hand-written Blackfin assembly for the heavy inner loops (31 kernels), and plugins that
     use the iter voice objects and the L1 scratch beside them directly.

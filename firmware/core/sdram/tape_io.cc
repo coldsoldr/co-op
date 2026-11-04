@@ -305,19 +305,25 @@ static uint8_t *g_load_node;
 static int16_t g_load_chunk;
 static int g_load_part;
 
-/* Held saves while recording (kennel kn_tape.c, op1r 49): the stock service step flushes the chunk being recorded
- * on every main-loop pass. A node saved less than HOLD_CYCLES ago keeps its flush request while recording and the
- * step goes on to the loads; when recording ends every held chunk goes out in that pass. Power loss while recording
- * loses at most the last HOLD_CYCLES of the take. */
+/* Held saves while recording (kennel kn_tape.c, op1r 49; narrowed as hundekraft 3.1.4 did, 2026-11-04): the stock
+ * service step flushes the chunk being recorded on every main-loop pass. Only the record head's node (REC_NODE), saved
+ * less than HOLD_CYCLES ago, keeps its flush request while recording; every other modified node is written when its
+ * turn comes. hundekraft 3.1.4 found that holding any recently saved node let a finished chunk slip behind the
+ * always-modified record node and, on a slow flash, reach the tail of the cache unsaved: R246's eviction (get_node
+ * 0x01A54D5C -> touch_chunk 0x01A54CD4 -> 0x01A53E40, audio thread) reuses the tail node without looking at its flush
+ * request, and the audio in it is lost (silent chunks, clicks at chunk boundaries). When recording ends every held
+ * chunk goes out. Power loss while recording loses at most the last HOLD_CYCLES of the take. */
 #define HOLD_CYCLES   400000000u                                       /* 1 s at 400 MHz */
 #define RECORDING     (*(volatile uint8_t *)0x018C17D8u)               /* d_tape_rec_state: recording byte */
+#define REC_NODE      (*(uint8_t *volatile *)0x018C17ECu)              /* the node the record head writes, 0 between takes (hundekraft 3.1.4) */
+#define GUARD_DEPTH   8                                                /* the tail guard: the last 8 nodes (the tail half at most) */
 #define NODE_BASE     0x0107d034u
 #define NODE_STRIDE   0x28
 #define NODE_SLOTS    32
 static uint32_t g_saved_at[NODE_SLOTS];
 static uint8_t g_saved_once[NODE_SLOTS];
 static uint8_t g_was_recording;
-volatile uint32_t g_tape_io_held;
+volatile uint32_t g_tape_io_held, g_tape_io_guarded;                /* guarded: flushes the tail guard started */
 volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g_tape_io_flush_cycles_max;   /* CYCLES per step / node load / chunk flush */
 volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g_tape_io_flush_cycles_win, g_tape_io_steps_win;
 volatile uint32_t g_tape_io_gap_cycles_max, g_tape_io_gap_cycles_win;   /* end of one step to the start of the next: the rest of a main-loop pass */
@@ -332,6 +338,71 @@ static inline int node_slot(const uint8_t *node)
 {
     uint32_t i = ((uint32_t)(uintptr_t)node - NODE_BASE) / NODE_STRIDE;
     return i < NODE_SLOTS ? (int)i : -1;
+}
+
+static int held_recent(const uint8_t *node, uint32_t now)
+{
+    int slot = node_slot(node);
+    return slot >= 0 && g_saved_once[slot] && now - g_saved_at[slot] < HOLD_CYCLES;
+}
+
+static void flush_begin(uint8_t *node, uint32_t now)
+{
+    int slot = node_slot(node);
+    if (slot >= 0) { g_saved_at[slot] = now; g_saved_once[slot] = 1; }
+    node[NODE_FLUSHREQ] = 0;
+    g_flush_node = node; g_flush_chunk = *(int16_t *)(node + NODE_CHUNK); g_flush_track = 0; g_flush_part = 0;
+}
+
+/* One part of the flush in progress on node: 1 = a part was written, 0 = the node is done or was reassigned. */
+static int flush_part(uint8_t *node)
+{
+    uint8_t *data = *(uint8_t **)(node + NODE_DATA);
+    int16_t chunk = *(int16_t *)(node + NODE_CHUNK);
+    if (chunk != g_flush_chunk || chunk < 0) { g_flush_node = 0; return 0; }   /* reassigned under us */
+    uint16_t bits = 0;
+    while (g_flush_track < TRACKS) {
+        bits = (uint16_t)((1u << g_flush_track) | (1u << (TRACKS + g_flush_track)));   /* both passes set bit t; 4+t is legacy */
+        if (*(uint16_t *)(node + NODE_DIRTY) & bits) break;
+        g_flush_track++;
+    }
+    if (g_flush_track >= TRACKS) { g_flush_node = 0; return 0; }               /* this node is done */
+    int t = g_flush_track, sub = g_flush_part;
+    uint32_t f0 = now_cycles();
+    interleave_n(g_bounce, data + t * LANE_BYTES + sub * PART_LANE,
+                 data + (TRACKS + t) * LANE_BYTES + sub * PART_LANE, PART_FRAMES);
+    if (rw_bytes(1, t, chunk, sub * (PART_FRAMES * 4), PART_FRAMES * 4) != 0) g_tape_io_errors++;
+    peak(&g_tape_io_flush_cycles_max, &g_tape_io_flush_cycles_win, now_cycles() - f0);   /* per part */
+    if (++g_flush_part < PARTS_PER_TRACK) return 1;
+    if (!node[NODE_FLUSHREQ]) *(uint16_t *)(node + NODE_DIRTY) &= (uint16_t)~bits;   /* nothing landed meanwhile */
+    g_flush_part = 0; g_flush_track++;
+    g_tape_io_flushes++;
+    return 1;
+}
+
+/* Tail guard (port of hundekraft 3.1.4 kn_tape.c write_oldest, GPL-3.0-or-later): the io step writes the newest
+ * modified node first, so when the main loop falls behind (a slow flash; coop's stereo chunks are twice the stock's
+ * and go out a part per pass) older modified nodes drift to the tail, where the eviction reuses them unsaved. Each
+ * main-loop pass with no flush in progress, the oldest modified, loaded node among the last GUARD_DEPTH (the tail half
+ * at most) is flushed first. The record head's node is the hold's. */
+static int guard_pick(uint32_t now)
+{
+    uint8_t *list[32];
+    int n = 0;
+    for (uint8_t *node = CACHE_HEAD; node && n < 32; node = *(uint8_t **)(node + NODE_NEXT)) {
+        list[n++] = node;
+        if (*(uint8_t **)(node + NODE_NEXT) == CACHE_HEAD) break;
+    }
+    int lo = n - GUARD_DEPTH;
+    if (lo < n / 2) lo = n / 2;
+    uint8_t *rec = REC_NODE;
+    for (int i = n - 1; i >= 0 && i >= lo; i--)
+        if (list[i][NODE_FLUSHREQ] && list[i][NODE_VALID] && list[i] != rec) {
+            flush_begin(list[i], now);
+            g_tape_io_guarded++;
+            return 1;
+        }
+    return 0;
 }
 
 /* R0 = mode (0: the main loop's service step, nonzero: the shutdown flush). Returns 1 if it did a chunk. */
@@ -356,39 +427,20 @@ static int io_step(int mode)
     int flush_all = !recording && g_was_recording;                     /* the take ended (or a forced flush): nothing held */
     g_was_recording = (uint8_t)recording;
     uint32_t now = now_cycles();
+    if (g_flush_node && flush_part(g_flush_node)) return 1;            /* the node in progress first: a newer one used to
+                                                                          take over and leave it dirty without a request */
+    if (mode == 0 && !g_flush_node && guard_pick(now) && flush_part(g_flush_node)) return 1;
     for (uint8_t *node = CACHE_HEAD; node; node = *(uint8_t **)(node + NODE_NEXT)) {
         uint8_t *data = *(uint8_t **)(node + NODE_DATA);
         int16_t chunk = *(int16_t *)(node + NODE_CHUNK);
-        if (node[NODE_FLUSHREQ] || g_flush_node == node) {              /* flush: every dirty lane pair, a half per pass */
-            if (g_flush_node != node) {
-                int slot = node_slot(node);
-                if (recording && !flush_all && slot >= 0 && g_saved_once[slot] && now - g_saved_at[slot] < HOLD_CYCLES) {
-                    g_tape_io_held++;
-                    continue;                                          /* held: the request stays, loads may go on */
-                }
-                if (slot >= 0) { g_saved_at[slot] = now; g_saved_once[slot] = 1; }
-                node[NODE_FLUSHREQ] = 0;
-                g_flush_node = node; g_flush_chunk = chunk; g_flush_track = 0; g_flush_part = 0;
+        if (node[NODE_FLUSHREQ]) {                                     /* flush: every dirty lane pair, a part per pass */
+            if (recording && !flush_all && node == REC_NODE && held_recent(node, now)) {
+                g_tape_io_held++;
+                continue;                                              /* held: the request stays, loads may go on */
             }
-            if (chunk != g_flush_chunk || chunk < 0) { g_flush_node = 0; continue; }   /* reassigned under us */
-            uint16_t bits = 0;
-            while (g_flush_track < TRACKS) {
-                bits = (uint16_t)((1u << g_flush_track) | (1u << (TRACKS + g_flush_track)));   /* both passes set bit t; 4+t is legacy */
-                if (*(uint16_t *)(node + NODE_DIRTY) & bits) break;
-                g_flush_track++;
-            }
-            if (g_flush_track >= TRACKS) { g_flush_node = 0; continue; }           /* this node is done */
-            int t = g_flush_track, sub = g_flush_part;
-            uint32_t f0 = now_cycles();
-            interleave_n(g_bounce, data + t * LANE_BYTES + sub * PART_LANE,
-                         data + (TRACKS + t) * LANE_BYTES + sub * PART_LANE, PART_FRAMES);
-            if (rw_bytes(1, t, chunk, sub * (PART_FRAMES * 4), PART_FRAMES * 4) != 0) g_tape_io_errors++;
-            peak(&g_tape_io_flush_cycles_max, &g_tape_io_flush_cycles_win, now_cycles() - f0);   /* per half */
-            if (++g_flush_part < PARTS_PER_TRACK) return 1;
-            if (!node[NODE_FLUSHREQ]) *(uint16_t *)(node + NODE_DIRTY) &= (uint16_t)~bits;   /* nothing landed meanwhile */
-            g_flush_part = 0; g_flush_track++;
-            g_tape_io_flushes++;
-            return 1;
+            flush_begin(node, now);
+            if (flush_part(node)) return 1;
+            continue;
         }
         if (mode != 0) return 0;
         if (chunk < 0 || node[NODE_VALID]) continue;

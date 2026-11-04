@@ -14,10 +14,12 @@
 #define KEY_DISPATCH   ((void (*)(int, int))0x019B6C74u)                          /* the stock key dispatch (code, pressed) */
 
 volatile uint32_t g_lander_swallowed;
+extern "C" int coop_ui_key(int code, int pressed);   /* coop_ui.cc: the slot 2 page */
 static uint8_t mode_keys;                                                         /* synth drum tape mixer held (bits 0-3) */
 
 extern "C" void coop_key_event(int code, int pressed)
 {
+    if (coop_ui_key(code, pressed)) return;
     if (code >= 0x02 && code <= 0x05) {                                           /* the four mode keys */
         uint8_t bit = (uint8_t)(1u << (code - 2));
         if (!pressed) mode_keys &= (uint8_t)~bit;

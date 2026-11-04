@@ -497,3 +497,31 @@ too; tape record the same energy (one-block shift, as S3 to S2); the write trace
 its own tank and the stock tanks untouched after boot; no faults.
 
 Result: _not yet flashed_.
+
+## P3a: the FX 2 page on the OP-1, and the tape tail guard — device test (pending, 2026-11-04)
+
+`build/pkg/op1_246_coop_p3a_fx2page.op1` (copy in Downloads; sha256
+`ce9eec015379492904d9c602de3e47d369a208f2ecbd7dffb0c8c4e64a39fd44`). Contains everything above (S1, S3, S2, the
+clean-ups) and supersedes the `s2c` package: run the S2 and clean-up checks on this one. Hello and stats say `p3a`.
+New: the second effect slot's page (`docs/screens.md`), and the tape fix taken from hundekraft 3.1.4
+(`docs/tape-stereo.md` section 13).
+
+**What to do:**
+1. Synth, T3 (the effect page, any effect). **Shift + Help**: INSTRUMENT FX 2 fills the screen. Turn the four
+   encoders: the four bars and numbers follow, 1 per detent (if it moves 2 per detent, say so). Play keys meanwhile:
+   the page stays up and the sound follows the knobs.
+2. **Shift + blue**: the name steps through NONE, DELAY ... CWO, then the plugins, in blue with "PUSH BLUE TO SET".
+   A **blue push** sets it: you hear it. With grid, one short glitch at the push is expected.
+3. **Help** closes the page (so do Shift + Help, a mode key or T1-T4). The stock effect page is back unchanged.
+4. On the master effect page, Shift + Help shows MASTER FX 2, which is the master's slot 2.
+5. Power-cycle: the slot comes back as set (the page shows it; the host page's Read slots too).
+6. Tape: record a long take (a minute or more, ideally on a fuller flash), play it back: no clicks, no silent
+   stretches. Stats: `io ... guarded` counts the flushes the tail guard started.
+7. Stats `plugins ... ui_opens / ui_applies`.
+
+Emulator (op1emu, one job): the page opens, takes the encoders and applies DELAY, and draws cleanly over the phone
+page; with the page never opened the chord, phone and nitro scenarios are sample-identical to the build before;
+tape scenarios as before (play and loop identical; record and lift / drop the usual one-block take shift); no faults.
+The tail guard cannot be exercised in op1emu (its flash is fast).
+
+Result: _not yet flashed_.

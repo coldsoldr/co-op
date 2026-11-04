@@ -426,3 +426,24 @@ fd `0x1b4ef44`), else load an invalid node (`W[+6] >= 0`, `B[+0] == 0`) lane by 
 0x1a99c90`), keeping the `B[+1]` loading flag and the chunk-index re-check of the stock code. Test:
 a two-run emulator scenario on a kept NAND copy (hear.sh needs a NAND_KEEP option): record + stop +
 quit, then boot + play; the stereo take must come back with its width.
+
+## 13. Unsaved chunks at the tail: the hold narrowed, a tail guard (2026-11-04, from hundekraft 3.1.4)
+
+hundekraft 3.1.3/3.1.4 traced tape clicks and short dropouts (most often in the first 20 s of a take, on units with
+fragmented or nearly full flash) to R246 itself: the cache's eviction (get_node `0x01A54D5C` -> touch_chunk
+`0x01A54CD4` -> `0x01A53E40`, audio thread, at each chunk crossing of the record head and every block of playback
+with a five-chunk read-ahead) reuses the tail node **without looking at its flush request**, so a modified node that
+reaches the tail loses its unsaved audio. The io step writes the newest modified node first, so when the main loop
+falls behind, older modified nodes drift to the tail. Their held saves (section 9's rule, which coop took from
+kennel 3.1) made it worse: holding every recently saved node let finished chunks slip behind the record node.
+[C in hundekraft's source and changelog; I for coop: not reproduced, op1emu's flash is fast]
+
+coop was more exposed than kennel: a stereo chunk is twice the stock's data, and coop writes it in 8 KiB parts, one
+per main-loop pass (T4f). `tape_io.cc` now (port of kennel 3.1.4 `kn_tape.c`, GPL):
+- holds only the record head's node (`0x018C17EC`, 0 between takes), saved less than 1 s ago;
+- runs a tail guard on each main-loop pass with no flush in progress: the oldest modified, loaded node among the
+  last 8 (the tail half at most), not the record node, is flushed first;
+- finishes a flush in progress before starting another. Before, a newer node with a request took the flush over
+  and the half-written one was left dirty with its request already cleared: nothing would write it again until the
+  record head touched it, so it could be evicted unsaved.
+Stats: `io ... guarded` (flushes the guard started) beside `held`.
