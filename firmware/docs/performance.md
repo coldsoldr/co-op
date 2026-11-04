@@ -670,6 +670,33 @@ samples) and measured:
    MAX loops) and the call overhead stay stock. Region C `.near`: 0x286 bytes used. [C in op1emu, the device figure
    pending]
 
+8. **grid's stereo loop** (`core/sdram/grid_fast.S`; switch `g_coop_fast_grid`, 1 by default). grid is a 2D wave mesh: a
+   tank of two 260 x 260 planes of halfwords (coop's own per object through the 0x019AF846 thunk; cell (x, y) of plane p
+   at T + p * 0x21020 + y * 520 + 2x). The stereo render `0x019AF83C` derives per block the grid size (b, a), H, q =
+   0x400000 / (b - 3) and the gains, then runs the loop `0x019AF932..0x019AFCC8` (64 samples, 353 instructions, 88 frame
+   accesses each): walker 1 (this[0x18/0x1c/0x08]) adds inL * K3 * 2 tabA to its cell and inR * K3 * 2 tabB to a mirrored
+   cell, walker 2 (this[0x10/0x14/0x04]) runs the wave update (four neighbours of the other plane, halved, minus the old
+   value, times 2 tab * K44) at its cell and its mirror, the outputs mix the two new cells with the input, and a third
+   walker (this[0x20/0x24/0x0c]) clears one cell outside the active area per sample; four phases (step q, wrap at
+   0x400000) index the table `0x0101E5E8`. The only way into the loop is its LSETUP (`0x019AF92E`, no other branch in the
+   image targets the range), which becomes a JUMP.L to a 58-byte `.near` stub (switch 0, or both I/O buffers the same:
+   LT0 / LB0 / LC0 by hand, then the stock loop); the rewrite (970 bytes, region A) returns to `0x019AFCCA`, which reads
+   only I2 / I3 and the epilogue. Every multiply, add and shift on the signal is the stock's with its operands, halves,
+   order and modes, and every tank access is in the stock's order wherever two can touch the same word. What changed:
+   the per-block constants are a 27-word circular stream (I3 / B3 / L3 over a block below the stock frame) read in the
+   third parallel slot, so the P slot carries the object fields, the phases and the tank; the addresses are
+   T + 2 (260 y + x) + p * 0x21020 (one multiply and one `(R + R) << 1` per cell) and the other plane T + 0x21020 -
+   p * 0x21020 (the plane fields are 0 from both constructors and only toggled, so this is the stock's
+   T + (p == 0) * 0x21020); the eight neighbour loads go through I2 with M0 / M1 / 4 steps in the parallel slots; the
+   walker-1 step is done first, after its fields are read; the right input is read before the left output is written,
+   which is why shared buffers take the stock loop. 136 packets a sample against the stock's 353 instructions. op1emu, stock grid at the
+   synth with a chord (`det_fx_stock_grid`): **19.0 k -> 11.05 k emulator cycles per call (-42 %)**, the callback
+   64.7 k -> 56.7 k; with all four knobs turned during and after the chord (`det_fx_stock_grid_knobs`, from 41 s):
+   19.2 k -> 11.2 k, the callback 139.1 k -> 131.1 k; **the samples identical over the whole run in both** (no lockstep
+   build needed). Not exercised in op1emu: the shared-buffer fallback. The device figure is pending (stock 36 k; the
+   loop's tank accesses are unchanged in number, so the cache misses that make up much of the device cost stay).
+   [C in op1emu, the device figure pending]
+
 Correction (2026-11-04): the T4f device test already measured the six-voice DSynth chord at 65-67 % of the block
 (the stock engine about 57 %, coop 8.6 %). There is no "base cost" regression since T4: the engine itself is the
 cost, which is why its loops are the lever.

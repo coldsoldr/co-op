@@ -95,6 +95,17 @@ performance.
   the assembly); shared buffers both runs write with the same values are fine.
 - A whole function reached only through a vtable needs no region-C stub: point the vtable entry at the rewrite (a
   data patch, any address) and jump to the untouched stock function for the switch-off and unusual cases (punch).
+- **A constant stream in the third slot.** A loop that needs more per-block constants than registers can read them in
+  order from a circular buffer: write them below the frame in the order the loop body reads them, `B3 = I3 = base`,
+  `L3 = 4 * N`, and each `Rx = [I3++]` in a parallel slot gives the next one for free, every pass, with no reset (grid:
+  27 words; rare branch paths read the frame instead so the count per pass stays fixed). The P slot is then free for
+  the object, the state and the data. Restore L3 = 0 and the stack before returning.
+- **Slot rules the assembler enforces** (binutils 2.43): an I-register modify (`I2 += M0`, `I2 -= 4`) goes only in the
+  second slot, with an I-register load or NOP in the third; a P-based load or store goes in the second slot and the third
+  must then be an I-register access; at most one store per packet. A register read by the DSP op may be loaded in the
+  same packet (the stock does this), two writes to one register may not.
+- **Reordering in-place I/O.** Reading an input before an output of the other channel is written is only safe when the
+  two buffers differ; check `L != R` at the entry and take the stock path otherwise (grid, punch).
 - When an A/B is not identical, run the stock image two or three times: op1emu's variation gives several stock
   outcomes, and the rewrite is right only if it matches one of them sample for sample. The level check is not
   enough: it weighs loud seconds, and punch's first version (a shift pair that kept extra bits) passed it while 1-2
