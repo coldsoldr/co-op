@@ -547,3 +547,18 @@ page whose slot 2 is on. Build tag `p3m`.
 7. Copy `coop_stats.txt`. The `cost` line then gives each part's cycles per block directly.
 
 Result: _not yet flashed_.
+
+## Performance 1: DSynth voice loop — device test (pending, 2026-11-04)
+
+`build/pkg/op1_246_coop_p4a_dsynth.op1` (copy in Downloads; sha256
+`7cc6379bfbe3b7a25e858e559c8bd01d78e939de4139374840fdba087a19739a`). p3m plus the rewritten stock DSynth voice
+loop (`docs/performance.md`, step 1). Build tag `p4a`.
+
+**What to do:** as the p3m measurement above (a held six-note DSynth chord, about 15 s each): effect off and FX 2
+off; then cwo at the synth. Listen for any change in DSynth's sound (there should be none: the samples are
+identical in op1emu), and feel the UI. Copy `coop_stats.txt`.
+
+Expected: the six-voice chord about 45 k cycles a block cheaper than on p3m (more if the stock loop's stack traffic
+missed the cache). [I until the file]
+
+Result: _not yet flashed_.
