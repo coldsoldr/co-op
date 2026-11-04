@@ -24,6 +24,7 @@
 #include "plugin_load.h"
 #include "coop_plugin_host.h"
 #include "coop_fixed.h"
+#include "coop_cost.h"
 
 #define Y_OPENDIR  ((void *(*)(const char *))0x01A9B450u)               /* kennel kn_boot.c */
 #define Y_READDIR  ((const uint8_t *(*)(void *))0x01A9B648u)             /* dirent: +0x0B d_name */
@@ -477,6 +478,7 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
         g_cur[pos] = 0;
         int t = type_of_mono(self);
         if (t < 0 || g_st[0].type != t) return;                          /* no twin (construction failed): pass through dry */
+        uint32_t c0 = coop_cost_now();
         int16_t l[BLOCK], r[BLOCK];
         for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16((int32_t)buf[i] + dL[i]); r[i] = coop_sat16((int32_t)buf[i] + dR[i]); }
         st_render(0, l, r, params);
@@ -484,8 +486,10 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
             int16_t m = (int16_t)(((int32_t)l[i] + r[i]) >> 1);
             buf[i] = m; dL[i] = (int16_t)(l[i] - m); dR[i] = (int16_t)(r[i] - m);
         }
+        coop_cost_add(COOP_COST_ST1 + t, coop_cost_now() - c0);
         return;
     }
+    uint32_t c0 = coop_cost_now();
     const coop_fx_t *fx = g_plug[e].inst[pos];
     if (e != g_cur[pos]) { g_cur[pos] = e; if (fx->init(pos) != 0) { g_plug[e].fx = 0; return; } }
     int32_t L[BLOCK], R[BLOCK];
@@ -500,6 +504,7 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
         buf[i] = m;                                                       /* down the stock mono path */
         dL[i] = (int16_t)(l - m); dR[i] = (int16_t)(r - m);               /* the new side of this instrument */
     }
+    coop_cost_add(COOP_COST_PLUG, coop_cost_now() - c0);
     g_fx_plugin_blocks++;
 }
 
@@ -622,7 +627,14 @@ static int16_t knob_map(int lo, int hi, uint16_t k)
 }
 
 /* audio thread: take a posted change (construct / init), then run the slot on l / r (int16, 64, in place) */
+static void slot2_render(int pos, int16_t *l, int16_t *r);
 extern "C" void coop_slot2_render(int pos, int16_t *l, int16_t *r)
+{
+    uint32_t c0 = coop_cost_now();
+    slot2_render(pos, l, r);
+    if (g_s2[pos & 1].kind_on) coop_cost_add(pos ? COOP_COST_S2M : COOP_COST_S2I, coop_cost_now() - c0);
+}
+static void slot2_render(int pos, int16_t *l, int16_t *r)
 {
     struct slot2 *s = &g_s2[pos & 1];
     uint32_t req = s->req;

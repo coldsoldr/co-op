@@ -525,3 +525,25 @@ tape scenarios as before (play and loop identical; record and lift / drop the us
 The tail guard cannot be exercised in op1emu (its flash is fast).
 
 Result: _not yet flashed_.
+
+## Performance: DSynth lag — device measurement (pending, 2026-11-04)
+
+The owner on `p3a` (`coop_stats (5).txt`): with DSynth the UI became unbearably laggy, worst with cwo. The stats
+agree: while a six-voice DSynth chord played the callback averaged 483-572 k cycles a block (83-99 % of 580,499;
+3,359 of 3,452 blocks over the ceiling in window 19); the T4 builds spent 251-297 k on the same chord. FX 2 was on
+in those windows (the mix step, which runs instrument slot 2, rose from 18 k to 65 k), and the record pass from 9 k
+to 23 k. The rest (about 150 k) has no breakdown in that file. [C: the file]
+
+`build/pkg/op1_246_coop_p3m_measure.op1` (copy in Downloads; sha256
+`bc25d03aa5734105245d0ea7c7b7a9b9e2b0d3aa550029f4ca4a747d4dd6b83f`): p3a plus a `cost` line in the stats (average /
+peak / calls for each coop stage, and slot 1's stock effect by type), and an "FX2" tag in the corner of an effect
+page whose slot 2 is on. Build tag `p3m`.
+
+**What to do** (each step about 15 s with a held six-note DSynth chord, no recording):
+1. FX 2 off on both (open the page with Shift + Help, Shift + blue to NONE, blue push; no "FX2" tag), OP-1 effect
+   off.
+2. OP-1 effect cwo at the synth. 3. Phone instead. 4. Spring instead.
+5. Effect off, instrument FX 2 = cwo. 6. Master FX 2 = spring.
+7. Copy `coop_stats.txt`. The `cost` line then gives each part's cycles per block directly.
+
+Result: _not yet flashed_.

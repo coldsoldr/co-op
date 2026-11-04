@@ -73,6 +73,7 @@ static inline uint32_t coop_cycles(void)
     return v;
 }
 
+#include "coop_cost.h"
 extern "C" uint32_t coop_master_apply(void)
 {
     if (!g_inited) {
@@ -81,10 +82,11 @@ extern "C" uint32_t coop_master_apply(void)
         coop_delay_set(&g_fx, FX_DELAY_SAMPLES, FX_FB_Q31, FX_MIX_Q31);
         g_inited = 1;
     }
+    uint32_t m0 = coop_cycles();
     coop_slot2_render(1, (int16_t *)MBUS_L, (int16_t *)MBUS_R);   /* S2: the master's second slot, after the stock master
                                                                      effect (0xffa017e6), before the level stage */
     uint32_t flags = g_coop_master_flags;
-    if (!(flags & 3u)) return STOCK_GETTER_RESULT;   /* transparent: nothing to do on d34/db4 */
+    if (!(flags & 3u)) { coop_cost_add(COOP_COST_MASTER, coop_cycles() - m0); return STOCK_GETTER_RESULT; }   /* transparent */
     int32_t L[BLOCK], R[BLOCK];
     for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)MBUS_L[i] << 16; R[i] = (int32_t)MBUS_R[i] << 16; }
 

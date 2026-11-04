@@ -89,6 +89,7 @@ uint32_t g_mix_p0_out;
 #define MIX_A_SITE  0xffa00f30u
 #define VOICE_GAIN_W ((const volatile int16_t *)0x01b4ef6eu)
 
+#include "coop_cost.h"
 static inline uint32_t coop_cycles(void)
 {
     uint32_t v;
@@ -323,6 +324,7 @@ extern "C" void coop_instr_stage(void)
     g_stereo_side_blocks++;
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_stereo_stage_cycles_max) g_stereo_stage_cycles_max = dt;
+    coop_cost_add(COOP_COST_STAGE, dt);
 }
 
 /* S3: the drum path's bus stage. In drum mode the stock runs 0x01a66922 (state, bus, params) on the summed 128-sample

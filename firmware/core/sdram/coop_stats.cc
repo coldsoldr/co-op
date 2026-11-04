@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p3a"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p3m"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       12
 #define TOP           8
@@ -84,6 +84,15 @@ static void put_window(const char *tag, const struct window *w)
     kv("recording", w->recording); put("\n");
 }
 
+#include "coop_cost.h"
+struct coop_cost g_coop_cost[COOP_COST_N];
+static void put_cost(const char *name, int i)               /* name avg max n: cycles per call */
+{
+    const struct coop_cost *c = &g_coop_cost[i];
+    if (!c->n) return;
+    put(" "); put(name); putn((uint32_t)(c->sum / c->n)); put("/"); putn(c->max); put("/"); putn(c->n);
+}
+
 static void write_file(void)
 {
     g_len = 0;
@@ -92,6 +101,12 @@ static void write_file(void)
     put("stages"); kv("rec_max", g_tape_rec_cycles_max); kv("mix_max", g_stereo_mix_cycles_max);
     kv("hook_max", g_stereo_hook_cycles_max); kv("stage_max", g_stereo_stage_cycles_max); kv("stage_calls", g_stereo_stage_calls); kv("lfo2_max", g_lfo2_cycles_max); kv("master_max", g_master_cycles);
     kv("fx_max", g_fx_cycles); kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
+    put("cost avg/max/n");                                   /* per call; slot 1's stock effect by type (stereo class) */
+    put_cost("stage=", COOP_COST_STAGE); put_cost("s2_instr=", COOP_COST_S2I); put_cost("s2_master=", COOP_COST_S2M);
+    put_cost("master=", COOP_COST_MASTER); put_cost("fx1_plugin=", COOP_COST_PLUG);
+    static const char *const st_names[8] = { "fx1_delay=", "fx1_grid=", "fx1_punch=", "fx1_phone=", "fx1_spring=", "fx1_filter=", "fx1_nitro=", "fx1_cwo=" };
+    for (int t = 0; t < 8; t++) put_cost(st_names[t], COOP_COST_ST1 + t);
+    put("\n");
     put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
     put("plugins"); kv("seen", g_plugins_seen); kv("loaded", g_plugins_loaded); kv("failed", g_plugins_failed);
     kv("mono_calls", g_fx_dispatch_mono); kv("st_calls", g_fx_dispatch_st); kv("plugin_blocks", g_fx_plugin_blocks); kv("stock_st_blocks", g_fx_stock_stereo_blocks); kv("stock_st_made", g_fx_stock_ctor); kv("s2_instr", g_s2_blocks[0]); kv("s2_master", g_s2_blocks[1]); kv("s2_changes", g_s2_changes); kv("tanks", g_tank_bound); kv("tank_short", g_tank_short); kv("ui_opens", g_ui_opens); kv("ui_applies", g_ui_applies);

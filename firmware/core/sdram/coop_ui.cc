@@ -170,8 +170,14 @@ static void fill(void *r, int32_t x0, int32_t y0, int32_t x1, int32_t y1, const 
 extern "C" void coop_ui_frame(void *table)
 {
     SCREENS_UPDATE(table);
-    if (!s_open) return;
     if (!on_fx_page()) return;                                         /* closed by the next key or turn */
+    if (!s_open) {                                                     /* a slot 2 that runs is always visible: "FX2" in
+                                                                          the corner of its position's effect pages */
+        uint8_t b[10];
+        coop_slot2_get(FX_POS == 3 ? 1 : 0, b);
+        if (b[0]) { void *rr = op1_raster(); if (rr) sf_text(rr, 284 << 10, 4 << 10, 1 << 10, "FX2", 1280, c_enc[0]); }
+        return;
+    }
     g_ui_frames++;
     void *r = op1_raster();
     if (!r) return;
