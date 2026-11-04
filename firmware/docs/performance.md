@@ -639,6 +639,36 @@ samples) and measured:
    capture-buffer closes, 2,158 trigger swaps). Not reproduced: the stock's dead stores to `W[FP+8]` / `W[FP+0xa]`
    (the caller's argument homes) and its loop scratch `[FP-8]`; the frame constants the loops read are reused as
    scratch after they are read. [C in op1emu, the device figure pending]
+7. **nitro's mono render, both loops** (`core/sdram/nitro_fast.S`; switch `g_coop_fast_nitro`, 1 by default). nitro is
+   dual-mono: the stereo render `0x019A684C` calls the mono render `0x019A62A4` twice (this + 4, this + 0x40; its only
+   callers). After the coefficients, two 64-sample loops: LC1 `0x019A64A8..0x019A6682` (x = the input, a sine-shaper
+   lookup S(s0) of the loop's own last output against x << 14, a 32 x 32 multiply by k1, S() again, then a four-stage
+   one-pole ladder y_k = sat(sat(z_k + M(y_k-1, g)) + M(sat(-z_k), g)) with the poles mixed by five coefficients,
+   S(sat(acc << 2)) as 32-bit words into an L1 buffer at `0xFF801B50`) and LC1 `0x019A6698..0x019A67F6` (the same
+   shape on that buffer with its own k2 / g2 and no mix, output S(y_3).H in place). S is the stock's interpolated lookup
+   in the 8192-entry sine table (P5 at the loop entry, so the package's L1 retarget and its reference count are
+   untouched); M is the stock's six-instruction 32 x 32 multiply. Both loops are entered only through loop 1's LSETUP
+   (`0x019A64A4`), which becomes a JUMP.L to a 50-byte `.near` stub; with the switch off it sets LT1 / LB1 / LC1 and
+   jumps into the stock loop (loop 2's LSETUP is stock). The rewrite keeps all 23 multiplies per sample instruction
+   for instruction and cuts the bookkeeping: the three inner stages of each ladder unrolled with states and
+   coefficients loaded in the parallel slots; the lookup's index as `(T + 0x2002) + 2 * ~(v >>> 20)` (4 packets
+   against 5), its fraction as `v.H << 12 >> 1` (2 against 4), its two 16 x 16 products summed in A0 (both are
+   non-negative fractions, so neither saturates alone and one 40-bit saturation equals the stock's two saturated
+   products added with saturation); x << 14 as one integer multiply by 0x4000 (so x comes through an I-register half
+   load); and loop 2's G = S(s2) is the previous sample's output lookup S(y_3) (s2 is y_3), computed once. **132 + 87
+   packets per sample against the stock's 180 + 131.** op1emu, stock nitro at the synth with a chord
+   (`det_fx_stock_nitro`, from 34 s): **38,605 -> 31,728 emulator cycles per call (-18 %)**, the callback 84.3 k ->
+   77.4 k, **the samples identical over the whole run**; with all four knobs turned during and after the chord
+   (`det_fx_stock_nitro_knobs`, from 41 s): the same per-call figures (the loops have no data-dependent branches, so
+   every call costs the same), the callback 158.5 k -> 151.7 k, levels equal second by second (largest difference
+   0.01 %), samples differing between 29.8 s and 48.2 s by up to 138 (a moved UI event, not an offset: lag 0 fits best;
+   the same script prefix is identical in the base scenario). The proof is the lockstep build
+   (`EXTRA_CXXFLAGS=-DCOOP_NITRO_CHECK`, `plugin_host.cc nitro_check`, as phone's): **0 differences in 33,972
+   (det_fx_stock_nitro) and 33,830 (knobs) mono calls**, the rewrite run in every one (`g_nitro_hit_calls`); there are
+   no rare branches. Not reproduced: the stock's spill `[FP+8]` (the caller's argument home, dead after the loop). The
+   per-call saving is less than the loops' 30 % because the coefficient setup, the two level meters (64-sample vector
+   MAX loops) and the call overhead stay stock. Region C `.near`: 0x286 bytes used. [C in op1emu, the device figure
+   pending]
 
 Correction (2026-11-04): the T4f device test already measured the six-voice DSynth chord at 65-67 % of the block
 (the stock engine about 57 %, coop 8.6 %). There is no "base cost" regression since T4: the engine itself is the
