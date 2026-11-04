@@ -460,3 +460,72 @@ _coop_seam_prologue_thunk:
     ASTAT = [SP++];
     RETS = [SP++];
     RTS;
+
+/* ---- own reverb memory per stereo grid / spring object (clean-up after S2, docs/stereo-bus-v2.md) ----
+ * The stereo grid and spring classes load their tank address as an immediate pair in their render and init. Each of
+ * those four 8-byte pairs becomes a JUMP.L here (tools/l1_stereo_insert.py, TANK_SITES); the thunk looks the object
+ * up in a map kept by plugin_host.cc, puts that object's tank (or the stock tank for any other object, the stock
+ * master's included) into the register the stock code expects, and jumps back after the pair. Map: 8 words,
+ * { obj0, tank0, obj1, tank1, obj2, tank2, 0, stock tank }. Only ASTAT and the scratch registers are touched, and
+ * each is restored except the destination. No CALL: the grid init does not LINK, so RETS must survive. */
+/* The return addresses come from the link (core/sdram/Makefile, --defsym): the assembler cannot reach an absolute
+ * address from a section-relative JUMP.L. _stock_grid_render_back 0x019af84e, _stock_grid_init_back 0x019af294,
+ * _stock_spring_render_back 0x01a3300a, _stock_spring_init_back 0x01a336b8. */
+
+/* In region C (.near, coop_cb.ld): region A, where the rest of coop lives, is beyond JUMP.L reach of the stock. */
+    .section .near, "ax"
+/* R0 = this -> R0 = its tank; clobbers R1, P0, CC */
+.macro TANK_LOOKUP map
+    P0.L = \map; P0.H = \map;
+    R1 = [P0++]; CC = R0 == R1; IF CC JUMP 1f; P0 += 4;
+    R1 = [P0++]; CC = R0 == R1; IF CC JUMP 1f; P0 += 4;
+    R1 = [P0++]; CC = R0 == R1; IF CC JUMP 1f; P0 += 4;
+    P0 += 4;
+1:  R0 = [P0];
+.endm
+
+/* grid stereo render 0x019af83c: at 0x019af846 `R7.L = 0xc70c; R7.H = 0x1d8`, R0 = this */
+    .global _coop_tank_grid_render
+    .type   _coop_tank_grid_render, STT_FUNC
+_coop_tank_grid_render:
+    [--SP] = ASTAT; [--SP] = R0; [--SP] = R1; [--SP] = P0;
+    TANK_LOOKUP _g_coop_tank_grid
+    R7 = R0;
+    P0 = [SP++]; R1 = [SP++]; R0 = [SP++]; ASTAT = [SP++];
+    JUMP.L _stock_grid_render_back;
+    .size _coop_tank_grid_render, .-_coop_tank_grid_render
+
+/* grid stereo init 0x019af27e: at 0x019af28c `I0.L = 0xc70c; I0.H = 0x1d8`, P2 = this, R0 = 0 (kept) */
+    .global _coop_tank_grid_init
+    .type   _coop_tank_grid_init, STT_FUNC
+_coop_tank_grid_init:
+    [--SP] = ASTAT; [--SP] = R0; [--SP] = R1; [--SP] = P0;
+    R0 = P2;
+    TANK_LOOKUP _g_coop_tank_grid
+    I0 = R0;
+    P0 = [SP++]; R1 = [SP++]; R0 = [SP++]; ASTAT = [SP++];
+    JUMP.L _stock_grid_init_back;
+    .size _coop_tank_grid_init, .-_coop_tank_grid_init
+
+/* spring stereo render 0x01a32ffc: at 0x01a33002 `P1.L = 0x6252; P1.H = 0x1de`, R0 = this */
+    .global _coop_tank_spring_render
+    .type   _coop_tank_spring_render, STT_FUNC
+_coop_tank_spring_render:
+    [--SP] = ASTAT; [--SP] = R0; [--SP] = R1; [--SP] = P0;
+    TANK_LOOKUP _g_coop_tank_spring
+    P1 = R0;
+    P0 = [SP++]; R1 = [SP++]; R0 = [SP++]; ASTAT = [SP++];
+    JUMP.L _stock_spring_render_back;
+    .size _coop_tank_spring_render, .-_coop_tank_spring_render
+
+/* spring stereo init 0x01a336ae: at 0x01a336b0 `P0.L = 0x6252; P0.H = 0x1de`, R0 = P1 = this */
+    .global _coop_tank_spring_init
+    .type   _coop_tank_spring_init, STT_FUNC
+_coop_tank_spring_init:
+    [--SP] = ASTAT; [--SP] = R0; [--SP] = R1;
+    TANK_LOOKUP _g_coop_tank_spring
+    P0 = R0;
+    R1 = [SP++]; R0 = [SP++]; ASTAT = [SP++];
+    JUMP.L _stock_spring_init_back;
+    .size _coop_tank_spring_init, .-_coop_tank_spring_init
+    .text

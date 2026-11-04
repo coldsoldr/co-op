@@ -193,9 +193,33 @@ static void dbg_drum_probe(int16_t gain)
 /* Common per-voice path: bookkeeping, drum note-on heuristic (a drum voice that was not rendered last
  * block gets a fresh random pan scaled by the spread; synth voices get theirs from the note-on hook),
  * then the voice's whole contribution placed into the pair. */
+/* The stock per-voice sum into the mono bus is patched out (clean-up after S2: tools/l1_stereo_insert.py, VOICE_SUM_SKIPS;
+ * the bus was only ever overwritten by the mid). Where the stock bus is still needed, with the stereo bus off
+ * (g_coop_stereo_enable = 0: the stock decimator and DC block run on it) and for the debug compare, the hook does that
+ * sum itself, as the stock loops did it (0xffa00d2c..0xffa00d70 synth: out * env * gain; 0xffa00922..0xffa0093e drum:
+ * out * gain << 1 (S); each added with saturation). */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_voice_sum_own = 1; }   /* marker for the package tool */
+static void voice_sum_stock(int is_drum, int16_t gain)
+{
+    int16_t *bus = MONO_BUS64;
+    if (is_drum) {                                                       /* the stock instructions themselves (0xffa0092e..
+                                                                             0xffa0093a): op1emu differs by 1 LSB from the
+                                                                             equivalent helper sequence, the bfin simulator not */
+        for (int i = 0; i < COOP_VBLK; i++) {
+            int32_t r0 = (uint16_t)VOICE_OUT[i], r1 = (uint16_t)gain, b = bus[i];
+            __asm__("%1.L = %0.L * %1.L;\n\t%0 = %2;\n\t%0.H = %1.L << 1 (S);\n\t%0.L = %0.H + %0.L (S);"
+                    : "+&d"(r0), "+&d"(r1) : "d"(b));
+            bus[i] = (int16_t)r0;
+        }
+        return;
+    }
+    for (int i = 0; i < COOP_VBLK; i++)
+        bus[i] = coop_fr16_add(bus[i], coop_fr16_mul(coop_fr16_mul(VOICE_OUT[i], VOICE_ENV[i]), gain));
+}
+
 static void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)
 {
-    if (!g_coop_stereo_enable) return;
+    if (!g_coop_stereo_enable) { voice_sum_stock(is_drum, *VOICE_GAIN); return; }
     uint32_t t0 = coop_cycles();
     g_stereo_hooks++;
     if (g_rendered_cur & bit) g_dbg_twice++;           /* the same voice hooked twice in one block */
@@ -208,6 +232,7 @@ static void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)
     coop_pan_delta d = coop_pan_deltas_tab(pans->pan[voice], g_sin);
     int16_t gain = *VOICE_GAIN;
     if (g_coop_dbg_cmp && is_drum) dbg_drum_probe(gain);
+    if (g_coop_dbg_cmp) voice_sum_stock(is_drum, gain);                  /* the stock bus the compare reads */
     if (is_drum) coop_pair_accum_drum(g_vL, g_vR, VOICE_OUT, gain, d);
     else         coop_pair_accum_synth(g_vL, g_vR, VOICE_OUT, VOICE_ENV, gain, d);
     g_pair_dirty = 1;

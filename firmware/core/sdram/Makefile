@@ -6,7 +6,7 @@ BUILD    ?= ../../build/core
 EXTRA_CXXFLAGS ?=
 CXXFLAGS := $(EXTRA_CXXFLAGS) -O2 -std=c++17 -mcpu=bf524 -ffreestanding -fno-exceptions -fno-rtti \
             -fno-threadsafe-statics -fno-use-cxa-atexit -ffunction-sections -fdata-sections -Wall -Wextra
-LDFLAGS  := -nostdlib -nostartfiles -T coop_cb.ld -Wl,--gc-sections -Wl,--no-undefined
+LDFLAGS  := -nostdlib -nostartfiles -T coop_cb.ld -Wl,--gc-sections -Wl,-z,max-page-size=0x400 -Wl,--no-undefined
 
 .PHONY: all clean combined
 all: $(BUILD)/coop_cb.elf
@@ -17,7 +17,7 @@ $(BUILD)/coop_cb.elf: coop_cb.cc coop_cb.ld | $(BUILD)
 # Combined baseline+suite image: m1's whole-callback timer (CoopAudioCb, imm-seam patched)
 # plus the master suite (coop_master_apply, wired by tools/l1_insert.py), one header, region A.
 combined: $(BUILD)/coop_combined.elf
-STEREO_KEEP := -Wl,--undefined=_coop_synth_render_thunk -Wl,--undefined=_coop_drum_render_thunk -Wl,--undefined=_coop_mix_thunk -Wl,--undefined=_coop_synth_noteon_thunk -Wl,--undefined=_coop_core_noteon_thunk -Wl,--undefined=_coop_tape_rec_thunk -Wl,--undefined=_coop_tape_gains_thunk -Wl,--undefined=_coop_seam_prologue_thunk -Wl,--undefined=_coop_seam_fill -Wl,--undefined=_coop_lift -Wl,--undefined=_coop_drop -Wl,--undefined=_coop_erase -Wl,--undefined=_coop_tape_io_step -Wl,--undefined=_coop_tape_mount_and_index -Wl,--undefined=_coop_sysex_rx_poll -Wl,--undefined=_coop_key_event -Wl,--undefined=_coop_fx_name_eq -Wl,--undefined=_coop_fx_render_mono -Wl,--undefined=_coop_fx_init_mono -Wl,--undefined=_coop_fx_render_st -Wl,--undefined=_coop_fx_init_st
+STEREO_KEEP := -Wl,--undefined=_coop_synth_render_thunk -Wl,--undefined=_coop_drum_render_thunk -Wl,--undefined=_coop_mix_thunk -Wl,--undefined=_coop_synth_noteon_thunk -Wl,--undefined=_coop_core_noteon_thunk -Wl,--undefined=_coop_tape_rec_thunk -Wl,--undefined=_coop_tape_gains_thunk -Wl,--undefined=_coop_seam_prologue_thunk -Wl,--undefined=_coop_seam_fill -Wl,--undefined=_coop_lift -Wl,--undefined=_coop_drop -Wl,--undefined=_coop_erase -Wl,--undefined=_coop_tape_io_step -Wl,--undefined=_coop_tape_mount_and_index -Wl,--undefined=_coop_sysex_rx_poll -Wl,--undefined=_coop_key_event -Wl,--undefined=_coop_fx_name_eq -Wl,--undefined=_coop_fx_render_mono -Wl,--undefined=_coop_fx_init_mono -Wl,--undefined=_coop_fx_render_st -Wl,--undefined=_coop_fx_init_st -Wl,--undefined=_coop_tank_grid_render -Wl,--undefined=_coop_tank_grid_init -Wl,--undefined=_coop_tank_spring_render -Wl,--undefined=_coop_tank_spring_init -Wl,--undefined=_g_coop_voice_sum_own -Wl,--defsym=_stock_grid_render_back=0x019af84e -Wl,--defsym=_stock_grid_init_back=0x019af294 -Wl,--defsym=_stock_spring_render_back=0x01a3300a -Wl,--defsym=_stock_spring_init_back=0x01a336b8
 $(BUILD)/coop_combined.elf: coop_cb.cc master_suite.cc stereo_bus.cc stereo_thunks.S lfo2.cc tape_stereo.cc tape_io.cc tape_edit.cc coop_stats.cc l1_pool.cc coop_sysex.cc lander_off.cc plugin_load.cc plugin_host.cc ../../sdk/coop_exports.cc coop_cb.ld | $(BUILD)
 	$(BFIN_CXX) $(CXXFLAGS) -DCOOP_COMBINED -I../include -I../../sdk coop_cb.cc master_suite.cc stereo_bus.cc stereo_thunks.S lfo2.cc tape_stereo.cc tape_io.cc tape_edit.cc coop_stats.cc l1_pool.cc coop_sysex.cc lander_off.cc plugin_load.cc plugin_host.cc ../../sdk/coop_exports.cc $(LDFLAGS) -Wl,--undefined=_coop_master_apply $(STEREO_KEEP) -o $@ -lgcc
 	$(BFIN_BIN)/bfin-elf-size $@

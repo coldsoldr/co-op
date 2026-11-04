@@ -113,7 +113,7 @@ static inline int16_t coop_fr16_shl1(int16_t a)             /* Rx.H = Ra.L << 1 
 {
 #ifdef __bfin__
     int32_t r;
-    __asm__("%0.L = %1.L << 1 (S);\n\t%0 = %0.L (X);" : "=&d"(r) : "d"(a));
+    __asm__("%0.H = %1.L << 1 (S);\n\t%0 = %0 >>> 16;" : "=&d"(r) : "d"(a));   /* the stock's own form (0xffa00936) */
     return (int16_t)r;
 #else
     return coop_sat16((int32_t)a << 1);

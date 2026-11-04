@@ -50,6 +50,11 @@ from ldr_dump import LdrError, memory_runs, parse, serialize  # noqa: E402
 from patch_app import apply_patch  # noqa: E402
 
 REGION_START = 0x02c00000
+# A small window in free region C, within pcrel24 reach of the stock code (region A is not): code that must JUMP.L
+# straight back into the stock (the grid / spring tank thunks, core/sdram/coop_cb.ld .near). The region-C
+# trampolines that l1_stereo_insert.py writes sit below it, at 0x01e00000..0x01e000ff.
+NEAR_START = 0x01e00400
+NEAR_END = 0x01e01000
 REGION_END = 0x03000000
 HEADER_MAGIC = 0x5831504f  # "OP1X"
 DMA_CODE = 6               # as every other block in OP1_vdk.ldr
@@ -264,7 +269,8 @@ def inject(ldr_bytes, image_path, words=None, fill_pattern=None, strings=None, r
     header = None
     for vaddr, payload, memsz in segments:
         end = vaddr + memsz
-        if vaddr < region_start or end > region_end:
+        near = NEAR_START <= vaddr and end <= NEAR_END
+        if (vaddr < region_start or end > region_end) and not near:
             raise LdrError('segment {:#x}-{:#x} is outside {:#x}-{:#x}'.format(
                 vaddr, end, region_start, region_end))
         for lo, hi in loaded:

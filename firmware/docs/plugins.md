@@ -102,8 +102,9 @@ or plugin, run on the whole stereo pair:
 - the stats `plugins` line adds `stock_st_blocks` (blocks a stock stereo twin rendered) and `stock_st_made`
   (constructions); the build tag is `s1`.
 
-Limits: the stock delay sums L and R into its line, so its echoes are centred (as on the master); grid and spring
-share one fixed tank between an instrument position and the master (`docs/stereo-bus-v2.md`). The FX list of R246
+Limits: the stock delay sums L and R into its line, so its echoes are centred (as on the master). Grid and spring
+shared one fixed tank between an instrument position and the master until the clean-ups after S2
+(`docs/stereo-bus-v2.md`). The FX list of R246
 has no filter row (cwo, delay, grid, nitro, phone, punch, spring, then the plugin rows); the filter type only carries
 plugins.
 
@@ -126,3 +127,17 @@ slot 1, with the four knob words in the filter ranges and `params[4] = 0x5300 + 
 - P3: engines (`coop_engine_t`, 128 samples at 88.2 kHz, stereo or mono-with-flag), LFO and sequencer objects,
   screens through the stock SVG renderer; the L1 and big-buffer leases (`kn_l1.c` model).
 - The porting guide (kennel 3.1 and opus to coop) and the first ports from `te-op1-cfw/ports`.
+- Updates without reflashing (the owner, 2026-11-04; planned after the P3 screens). Plugins already install over
+  SysEx. The coop core itself is linked into the firmware image, so today every core change is a flash. Plan: a small
+  stable loader flashed once, which loads the core from a file on the OP-1's disk at boot (integrity check, and a key
+  held at boot skips the file: `docs/brick-safety.md` first). The web app then installs the core as it installs
+  plugins; only a change to the stock hook sites still needs a flash. Opus 2 works this way (a patched core, then
+  plugin files), and its patcher builds the package in the browser from the owner's own stock file. [I]
+- Lessons from the other two firmwares for P3 (from their sources and docs, not measured here) [I]:
+  - hundekraft (kennel 3.1): hand-written Blackfin assembly for the heavy inner loops (31 kernels), and plugins that
+    use the iter voice objects and the L1 scratch beside them directly.
+  - Opus 2: an L1 data allocator (about 25 KB for all plugins); an audio pool the display does not share (ordinary
+    pool memory reads about twice as slow while a frame goes out); about 107 cycles per 32-byte line an audio block
+    touches outside L1; stock effect inits off the audio thread (grid's takes 1.65 M cycles); every plugin call
+    timed, a measured budget per plugin, and a plugin over it switched off.
+  - Neither has a stereo voice path or 32-bit working values; coop keeps those.

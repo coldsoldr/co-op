@@ -260,12 +260,14 @@ static const char *load_one(const char *fname, uint8_t *stage)
 }
 
 static void slot2_load(void);                                              /* S2, below */
+static void tanks_boot(void);                                              /* below */
 
 /* From the tape mount hook (main thread, boot), once. */
 extern "C" void coop_plugins_boot(void)
 {
     if (g_plugins_booted) return;
     g_plugins_booted = 1;
+    tanks_boot();                                                          /* the instrument spring's own tank */
     list_dir();
     if (!g_n_names) { slot2_load(); return; }
     void *udb = DB_HANDLE();
@@ -315,11 +317,9 @@ extern "C" int coop_fx_name_eq(const char *name, const dstr *s)
 #define OBJ_BYTES 0x400                                                   /* every stereo object fits the 0x270 placement gap */
 #define LINE_TABLE ((volatile uint32_t *)0x01AB8B94u)                     /* delay / cwo line buffers: [+0xc] mono delay, [+0x14] stereo delay, [+0] mono cwo, [+8] stereo cwo */
 #define LINE_BYTES 0x2B14Cu                                               /* one line buffer (0x1b0ee48 - 0x1ae3cfc) */
-/* Known S1 limit: the stereo grid and spring classes keep their tank at a fixed address (grid 0x01D8C70C, spring
- * 0x01DE1F50 / 0x01DE6248, immediates in their render and init; the mono classes use other ones), so the same one of
- * those two types at an instrument position and on the master at once shares one tank. Bounded (positions live in
- * the object), audible as interference. Fix planned with S3: clones of those two renders retargeted at the unused
- * mono tanks. punch, phone, filter and nitro are dual-mono (their stereo render calls the mono render directly). */
+/* The stereo grid and spring classes keep their tank at a fixed address (grid 0x01D8C70C, spring 0x01DE6252); every
+ * coop object of those two types gets its own (tank_bind below; the S1 note's 0x01DE1F50 was a misread L1 table).
+ * punch, phone, filter and nitro are dual-mono (their stereo render calls the mono render directly). */
 struct fx_class { uint32_t mono_vt, st_ctor, st_vt; };
 static const struct fx_class g_fx_class[FX_TYPES] = {
     { 0x0190FB6Cu, 0x0197D880u, 0x0190FB8Cu },   /* delay  */
@@ -354,6 +354,50 @@ static int type_of_mono(void *self)
 }
 static inline uint32_t vt_entry(uint32_t vt, int off) { return *(volatile uint32_t *)(vt + off); }
 
+/* Own reverb memory for every coop grid / spring object (clean-up after S2). The stereo classes load their tank as an
+ * immediate in render and init; the package points those four loads at coop_tank_* (stereo_thunks.S), which look the
+ * object up here: { obj0, tank0, obj1, tank1, obj2, tank2, 0, stock tank }, index = g_st index. Any other object (the
+ * stock master's) gets the stock tank. Tanks, from the stock static constructors (RE 2026-11-04):
+ * - grid stereo: 0x42040 bytes at 0x01D8C70C. The mono class keeps two of the same size just below it at 0x01D0868C
+ *   (two positions); since S1 no mono grid runs (its vtable points at coop), so they serve g_st[0] and g_st[1].
+ *   g_st[2] (master slot 2) gets one from the heap when grid is put there.
+ * - spring stereo: 0xE3A0 bytes at 0x01DE6252 (halfword aligned, 2 mod 8). The mono ones (0x01001EA8, two) are word
+ *   aligned, so every coop spring tank comes from the heap at the stock alignment: g_st[0]'s at boot, slot 2's when
+ *   spring is put there. All tanks are zero when bound (the stock init clears them anyway).
+ * A tank that cannot be had leaves the object on the stock tank (the old shared behaviour), counted in g_tank_short. */
+#define GRID_TANK        0x42040u
+#define GRID_MONO_TANKS  0x01D0868Cu
+#define SPRING_TANK      0xE3A0u
+extern "C" {
+__attribute__((section(".data"))) volatile uint32_t g_coop_tank_grid[8] = { 0, 0, 0, 0, 0, 0, 0, 0x01D8C70Cu };
+__attribute__((section(".data"))) volatile uint32_t g_coop_tank_spring[8] = { 0, 0, 0, 0, 0, 0, 0, 0x01DE6252u };
+}
+static uint32_t g_tank_grid_heap, g_tank_spring_own[3];
+volatile uint32_t g_tank_short, g_tank_bound;                              /* g_tank_bound: bit i grid, bit 4 + i spring */
+
+static uint32_t tank_alloc(uint32_t size, uint32_t rem8)                  /* main thread only; zeroed, addr % 8 == rem8 */
+{
+    uint8_t *raw = (uint8_t *)MALLOC(size + 16);
+    if (!raw) { g_tank_short++; return 0; }
+    uint32_t a = (((uint32_t)(uintptr_t)raw + 7u) & ~7u) + rem8;
+    for (uint32_t i = 0; i < size; i += 2) *(volatile uint16_t *)(uintptr_t)(a + i) = 0;
+    return a;
+}
+
+static void tanks_boot(void) { if (!g_tank_spring_own[0]) g_tank_spring_own[0] = tank_alloc(SPRING_TANK, 2); }
+
+static void tank_bind(int i, void *obj, int t)
+{
+    volatile uint32_t *map = t == 1 ? g_coop_tank_grid : t == 4 ? g_coop_tank_spring : 0;
+    if (!map || !obj || map[2 * i] == (uint32_t)(uintptr_t)obj) return;
+    uint32_t a = t == 1 ? (i < 2 ? GRID_MONO_TANKS + (uint32_t)i * GRID_TANK : g_tank_grid_heap) : g_tank_spring_own[i];
+    if (!a) return;
+    map[2 * i + 1] = a;
+    __asm__ __volatile__("ssync;" ::: "memory");
+    map[2 * i] = (uint32_t)(uintptr_t)obj;
+    g_tank_bound |= 1u << (t == 1 ? i : 4 + i);
+}
+
 /* construct (or reconstruct) position pos's stereo object of stock type t */
 static void st_make(int pos, int t)
 {
@@ -368,6 +412,7 @@ static void st_make(int pos, int t)
     if (t == 7) LINE_TABLE[2] = (uint32_t)(uintptr_t)s->line;              /* cwo caches its line at construction */
     ((void (*)(void *))(uintptr_t)g_fx_class[t].st_ctor)(s->obj);
     if (t == 7) LINE_TABLE[2] = save8;
+    tank_bind(pos, s->obj, t);                                            /* before the init, which clears the tank */
     ((st_init_fn)(uintptr_t)vt_entry(g_fx_class[t].st_vt, 0x1c))(s->obj);
     s->type = t;
     for (int k = 0; k < 8; k++) s->slots[k] = 0;
@@ -378,8 +423,9 @@ static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
 {
     struct st_inst *s = &g_st[pos];
     int t = s->type;
+    tank_bind(pos, s->obj, t);                                            /* a tank that came after the construction (zeroed) */
     uint32_t save = LINE_TABLE[5];
-    if (t == 0) LINE_TABLE[5] = (uint32_t)(uintptr_t)s->line;              /* the stereo delay reads its line from the table each render */
+    if (t == 0) LINE_TABLE[5] = (uint32_t)(uintptr_t)s->line;             /* the stereo delay reads its line from the table each render */
     uint32_t master[8];
     for (int k = 0; k < 8; k++) { master[k] = FX_SLOTS[8 + k]; FX_SLOTS[8 + k] = s->slots[k]; }
     ((st_render_fn)(uintptr_t)vt_entry(g_fx_class[t].st_vt, 0x14))(s->obj, l, r, params);
@@ -505,6 +551,8 @@ extern "C" int coop_slot2_set(int pos, int kind, int id, const uint16_t *knob)
         if (!t->obj) t->obj = MALLOC(OBJ_BYTES);
         if ((id == 0 || id == 7) && !t->line) t->line = (uint8_t *)MALLOC(LINE_BYTES);
         if (!t->obj || ((id == 0 || id == 7) && !t->line)) return 0;
+        if (id == 4 && !g_tank_spring_own[1 + pos]) g_tank_spring_own[1 + pos] = tank_alloc(SPRING_TANK, 2);
+        if (id == 1 && pos == 1 && !g_tank_grid_heap) g_tank_grid_heap = tank_alloc(GRID_TANK, 4);   /* the instrument's is a mono one */
     }
     struct slot2 *s = &g_s2[pos];
     for (int i = 0; i < 4; i++) s->knob[i] = knob[i] > 32767 ? 32767 : knob[i];

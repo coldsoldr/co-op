@@ -170,6 +170,36 @@ def jump_s(address, target):
     return struct.pack('<H', 0x2000 | (off & 0xfff))
 
 
+# Clean-up after S2 (docs/stereo-bus-v2.md): the stock per-voice sum into the mono bus 0xff800bb4 is skipped. Since S3
+# its result is never read (coop's decimator reads the pair, and the bus's first 64 samples are overwritten with the
+# mid); the voice hook sums into it itself when the stereo bus is off or the debug compare runs. Synth: after the
+# render (the trampoline returns to 0xffa00d2a, `P1 = [FP -0x28]`, kept) `R0 = W[P5++]` at 0xffa00d2c becomes a jump
+# over the loop to 0xffa00d72, which reloads P1 / P0 and reads nothing the loop wrote. Drum: the loop's LSETUP at
+# 0xffa00922 becomes a jump to 0xffa00940, where the stock goes for a voice it does not sum (0xffa0075e).
+VOICE_SUM_SKIPS = [
+    (0xffa00d2c, bytes.fromhex('6894'), 0xffa00d72, 0),
+    (0xffa00922, bytes.fromhex('a2e00e20'), 0xffa00940, 1),
+]
+
+
+def voice_sum_patches():
+    return [(site, stock, jump_s(site, target) + b'\x00\x00' * pad) for site, stock, target, pad in VOICE_SUM_SKIPS]
+
+
+# Own tanks for the stereo grid / spring objects (plugin_host.cc, tank_bind): the tank's immediate pair in each class's
+# render and init becomes a JUMP.L to coop_tank_* (stereo_thunks.S), which jumps back after the pair.
+TANK_SITES = [
+    (0x019af846, bytes.fromhex('07e10cc7' '47e1d801'), 'tank_grid_render'),    # R7.L = 0xc70c; R7.H = 0x1d8
+    (0x019af28c, bytes.fromhex('10e10cc7' '50e1d801'), 'tank_grid_init'),      # I0.L = 0xc70c; I0.H = 0x1d8
+    (0x01a33002, bytes.fromhex('09e15262' '49e1de01'), 'tank_spring_render'),  # P1.L = 0x6252; P1.H = 0x1de
+    (0x01a336b0, bytes.fromhex('08e15262' '48e1de01'), 'tank_spring_init'),    # P0.L = 0x6252; P0.H = 0x1de
+]
+
+
+def tank_patches(thunks):
+    return [(site, stock, jump_l(site, thunks[name]) + bytes.fromhex('00000000')) for site, stock, name in TANK_SITES]
+
+
 def instr_patches(thunk):
     """[(address, stock, new)] for the three decimator + DC call pairs (S3)."""
     out = []
@@ -355,6 +385,16 @@ def thunk_addresses(elf):
         drumbus = symbol_address(syms, 'coop_drumbus_thunk')[0]
     except Exception:                                  # an ELF before S3
         instr = drumbus = None
+    tanks = {}
+    try:                                               # clean-up after S2: own grid / spring tanks
+        for name in ('tank_grid_render', 'tank_grid_init', 'tank_spring_render', 'tank_spring_init'):
+            tanks[name] = symbol_address(syms, 'coop_' + name)[0]
+    except Exception:
+        tanks = {}
+    try:                                               # the voice hook can stand in for the stock voice sum
+        tanks['voice_sum'] = symbol_address(syms, 'g_coop_voice_sum_own')[0]
+    except Exception:
+        pass
     try:
         sine_copy = symbol_address(syms, 'coop_l1_sine_copy')[0]
     except Exception:
@@ -363,7 +403,7 @@ def thunk_addresses(elf):
         sysex_rx = symbol_address(syms, 'coop_sysex_rx_poll')[0]
     except Exception:                                  # an ELF without the SysEx channel
         sysex_rx = None
-    return {'instr': instr, 'drumbus': drumbus, 'sysex_rx': sysex_rx, 'sine_copy': sine_copy, 'keyev': keyev, **fxh,'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
+    return {'instr': instr, 'drumbus': drumbus, 'sysex_rx': sysex_rx, 'sine_copy': sine_copy, 'keyev': keyev, **fxh, **tanks, 'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
             'drum': symbol_address(syms, 'coop_drum_render_thunk')[0],
             'mix': symbol_address(syms, 'coop_mix_thunk')[0],
             'noteon': symbol_address(syms, 'coop_synth_noteon_thunk')[0],
@@ -391,6 +431,10 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     patches = site_patches(tramps) + core_noteon_patches()
     if thunks.get('instr'):
         patches += instr_patches(thunks['instr']) + [drumbus_patch(thunks['drumbus'])]
+        if thunks.get('voice_sum'):
+            patches += voice_sum_patches()
+    if thunks.get('tank_grid_render'):
+        patches += tank_patches(thunks)
     if tape:
         patches += tape_patches(tramps)
     for address, stock, new in patches:

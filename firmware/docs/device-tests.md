@@ -468,3 +468,32 @@ Known: the stock delay's echoes are centred; grid or spring in two places at onc
 no page on the OP-1 yet and is the same for every sound.
 
 Result: _not yet flashed_.
+
+## Clean-ups after S2: voice sum off, own grid / spring memory — device test (pending, 2026-11-04)
+
+`build/pkg/op1_246_coop_s2c_cleanup.op1` (copy in Downloads; sha256
+`eb7cceb55c5e1854b5a39cf571630dae5bbce33e4ea5695a174ce9a38c6a68d3`). Contains S1 + S3 + S2 and supersedes the S2
+package: test this one with the S2 entry above, then the two points below. Hello and the stats say `build s2c`.
+(`docs/stereo-bus-v2.md`, "Clean-ups after S2".)
+- The stock per-voice mono sum is patched out (unused since S3): nothing should sound different from S2.
+- Every coop grid and spring object has its own reverb memory: the same one of those two types in two places at
+  once no longer interferes.
+
+**What to do (after the S2 steps):**
+1. Play the synth and the drums with no effect and with phone: as on S2. Any click, level change or silence is a
+   fail.
+2. Grid at the synth position (FX list) and grid in instrument slot 2 and in master slot 2 (host page, Apply each):
+   three clean grids, each with its own tail. Same with spring. On S2 these interfered.
+3. Grid or spring on the master (the OP-1's master effect) and the same type in master slot 2: both clean. (This
+   pair is not covered in the emulator.)
+4. Expected once: a short glitch at the moment grid is applied to a slot 2 (its init clears 264 KB in the audio
+   thread). Anything longer, or a hang, is a fail.
+5. Stats: `plugins ... tanks` (bits: 1, 2, 4 grid at the instrument / slot 2 / master slot 2; 16, 32, 64 the same
+   for spring) and `tank_short` (0 expected: a tank that did not fit). `stage_max` should be a little lower than on
+   S2 with six voices playing.
+
+Emulator (op1emu, old = S2, one job): chord and drums identical to S2 (drums after the boot), with the stereo bus off
+too; tape record the same energy (one-block shift, as S3 to S2); the write tracer shows each grid / spring object on
+its own tank and the stock tanks untouched after boot; no faults.
+
+Result: _not yet flashed_.

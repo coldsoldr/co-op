@@ -77,10 +77,9 @@ carrier. What the owner asked for holds: effects see the whole stereo signal, no
   render by delay, `[+8]` cached at construction by cwo); the twin gets its own line (0x2B14C bytes) and the table
   entry is swapped around the call. punch, phone, filter and nitro are dual-mono: their stereo render calls the
   stock mono render function directly (not through the vtable), so they need nothing. grid and spring keep a tank at
-  a fixed address in their stereo code (grid 0x01D8C70C, spring 0x01DE1F50 / 0x01DE6248; the mono classes use
-  0x01D0868C and their own), so **the same one of those two types at an instrument and on the master at once shares
-  one tank**: bounded, audible as interference. Planned fix: clones of those two renders retargeted at the mono
-  tanks, which nothing uses now. [I from the disassembly]
+  a fixed address in their stereo code, so at S1 the same one of those two types in two places at once shared one
+  tank. Fixed after S2: every coop object gets its own (see "Clean-ups after S2"; the 0x01DE1F50 named here at S1
+  was an L1 table misread).
 - The stock delay is mono inside: its stereo render sums `g·(L + R)` into one scratch buffer (L1 0xFF801B50)
   before the line, so its echoes are centred wherever it runs, the master included. Echoes that follow the
   placement need a stereo delay (the coop `stereo_delay` plugin does it). [I from the disassembly, matches the
@@ -161,9 +160,8 @@ One second slot after the instrument effect and one after the master effect (`pl
   renders. A MALLOC from the audio interrupt hung op1emu (the heap lock), and a stock type must not be constructed
   before the stock has loaded its range row (zero ranges give the delay a zero length; its wrap loop never ends).
   The slot's buffers are static (the mix context is deep on the interrupt stack).
-- **Limits.** The stock delay is mono inside (centred echoes); grid and spring share one tank between all their
-  stereo instances (slot 1 at an instrument, slot 2, the master). Slot 2 has no stock page: its display state is not
-  copied anywhere.
+- **Limits.** The stock delay is mono inside (centred echoes). Slot 2 has no stock page: its display state is not
+  copied anywhere. (At S2 grid and spring shared one tank between all their stereo instances; fixed after S2.)
 
 Emulator (2026-11-03, one job): with no slot 2 the chord and the drums are sample-identical to S3, tape record the
 same energy (one-block onset shift), the plugin scenario within 2 LSB. Instrument slot 2 = stock delay (knobs at
@@ -182,7 +180,54 @@ the stereo delay plugin: it rendered every block (37,002) and changes the output
 3. **S2** (built, see above): the second FX slot after the instrument effect and after the master effect, set from
    the SysEx page; the saved-sound JSON member and an on-device page are still to do.
 4. **S3** (built, see above): the stereo pair from the voice hook, coop's decimator and DC block in place of the
-   stock mono ones, the drum bus stage per side; the stock per-voice sum still runs, unused.
+   stock mono ones, the drum bus stage per side. The stock per-voice sum is patched out since the clean-ups.
+
+## Clean-ups after S2 (2026-11-04)
+
+**The stock per-voice sum is patched out.** Since S3 nothing reads the mono bus the stock voice loops sum into
+(coop's decimator reads the pair; the bus's first 64 samples are overwritten with the mid). `tools/l1_stereo_insert.py`
+(`VOICE_SUM_SKIPS`) turns the two loops into jumps over them, checked against the stock bytes:
+- synth, after the render: `R0 = W[P5++]` at L1 0xffa00d2c becomes `JUMP.S 0xffa00d72` (the code there reloads P1 and
+  P0 and reads nothing the loop wrote);
+- drum: the loop's `LSETUP` at 0xffa00922 becomes `JUMP.S 0xffa00940; NOP`, where the stock goes for a voice it does
+  not sum (0xffa0075e).
+The voice hook sums into the stock bus itself where it is still read: with the stereo bus off
+(`g_coop_stereo_enable = 0`, the stock decimator and DC block run) and for the debug compare (`g_coop_dbg_cmp`). The
+drum sum uses the stock's own instructions: the helper sequence (`coop_fr16_*`) is bit-identical in the bfin
+simulator over 2 M random inputs but 1 LSB off in op1emu. Saving: two 128-sample loops per voice, up to 6 synth or
+12 drum voices per block. [C in bytes and op1emu; the cycle figure only on the device]
+
+**Own reverb memory for every grid / spring object.** The stereo grid and spring classes load their tank address as
+an immediate pair in render and init (RE 2026-11-04, from their static constructors):
+- grid: 0x42040 bytes at 0x01D8C70C (render 0x019af83c, pair at 0x019af846 into R7; init 0x019af27e, pair at
+  0x019af28c into I0). The mono class keeps two tanks of the same size just below, at 0x01D0868C; since S1 no mono
+  grid runs, and the write tracer shows nothing but the boot constructor ever writes them.
+- spring: 0xE3A0 bytes at 0x01DE6252, halfword aligned (render 0x01a32ffc, pair at 0x01a33002 into P1; init
+  0x01a336ae, pair at 0x01a336b0 into P0). The words at 0x01DE6244..0x01DE6251 are constants set at boot and read by
+  every spring. The mono tanks (0x01001EA8, two) are word aligned, so coop's spring tanks come from the heap at the
+  stock alignment (2 mod 8).
+Each pair becomes a `JUMP.L` to a thunk (`coop_tank_*`, stereo_thunks.S) that looks the object up in a map
+(`g_coop_tank_grid` / `g_coop_tank_spring`, plugin_host.cc) and loads that object's tank, or the stock tank for any
+other object (the stock master's), then jumps back. No CALL: the grid init does not LINK. The thunks live in a small
+window of free region C (0x01e00400, `.near` in coop_cb.ld, `NEAR_*` in inject_app.py) because region A is beyond
+JUMP.L reach of the stock. Tanks: the instrument effect (`g_st[0]`) and instrument slot 2 (`g_st[1]`) get the two mono
+grid tanks; master slot 2 a heap grid tank when grid is put there; spring a heap tank each (the instrument's at boot,
+57 KB; slot 2's when spring is put there). A tank that cannot be allocated leaves the object on the stock tank (the
+old behaviour), counted as `tank_short` in the stats; `tanks` there is the bound set (bit i grid, bit 4 + i spring).
+
+Emulator (op1emu, 2026-11-04; old = the S2 image, new = this one, one job):
+- Stereo bus on: the chord sample-identical; the drums identical after the boot (the first 2.3 s differ, before
+  any key); tape record the same energy with the recording one block (64 samples) later, as between S3 and S2.
+- Stereo bus off: the chord and the drums sample-identical (coop's sums = the stock's). The chord run itself lands
+  in one of two states 2 LSB apart from job to job, the old image too; the new run equals an old one exactly.
+- Write tracer on the tanks: grid at the instrument writes the stock tank on S2, its own mono tank 0 here; grid in
+  both slot 2s wrote the stock tank twice per block on S2, here instrument slot 2 writes mono tank 1 and the master
+  one its heap tank; spring at the instrument + master slot 2 and spring in both slot 2s: the stock spring tank is
+  never written after boot. Every run has its reverb tail and no faults.
+- Not tested: the stock master's own grid or spring with a coop one beside it (it misses the map and keeps the stock
+  tank by construction). [I]
+- Known, unchanged: a stock effect put in slot 2 is constructed in the audio thread, and grid's init clears 264 KB
+  (Opus measured 1.65 M cycles, about three blocks): one audio glitch when grid is chosen for slot 2. [I]
 
 ## Display slots (2026-11-03, the owner on the first S1 build: nitro's dials did not move)
 
