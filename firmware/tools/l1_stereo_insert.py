@@ -244,6 +244,13 @@ PUNCH_ST_RENDER = 0x019e662c
 GRID_LOOP_SITE = 0x019af92e
 GRID_LOOP_STOCK = bytes.fromhex('a2e0cd01')
 
+# Performance (2026-11-04): the stock delay stereo render (0x0197DC42) per-sample loop LC1 0x0197DD4A..0x0197DF7A (160
+# instructions with two LC0 loops, 15 frame accesses per sample) becomes coop_delay_loop (delay_fast.S), back at
+# 0x0197DF7C. The only way into the loop is its LSETUP at 0x0197DD46, which becomes the JUMP.L (coop_delay_loop_near
+# sets LT1 / LB1 / LC1 by hand when g_coop_fast_delay = 0).
+DELAY_LOOP_SITE = 0x0197dd46
+DELAY_LOOP_STOCK = bytes.fromhex('b2e01a11')
+
 # Performance (2026-11-04): the stock nitro mono render (0x019A62A4, called twice by the stereo render 0x019A684C) loops
 # 0x019A64A8..0x019A6682 and 0x019A6698..0x019A67F6 become coop_nitro_loop (nitro_fast.S), back at 0x019A67F8. The only
 # way into them is loop 1's LSETUP at 0x019A64A4, which becomes the JUMP.L (coop_nitro_loop_near sets LT1 / LB1 / LC1
@@ -486,6 +493,10 @@ def thunk_addresses(elf):
         tanks['grid_loop'] = symbol_address(syms, 'coop_grid_loop_near')[0]
     except Exception:
         pass
+    try:                                               # performance: the delay stereo loop
+        tanks['delay_loop'] = symbol_address(syms, 'coop_delay_loop_near')[0]
+    except Exception:
+        pass
     try:                                              # performance: the punch stereo render
         tanks['punch_st'] = symbol_address(syms, 'coop_punch_render_st')[0]
     except Exception:
@@ -556,6 +567,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
         patches.append((PHONE_CAPTURE_SITE, PHONE_CAPTURE_STOCK, jump_l(PHONE_CAPTURE_SITE, thunks['phone_capture'])))
     if thunks.get('grid_loop'):
         patches.append((GRID_LOOP_SITE, GRID_LOOP_STOCK, jump_l(GRID_LOOP_SITE, thunks['grid_loop'])))
+    if thunks.get('delay_loop'):
+        patches.append((DELAY_LOOP_SITE, DELAY_LOOP_STOCK, jump_l(DELAY_LOOP_SITE, thunks['delay_loop'])))
     if thunks.get('punch_st'):
         patches.append((PUNCH_ST_RENDER_ENTRY, struct.pack('<I', PUNCH_ST_RENDER), struct.pack('<I', thunks['punch_st'])))
     if thunks.get('nitro_loop'):

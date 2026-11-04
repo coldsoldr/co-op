@@ -250,6 +250,8 @@ extern "C" void coop_voltage_check(void *self, int16_t *out, const int16_t *para
     if (bad) { if (!g_voltage_check_bad) g_voltage_check_first = g_voltage_check_calls; g_voltage_check_bad++; }
 }
 #endif
+/* performance: the rewritten stock delay stereo loop (delay_fast.S); 0 runs the stock loop (A/B, kill switch) */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_delay = 1; }
 static void voice_sum_stock(int is_drum, int16_t gain)
 {
     int16_t *bus = MONO_BUS64;
