@@ -587,6 +587,32 @@ samples) and measured:
    aliasing against the loop's own stores, and A/B each rewrite in more than one scenario.
 4. cwo's loop (in progress). 5. The other effects by cost: punch, phone, nitro, spring, grid and delay are already
    compiled hardware loops without per-sample calls; a rewrite gains less there.
+6. **phone's mono render, both loops** (`core/sdram/phone_fast.S`; switch `g_coop_fast_phone`, 1 by default). phone
+   is dual-mono: the stereo render `0x01A1C25C` calls the mono render `0x01A1BB74` twice (its only callers). The mono
+   render runs a 64-sample capture loop `0x01A1BC00..0x01A1BC58` (input into a buffer at `0x027D1FE0 + this[0x88] *
+   0x89D0 + sel * 0x2DF0`, a level ramp, a trigger that closes / swaps buffers) and a 64-sample output loop LC1
+   `0x01A1BCB0..0x01A1BF34`: a phase steps by the rate knob and N = 0..10 new capture samples per output sample go
+   through three LC0 loops over a 32-entry ring (the read, a 32-bit high-pass with the stock 32 x 32 multiply, a 16-bit
+   low-pass), then a 7-tap interpolating FIR (table `0x0106A730`, 32 phases, an 11-bit blend) and the wet / dry mix.
+   Both loops are entered only by their LSETUPs (`0x01A1BBFC`, `0x01A1BCAC`), which become JUMP.Ls to two `.near` stubs
+   (50 bytes each); with the switch off they set LT / LB / LC by hand and jump into the stock loop. The rewrite runs
+   the three ring loops as one chain per new sample with both filter states in registers (12 packets a sample against
+   about 43), the FIR with one dual 16 x 16 multiply per product pair and the table / ring loads in the parallel slots,
+   and the capture loop with the level, the write pointer, the count and the trigger flag in registers (12 packets
+   against about 26). Every multiply, add and shift on the signal has the stock's operands, order and mode; the
+   buffer-end, buffer-swap and trigger paths are the stock's in their own branches. op1emu, stock phone at the synth with
+   a chord (`det_fx_stock_phone`, from 40 s): **28.9 k -> 14.1 k emulator cycles per call (-51 %)**, the callback 74.6 k
+   -> 59.7 k; with all four knobs turned during and after the chord (`det_fx_stock_phone_knobs`, from 41 s): 29.0 k
+   -> 14.0 k, the callback 148.9 k -> 134.0 k, **the samples identical over the whole run**. In `det_fx_stock_phone` the
+   faster callback moved the chord to another block and the levels differ by up to 3 % in the chord's seconds (the
+   capture buffer closes on a fixed sample count, silence or not, so the effect's state is not shift-invariant); the
+   proof there is a lockstep build (`make ... EXTRA_CXXFLAGS=-DCOOP_PHONE_CHECK`: `plugin_host.cc` runs the stock
+   render on a copy of each half's object and I/O block and the rewrite on the real one every block and counts any
+   difference): **0 differences in 45,488 (det_fx_stock_phone) and 43,816 (knobs) mono calls**, with every rare path
+   taken (hit counters in the assembly, knobs run: 11,544 buffer ends inside a sample, 595 buffer swaps there, 619
+   capture-buffer closes, 2,158 trigger swaps). Not reproduced: the stock's dead stores to `W[FP+8]` / `W[FP+0xa]`
+   (the caller's argument homes) and its loop scratch `[FP-8]`; the frame constants the loops read are reused as
+   scratch after they are read. [C in op1emu, the device figure pending]
 
 Correction (2026-11-04): the T4f device test already measured the six-voice DSynth chord at 65-67 % of the block
 (the stock engine about 57 %, coop 8.6 %). There is no "base cost" regression since T4: the engine itself is the

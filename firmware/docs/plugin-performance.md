@@ -83,3 +83,13 @@ performance.
 - Code that must JUMP.L back into stock code goes in the `.near` region-C window (0x01E00400-0x01E01000, coop_cb.ld);
   region A is out of pcrel24 reach. Longer code goes in region A behind a `.near` stub (cwo does this).
 - Keep the stock path reachable behind the switch (for a loop entered by LSETUP, set LT0 / LB0 / LC0 by hand).
+- **Loops over sub-steps fuse into one chain.** phone ran three loops over the N new samples of each output sample
+  (capture read into a ring, a high-pass over the ring, a low-pass over the ring); each stage reads only its own
+  position, so one pass per new sample with the filter states in registers gives the same numbers in a third of the
+  instructions (the ring's intermediate writes vanish). Check that no stage reads a neighbour before fusing.
+- **A lockstep check when knob events make the A/B ambiguous.** A faster callback moves key and knob events by a
+  block, and an effect with time-periodic state (phone's capture buffer closes every few thousand samples, silence or
+  not) then sounds different by percents in the seconds after an event, with no fixed offset. The proof then is a
+  test build that runs the stock code on a copy of the object and I/O block and the rewrite on the real ones, every
+  block, and counts differences (`-DCOOP_PHONE_CHECK` in `plugin_host.cc`, with hit counters on the rare paths in
+  the assembly); shared buffers both runs write with the same values are fine.
