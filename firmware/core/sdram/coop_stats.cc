@@ -21,9 +21,9 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p4b"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p5a"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
-#define WINDOWS       12
+#define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
 #define FIRST_WRITE_PASSES 64
 
@@ -60,7 +60,7 @@ static uint32_t g_window_start;
 static uint32_t g_prev_hooks, g_prev_side, g_prev_recs, g_prev_loads, g_prev_flushes;
 static int g_started;
 static uint8_t g_win_recording;
-static char g_text[8192];
+static char g_text[16384];                                      /* p5a: the whole file over SysEx; the tape tail keeps the first 8 KiB */
 static int g_len;
 
 static inline uint32_t now_cycles(void) { uint32_t v; __asm__ __volatile__("%0 = CYCLES;" : "=d"(v)); return v; }
@@ -86,11 +86,60 @@ static void put_window(const char *tag, const struct window *w)
 
 #include "coop_cost.h"
 struct coop_cost g_coop_cost[COOP_COST_N];
+uint32_t g_coop_eng_fn[COOP_ENG_N];
+static uint32_t g_eng_blk[2];                                     /* this block's synth / drum render cycles */
+static uint32_t g_eng_last;                                       /* the entry the last render used */
+
+/* From the render thunks (stereo_thunks.S) after every voice render: the cycles of one render of the engine whose
+ * render function is fn. The table fills in the order the engines are first heard; COOP_ENG_N covers every stock
+ * synth and drum engine of a session. */
+extern "C" void coop_eng_cost(uint32_t fn, uint32_t dt, int drum)
+{
+    g_eng_blk[drum & 1] += dt;
+    uint32_t i = g_eng_last;
+    if (g_coop_eng_fn[i] != fn) {
+        for (i = 0; i < COOP_ENG_N; i++) {
+            if (g_coop_eng_fn[i] == fn) break;
+            if (!g_coop_eng_fn[i]) { g_coop_eng_fn[i] = fn; break; }
+        }
+        if (i == COOP_ENG_N) return;
+        g_eng_last = i;
+    }
+    coop_cost_add(COOP_COST_ENG + (int)i, dt);
+}
+
+/* From coop_stereo_block_start: the previous block's render sums. */
+extern "C" void coop_eng_block_end(void)
+{
+    if (g_eng_blk[0]) { coop_cost_add(COOP_COST_SYNTH, g_eng_blk[0]); g_eng_blk[0] = 0; }
+    if (g_eng_blk[1]) { coop_cost_add(COOP_COST_DRUM, g_eng_blk[1]); g_eng_blk[1] = 0; }
+}
 static void put_cost(const char *name, int i)               /* name avg max n: cycles per call */
 {
     const struct coop_cost *c = &g_coop_cost[i];
     if (!c->n) return;
     put(" "); put(name); putn((uint32_t)(c->sum / c->n)); put("/"); putn(c->max); put("/"); putn(c->n);
+}
+
+/* The stock engines' render functions (synth: vtable + 0x14, read from the constructors in the stock disassembly,
+ * docs/performance.md "Per-engine cost"); the other drum engines and iter print as r_ + their address. */
+static const char *eng_name(uint32_t fn)
+{
+    static const struct { uint32_t fn; const char *name; } k[] = {
+        { 0x019A23D4u, "fm=" }, { 0x01A51F7Au, "digital=" }, { 0x0197C870u, "drwave=" }, { 0x01A4F098u, "string=" },
+        { 0x01960288u, "cluster=" }, { 0xFFA04B88u, "pulse=" }, { 0x01A51A7Cu, "sampler=" }, { 0x01A0BC5Cu, "phase=" },
+        { 0x019D33A0u, "ls=" }, { 0x019B48D8u, "dna=" }, { 0x0197E1D8u, "dsynth=" }, { 0x01A49BF4u, "voltage=" },
+        { 0x019788B0u, "drumsampler=" },                                /* DrumSampler.cpp, vtable 0x0190FAC4 + 0x24 (op1emu det_drum) */
+    };
+    for (unsigned i = 0; i < sizeof k / sizeof k[0]; i++) if (k[i].fn == fn) return k[i].name;
+    static char hex[COOP_ENG_N][12];                              /* "r_" + 8 hex digits + "=", one per table entry */
+    for (int i = 0; i < COOP_ENG_N; i++) {
+        if (g_coop_eng_fn[i] != fn) continue;
+        char *h = hex[i]; h[0] = 'r'; h[1] = '_';
+        for (int d = 0; d < 8; d++) h[2 + d] = "0123456789abcdef"[(fn >> (28 - 4 * d)) & 15];
+        h[10] = '='; h[11] = 0; return h;
+    }
+    return "?";
 }
 
 static void write_file(void)
@@ -107,6 +156,13 @@ static void write_file(void)
     static const char *const st_names[8] = { "fx1_delay=", "fx1_grid=", "fx1_punch=", "fx1_phone=", "fx1_spring=", "fx1_filter=", "fx1_nitro=", "fx1_cwo=" };
     for (int t = 0; t < 8; t++) put_cost(st_names[t], COOP_COST_ST1 + t);
     put("\n");
+    put("engines avg/max/n");                                /* per voice render, by engine; synth= / drum= per block */
+    put_cost("synth=", COOP_COST_SYNTH); put_cost("drum=", COOP_COST_DRUM);
+    for (int i = 0; i < COOP_ENG_N; i++) {
+        if (!g_coop_eng_fn[i]) break;
+        put_cost(eng_name(g_coop_eng_fn[i]), COOP_COST_ENG + i);
+    }
+    put("\n");
     put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
     put("plugins"); kv("seen", g_plugins_seen); kv("loaded", g_plugins_loaded); kv("failed", g_plugins_failed);
     kv("mono_calls", g_fx_dispatch_mono); kv("st_calls", g_fx_dispatch_st); kv("plugin_blocks", g_fx_plugin_blocks); kv("stock_st_blocks", g_fx_stock_stereo_blocks); kv("stock_st_made", g_fx_stock_ctor); kv("s2_instr", g_s2_blocks[0]); kv("s2_master", g_s2_blocks[1]); kv("s2_changes", g_s2_changes); kv("tanks", g_tank_bound); kv("tank_short", g_tank_short); kv("ui_opens", g_ui_opens); kv("ui_applies", g_ui_applies);
@@ -122,14 +178,14 @@ static void write_file(void)
     kv("mono_fallbacks", g_edit_mono_fallbacks); put("\n");
     put("stats"); kv("writes", g_stats_writes); kv("errors", g_stats_errors); kv("tail_writes", g_stats_tail_writes);
     kv("tail_errors", g_stats_tail_errors); kv("windows", g_stats_windows); kv("ticks", g_stats_ticks); put("\n");
+    for (uint32_t i = 0; i < TOP; i++) {                               /* the heaviest windows, any order */
+        if (!g_top[i].blocks) continue;
+        put_window("top", &g_top[i]);
+    }
     for (uint32_t i = 0; i < WINDOWS; i++) {                           /* oldest first */
         const struct window *w = &g_ring[(g_ring_next + i) % WINDOWS];
         if (!w->blocks && !w->io_steps) continue;
         put_window("win", w);
-    }
-    for (uint32_t i = 0; i < TOP; i++) {                               /* the heaviest windows, any order */
-        if (!g_top[i].blocks) continue;
-        put_window("top", &g_top[i]);
     }
     g_text[g_len] = 0;
     if (coop_tape_write_tail(g_text, g_len + 1) == 0) g_stats_tail_writes++; else g_stats_tail_errors++;   /* the channel disk mode copies */

@@ -7,12 +7,12 @@ audio data (docs/performance.md, T3g). Copy `tape/track_4.aif` off the disk-mode
 
     python3 -I tools/tape_tail_stats.py ~/Downloads/track_4.aif
 
-Walks the AIFF chunks to the SSND data, takes its last 4096 bytes and prints them up to the first NUL. Says so
+Walks the AIFF chunks to the SSND data, takes its last 8192 bytes and prints them up to the first NUL. Says so
 if the tail is silence (no stats written: the image did not run, or the tape was rebuilt after the last write).
 """
 import struct, sys
 
-TAIL = 4096
+TAIL = 8192                                             # coop_tape_write_tail (tape_io.cc TAIL_BYTES)
 
 def main():
     if len(sys.argv) != 2:

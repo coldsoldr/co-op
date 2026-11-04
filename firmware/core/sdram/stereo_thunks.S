@@ -31,8 +31,19 @@ _coop_synth_render_thunk:
     R1 = [SP++];
     R0 = [SP++];
     P2 = [SP++];
+    [--SP] = P2;                     /* the render names the engine for the cost line */
+    R3 = CYCLES;                     /* R3 is no argument and was already clobbered by the C call above */
+    [--SP] = R3;
     SP += -12;
     CALL (P2);
+    R1 = CYCLES;
+    SP += 12;
+    R3 = [SP++];
+    R1 = R1 - R3;                    /* the render's cycles, interrupts included */
+    R0 = [SP++];
+    R2 = 0;
+    SP += -12;
+    CALL _coop_eng_cost;             /* (render, cycles, 0 = synth) */
     R0 = R7;
     CALL _coop_synth_voice_hook;
     SP += 12;
@@ -60,12 +71,22 @@ _coop_drum_render_thunk:
     R1 = [SP++];
     R0 = [SP++];
     P0 = [SP++];
+    [--SP] = P0;                     /* the render names the engine for the cost line */
+    R3 = CYCLES;
+    [--SP] = R3;
     SP += -12;
     CALL (P0);
+    R1 = CYCLES;
     SP += 12;
-    [--SP] = R0;
+    R3 = [SP++];
+    R1 = R1 - R3;
+    P0 = [SP++];
+    [--SP] = R0;                     /* the render's result, which the stock caller tests */
     SP += -12;
-    R1 = R0;                         /* active: the stock sums the voice only when the render returned nonzero */
+    R0 = P0;
+    R2 = 1;
+    CALL _coop_eng_cost;             /* (render, cycles, 1 = drum) */
+    R1 = [SP+12];                    /* active: the stock sums the voice only when the render returned nonzero */
     R0 = R7;
     CALL _coop_drum_voice_hook;
     SP += 12;

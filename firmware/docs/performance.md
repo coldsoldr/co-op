@@ -591,3 +591,45 @@ samples) and measured:
 Correction (2026-11-04): the T4f device test already measured the six-voice DSynth chord at 65-67 % of the block
 (the stock engine about 57 %, coop 8.6 %). There is no "base cost" regression since T4: the engine itself is the
 cost, which is why its loops are the lever.
+
+## Per-engine cost and the engine scan (p5a, 2026-11-04)
+
+**Measurement.** The synth and drum render thunks (`stereo_thunks.S`) read CYCLES around every stock voice render and
+hand (render function, cycles) to `coop_eng_cost` (`coop_stats.cc`). The stats file gains an `engines` line:
+`synth=` and `drum=` are the cycles of all voice renders in a block (one entry per block with a voice), then one
+entry per engine, per voice render, named from the render function (`fm`, `digital`, `drwave`, `string`, `cluster`,
+`pulse`, `sampler`, `phase`, `ls`, `dna`, `dsynth`, `voltage`, `drumsampler`; any other prints as `r_<address>`).
+The render functions are vtable + 0x14 of each engine's voice class, read from the constructors the voice getters
+call (`../te-op1-cfw/docs/engine-interface.md` engine table); DrumSampler (vtable 0x0190FAC4 + 0x24) was found in
+op1emu (`det_drum`). The cost index of the first engine heard is 15 (`tests/sim/ab_switch.sh SWITCH SCENARIO 15`),
+the block sums are 13 (synth) and 14 (drum). The window ring keeps 24 windows (two minutes, was 12) and the
+heaviest-windows lines come first, so the 8 KiB tape tail keeps them; the whole text (up to 16 KiB) is in the
+yaffs file, read over SysEx.
+
+op1emu, six-voice DSynth (`det_dsynth6`): **26.0 k emulator cycles per DSynth voice render with the stock voice loop,
+18.6 k with `g_coop_fast_dsynth`** (342 renders each). The instrumentation costs about 30 cycles a block
+(`tests/sim/ab_images.sh`, p4b against the p5a measurement image on `det_drum` and `det_dsynth6_cwo`: equal
+levels second by second, 0.00 % and 0.14 %).
+
+**Scan** (`loopscan.py` over the stock disassembly: every hardware loop and backward branch in each render and its
+callees, the CALLs and frame accesses inside them). Only two engine loops make calls per sample: DSynth's voice
+loop (already rewritten) and `ls` (`0x019D33A0`, an internal single-instance engine: `CALL (P1)` in two LC1 loops,
+nine calls in a software loop). Everything else is compiled hardware loops without calls; the big per-sample
+bodies are:
+
+| Engine / effect | Hot loop | Packets per pass | Frame accesses | Notes |
+|---|---|---|---|---|
+| voltage | `0x01A49CBA..0x01A49ED0` (128 / render) | ~105 | 24 | six sine lookups, each through a P register loaded from a data register just before the load (DAG stalls on the device) |
+| dna | `0x019B4A68..0x019B4C36` (LC1) | 146 instr | 20 | |
+| string | `0x01A4F1E0..0x01A4F322` (LC1) | 102 instr | 11 | |
+| fm | 36 small loops (one per operator / algorithm) | 12-18 | 0-3 | lean already; its cost was the sine table (T4c) |
+| punch (mono, x2) | outer `0x019E6376..0x019E65A6` x64, inner `0x019E64CA..0x019E6520` x (param >> 10) - 1 | ~22 per stage | 0 in the inner loop | a serial chain of waveshaper stages per sample: interpolated sine lookup, a 32 x 32 multiply, history read / write |
+| grid (stereo) | `0x019AF932..0x019AFCC8` x64 | 353 instr | **88** | state through the frame every sample |
+| phone (mono, x2) | LC1 `0x01A1BCB0..0x01A1BF34` with four inner loops | 219 instr | 21 | |
+| nitro (mono, x2) | two LC1 loops, 128 + 97 instr | | 7 / 2 | |
+| filter (mono, x2) | LC1 `0x019E7C5C..0x019E7E86` | 150 instr | 11 | |
+| delay (stereo) | LC1 `0x0197DD4A..0x0197DF7A` | 160 instr | 15 | |
+
+So there is no further call-heavy outlier: the remaining gains are scheduling (state in registers, parallel loads,
+the two channels of a dual-mono effect interleaved so one hides the other's stalls). The device ranking comes from
+the p5a stats file's `engines` line.
