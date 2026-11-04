@@ -584,7 +584,7 @@ cwo 322 k a block (p3m 448 k), one cwo 305 k (p3m about 394 k); the chord alone 
 Not yet rewritten (same as before within run-to-run spread): punch 78 k, phone 49 k, spring 47 k, nitro 46 k, grid
 36 k, delay 29 k. [C]
 
-## Performance 5d (p5d): the spring crash fixed (second try) — device test (pending, 2026-11-04)
+## Performance 5d (p5d): the spring crash fixed (second try) — device test (PASS, 2026-11-04)
 
 p5c crashed exactly as p5b did (below). p5d takes the P-register stores out of spring's two accumulator-shift
 packets.
@@ -611,7 +611,36 @@ Risk left: the other seven p5a rewrites have never run on the device (the test a
 some slot combinations the stock never does, all with D registers (none is a P store); two of those kinds already
 run in the p4b cwo rewrite. A crash photo's RETX names the packet, as it did here.
 
-Result: pending.
+**Result (owner, 2026-11-04): PASS, stable, no crash.** The automatic test ran to the end (`state 3`, 1,554 events,
+15 sections, none lost), the sequencer stayed off. No recording came back (three text files only; the interface
+question is open). Files: `docs/device-stats/p5d_2026-11-04_{run,stats,stats_after}.txt`.
+
+Device costs per call (cycles of the 580,499 block) against the stock figures measured on the device in p3m (six-voice
+DSynth, `docs/performance.md`) and the op1emu saving:
+
+| | device p5d | device stock (p3m) | device change | op1emu change |
+|---|---|---|---|---|
+| punch | 71.5 k | 77 k | -7 % | -26 % |
+| phone | 30.2 k | 43 k | -30 % | -51 % |
+| nitro | 44.8 k | 44 k | 0 % | -18 % |
+| grid | 28.8 k | 32 k | -10 % | -42 % |
+| spring | 38.8 k | 45 k | -14 % | -51 % |
+| delay | 23.2 k | 24 k | -3 % | -34 % |
+| cwo (p4b) | 62 k | 92 k | -33 % | -48 % |
+| S3 stage (p4b) | 11.3 k | 15 k | -25 % | |
+
+The p3m figures were not taken under the same knob settings (punch's cost grows with its stage count), so the rows
+are rough; a p5d safe run of the same script gives the exact stock figures. Engines per voice render on the device:
+dsynth 22.9 k, drwave 16.0 k, digital 10.2 k, fm 10.0 k, sampler 9.8 k, phase 7.5 k (op1emu: 18.6, 9.6, 7.1, 5.9,
+6.9, 5.8 k).
+
+What the file also shows:
+- The owner's sound slots are not all factory: s2 is FM (the Voltage section played fm), s3 the sampler. The Voltage
+  rewrite has therefore not run on the device yet.
+- Instrument FX 2 is on (`s2_instr` 36 k per block in every section): about 6 % of the block on top of everything.
+- Three blocks of about 2.04 M cycles (3.5 blocks long, an audible dropout) in the heaviest windows, two of them in
+  the run (the Voltage and drwave sections, both right after a sound-slot change) and one before it. To investigate.
+- Callback per block, six-voice DSynth with no effect: 320 k average, 438 k peak (55 % / 75 %, FX 2 included).
 
 ## Performance 5c (p5c): p5b with the spring crash fixed — device test (FAIL, 2026-11-04)
 

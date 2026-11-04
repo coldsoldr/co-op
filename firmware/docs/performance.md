@@ -939,3 +939,18 @@ before the Phase rewrite): s5 dsynth 18,616 (its voice loop already rewritten), 
 Not done, in order of expected value: DSynth's remaining loops (its oscillator loop stays stock, step 3), pulse (its
 render is L1 code: a patch there goes through the decrypted L1 image), drwave, the dual-mono zero-side shortcut
 (waits for the spread decision), filter (not reachable from the stock FX list).
+
+## p5d on the device: what the rewrites save there (2026-11-04) [C device]
+
+The first device run of the p5a rewrites (the test runner's `run_p5a.txt`, `docs/device-stats/p5d_2026-11-04_*`;
+table in `docs/device-tests.md`, Performance 5d). Against the stock figures of p3m: phone -30 %, cwo -33 % (p4b),
+the S3 stage -25 %, spring -14 %, grid -10 %, punch -7 %, delay -3 %, nitro 0 %. op1emu promised -18 to -51 %. The
+effects that move most data through SDRAM delay lines (spring, grid, delay) cost 2-2.8 times their op1emu figure on
+the device, the engines 1.2-1.7 times: on the device these loops wait for memory, and fewer instructions buy little.
+Lessons for the next rewrites:
+- Measure the stock figure under the same script on the device first (the p5d safe package), then judge a rewrite by
+  the device figure only; op1emu's instruction count is not the device's cost for memory-bound loops.
+- For memory-bound effects the gain is in the access pattern (fewer SDRAM touches per sample, data in L1), not in
+  the arithmetic.
+- New lead: blocks of ~2.04 M cycles (3.5 blocks, an audible dropout) right after a sound-slot change, twice in the
+  run and once before it. Find what runs in the audio callback then.
