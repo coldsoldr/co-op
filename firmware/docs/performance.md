@@ -561,4 +561,16 @@ samples) and measured:
    callback moves a key event by one block later in the run, as tape scenarios showed before). [C in op1emu, the
    device figure pending]
 2. coop's S3 stage in assembly, its buffers in L1.
-3. cwo's loop. 4. The other effects by cost (punch next). 5. The base cost left (cache pressure from coop code).
+3. **cwo's stereo loop** (`coop_cwo_loop`, core/sdram/cwo_fast.S; switch `g_coop_fast_cwo`, 1 by default). The
+   stereo render `0x019450FC` jumps at `0x019457D2` into the rewrite of its loop `0x019457D6..0x01945AC6` and comes
+   back at `0x01945AC8`; its four `__cxa_vec_ctor` CALLs (`0x0194569A/6B6/6DC/6EE`, a zero halfword through a
+   function pointer 256 times per block) call `coop_cwo_vec_ctor`, which returns at once: `0x019446E0` writes all 64
+   entries of each array before anything reads them. The six helpers per sample are inlined with the stock's
+   arithmetic, the allpass stages unrolled so their state accesses ride in the parallel slots. op1emu, stock cwo at
+   the synth with a chord (`det_fx_stock_cwo.txt`): 54.8 k -> 28.5 k emulator cycles per call (-48 %). op1emu counts
+   one cycle per issued packet, so this is the instruction count; the device adds stalls and cache misses (stock
+   92 k). The samples are identical to a stock run in the same emulator state (op1emu's two-state run-to-run
+   variation splits two stock runs from the chord on, too), also with the fast-moving-delay branch and the
+   read-before-start branch forced on both sides (test-only byte patches) and with all four cwo knobs turned during
+   the chord. [C in op1emu, the device figure pending]
+4. The other effects by cost (punch next). 5. The base cost left (cache pressure from coop code).

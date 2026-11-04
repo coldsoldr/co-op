@@ -166,6 +166,14 @@ def jump_l(address, target):
     return struct.pack('<HH', 0xE200 | ((off >> 16) & 0xFF), off & 0xFFFF)
 
 
+def call_l(address, target):
+    """CALL pcrel24 (0xE300 | offset[23:16], offset[15:0], offset = (target - address) / 2)."""
+    off = (target - address) >> 1
+    if not -(1 << 23) <= off < (1 << 23) or (target - address) & 1:
+        raise SystemExit('CALL {:#x} -> {:#x} out of range'.format(address, target))
+    return struct.pack('<HH', 0xE300 | ((off >> 16) & 0xFF), off & 0xFFFF)
+
+
 def jump_s(address, target):
     """JUMP.S pcrel12 (0x2000 | imm12, imm = (target - address) / 2)."""
     off = (target - address) >> 1
@@ -205,6 +213,16 @@ TANK_SITES = [
 # through 0x0197E956, where `P1 = FP; P1 += -0xa` becomes the JUMP.L.
 DSYNTH_LOOP_SITE = 0x0197e956
 DSYNTH_LOOP_STOCK = bytes.fromhex('4f32' 'b16f')
+
+# Performance (2026-11-04): the stock cwo stereo render (0x019450FC) loop 0x019457D6..0x01945AC6 (six helper CALLs per
+# sample) becomes coop_cwo_loop (cwo_fast.S, the helpers inlined). The only way into the loop is 0x019457D2,
+# `R2 = 0x40 (X)`, which becomes the JUMP.L (coop_cwo_loop_near executes it when g_coop_fast_cwo = 0). The four
+# __cxa_vec_ctor CALLs (0x01AA3862) zeroing the stack arrays that 0x019446E0 then fills whole call coop_cwo_vec_ctor,
+# which returns at once while the switch is on.
+CWO_LOOP_SITE = 0x019457d2
+CWO_LOOP_STOCK = bytes.fromhex('22e14000')
+CWO_VEC_CTOR_SITES = [(0x0194569a, bytes.fromhex('0ae3e4f0')), (0x019456b6, bytes.fromhex('0ae3d6f0')),
+                      (0x019456dc, bytes.fromhex('0ae3c3f0')), (0x019456ee, bytes.fromhex('0ae3baf0'))]
 
 
 def tank_patches(thunks):
@@ -414,6 +432,11 @@ def thunk_addresses(elf):
         tanks['dsynth_loop'] = symbol_address(syms, 'coop_dsynth_voice_loop')[0]
     except Exception:
         pass
+    try:                                               # performance: the cwo stereo loop
+        tanks['cwo_loop'] = symbol_address(syms, 'coop_cwo_loop_near')[0]
+        tanks['cwo_vec_ctor'] = symbol_address(syms, 'coop_cwo_vec_ctor')[0]
+    except Exception:
+        pass
     try:                                               # the voice hook can stand in for the stock voice sum
         tanks['voice_sum'] = symbol_address(syms, 'g_coop_voice_sum_own')[0]
     except Exception:
@@ -460,6 +483,9 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
         patches += tank_patches(thunks)
     if thunks.get('dsynth_loop'):
         patches.append((DSYNTH_LOOP_SITE, DSYNTH_LOOP_STOCK, jump_l(DSYNTH_LOOP_SITE, thunks['dsynth_loop'])))
+    if thunks.get('cwo_loop'):
+        patches.append((CWO_LOOP_SITE, CWO_LOOP_STOCK, jump_l(CWO_LOOP_SITE, thunks['cwo_loop'])))
+        patches += [(site, stock, call_l(site, thunks['cwo_vec_ctor'])) for site, stock in CWO_VEC_CTOR_SITES]
     if tape:
         patches += tape_patches(tramps)
     for address, stock, new in patches:
