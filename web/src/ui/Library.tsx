@@ -20,6 +20,9 @@ import { installedNames } from '../core/plugins/requirements';
 import { playPcm } from './audio';
 import { AuditionTest } from './AuditionTest';
 import { BackupPanel, type BackupControls } from './BackupPanel';
+import { BulkTools } from './BulkTools';
+import { CopyFromDrive } from './CopyFromDrive';
+import { drivePlace } from './places';
 import { ConfirmDialog } from './Dialog';
 import { saveBlob, zipBlob } from './download';
 import { compatView, dateStamp, folderOf, formatSize, kindMismatchText, rootOf, soundLine } from './format';
@@ -372,11 +375,16 @@ function Connected({
       ? place
       : null;
   // A local folder gone after a refresh or change of folder falls back to the drive.
-  const localFolder = localPlace !== null && local.patches.some((p) => inFolder(p, localPlace)) ? localPlace : null;
+  const localFolder =
+    localPlace !== null && local.folder !== null && (localPlace === '' || local.folders.includes(localPlace) || local.patches.some((p) => inFolder(p, localPlace)))
+      ? localPlace
+      : null;
   const inView = folder === null ? device.rows : device.rows.filter((r) => folderOf(r) === folder);
   const where = folder === null ? `on ${source.store.label || 'the drive'}` : `in ${folder}`;
   const shown = filterRows(inView, query);
   const selectedPaths = device.rows.filter((r) => selected.has(r.path)).map((r) => r.path);
+  const tickedPaths = shown.filter((r) => selected.has(r.path)).map((r) => r.path);
+  const drive = drivePlace(device);
   const allShownSelected = shown.length > 0 && shown.every((r) => selected.has(r.path));
   const pendingPaths = staged ? [...new Set(staged.changes().map((c) => c.path))] : [];
 
@@ -567,6 +575,18 @@ function Connected({
           {!device.loading && inView.length === 0 && (
             <p className="empty">{folder ? 'No patches in this folder yet.' : 'No patches found in the synth and drum folders.'}</p>
           )}
+
+          <BulkTools
+            place={drive}
+            selected={tickedPaths}
+            onClear={() => setSelected(new Set())}
+            onDone={() => {
+              setSelected(new Set());
+              stopRef.current?.();
+            }}
+          >
+            {local.supported && <CopyFromDrive device={device} local={local} place={drive} paths={tickedPaths} />}
+          </BulkTools>
 
           {inView.length > 0 && (
             <>
@@ -780,7 +800,7 @@ const Row = memo(function Row({
           run={run}
           staged={staged}
           busy={busy}
-          onUpload={onUpload}
+          onUpload={() => onUpload(row)}
           uploadUnavailable={uploadUnavailable}
           uploadNoteId={uploadNoteId}
         />

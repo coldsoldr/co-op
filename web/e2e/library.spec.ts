@@ -118,9 +118,9 @@ test('writes to a connected drive and recovers an interrupted write', async ({ p
 
   const synth = page.locator('tr[data-path="synth/user/cluster.aif"]');
   await synth.getByRole('button', { name: 'More actions for cluster.aif' }).click();
-  await synth.getByRole('button', { name: 'Rename file cluster.aif' }).click();
+  await synth.getByRole('button', { name: 'Rename cluster.aif' }).click();
   const dialog = page.getByRole('dialog', { name: 'Rename cluster.aif' });
-  await dialog.getByLabel('New file name').fill('pad.aif');
+  await dialog.getByLabel('New name (for the patch and its file)').fill('pad');
   await dialog.getByRole('button', { name: 'Rename' }).click();
   await expect(page.locator('tr[data-path="synth/user/pad.aif"]')).toBeVisible();
 
@@ -268,9 +268,9 @@ test('shows an operation error inline in the row', async ({ page }) => {
   const synth = page.locator('tr[data-path="synth/user/cluster.aif"]');
   await expect(synth.locator('.badge')).toHaveText('ok');
   await synth.getByRole('button', { name: 'More actions for cluster.aif' }).click();
-  await synth.getByRole('button', { name: 'Rename file cluster.aif' }).click();
+  await synth.getByRole('button', { name: 'Rename cluster.aif' }).click();
   const dialog = page.getByRole('dialog', { name: 'Rename cluster.aif' });
-  await dialog.getByLabel('New file name').fill('cluster.wav');
+  await dialog.getByLabel('New name (for the patch and its file)').fill('bad/name');
   await dialog.getByRole('button', { name: 'Rename' }).click();
-  await expect(synth.getByRole('alert')).toContainText('must end in .aif or .aiff');
+  await expect(synth.getByRole('alert')).toContainText('contains a character the OP-1 drive cannot hold');
 });

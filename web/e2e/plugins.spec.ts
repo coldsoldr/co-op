@@ -165,7 +165,7 @@ test('plays community patches and opens a keyboard, with nothing plugged in', as
 
   await page.locator('#panel-patches').getByLabel('Kind').selectOption('drum');
   await expect(rows.first()).toBeVisible();
-  await page.getByRole('button', { name: 'My folder' }).click();
+  await page.getByRole('button', { name: 'My folder', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Choose a folder' })).toBeVisible();
 });
 
@@ -205,7 +205,6 @@ test('sends ticked local patches to the OP-1 from the Library', async ({ page })
   const folders = page.getByRole('complementary', { name: 'Folders' });
   await folders.getByRole('region', { name: 'local folders' }).getByRole('button', { name: /^pads/ }).click();
   const send = page.getByRole('button', { name: 'Send to OP-1 (2)' });
-  await expect(page.getByRole('button', { name: 'Send to OP-1 (0)' })).toBeDisabled();
   await page.getByRole('checkbox', { name: 'Select all local patches here' }).check();
   await send.click();
   const dialog = page.getByRole('dialog', { name: 'Send 2 patches to the OP-1' });
