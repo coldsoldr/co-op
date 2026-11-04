@@ -201,7 +201,9 @@ static void dbg_drum_probe(int16_t gain)
  * out * gain << 1 (S); each added with saturation). */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_voice_sum_own = 1; }
 /* performance: the rewritten stock DSynth voice loop (stereo_thunks.S); 0 runs the stock loop (A/B, kill switch) */
-extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_dsynth = 1; }   /* marker for the package tool */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_dsynth = 1; }
+/* performance step 3: the rewritten DSynth oscillator loop (perf_dsynth.S); 0 runs the stock loop */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_dsynth_osc = 1; }   /* marker for the package tool */
 static void voice_sum_stock(int is_drum, int16_t gain)
 {
     int16_t *bus = MONO_BUS64;

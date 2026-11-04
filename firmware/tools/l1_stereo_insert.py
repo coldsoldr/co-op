@@ -205,6 +205,10 @@ TANK_SITES = [
 # through 0x0197E956, where `P1 = FP; P1 += -0xa` becomes the JUMP.L.
 DSYNTH_LOOP_SITE = 0x0197e956
 DSYNTH_LOOP_STOCK = bytes.fromhex('4f32' 'b16f')
+# Performance step 3: DSynth's oscillator loop (0x0197E736..0x0197E84C): its LSETUP at 0x0197E732, the only way in,
+# becomes a JUMP.L to coop_dsynth_osc_loop (perf_dsynth.S), which returns to 0x0197E850.
+DSYNTH_OSC_SITE = 0x0197e732
+DSYNTH_OSC_STOCK = bytes.fromhex('a2e08b10')
 
 
 def tank_patches(thunks):
@@ -412,6 +416,7 @@ def thunk_addresses(elf):
         tanks = {}
     try:                                               # performance: the DSynth voice loop
         tanks['dsynth_loop'] = symbol_address(syms, 'coop_dsynth_voice_loop')[0]
+        tanks['dsynth_osc'] = symbol_address(syms, 'coop_dsynth_osc_loop')[0]
     except Exception:
         pass
     try:                                               # the voice hook can stand in for the stock voice sum
@@ -460,6 +465,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
         patches += tank_patches(thunks)
     if thunks.get('dsynth_loop'):
         patches.append((DSYNTH_LOOP_SITE, DSYNTH_LOOP_STOCK, jump_l(DSYNTH_LOOP_SITE, thunks['dsynth_loop'])))
+    if thunks.get('dsynth_osc'):
+        patches.append((DSYNTH_OSC_SITE, DSYNTH_OSC_STOCK, jump_l(DSYNTH_OSC_SITE, thunks['dsynth_osc'])))
     if tape:
         patches += tape_patches(tramps)
     for address, stock, new in patches:

@@ -560,5 +560,21 @@ samples) and measured:
    cycles per block (-44.5 k, -19 % of the callback, about 7.4 k per voice); the samples identical (the faster
    callback moves a key event by one block later in the run, as tape scenarios showed before). [C in op1emu, the
    device figure pending]
-2. coop's S3 stage in assembly, its buffers in L1.
-3. cwo's loop. 4. The other effects by cost (punch next). 5. The base cost left (cache pressure from coop code).
+2. **coop's S3 stage in assembly** (`coop_stage.S`; switch `g_coop_fast_stage`): the decimator with its rings
+   circular for the whole block, the pair clear, both DC blockers and the mid / side split in one loop. Bit-exact
+   with the C path (`tests/sim/kern_check.cc`, 3000 random blocks, state carried on); op1emu 11,571 -> 6,697 emulator
+   cycles per block (-42 %), audio identical over a 50 s six-voice run. [C in the simulator and op1emu]
+3. **DSynth's oscillator loop** (`perf_dsynth.S`, patch at `0x0197E732`; switch `g_coop_fast_dsynth_osc`): the
+   loop-invariant gain G = sat(C40 + sat(K3 << 2) * C3c2) and H1 = C1c * G hoisted, constants and the loop-carried
+   words in a 32-byte block on the stack. Small: 179.7 k -> 177.5 k emulator cycles per block with six voices
+   (-1.2 %); the three 32 x 32 products (six instructions each, kept exactly) dominate the loop. Exact: after the
+   attack the run equals the stock one shifted by one block (the faster callback moves the key events) with a
+   residual at the emulator's run-to-run noise (0.35 per sample); an arithmetic error would compound through the
+   phase and both filters. The device may gain a little more (load-use stalls the emulator does not model). [C in
+   op1emu, the device figure pending]
+4. cwo's loop (in progress). 5. The other effects by cost: punch, phone, nitro, spring, grid and delay are already
+   compiled hardware loops without per-sample calls; a rewrite gains less there.
+
+Correction (2026-11-04): the T4f device test already measured the six-voice DSynth chord at 65-67 % of the block
+(the stock engine about 57 %, coop 8.6 %). There is no "base cost" regression since T4: the engine itself is the
+cost, which is why its loops are the lever.
