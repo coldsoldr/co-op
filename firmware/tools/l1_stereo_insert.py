@@ -224,6 +224,13 @@ CWO_LOOP_STOCK = bytes.fromhex('22e14000')
 CWO_VEC_CTOR_SITES = [(0x0194569a, bytes.fromhex('0ae3e4f0')), (0x019456b6, bytes.fromhex('0ae3d6f0')),
                       (0x019456dc, bytes.fromhex('0ae3c3f0')), (0x019456ee, bytes.fromhex('0ae3baf0'))]
 
+# Performance (2026-11-04): the stock punch stereo render (0x019E662C, dual-mono: two CALLs of the mono render
+# 0x019E6260) becomes coop_punch_render_st (punch_fast.S, both channels in one pass). Its only way in is the stereo
+# class vtable's render entry (0x01910C3C + 0x14; no CALL or jump in the image targets 0x019E662C), which is pointed
+# at coop; with g_coop_fast_punch = 0 coop jumps to the untouched stock render.
+PUNCH_ST_RENDER_ENTRY = 0x01910c50
+PUNCH_ST_RENDER = 0x019e662c
+
 
 def tank_patches(thunks):
     return [(site, stock, jump_l(site, thunks[name]) + bytes.fromhex('00000000')) for site, stock, name in TANK_SITES]
@@ -437,6 +444,10 @@ def thunk_addresses(elf):
         tanks['cwo_vec_ctor'] = symbol_address(syms, 'coop_cwo_vec_ctor')[0]
     except Exception:
         pass
+    try:                                               # performance: the punch stereo render
+        tanks['punch_st'] = symbol_address(syms, 'coop_punch_render_st')[0]
+    except Exception:
+        pass
     try:                                               # the voice hook can stand in for the stock voice sum
         tanks['voice_sum'] = symbol_address(syms, 'g_coop_voice_sum_own')[0]
     except Exception:
@@ -486,6 +497,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     if thunks.get('cwo_loop'):
         patches.append((CWO_LOOP_SITE, CWO_LOOP_STOCK, jump_l(CWO_LOOP_SITE, thunks['cwo_loop'])))
         patches += [(site, stock, call_l(site, thunks['cwo_vec_ctor'])) for site, stock in CWO_VEC_CTOR_SITES]
+    if thunks.get('punch_st'):
+        patches.append((PUNCH_ST_RENDER_ENTRY, struct.pack('<I', PUNCH_ST_RENDER), struct.pack('<I', thunks['punch_st'])))
     if tape:
         patches += tape_patches(tramps)
     for address, stock, new in patches:

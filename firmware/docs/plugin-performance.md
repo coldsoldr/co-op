@@ -79,3 +79,9 @@ performance.
 - Code that must JUMP.L back into stock code goes in the `.near` region-C window (0x01E00400-0x01E01000, coop_cb.ld);
   region A is out of pcrel24 reach. Longer code goes in region A behind a `.near` stub (cwo does this).
 - Keep the stock path reachable behind the switch (for a loop entered by LSETUP, set LT0 / LB0 / LC0 by hand).
+- A whole function reached only through a vtable needs no region-C stub: point the vtable entry at the rewrite (a
+  data patch, any address) and jump to the untouched stock function for the switch-off and unusual cases (punch).
+- When an A/B is not identical, run the stock image two or three times: op1emu's variation gives several stock
+  outcomes, and the rewrite is right only if it matches one of them sample for sample. The level check is not
+  enough: it weighs loud seconds, and punch's first version (a shift pair that kept extra bits) passed it while 1-2
+  LSB of DC off in every quiet second. Work every bit-field trick through bit by bit.
