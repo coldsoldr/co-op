@@ -577,4 +577,9 @@ op1emu, six voices: DSynth alone 238 k -> 189 k emulator cycles per block (-21 %
 instrument FX 2; cwo on the master. Listen for any change in DSynth's or cwo's sound against p3a / stock (there
 should be none), turn cwo's knobs while it plays, feel the UI. Copy `coop_stats.txt`.
 
-Result: _not yet flashed_.
+Result (2026-11-04, the owner, `coop_stats (7).txt`): **the UI feels much better; everything sounds as
+normal.** Cost line (cycles per call, device): cwo at the synth 60.5 k (p3m 92.3 k, -34 %), cwo in FX 2 62.0 k
+(92.5 k, -33 %), S3 stage 10.3 k (15.2 k, -32 %), master stand-in idle 1.8 k. Windows with a six-voice chord: FX 2 =
+cwo 322 k a block (p3m 448 k), one cwo 305 k (p3m about 394 k); the chord alone about 245 k (42 %) by subtraction.
+Not yet rewritten (same as before within run-to-run spread): punch 78 k, phone 49 k, spring 47 k, nitro 46 k, grid
+36 k, delay 29 k. [C]

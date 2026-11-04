@@ -146,3 +146,8 @@ slot 1, with the four knob words in the filter ranges and `params[4] = 0x5300 + 
     touches outside L1; stock effect inits off the audio thread (grid's takes 1.65 M cycles); every plugin call
     timed, a measured budget per plugin, and a plugin over it switched off.
   - Neither has a stereo voice path or 32-bit working values; coop keeps those.
+
+## Performance rules for plugins
+
+Every plugin follows `docs/plugin-performance.md` (the SDK guide: the block budget, the per-sample loop rules, how a
+plugin is measured with the stats file's cost line). A plugin over 60 k cycles a block is a bug to fix before release.
