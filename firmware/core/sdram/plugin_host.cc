@@ -385,7 +385,16 @@ static uint32_t tank_alloc(uint32_t size, uint32_t rem8)                  /* mai
     return a;
 }
 
-static void tanks_boot(void) { if (!g_tank_spring_own[0]) g_tank_spring_own[0] = tank_alloc(SPRING_TANK, 2); }
+#ifdef COOP_SPRING_CHECK
+static uint32_t g_spring_shadow_tank;                                     /* the lockstep check's tank (below) */
+#endif
+static void tanks_boot(void)
+{
+    if (!g_tank_spring_own[0]) g_tank_spring_own[0] = tank_alloc(SPRING_TANK, 2);
+#ifdef COOP_SPRING_CHECK
+    if (!g_spring_shadow_tank) g_spring_shadow_tank = tank_alloc(SPRING_TANK, 2);
+#endif
+}
 
 static void tank_bind(int i, void *obj, int t)
 {
@@ -476,6 +485,46 @@ static void nitro_check(uint8_t *obj, int16_t *io, const int16_t *params)
 }
 #endif
 
+#ifdef COOP_SPRING_CHECK
+/* Test builds only (EXTRA_CXXFLAGS=-DCOOP_SPRING_CHECK): spring_fast.S in lockstep with the stock loop. The stock render
+ * runs first with g_coop_fast_spring = 0 on a copy of the object (the 0x64 bytes the render touches), of the I/O blocks
+ * and of the object's tank (the shadow tank: the shadow object is in no map entry, so the tank lookup gives the map's
+ * default word, pointed at the shadow tank for that call), then for real with 1; any difference in the object, the
+ * output or the whole tank counts in g_spring_check_bad. Both runs write the same value to W[0xFF801794].
+ * g_spring_hit_* count spring_fast.S's paths: calls, stock fallbacks, blocks cut into segments, pointer wraps. */
+extern "C" volatile uint32_t g_coop_fast_spring;
+extern "C" { volatile uint32_t g_spring_check_calls, g_spring_check_bad, g_spring_check_first, g_spring_check_tank_bad,
+                                g_spring_hit_calls, g_spring_hit_stock, g_spring_hit_split, g_spring_hit_wrap; }
+static uint32_t g_spring_shadow[0x68 / 4];
+static int16_t g_spring_l[64], g_spring_r[64];
+static void spring_check(void *obj, int16_t *l, int16_t *r, const int16_t *params, st_render_fn fn)
+{
+    volatile uint32_t *map = g_coop_tank_spring;
+    uint32_t tank = map[7];
+    for (int k = 0; k < 3; k++) if (map[2 * k] == (uint32_t)(uintptr_t)obj) tank = map[2 * k + 1];
+    uint32_t sh = g_spring_shadow_tank;
+    if (!sh) { fn(obj, l, r, params); return; }
+    for (uint32_t i = 0; i < SPRING_TANK; i += 2) *(volatile uint16_t *)(uintptr_t)(sh + i) = *(volatile uint16_t *)(uintptr_t)(tank + i);
+    const uint32_t *o = (const uint32_t *)obj;
+    for (int k = 0; k < 0x68 / 4; k++) g_spring_shadow[k] = o[k];
+    for (int k = 0; k < 64; k++) { g_spring_l[k] = l[k]; g_spring_r[k] = r[k]; }
+    uint32_t save = map[7];
+    map[7] = sh;
+    g_coop_fast_spring = 0;
+    fn(g_spring_shadow, g_spring_l, g_spring_r, params);
+    map[7] = save;
+    g_coop_fast_spring = 1;
+    fn(obj, l, r, params);
+    int bad = 0;
+    for (int k = 1; k < 0x64 / 4; k++) if (g_spring_shadow[k] != o[k]) bad = 1;
+    for (int k = 0; k < 64; k++) if (g_spring_l[k] != l[k] || g_spring_r[k] != r[k]) bad = 1;
+    for (uint32_t i = 0; i < SPRING_TANK; i += 2)
+        if (*(volatile uint16_t *)(uintptr_t)(sh + i) != *(volatile uint16_t *)(uintptr_t)(tank + i)) { bad = 1; g_spring_check_tank_bad++; break; }
+    g_spring_check_calls++;
+    if (bad) { if (!g_spring_check_bad) g_spring_check_first = g_spring_check_calls; g_spring_check_bad++; }
+}
+#endif
+
 static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
 {
     struct st_inst *s = &g_st[pos];
@@ -487,6 +536,9 @@ static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
     for (int k = 0; k < 8; k++) { master[k] = FX_SLOTS[8 + k]; FX_SLOTS[8 + k] = s->slots[k]; }
 #ifdef COOP_PHONE_CHECK
     if (t == 3) { phone_check((uint8_t *)s->obj + 4, l, params); phone_check((uint8_t *)s->obj + 0x90, r, params); } else
+#endif
+#ifdef COOP_SPRING_CHECK
+    if (t == 4) spring_check(s->obj, l, r, params, (st_render_fn)(uintptr_t)vt_entry(g_fx_class[t].st_vt, 0x14)); else
 #endif
 #ifdef COOP_NITRO_CHECK
     if (t == 6) { nitro_check((uint8_t *)s->obj + 4, l, params); nitro_check((uint8_t *)s->obj + 0x40, r, params); } else

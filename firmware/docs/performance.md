@@ -696,6 +696,45 @@ samples) and measured:
    build needed). Not exercised in op1emu: the shared-buffer fallback. The device figure is pending (stock 36 k; the
    loop's tank accesses are unchanged in number, so the cache misses that make up much of the device cost stay).
    [C in op1emu, the device figure pending]
+9. **spring's stereo loop** (`core/sdram/spring_fast.S`; switch `g_coop_fast_spring`, 1 by default). spring is native
+   stereo: the stereo render `0x01A32FFC` (LINK 0x40, seven registers: FP = SP + 0x5C) sets its coefficients and runs one
+   64-sample LC0 loop `0x01A3310E..0x01A33694` (its LSETUP at `0x01A3310A` has the end above the start, which objdump
+   prints as a negative offset and `loopscan.py` cannot parse), no branches, no calls. Per sample: four one-pole stages
+   with the stock 32 x 32 multiply (this[4], [8], [0x18], [0x28]), nine delay lines in the tank (T = [FP-0x10], coop's own
+   tank through `coop_tank_spring_render`; lengths 382..6898 samples, a fixed tap each, a one-pole state each), four
+   halfword feedback values (this[0x38..0x3e]), nine write indices (this[0x40..0x60]), the wet pair added to L / R in
+   place. The stock spends most of its 393 packets a sample on index bookkeeping: per line it reloads the index from the
+   object, forms both addresses with a compare for the tap's wrap, increments the index with a compare and stores it
+   (about 19 instructions a line), and passes temporaries through the frame. The rewrite keeps the 18 read / write
+   pointers as addresses in a frame of its own (LINK 0x80), loaded, post-incremented and stored in the parallel slots
+   (`W[P ++ P5]` with P5 = 2 for the high-half accesses), and cuts the block into segments in which no pointer reaches
+   its line's end (every line is longer than 64 samples, so a pointer wraps at most once a block: 1.8 segments a block
+   on average); the wraps, and the write-back of the indices, happen between segments. The signal arithmetic is the
+   stock's instruction for instruction (operands, order, modes); the products M(x, c) with x a 16-bit value << 16 lose
+   the stock's two zero terms (3 instructions, not 6); the stock's x << 16 shifts become the multiply writing the high
+   half. **162 packets a sample against 393.** Hoisted (nothing in the loop stores to them, as words or halves; checked
+   against every store of the loop: the object, the tank, I0 / I1, [FP-0xc], [SP+0x1c], [SP+0x20..0x23], [FP+0xc],
+   [FP+0x10]): c = R7, R2, R3.L, g4 = [FP-4].L, gb = [FP-0x14].L, g8 = [FP-8].L, gf = [FP+8].L, T. The code after the
+   loop reads P0 = this (the stock loads it inside the loop from [SP+0x24]) and the object; the rewrite sets P0. Entry:
+   the LSETUP becomes a JUMP.L to a 50-byte `.near` stub (switch off: LT0 / LB0 / LC0 by hand); the stock loop also runs
+   when L and R are the same buffer or an index is out of range (neither seen). The loop is entered in its third packet
+   on each segment (LT0 / LB0 / LC0 set by hand, then a jump into the body), so the previous sample's output stores and
+   pointer store that ride in its first packets are skipped on the first pass and done after the last.
+   op1emu, stock spring at the synth with a chord (`det_fx_stock_spring`, from 34 s): **27,807 -> 13,603 emulator cycles
+   per call (-51 %)**, the callback 73.5 k -> 59.3 k per block, **the samples identical over the whole run**. With all
+   four knobs turned during and after the chord (`det_fx_stock_spring_knobs`, from 41 s): 27,807 -> 13,597, the callback
+   147.7 k -> 133.5 k, levels equal second by second (largest difference 0.08 %), the samples differing from 0.52 s (at
+   boot, before spring is selected: op1emu's run-to-run variation; three stock runs differ from each other the same
+   way, max 47-83; the fast run against the ab_switch stock run: max 56). The proof is the lockstep build (`EXTRA_CXXFLAGS=-DCOOP_SPRING_CHECK`, `plugin_host.cc
+   spring_check`): the stock render runs on a shadow object, shadow I/O and a shadow tank (the shadow object is in no
+   tank-map entry, so the lookup returns the map's default word, pointed at the shadow tank for that call), then the
+   rewrite on the real ones; object, output and the whole tank compared: **0 differences in 7,288 (det_fx_stock_spring)
+   and 8,932 (knobs) calls**, every one through the rewrite, with 6,050 / 7,408 blocks cut into two segments or more and
+   6,076 / 7,444 pointer wraps spread over all 18 pointers. A first version lost line 9's write-pointer step at the end
+   of every segment (its store rides in the loop's first packet): the segments collapsed to one sample (the cost stayed
+   at 23 k) and the check failed every call. Region C `.near`: 0x2b8 bytes used; region A 0x99a bytes. Two pointer loads
+   still sit one packet before their use (DAG stalls on the device, not in op1emu). [C in op1emu, the device figure
+   pending]
 
 Correction (2026-11-04): the T4f device test already measured the six-voice DSynth chord at 65-67 % of the block
 (the stock engine about 57 %, coop 8.6 %). There is no "base cost" regression since T4: the engine itself is the

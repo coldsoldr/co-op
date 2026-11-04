@@ -214,6 +214,8 @@ extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_pun
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_nitro = 1; }
 /* performance: the rewritten stock grid stereo loop (grid_fast.S); 0 runs the stock loop (A/B, kill switch) */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_grid = 1; }
+/* performance: the rewritten stock spring stereo loop (spring_fast.S); 0 runs the stock loop (A/B, kill switch) */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_spring = 1; }
 static void voice_sum_stock(int is_drum, int16_t gain)
 {
     int16_t *bus = MONO_BUS64;
