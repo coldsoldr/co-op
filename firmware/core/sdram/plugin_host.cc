@@ -420,6 +420,35 @@ static void st_make(int pos, int t)
     g_fx_stock_ctor++;
 }
 
+#ifdef COOP_PHONE_CHECK
+/* Test builds only (EXTRA_CXXFLAGS=-DCOOP_PHONE_CHECK): phone_fast.S in lockstep with the stock loop. Each mono half
+ * runs first on a copy of its object and I/O block with g_coop_fast_phone = 0, then for real with 1; any difference in
+ * the object (0x8c bytes) or the output counts in g_phone_check_bad. The capture buffer is shared by both runs, which
+ * write the same values to it. */
+extern "C" volatile uint32_t g_coop_fast_phone;
+extern "C" { volatile uint32_t g_phone_check_calls, g_phone_check_bad, g_phone_check_first; }
+extern "C" { volatile uint32_t g_phone_hit_slow, g_phone_hit_end, g_phone_hit_swap, g_phone_hit_capa, g_phone_hit_rise,
+                                g_phone_hit_capb; }   /* phone_fast.S's rare paths */
+static uint32_t g_phone_shadow[0x90 / 4];
+static int16_t g_phone_buf[64];
+typedef void (*phone_mono_fn)(void *, int16_t *, const int16_t *);
+static void phone_check(uint8_t *obj, int16_t *io, const int16_t *params)
+{
+    const uint32_t *o = (const uint32_t *)obj;
+    for (int k = 0; k < 0x8c / 4; k++) g_phone_shadow[k] = o[k];
+    for (int k = 0; k < 64; k++) g_phone_buf[k] = io[k];
+    g_coop_fast_phone = 0;
+    ((phone_mono_fn)0x01A1BB74u)(g_phone_shadow, g_phone_buf, params);
+    g_coop_fast_phone = 1;
+    ((phone_mono_fn)0x01A1BB74u)(obj, io, params);
+    int bad = 0;
+    for (int k = 0; k < 0x8c / 4; k++) if (g_phone_shadow[k] != o[k]) bad = 1;
+    for (int k = 0; k < 64; k++) if (g_phone_buf[k] != io[k]) bad = 1;
+    g_phone_check_calls++;
+    if (bad) { if (!g_phone_check_bad) g_phone_check_first = g_phone_check_calls; g_phone_check_bad++; }
+}
+#endif
+
 static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
 {
     struct st_inst *s = &g_st[pos];
@@ -429,6 +458,9 @@ static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
     if (t == 0) LINE_TABLE[5] = (uint32_t)(uintptr_t)s->line;             /* the stereo delay reads its line from the table each render */
     uint32_t master[8];
     for (int k = 0; k < 8; k++) { master[k] = FX_SLOTS[8 + k]; FX_SLOTS[8 + k] = s->slots[k]; }
+#ifdef COOP_PHONE_CHECK
+    if (t == 3) { phone_check((uint8_t *)s->obj + 4, l, params); phone_check((uint8_t *)s->obj + 0x90, r, params); } else
+#endif
     ((st_render_fn)(uintptr_t)vt_entry(g_fx_class[t].st_vt, 0x14))(s->obj, l, r, params);
     for (int k = 0; k < 8; k++) s->slots[k] = FX_SLOTS[8 + k];
     if (pos == 0) for (int k = 0; k < 4; k++) FX_SLOTS[4 * (g_fx_pos & 1) + k] = s->slots[k];   /* slot 2 has no stock page */

@@ -224,6 +224,15 @@ CWO_LOOP_STOCK = bytes.fromhex('22e14000')
 CWO_VEC_CTOR_SITES = [(0x0194569a, bytes.fromhex('0ae3e4f0')), (0x019456b6, bytes.fromhex('0ae3d6f0')),
                       (0x019456dc, bytes.fromhex('0ae3c3f0')), (0x019456ee, bytes.fromhex('0ae3baf0'))]
 
+# Performance (2026-11-04): the stock phone mono render (0x01A1BB74, called twice by the stereo render 0x01A1C25C) output
+# loop 0x01A1BCB0..0x01A1BF34 becomes coop_phone_loop (phone_fast.S). The only way into the loop is its LSETUP at
+# 0x01A1BCAC, which becomes the JUMP.L (coop_phone_loop_near sets LT1 / LB1 / LC1 by hand when g_coop_fast_phone = 0).
+PHONE_LOOP_SITE = 0x01a1bcac
+PHONE_LOOP_STOCK = bytes.fromhex('b2e04421')
+# Its capture loop 0x01A1BC00..0x01A1BC58 the same way: the LSETUP at 0x01A1BBFC jumps to coop_phone_capture_near.
+PHONE_CAPTURE_SITE = 0x01a1bbfc
+PHONE_CAPTURE_STOCK = bytes.fromhex('a2e02e00')
+
 
 def tank_patches(thunks):
     return [(site, stock, jump_l(site, thunks[name]) + bytes.fromhex('00000000')) for site, stock, name in TANK_SITES]
@@ -437,6 +446,11 @@ def thunk_addresses(elf):
         tanks['cwo_vec_ctor'] = symbol_address(syms, 'coop_cwo_vec_ctor')[0]
     except Exception:
         pass
+    try:                                               # performance: the phone output loop
+        tanks['phone_loop'] = symbol_address(syms, 'coop_phone_loop_near')[0]
+        tanks['phone_capture'] = symbol_address(syms, 'coop_phone_capture_near')[0]
+    except Exception:
+        pass
     try:                                               # the voice hook can stand in for the stock voice sum
         tanks['voice_sum'] = symbol_address(syms, 'g_coop_voice_sum_own')[0]
     except Exception:
@@ -486,6 +500,9 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     if thunks.get('cwo_loop'):
         patches.append((CWO_LOOP_SITE, CWO_LOOP_STOCK, jump_l(CWO_LOOP_SITE, thunks['cwo_loop'])))
         patches += [(site, stock, call_l(site, thunks['cwo_vec_ctor'])) for site, stock in CWO_VEC_CTOR_SITES]
+    if thunks.get('phone_loop'):
+        patches.append((PHONE_LOOP_SITE, PHONE_LOOP_STOCK, jump_l(PHONE_LOOP_SITE, thunks['phone_loop'])))
+        patches.append((PHONE_CAPTURE_SITE, PHONE_CAPTURE_STOCK, jump_l(PHONE_CAPTURE_SITE, thunks['phone_capture'])))
     if tape:
         patches += tape_patches(tramps)
     for address, stock, new in patches:

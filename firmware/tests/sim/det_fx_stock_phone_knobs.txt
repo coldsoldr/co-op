@@ -1,0 +1,56 @@
+# The STOCK phone effect at the synth position (as det_fx_stock_phone; its FX page stays up: another T3 would switch
+# the effect off), all four phone knobs turned while a chord plays, so the coefficients, the rate, the gains and the buffer switching move mid-note
+# (performance: g_coop_fast_phone A/B). Guest-timed.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 32
+at 33000
+tap seq 200
+at 34000
+tap synth 200
+at 40000
+press c4
+press e4
+press g4
+at 40500
+turn enc1 cw 24
+at 41500
+turn enc2 ccw 24
+at 42500
+turn enc3 cw 24
+at 43500
+turn enc4 ccw 24
+at 44500
+turn enc1 ccw 40
+at 45500
+turn enc2 cw 40
+at 46500
+turn enc3 ccw 40
+at 47500
+turn enc4 cw 40
+at 48500
+release c4
+release e4
+release g4
+at 49000
+turn enc1 cw 30
+at 50000
+press d4
+press a4
+at 52000
+release d4
+release a4
+wait 52000
+screenshot /root/op1emu-work/sfk.ppm
+quit
