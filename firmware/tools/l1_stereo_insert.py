@@ -200,6 +200,13 @@ TANK_SITES = [
 ]
 
 
+# Performance (2026-11-04): the stock DSynth voice loop (0x0197E974..0x0197EA6A, four accessor CALLs per sample) becomes
+# coop_dsynth_voice_loop (stereo_thunks.S, the same arithmetic in a hardware loop). Every path into the loop goes
+# through 0x0197E956, where `P1 = FP; P1 += -0xa` becomes the JUMP.L.
+DSYNTH_LOOP_SITE = 0x0197e956
+DSYNTH_LOOP_STOCK = bytes.fromhex('4f32' 'b16f')
+
+
 def tank_patches(thunks):
     return [(site, stock, jump_l(site, thunks[name]) + bytes.fromhex('00000000')) for site, stock, name in TANK_SITES]
 
@@ -403,6 +410,10 @@ def thunk_addresses(elf):
             tanks[name] = symbol_address(syms, 'coop_' + name)[0]
     except Exception:
         tanks = {}
+    try:                                               # performance: the DSynth voice loop
+        tanks['dsynth_loop'] = symbol_address(syms, 'coop_dsynth_voice_loop')[0]
+    except Exception:
+        pass
     try:                                               # the voice hook can stand in for the stock voice sum
         tanks['voice_sum'] = symbol_address(syms, 'g_coop_voice_sum_own')[0]
     except Exception:
@@ -447,6 +458,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
             patches += voice_sum_patches()
     if thunks.get('tank_grid_render'):
         patches += tank_patches(thunks)
+    if thunks.get('dsynth_loop'):
+        patches.append((DSYNTH_LOOP_SITE, DSYNTH_LOOP_STOCK, jump_l(DSYNTH_LOOP_SITE, thunks['dsynth_loop'])))
     if tape:
         patches += tape_patches(tramps)
     for address, stock, new in patches:

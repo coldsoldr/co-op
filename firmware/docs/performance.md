@@ -543,3 +543,22 @@ ways of the 16 KB cache; 3-4% of the block at best, and the riskiest change in t
 written from the ISR in a documented sequence, untestable in the emulator, which has no cache). Everything else
 is the stock engine's arithmetic. The performance work stops here unless the owner wants the way-locking
 experiment.
+
+## The DSynth lag and the rewrite programme (2026-11-04)
+
+The owner on `p3a`: DSynth made the UI unbearably laggy, worst with cwo. The `p3m` cost line (device, six-voice
+DSynth chord, block budget 580,499): slot 1's stock effects in their stereo class cwo 92 k, punch 77 k, spring 45 k,
+phone 43 k, nitro 44 k, grid 32 k, delay 24 k per block; FX 2 the same again; coop's S3 stage 15 k; the six-voice
+chord with no effect about 350 k (T4: about 300 k). [C: `coop_stats (6).txt`]
+
+SilverTape beta 2 (a third-party R246 mod, analysed in `incoming/silvertape/`, nothing copied) replaces DSynth's
+per-voice output loop, a software loop with four accessor CALLs per sample. cwo's 64-sample loop has the same
+pattern with five CALLs per sample (not touched by SilverTape). Programme, each step A/B'd in op1emu (identical
+samples) and measured:
+1. **DSynth voice loop** (`coop_dsynth_voice_loop`, stereo_thunks.S; patch at `0x0197E956`; switch
+   `g_coop_fast_dsynth`, 1 by default). op1emu, six voices (`tests/sim/det_dsynth6.txt`): 229 k -> 185 k emulator
+   cycles per block (-44.5 k, -19 % of the callback, about 7.4 k per voice); the samples identical (the faster
+   callback moves a key event by one block later in the run, as tape scenarios showed before). [C in op1emu, the
+   device figure pending]
+2. coop's S3 stage in assembly, its buffers in L1.
+3. cwo's loop. 4. The other effects by cost (punch next). 5. The base cost left (cache pressure from coop code).
