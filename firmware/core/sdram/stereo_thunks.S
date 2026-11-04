@@ -41,6 +41,12 @@ _coop_synth_render_thunk:
     P1.L = _coop_voltage_check; P1.H = _coop_voltage_check;
     IF CC P2 = P1;
 #endif
+#ifdef COOP_PHASE_CHECK
+    P1.L = 0xbc5c; P1.H = 0x01a0;    /* test builds: the Phase render runs through the lockstep check */
+    CC = P2 == P1;
+    P1.L = _coop_phase_check; P1.H = _coop_phase_check;
+    IF CC P2 = P1;
+#endif
     CALL (P2);
     R1 = CYCLES;
     SP += 12;

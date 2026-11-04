@@ -250,6 +250,44 @@ extern "C" void coop_voltage_check(void *self, int16_t *out, const int16_t *para
     if (bad) { if (!g_voltage_check_bad) g_voltage_check_first = g_voltage_check_calls; g_voltage_check_bad++; }
 }
 #endif
+/* performance: the rewritten stock Phase voice loop (phase_fast.S); 0 runs the stock loop (A/B, kill switch) */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_phase = 1; }
+#ifdef COOP_PHASE_CHECK
+/* Test builds only (EXTRA_CXXFLAGS=-DCOOP_PHASE_CHECK): phase_fast.S in lockstep with the stock loop, per voice render
+ * (the synth render thunk sends the Phase render here). The stock render runs first with g_coop_fast_phase = 0 on a
+ * copy of the voice (28 bytes) and of the output block, then for real with 1; the render's global accumulator
+ * (0x01DE4B8C, added to after the loop) is put back between the runs. Any difference in the voice, the output or the
+ * accumulator counts in g_phase_check_bad. Both runs read the same pitch words (L1 0xFF801950). g_phase_hit_calls
+ * counts the rewrite's runs, g_phase_hit_wrap1 / g_phase_hit_wrap2 its out-of-line wrap paths (phase_fast.S);
+ * g_phase_check_flag0 counts renders that start with the flag 0 (part A only until ph1 wraps). */
+extern "C" { volatile uint32_t g_phase_check_calls, g_phase_check_bad, g_phase_check_first, g_phase_hit_calls,
+                               g_phase_hit_wrap1, g_phase_hit_wrap2, g_phase_check_flag0; }
+static uint32_t g_phase_shadow[0x1c / 4];
+static int16_t g_phase_out[128];
+typedef void (*phase_render_fn)(void *, int16_t *, const int16_t *);
+extern "C" void coop_phase_check(void *self, int16_t *out, const int16_t *params)
+{
+    const uint32_t *o = (const uint32_t *)self;
+    volatile uint32_t *acc = (volatile uint32_t *)0x01DE4B8Cu;
+    for (int k = 0; k < 0x1c / 4; k++) g_phase_shadow[k] = o[k];
+    if (!((const uint8_t *)self)[0x14]) g_phase_check_flag0++;
+    uint32_t acc0 = *acc;
+    uint32_t save = g_coop_fast_phase;
+    g_coop_fast_phase = 0;
+    ((phase_render_fn)0x01A0BC5Cu)(g_phase_shadow, g_phase_out, params);
+    uint32_t acc_stock = *acc;
+    *acc = acc0;
+    g_coop_fast_phase = 1;
+    uint32_t hits = g_phase_hit_calls;
+    ((phase_render_fn)0x01A0BC5Cu)(self, out, params);
+    g_coop_fast_phase = save;
+    int bad = g_phase_hit_calls != hits + 1 || *acc != acc_stock;
+    for (int k = 0; k < 0x1c / 4; k++) if (g_phase_shadow[k] != o[k]) bad = 1;
+    for (int k = 0; k < 128; k++) if (g_phase_out[k] != out[k]) bad = 1;
+    g_phase_check_calls++;
+    if (bad) { if (!g_phase_check_bad) g_phase_check_first = g_phase_check_calls; g_phase_check_bad++; }
+}
+#endif
 static void voice_sum_stock(int is_drum, int16_t gain)
 {
     int16_t *bus = MONO_BUS64;

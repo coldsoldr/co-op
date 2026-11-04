@@ -264,6 +264,13 @@ SPRING_LOOP_STOCK = bytes.fromhex('a2e0c532')
 VOLTAGE_LOOP_SITE = 0x01a49cb6
 VOLTAGE_LOOP_STOCK = bytes.fromhex('a2e00d11')
 
+# Performance (2026-11-04): the stock Phase voice render (0x01A0BC5C, Pd.cpp) loop 0x01A0BCE4..0x01A0BD5A with its
+# out-of-line part 0x01A0BD88..0x01A0BE80 (128 samples, 30 / 82 instructions each) becomes coop_phase_loop
+# (phase_fast.S), back at 0x01A0BD5C. The only way in is its LSETUP at 0x01A0BCE0, which becomes the JUMP.L
+# (coop_phase_loop_near sets LT0 / LB0 / LC0 by hand when g_coop_fast_phase = 0).
+PHASE_LOOP_SITE = 0x01a0bce0
+PHASE_LOOP_STOCK = bytes.fromhex('a2e03d40')
+
 
 def tank_patches(thunks):
     return [(site, stock, jump_l(site, thunks[name]) + bytes.fromhex('00000000')) for site, stock, name in TANK_SITES]
@@ -502,6 +509,10 @@ def thunk_addresses(elf):
         tanks['voltage_loop'] = symbol_address(syms, 'coop_voltage_loop_near')[0]
     except Exception:
         pass
+    try:                                              # performance: the Phase voice loop
+        tanks['phase_loop'] = symbol_address(syms, 'coop_phase_loop_near')[0]
+    except Exception:
+        pass
     try:                                               # the voice hook can stand in for the stock voice sum
         tanks['voice_sum'] = symbol_address(syms, 'g_coop_voice_sum_own')[0]
     except Exception:
@@ -564,6 +575,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
         patches.append((SPRING_LOOP_SITE, SPRING_LOOP_STOCK, jump_l(SPRING_LOOP_SITE, thunks['spring_loop'])))
     if thunks.get('voltage_loop'):
         patches.append((VOLTAGE_LOOP_SITE, VOLTAGE_LOOP_STOCK, jump_l(VOLTAGE_LOOP_SITE, thunks['voltage_loop'])))
+    if thunks.get('phase_loop'):
+        patches.append((PHASE_LOOP_SITE, PHASE_LOOP_STOCK, jump_l(PHASE_LOOP_SITE, thunks['phase_loop'])))
     if tape:
         patches += tape_patches(tramps)
     for address, stock, new in patches:

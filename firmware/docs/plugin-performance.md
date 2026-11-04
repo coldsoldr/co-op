@@ -156,3 +156,14 @@ performance.
   store a register in the packet whose ALU op writes it.
 - **Assembler:** bfin gas does not substitute a macro parameter written directly before `]` (`[P4 + \off]` is a syntax
   error); write `[P4 + \off\()]`.
+- **A "software loop" in the scan can be a split hardware loop** (Phase, 2026-11-04): GCC moved a conditional half of the
+  body out of the LSETUP range and branches back to the loop's last instruction, which still counts the hardware loop. Read
+  the branches before planning a rewrite; the rewrite can keep that shape (rare paths out of line, jumping to the loop
+  bottom packet) at no cost.
+- **A wrap test `new < old` needs no register copy when the state lives in memory**: store the new value and reload it for
+  the next pass in parallel slots, and the old one stays in its register for the compare (Phase: both phases, two packets a
+  sample saved). A flag tested every sample but changed only on rare paths goes in a free P register (`CC = P4 == 0`),
+  written back once after the loop.
+- **Check whether two stock results are one.** Phase computes sat((ph1.H >>> 1) + 0x4000) and, a few instructions on,
+  sat((ph1 >>> 1) + 0x40000000); neither can overflow, so the first is the second's high half. Prove the range before
+  sharing, as for hoisting (rule 4).
