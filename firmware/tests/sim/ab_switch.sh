@@ -15,7 +15,7 @@ set -euo pipefail
 SW=${1:?switch word}; SC=${2:?scenario name in tests/sim}; IDX=${3:-}; FROM=${4:-34}
 W=${OP1EMU_WORK:-$HOME/op1emu-work}; T=$(pwd)
 NM=~/op1-toolchain/bfin/bin/bfin-elf-nm
-B="--tape-stereo --set-word g_coop_spread=32767 --set-word g_coop_force_stereo_out=1"
+B="--tape-stereo --set-word g_coop_spread=32767 --set-word g_coop_force_stereo_out=1 ${AB_EXTRA:-}"   # AB_EXTRA: more --set-word pairs for both images
 for v in 0 1; do tools/build_image.sh "$W/ab_$v.ldr" $B --set-word "$SW=$v" > /dev/null; done
 LAST=$($NM build/core/coop_combined.elf | awk '$3=="_g_last"{print $1}')
 ARGS=(--watch-writes "0x$LAST+4")

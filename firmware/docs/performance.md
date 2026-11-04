@@ -685,3 +685,11 @@ bodies are:
 So there is no further call-heavy outlier: the remaining gains are scheduling (state in registers, parallel loads,
 the two channels of a dual-mono effect interleaved so one hides the other's stalls). The device ranking comes from
 the p5a stats file's `engines` line.
+
+**Merged-build re-gates (2026-11-04).** On the merged code (punch + phone): punch `det_fx_stock_punch` identical over
+906,489 frames, 66,921 -> 49,458 per call. phone `det_fx_stock_phone_knobs` 28,932 -> 14,061 per call; this time the
+two runs split from 0.6 s and differed by up to 18.6 % in seconds 46-47 (after the knob turns). Controls with the
+same scenario: phone fast on both sides (only the punch word flipped) 1.32 %; **phone stock on both sides 13.6 %**
+(second 46 came out 630 in one stock run and 715 in another). So that tail is op1emu's run-to-run variation acting on
+phone's time-periodic capture state, the fast runs fall inside the stock spread, and the lockstep check (0
+differences) stands as the proof. `tests/sim/ab_switch.sh` takes `AB_EXTRA="--set-word NAME=V ..."` for such controls.
