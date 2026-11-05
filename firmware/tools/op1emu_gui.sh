@@ -34,8 +34,10 @@ if [ ! -f "$DIR/plain.ldr" ]; then
   echo "== $NAME: unpack and decrypt"
   [ -d "$DIR/unpacked/fw" ] || python3 -I "$here/tools/op1_unpack.py" "$PKG" "$DIR/unpacked" > "$DIR/files.txt"
   key=$(xxd -s 3328 -l 16 -p "$WORK/otp.bin")          # page 0xD0; stays in this shell
+  # The key's arrangement, given outright (check-key's result for this key, as build_image.sh --device): the
+  # --patches auto-pick checks stock L1 bytes, which a modified firmware (opus) has changed.
   python3 -I "$here/tools/l1_decrypt.py" decrypt-ldr "$DIR/unpacked/fw/OP1_vdk.ldr" "$key" "$DIR/plain.ldr" \
-      --patches "$here/third_party/kennel/synth_sdk/l1_patches.json" | tail -1
+      --swap le --order 1032 --words '<' | tail -1
 fi
 if [ -n "${FRESH:-}" ] || [ ! -f "$DIR/nand.bin" ]; then
   echo "== $NAME: NAND from the package"
