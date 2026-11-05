@@ -219,3 +219,22 @@ followed by `det_tape_play_start.txt`: the file path of every chunk.
 at the yaffs root (`overlay/plugins/x.coop` -> `/yaffs2/plugins/x.coop`), through op1emu's `provision_nand.py`
 functions; `docs/plugins.md` has the command. Two NANDs boot on different block boundaries, so compare their dumps
 with `--align`.
+
+## Any firmware in the window, with real controls (2026-11-05)
+
+`tools/op1emu_gui.sh PACKAGE.op1 [NAME]` runs a firmware package in op1emu's GLFW window (WSLg on Windows 11): it
+unpacks the package (`tools/op1_unpack.py`, refuses tar members outside the target), decrypts the L1 with the key in
+`otp.bin`, builds a NAND from that package's own content once (`FRESH=1` rebuilds it) and keeps both in
+`~/op1emu-work/fw_NAME/`. Third-party firmwares run as they are: SilverTape beta 2 boots (its tape screen shows its
+own "PREPARING STEREO" first-boot step), no fault.
+
+`tools/op1emu-patches/0003-gui-controls.patch` gives the window usable controls:
+- **Keyboard** (`gui/ui.json` `"keymap"`, computer key -> OP-1 button name, editable): tracker layout, F3..E4 on
+  `z s x d c v b h n j m`, F4..E5 on `q 2 w 3 e 4 r t 6 y 7 u`; F1-F4 synth / drum / tape / mixer, F5-F8 T1-T4;
+  keypad 1-8 or Ctrl+1..8 the sound slots; Shift; Space play, Enter rec, Backspace stop, the arrows; Home lift,
+  End drop, Page Down split; Tab seq, F9 mic, F10 com, F11 tempo, F12 help. A key release goes to the button its press
+  pressed, so changing a modifier in between leaves nothing stuck.
+- **Encoders**: drag up or right turns clockwise, one Gray transition per 4 px (two per detent); the mouse wheel turns
+  one detent per notch; a click without moving is the encoder's push. Transitions go out at most four per frame,
+  2 ms apart in guest time (edges sent at once would be lost by the firmware's GPIO interrupt). The volume knob drags
+  and wheels too. The old click areas are replaced (their anticlockwise step also indexed out of its table).
