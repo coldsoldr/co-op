@@ -584,7 +584,7 @@ cwo 322 k a block (p3m 448 k), one cwo 305 k (p3m about 394 k); the chord alone 
 Not yet rewritten (same as before within run-to-run spread): punch 78 k, phone 49 k, spring 47 k, nitro 46 k, grid
 36 k, delay 29 k. [C]
 
-## Diagnostic 5g (p5g_diag): where an ordinary block's time goes — device run (pending, 2026-11-05)
+## Diagnostic 5g (p5g_diag): where an ordinary block's time goes — device run (done, 2026-11-05)
 
 p5f's idle lead-in costs 164 k cycles per block on the device (cwo + the stage + the master account for 73 k; op1emu's
 whole idle block is 45 k): about 90 k per block, every block, that no coop counter sees. p5g adds a gap profile to the
@@ -603,7 +603,21 @@ flash p5f perf back for normal use (the profile costs a few k cycles per block o
 op1emu (`RUN_EXTRA="--set-word g_coop_gap_prof=1" tests/sim/run_emu.sh tests/sim/run_check.txt ...`): the idle block
 splits into mix entry -> master 16.7 k, FX 2 master -> tape tap 14.0 k, the stage 7.4 k, the rest small; no fault.
 
-Result: pending.
+**Result (owner, 2026-11-05): the gap profile ran** (`docs/device-stats/p5g_diag_2026-11-05_*`; no fault). The idle
+lead-in (168 k cycles per block, op1emu 45 k), per block:
+
+| gap | what lies between the marks | device | op1emu |
+|---|---|---|---|
+| `34>50` | after the mix entry up to coop's master stand-in: stock code (the master effect, if one is on; the tape-track and mixer stages) | 55.3 k | 16.7 k |
+| `44>34` | the instrument effect render (here cwo, slot 1) | 48.4 k | |
+| `4b>38` | after FX 2 master up to the tape tap: the stock level stage, the SPORT conversion | 17.5 k | 14.0 k |
+| `38>03` | coop's tape record tap (~7.5 k per block while not recording, the stats windows' `rec_sum`) and the stock tail (USB audio push, MIDI drain, key scan) | 14.1 k | 3.3 k |
+| `30>44` | coop's S3 stage | 13.6 k | 7.4 k |
+| `02>30` | the stock callback before the stage (voice loops with nothing playing) | 10.6 k | 2.3 k |
+| `01>02` | coop's block start | 4.5 k | 0.2 k |
+
+`34>50` is 55-64 k in every section of the run, the largest single item after the voices and the instrument effect.
+Whether it is the owner's master effect or stock overhead decides whether it can be touched (asked).
 
 ## Performance 5f (p5f): no effect construction in the audio interrupt — device test (PASS, 2026-11-04)
 
