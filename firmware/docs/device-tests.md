@@ -617,7 +617,7 @@ lead-in (168 k cycles per block, op1emu 45 k), per block:
 | `01>02` | coop's block start | 4.5 k | 0.2 k |
 
 `34>50` is 55-64 k in every section of the run, the largest single item after the voices and the instrument effect.
-Whether it is the owner's master effect or stock overhead decides whether it can be touched (asked).
+The owner (2026-11-05): nitro was the master effect (main slot; FX 2 master none), so `34>50` is mostly that effect (nitro ~45 k on the device) plus the stock mixer: a choice, not overhead. With this, nothing large is unaccounted for in the block; the owner is satisfied with the performance work to here.
 
 ## Performance 5f (p5f): no effect construction in the audio interrupt — device test (PASS, 2026-11-04)
 
