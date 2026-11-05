@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p5f"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p5g"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -146,6 +146,33 @@ extern "C" void coop_slow_keep(uint32_t dt)
     g_mk_lost = 0;
 }
 
+/* The gap profile (coop_cost.h). From CoopAudioCb, every block, when g_coop_gap_prof is set (0 in the packages but the
+ * diagnostic one). The marks are in time order but for the render starts (recorded at the render's end), so an
+ * insertion sort costs a few compares each. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_gap_prof = 0; }
+struct coop_gap g_gap[COOP_GAP_N];
+uint32_t g_gap_blocks, g_gap_full;
+extern "C" void coop_gap_block(void)
+{
+    uint32_t n = g_mk_n;
+    if (n > COOP_MK_N) n = COOP_MK_N;
+    for (uint32_t i = 1; i < n; i++) {
+        uint32_t id = g_mk[i][0], t = g_mk[i][1], j = i;
+        uint32_t t0 = g_mk[0][1];
+        while (j > 0 && g_mk[j - 1][1] - t0 > t - t0) { g_mk[j][0] = g_mk[j - 1][0]; g_mk[j][1] = g_mk[j - 1][1]; j--; }
+        g_mk[j][0] = id; g_mk[j][1] = t;
+    }
+    for (uint32_t i = 1; i < n; i++) {
+        uint32_t key = (g_mk[i - 1][0] & 0xFF) << 8 | (g_mk[i][0] & 0xFF), dt = g_mk[i][1] - g_mk[i - 1][1];
+        uint32_t k = 0;
+        while (k < COOP_GAP_N && g_gap[k].n && g_gap[k].key != key) k++;
+        if (k == COOP_GAP_N) { g_gap_full++; continue; }
+        struct coop_gap *g = &g_gap[k];
+        g->key = key; g->n++; g->sum += dt; if (dt > g->max) g->max = dt;
+    }
+    g_gap_blocks++;
+}
+
 static const struct coop_cost *g_cost_src = g_coop_cost;          /* the live table, or a run section's copy */
 static void put_cost(const char *name, int i)               /* name avg max n: cycles per call */
 {
@@ -251,11 +278,30 @@ extern "C" int coop_stats_run_header(char *out, int cap, const char *script, uin
     return n;
 }
 
-extern "C" int coop_stats_run_section(char *out, int cap, const char *name, const struct coop_cost *cost, uint32_t blocks, uint64_t cb_sum, uint32_t cb_max)
+/* "gaps" line: the pairs by their share of the block, largest first: prev>id=per-block/avg/max/n (cycles). */
+static void put_gaps(const struct coop_gap *g, uint32_t blocks)
+{
+    if (!blocks || !g[0].n) return;
+    static uint8_t done[COOP_GAP_N];
+    for (int i = 0; i < COOP_GAP_N; i++) done[i] = 0;
+    put("gaps per-block/avg/max/n"); kv("blocks", blocks);
+    for (int k = 0; k < 24; k++) {
+        int best = -1;
+        for (int i = 0; i < COOP_GAP_N; i++) if (g[i].n && !done[i] && (best < 0 || g[i].sum > g[best].sum)) best = i;
+        if (best < 0) break;
+        done[best] = 1;
+        put(" "); puthex2(g[best].key >> 8); put(">"); puthex2(g[best].key); put("=");
+        putn((uint32_t)(g[best].sum / blocks)); put("/"); putn((uint32_t)(g[best].sum / g[best].n)); put("/"); putn(g[best].max); put("/"); putn(g[best].n);
+    }
+    put("\n");
+}
+
+extern "C" int coop_stats_run_section(char *out, int cap, const char *name, const struct coop_cost *cost, uint32_t blocks, uint64_t cb_sum, uint32_t cb_max, const struct coop_gap *gaps, uint32_t gap_blocks)
 {
     g_out = out; g_cap = cap; g_len = 0; g_cost_src = cost;
     put("section "); put(name); kv("blocks", blocks); kv("cb_avg", blocks ? (uint32_t)(cb_sum / blocks) : 0); kv("cb_max", cb_max); put("\n");
     put_cost_lines();
+    put_gaps(gaps, gap_blocks);
     int n = g_len;
     g_out = g_text; g_cap = (int)sizeof g_text; g_len = 0; g_cost_src = g_coop_cost;
     return n;
@@ -273,7 +319,8 @@ static void write_file(void)
     put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
     put_switches();
     put_cplb();
-    put("slow"); kv("count", g_slow_count); kv("threshold", g_coop_slow_th); put("\n");
+    put("slow"); kv("count", g_slow_count); kv("threshold", g_coop_slow_th); kv("gap_prof", g_coop_gap_prof); kv("gap_full", g_gap_full); put("\n");
+    put_gaps(g_gap, g_gap_blocks);
     put_slow("slow_worst", &g_slow[SLOW_KEEP]);
     for (uint32_t i = 0; i < SLOW_KEEP; i++) put_slow("slow_recent", &g_slow[(g_slow_next + i) % SLOW_KEEP]);
     put("plugins"); kv("seen", g_plugins_seen); kv("loaded", g_plugins_loaded); kv("failed", g_plugins_failed);

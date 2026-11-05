@@ -45,7 +45,8 @@ static inline uint32_t cycles(void)
 extern "C" void coop_stereo_block_start(void);   /* stereo bus: per-block reset (core/sdram/stereo_bus.cc) */
 #include "coop_cost.h"                             /* the slow-block profiler marks */
 extern "C" void coop_slow_keep(uint32_t dt);       /* coop_stats.cc */
-extern "C" volatile uint32_t g_coop_slow_th;
+extern "C" volatile uint32_t g_coop_slow_th, g_coop_gap_prof;
+extern "C" void coop_gap_block(void);              /* coop_stats.cc, the p5g gap profile */
 #endif
 
 /* The replacement audio callback: time the stock callback and forward its result. */
@@ -63,6 +64,7 @@ extern "C" int CoopAudioCb(int r0, int r1)
 #ifdef COOP_COMBINED
     coop_mark(0x03);
     if (dt > g_coop_slow_th) coop_slow_keep(dt);
+    if (g_coop_gap_prof) coop_gap_block();
 #endif
     g_last = dt;
     if (dt > g_max) g_max = dt;

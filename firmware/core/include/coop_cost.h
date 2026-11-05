@@ -39,7 +39,7 @@ static inline void coop_cost_add(int i, uint32_t dt)
  * 0x34/0x35 the mix entry; 0x38/0x39 the tape record tap; 0x40/0x41 the stock mono FX init (coop_fx_init_mono);
  * 0x42/0x43 st_make; 0x44/0x45 the mono FX render; 0x46/0x47 the stereo FX render; 0x48/0x49 FX 2 instrument,
  * 0x4a/0x4b FX 2 master; 0x50/0x51 the master stand-in. */
-#define COOP_MK_N 64
+#define COOP_MK_N 128
 extern volatile uint32_t g_mk_n, g_mk_lost;
 extern uint32_t g_mk[COOP_MK_N][2];
 static inline void coop_mark_at(uint32_t id, uint32_t t)
@@ -48,4 +48,13 @@ static inline void coop_mark_at(uint32_t id, uint32_t t)
     if (n < COOP_MK_N) { g_mk[n][0] = id; g_mk[n][1] = t; g_mk_n = n + 1; } else g_mk_lost++;
 }
 static inline void coop_mark(uint32_t id) { coop_mark_at(id, coop_cost_now()); }
+
+/* The gap profile (p5g diagnostic, g_coop_gap_prof = 1): every block, the time between each pair of consecutive marks
+ * (in time order) is added up by pair, key = prev id << 8 | id. The time between two coop marks is stock code (or an
+ * interrupt), so the table says where an ordinary block spends what coop does not measure. The runner snapshots it
+ * per section. */
+struct coop_gap { uint32_t key, n, max; uint64_t sum; };
+#define COOP_GAP_N 48
+extern struct coop_gap g_gap[COOP_GAP_N];
+extern uint32_t g_gap_blocks, g_gap_full;
 #endif

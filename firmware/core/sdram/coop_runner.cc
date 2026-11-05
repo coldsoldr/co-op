@@ -50,7 +50,8 @@ enum { EV_KEY = 1, EV_KNOB = 2, EV_CLICK = 3, EV_MARK = 4, EV_END = 5 };
 enum { RS_IDLE = 0, RS_ARMED = 1, RS_RUNNING = 2, RS_DONE = 3, RS_ABORTED = 4, RS_ERROR = 5 };
 
 struct ev { uint32_t block; uint8_t type, a; int8_t b; uint8_t pad; };
-struct snap { struct coop_cost cost[COOP_COST_N]; uint32_t blocks, cb_max; uint64_t cb_sum; int mark; };
+struct snap { struct coop_cost cost[COOP_COST_N]; uint32_t blocks, cb_max; uint64_t cb_sum; int mark;
+              struct coop_gap gaps[COOP_GAP_N]; uint32_t gap_blocks; };
 
 static struct ev g_ev[MAX_EV];
 static uint8_t g_file[FILE_MAX];
@@ -59,7 +60,7 @@ static char g_marks[MAX_MARKS][MARK_LEN + 1];
 static uint16_t g_nev, g_nmarks;
 static struct snap g_snap[SNAPS];
 static volatile uint32_t g_snap_w, g_snap_r;
-static char g_run_text[8192];
+static char g_run_text[24576];                                   /* p5g: a gaps line per section */
 static int g_run_len;
 
 volatile uint32_t g_run_state, g_run_block, g_run_idx, g_run_sections, g_run_abort, g_run_click, g_run_error;
@@ -91,6 +92,8 @@ static void zero_costs(void)
 {
     for (int i = 0; i < COOP_COST_N; i++) { g_coop_cost[i].sum = 0; g_coop_cost[i].n = 0; g_coop_cost[i].max = 0; }
     g_sec_blocks = 0; g_sec_cb_max = 0; g_sec_cb_sum = 0;
+    for (int i = 0; i < COOP_GAP_N; i++) { g_gap[i].key = 0; g_gap[i].n = 0; g_gap[i].max = 0; g_gap[i].sum = 0; }
+    g_gap_blocks = 0;
 }
 
 static void close_section(void)                                    /* interrupt: snapshot, zero, count */
@@ -99,6 +102,8 @@ static void close_section(void)                                    /* interrupt:
         struct snap *s = &g_snap[g_snap_w % SNAPS];
         for (int i = 0; i < COOP_COST_N; i++) s->cost[i] = g_coop_cost[i];
         s->blocks = g_sec_blocks; s->cb_max = g_sec_cb_max; s->cb_sum = g_sec_cb_sum; s->mark = g_sec_mark;
+        for (int i = 0; i < COOP_GAP_N; i++) s->gaps[i] = g_gap[i];
+        s->gap_blocks = g_gap_blocks;
         g_snap_w++;
     } else g_run_lost++;
     zero_costs();
@@ -199,7 +204,7 @@ extern "C" void coop_runner_abort(void)
 }
 
 /* The run file text, formatted by coop_stats.cc (one line per section). */
-extern "C" int coop_stats_run_section(char *out, int cap, const char *name, const struct coop_cost *cost, uint32_t blocks, uint64_t cb_sum, uint32_t cb_max);
+extern "C" int coop_stats_run_section(char *out, int cap, const char *name, const struct coop_cost *cost, uint32_t blocks, uint64_t cb_sum, uint32_t cb_max, const struct coop_gap *gaps, uint32_t gap_blocks);
 extern "C" int coop_stats_run_header(char *out, int cap, const char *script, uint32_t events, uint32_t blocks, uint32_t state, uint32_t lost);
 extern "C" void coop_stats_write_now(void);
 
@@ -219,7 +224,7 @@ extern "C" void coop_runner_service(void)
         const struct snap *s = &g_snap[g_snap_r % SNAPS];
         const char *nm = s->mark < 0 ? "lead-in" : g_marks[s->mark];
         int room = (int)sizeof g_run_text - 1 - g_run_len;
-        if (room > 0) g_run_len += coop_stats_run_section(g_run_text + g_run_len, room, nm, s->cost, s->blocks, s->cb_sum, s->cb_max);
+        if (room > 0) g_run_len += coop_stats_run_section(g_run_text + g_run_len, room, nm, s->cost, s->blocks, s->cb_sum, s->cb_max, s->gaps, s->gap_blocks);
         g_snap_r++;
     }
     uint32_t st = g_run_state;

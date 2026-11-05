@@ -584,7 +584,35 @@ cwo 322 k a block (p3m 448 k), one cwo 305 k (p3m about 394 k); the chord alone 
 Not yet rewritten (same as before within run-to-run spread): punch 78 k, phone 49 k, spring 47 k, nitro 46 k, grid
 36 k, delay 29 k. [C]
 
-## Performance 5f (p5f): no effect construction in the audio interrupt — device test (pending, 2026-11-04)
+## Diagnostic 5g (p5g_diag): where an ordinary block's time goes — device run (pending, 2026-11-05)
+
+p5f's idle lead-in costs 164 k cycles per block on the device (cwo + the stage + the master account for 73 k; op1emu's
+whole idle block is 45 k): about 90 k per block, every block, that no coop counter sees. p5g adds a gap profile to the
+slow-block marks: every block, the time between each pair of consecutive marks is summed by pair (`prev>id`, ids in
+`core/include/coop_cost.h`), so the gaps between coop's hooks, which are stock code or interrupts, get numbers. The
+runner snapshots it per section: each section of the run file gets a `gaps` line (per block / average / max / count,
+largest first), the stats file one since boot. Switched by `g_coop_gap_prof`, 1 only in this package (0 in p5g's
+normal build); it runs after the callback's own timing, so the figures it reports are not changed by it.
+
+- `build/pkg/op1_246_coop_p5g_diag.op1` (sha256 `6c758d9d9652b1df0fb4b2815c4e086bcbb7bda7ff8121e0e1d7ec9900201dd1`):
+  p5f perf plus the gap profile. Passes `verify_bootloader` and `pkg_check`; copy in Downloads.
+
+Steps: flash it, run the automatic test (`run_p5a.txt`; Hello says `build p5g`), send the run and stats files. Then
+flash p5f perf back for normal use (the profile costs a few k cycles per block of audio-interrupt time).
+
+op1emu (`RUN_EXTRA="--set-word g_coop_gap_prof=1" tests/sim/run_emu.sh tests/sim/run_check.txt ...`): the idle block
+splits into mix entry -> master 16.7 k, FX 2 master -> tape tap 14.0 k, the stage 7.4 k, the rest small; no fault.
+
+Result: pending.
+
+## Performance 5f (p5f): no effect construction in the audio interrupt — device test (PASS, 2026-11-04)
+
+**Result (owner, 2026-11-04): PASS.** No slow block in the run or after it (`slow count 0`); the drwave section's
+worst block 1.99 M -> 308 k, pulse 485 k -> 298 k. 66 twins built on the main thread, 3,044 dry blocks: about 46
+blocks (~70 ms) per change on the device (op1emu: 1.3), so an effect comes in ~70 ms late after a sound change. One
+797 k block early in the session (below the profiler's 1 M threshold); FX 2 was changed three times then, and FX 2
+still builds in the interrupt. Effect costs as p5e; instrument FX 2 was off in this run (callback averages ~40 k
+lower for that reason). No recording (ASIO interface). Files: `docs/device-stats/p5f_2026-11-04_*`.
 
 p5e's profiler put every long block inside `st_make` (below). In p5f the audio interrupt only posts the type of the
 stereo twin it needs, with a sequence number; the main loop (`coop_fx_service`, every pass) builds the twin and

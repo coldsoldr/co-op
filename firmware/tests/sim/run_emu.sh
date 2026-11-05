@@ -17,7 +17,7 @@ IDLE=${2:?usage: run_emu.sh SCENARIO IDLE_SCRIPT [TAG]}
 TAG=${3:-run}
 STOCK_OP1=${STOCK_OP1:-/mnt/c/Users/byron/Downloads/op1_246.op1}
 LOCK=$WORK/emu.lock
-IMG="--tape-stereo --set-word g_coop_spread=32767 --set-word g_coop_force_stereo_out=1"   # as the A/B gates; the packages: --tape-stereo + spread
+IMG="--tape-stereo --set-word g_coop_spread=32767 --set-word g_coop_force_stereo_out=1 ${RUN_EXTRA:-}"   # as the A/B gates (RUN_EXTRA: more --set-word pairs); the packages: --tape-stereo + spread
 
 ov=$(mktemp -d); trap 'rm -rf "$ov"' EXIT
 mkdir -p "$ov/user"
