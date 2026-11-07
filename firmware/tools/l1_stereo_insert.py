@@ -119,6 +119,10 @@ UI_FRAME_SITE = 0x019b2690                                         # gfx_render_
 UI_FRAME_FN = 0x01a3bb20
 UI_KNOB_SITE = 0x019c2e94                                          # KeyHandler encoder step: CALL 0x019b6c0c -> coop_ui_knob
 UI_KNOB_FN = 0x019b6c0c
+SAVE_SITES = [(0x019ad220, 0x01a9ce04, 192, 'stamp'), (0x019ad5a6, 0x01a9ce04, 208, 'stamp'),   # u5 overwrite save (coop_save.cc)
+              (0x019ad3dc, 0x01995938, 224, 'insert_s'), (0x019ad762, 0x01995b80, 240, 'insert_d')]
+KEEP_SITE = 0x01a044a8                                            # parse_patch_json: CALL Value::operator=(patch, fresh) -> coop_keep (u5, kennel hook_dpkeep)
+JV_ASSIGN_FN = 0x019bddc0
 KEYEV_SITE = 0x019c2d3e                                           # KeyHandler dispatch: CALL key_dispatch (code, pressed)
 KEY_DISPATCH = 0x019b6c74
 # --- FX plugins at the stock positions (milestone P2, core/sdram/plugin_host.cc): kennel's filter-type hijack ---
@@ -415,6 +419,11 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
     if thunks_global.get('ui_frame'):                          # P3a: the slot 2 page (coop_ui.cc)
         out.append((UI_FRAME_SITE, call24(UI_FRAME_SITE, UI_FRAME_FN), call24(UI_FRAME_SITE, sdram_tramp_at + 144)))
         out.append((UI_KNOB_SITE, call24(UI_KNOB_SITE, UI_KNOB_FN), call24(UI_KNOB_SITE, sdram_tramp_at + 160)))
+    if thunks_global.get('keep'):                              # u5: the "coop" member of the sound JSON (coop_sound.cc)
+        out.append((KEEP_SITE, call24(KEEP_SITE, JV_ASSIGN_FN), call24(KEEP_SITE, sdram_tramp_at + 176)))
+    if thunks_global.get('stamp'):
+        for site, fn, off, _ in SAVE_SITES:
+            out.append((site, call24(site, fn), call24(site, sdram_tramp_at + off)))
     if thunks_global.get('keyev'):                             # the Lander combo swallowed (the getter sites stay stock:
         out.append((KEYEV_SITE, call24(KEYEV_SITE, KEY_DISPATCH), call24(KEYEV_SITE, sdram_tramp_at + 112)))   # a stub screen hung the boot in op1emu)
     return out + list(TAPE_BYTE_PATCHES)
@@ -476,6 +485,12 @@ def thunk_addresses(elf):
         ui = {'ui_frame': symbol_address(syms, 'coop_ui_frame')[0], 'ui_knob': symbol_address(syms, 'coop_ui_knob')[0]}
     except Exception:
         ui = {}
+    if ui:                                             # u5: the sound JSON keep hook and the overwrite save; an ELF with the
+        for key, name in (('keep', 'coop_keep'), ('stamp', 'coop_stamp'), ('insert_s', 'coop_insert_synth'), ('insert_d', 'coop_insert_drum')):
+            try:                                       # UI hooks must have them (a missing one is a dropped symbol: Makefile --undefined)
+                ui[key] = symbol_address(syms, name)[0]
+            except Exception:
+                sys.stderr.write('warning: ' + name + ' not in the ELF: its hook is not patched' + chr(10))
     tanks = {}
     try:                                               # clean-up after S2: own grid / spring tanks
         for name in ('tank_grid_render', 'tank_grid_init', 'tank_spring_render', 'tank_spring_init'):
@@ -616,6 +631,15 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
             if len(sdram_blob) != 144:
                 raise SystemExit('region-C trampolines: the slot 2 page needs +144 / +160 (have {})'.format(len(sdram_blob)))
             sdram_blob += build_jump_tramp(thunks['ui_frame']) + build_jump_tramp(thunks['ui_knob'])                    # +144, +160
+        if thunks.get('keep'):
+            if len(sdram_blob) != 176:
+                raise SystemExit('region-C trampolines: coop_keep needs +176 (have {})'.format(len(sdram_blob)))
+            sdram_blob += build_jump_tramp(thunks['keep'])                                                                 # +176
+        if thunks.get('stamp'):
+            if len(sdram_blob) != 192:
+                raise SystemExit('region-C trampolines: the save hooks need +192 (have {})'.format(len(sdram_blob)))
+            sdram_blob += build_jump_tramp(thunks['stamp']) + build_jump_tramp(thunks['stamp'])                            # +192, +208
+            sdram_blob += build_jump_tramp(thunks['insert_s']) + build_jump_tramp(thunks['insert_d'])                      # +224, +240
     dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, sdram_blob))
     for name, a, b in tramps:
         lines.append('tramp_{} at {:#x} ({} B) -> {:#x}'.format(name, a, len(b), thunks[name]))

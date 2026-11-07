@@ -1,0 +1,41 @@
+# u5: rename. Synth; hold S1 6 s: a stock save makes the snapshot preset "20640101_0000" (the emulator's clock) and
+# the slot now "is" it. Shift + S1 opens the preset browser positioned on it (a user preset). Orange push: naming;
+# orange two detents anticlockwise: two characters deleted ("20640101_00"); blue one detent: 'a' picked; blue push:
+# kept; orange push: saved. T1 closes the browser. Then Shift + S1 again and the orange push on the renamed row,
+# any other key (T1) cancels. The NAND is kept: synth_user's row should be named "20640101_00a".
+accel 64 -64 512
+wait-frames 1 300000
+at 24000
+tap synth 300
+at 25500
+press s1
+at 31500
+release s1
+at 34000
+press shift
+at 34200
+tap s1 200
+at 34700
+release shift
+at 36000
+tap enc4 200
+at 37000
+turn enc4 ccw 4
+at 38000
+turn enc1 cw 2
+at 39000
+tap enc1 200
+at 40000
+tap enc4 200
+at 42000
+tap t1 200
+at 44000
+press c4
+at 45000
+release c4
+at 52000
+press c4
+at 53000
+release c4
+wait 220000
+quit

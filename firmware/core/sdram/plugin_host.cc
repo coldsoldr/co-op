@@ -262,6 +262,13 @@ static const char *load_one(const char *fname, uint8_t *stage)
 
 static void slot2_load(void);                                              /* S2, below */
 static void tanks_boot(void);                                              /* below */
+extern "C" void coop_settings_boot(void);                                  /* coop_settings.cc (u1): the settings file */
+extern "C" int coop_plugin_disabled(const char *fname);
+volatile uint32_t g_plugins_disabled;
+
+/* u1: the files the scan saw, for the settings menu's Plugins list (disabled ones included) */
+extern "C" int coop_plugin_file_count(void) { return g_n_names; }
+extern "C" const char *coop_plugin_file_name(int i) { return i >= 0 && i < g_n_names ? g_names[i] : 0; }
 
 /* From the tape mount hook (main thread, boot), once. */
 extern "C" void coop_plugins_boot(void)
@@ -269,6 +276,7 @@ extern "C" void coop_plugins_boot(void)
     if (g_plugins_booted) return;
     g_plugins_booted = 1;
     tanks_boot();                                                          /* the instrument spring's own tank */
+    coop_settings_boot();                                                  /* spread and the disabled list, before the scan */
     list_dir();
     if (!g_n_names) { slot2_load(); return; }
     void *udb = DB_HANDLE();
@@ -277,6 +285,7 @@ extern "C" void coop_plugins_boot(void)
     if (!stage) { g_plugins_last_error = "no staging memory"; return; }
     for (int i = 0; i < g_n_names; i++) {
         g_plugins_seen++;
+        if (coop_plugin_disabled(g_names[i])) { g_plugins_disabled++; continue; }   /* off in the settings menu */
         const char *err = load_one(g_names[i], stage);
         if (err) { g_plugins_failed++; g_plugins_last_error = err; scopy(g_plugins_last_name, g_names[i], NAME_MAX); }
         else g_plugins_loaded++;
@@ -764,8 +773,12 @@ extern "C" void coop_fx_render_st(void *self, int16_t *l, int16_t *r, const int1
 #define RANGE_ROW(t) ((const int16_t *)(0x01DE5C50u + (uint32_t)(t) * 0x30u))   /* knob i: min, max, default at 3i */
 #define Y_WRITE      ((int (*)(int, const void *, int))0x01A99F84u)
 #define S2_FILE      "/yaffs2/user/coop_slot2.bin"
-struct slot2 { volatile int kind, id; volatile uint16_t knob[4]; volatile uint32_t req; uint32_t took; int kind_on, id_on; };
+struct slot2 { volatile int kind, id; volatile uint16_t knob[4]; volatile uint32_t req; uint32_t took; int kind_on, id_on; volatile int off; };
 static struct slot2 g_s2[2];
+
+/* u1: FX 2 off / on (the page's T key, coop_ui.cc); the effect stays chosen and constructed, it just does not run */
+extern "C" void coop_slot2_bypass(int pos, int off) { g_s2[pos & 1].off = off ? 1 : 0; }
+extern "C" int coop_slot2_bypassed(int pos) { return g_s2[pos & 1].off; }
 volatile uint32_t g_s2_blocks[2], g_s2_changes, g_s2_trace;   /* g_s2_trace: debug progress marker */
 
 extern "C" int coop_slot2_set(int pos, int kind, int id, const uint16_t *knob)
@@ -817,31 +830,41 @@ extern "C" int coop_plugin_list(char *out, int cap)
     return (int)(p - out);
 }
 
-/* main thread: save / load the two slots (magic "CS2", version 1, then 10 bytes per slot) */
+/* main thread: save / load the two slots (magic "CS2"; version 1: 10 bytes per slot; version 2 (u1) adds the two
+ * off bytes; version 3 (u3) adds LFO 2's type and four parameter words (17 bytes, lfo2.cc); older files still load) */
+extern "C" void coop_lfo2_words_get(uint8_t *out17);                     /* lfo2.cc */
+extern "C" void coop_lfo2_words_set(const uint8_t *in17);
+#define S2_LEN 43
 extern "C" int coop_slot2_save(void)
 {
-    uint8_t b[24] = { 'C', 'S', '2', 1 };
+    uint8_t b[S2_LEN];
+    for (int i = 0; i < S2_LEN; i++) b[i] = 0;
+    b[0] = 'C'; b[1] = 'S'; b[2] = '2'; b[3] = 3;
     coop_slot2_get(0, b + 4); coop_slot2_get(1, b + 14);
+    b[24] = (uint8_t)g_s2[0].off; b[25] = (uint8_t)g_s2[1].off;
+    coop_lfo2_words_get(b + 26);
     int fd = Y_OPEN(S2_FILE, 0x242, 0x180);
     if (fd < 0) return 0;
-    int ok = Y_WRITE(fd, b, 24) == 24;
+    int ok = Y_WRITE(fd, b, S2_LEN) == S2_LEN;
     return (Y_CLOSE(fd) == 0) && ok;
 }
 
 static void slot2_load(void)
 {
-    uint8_t b[24];
+    uint8_t b[S2_LEN];
     int fd = Y_OPEN(S2_FILE, 0, 0);
     if (fd < 0) return;
-    int got = Y_READ(fd, b, 24);
+    int got = Y_READ(fd, b, S2_LEN);
     Y_CLOSE(fd);
-    if (got != 24 || b[0] != 'C' || b[1] != 'S' || b[2] != '2' || b[3] != 1) return;
+    if (got < 24 || b[0] != 'C' || b[1] != 'S' || b[2] != '2' || b[3] < 1 || b[3] > 3) return;
     for (int pos = 0; pos < 2; pos++) {
         const uint8_t *e = b + 4 + 10 * pos;
         uint16_t k[4];
         for (int i = 0; i < 4; i++) k[i] = (uint16_t)(e[2 + 2 * i] | (e[3 + 2 * i] << 8));
         coop_slot2_set(pos, e[0], e[1], k);
+        g_s2[pos].off = (b[3] >= 2 && got >= 26) ? (b[24 + pos] != 0) : 0;
     }
+    if (b[3] >= 3 && got >= S2_LEN) coop_lfo2_words_set(b + 26);
 }
 
 static int16_t knob_map(int lo, int hi, uint16_t k)
@@ -882,7 +905,7 @@ static void slot2_render(int pos, int16_t *l, int16_t *r)
             g_s2_changes++;
         }
     }
-    g_s2_trace = 4; if (!s->kind_on) return;
+    g_s2_trace = 4; if (!s->kind_on || s->off) return;                   /* off: chosen and built, not run (u1) */
     int16_t p[8];
     if (s->kind_on == 1) {
         const int16_t *rg = RANGE_ROW(s->id_on);

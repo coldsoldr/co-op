@@ -179,3 +179,40 @@ extern "C" void coop_lfo2_trigger_drum(uint32_t voice)
     if (voice >= DRUM_VOICES || !sync()) return;
     trigger(g_drum_obj[voice]);
 }
+
+/* ---- u3: the LFO list's second column (coop_ui.cc) and the slot file (plugin_host.cc) ----
+ * One LFO 2 for both instruments (the words are global; per sound is P3b). A type picked from the list gets its
+ * parameters from the middle of the stock Ranges table (run-time filled: unknown entries give 0); sync() above rebuilds
+ * the objects in the audio thread when the words change. */
+extern "C" int coop_lfo2_get_type(void) { return g_coop_lfo2_active ? (int)g_coop_lfo2_type : (int)LFO_OFF; }
+extern "C" void coop_lfo2_set_type(int type)                     /* 0 tremolo, 1 value, 2 random, 7 off */
+{
+    if (type < 0 || (type > (int)LFO_RANDOM && type != (int)LFO_OFF)) return;
+    if (type != (int)LFO_OFF) {
+        uint32_t w[4] = { 0, 0, 0, 0 };
+        for (int k = 0; k < 8; k++) {
+            int16_t lo = LFO_RANGES[(type * 8 + k) * 3], hi = LFO_RANGES[(type * 8 + k) * 3 + 1];
+            int32_t v = lo < hi ? (lo + hi) / 2 : 0;
+            w[k >> 1] |= (uint32_t)(uint16_t)(int16_t)v << ((k & 1) * 16);
+        }
+        g_coop_lfo2_p01 = w[0]; g_coop_lfo2_p23 = w[1]; g_coop_lfo2_p45 = w[2]; g_coop_lfo2_p67 = w[3];
+    }
+    g_coop_lfo2_type = (uint32_t)type;
+    g_coop_lfo2_active = 1;
+}
+extern "C" void coop_lfo2_words_get(uint8_t *out17)             /* type, then the four words little-endian */
+{
+    out17[0] = (uint8_t)g_coop_lfo2_type;
+    uint32_t w[4] = { g_coop_lfo2_p01, g_coop_lfo2_p23, g_coop_lfo2_p45, g_coop_lfo2_p67 };
+    for (int i = 0; i < 4; i++) for (int b = 0; b < 4; b++) out17[1 + 4 * i + b] = (uint8_t)(w[i] >> (8 * b));
+}
+extern "C" void coop_lfo2_words_set(const uint8_t *in17)
+{
+    uint32_t w[4];
+    for (int i = 0; i < 4; i++) { w[i] = 0; for (int b = 0; b < 4; b++) w[i] |= (uint32_t)in17[1 + 4 * i + b] << (8 * b); }
+    int type = in17[0];
+    if (type > (int)LFO_RANDOM && type != (int)LFO_OFF) type = (int)LFO_OFF;
+    g_coop_lfo2_p01 = w[0]; g_coop_lfo2_p23 = w[1]; g_coop_lfo2_p45 = w[2]; g_coop_lfo2_p67 = w[3];
+    g_coop_lfo2_type = (uint32_t)type;
+    g_coop_lfo2_active = 1;
+}

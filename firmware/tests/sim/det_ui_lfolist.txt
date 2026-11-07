@@ -1,0 +1,42 @@
+# u3: the LFO list's green column. Synth, T4 (the LFO page), shift + T4 opens the stock browser; green one row
+# (none -> tremolo); T4 closes it and sets LFO 2 to tremolo (parameters mid-range); a chord (the tremolo's
+# modulation should be audible against det_chord); shift + T4 again, green one row (value), left open for the
+# screenshot. Screenshots are wall-timed: at the end.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t4 200
+at 29000
+press shift
+at 29200
+tap t4 200
+at 29700
+release shift
+at 31000
+turn enc2 cw 8
+at 33000
+tap t4 200
+at 35000
+press c4
+press e4
+press g4
+at 39000
+release c4
+release e4
+release g4
+at 41000
+press shift
+at 41200
+tap t4 200
+at 41700
+release shift
+at 43000
+turn enc2 cw 8
+wait 42000
+screenshot /root/op1emu-work/lfl_a.ppm
+wait 2000
+screenshot /root/op1emu-work/lfl_b.ppm
+wait 5000
+quit

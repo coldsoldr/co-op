@@ -1,0 +1,45 @@
+# u4 question: does the STOCK mute (Shift + T1 on the tape, track 1 = the live track) silence live playing? Tape; a
+# chord (A); Shift + T1 (mute 1); the chord (B); Shift + T1 (unmute); the chord (C). If B is silent, muting the live
+# track silences the instrument in stock, and coop's solo (which mutes the other tracks) behaves the same way.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tape 300
+at 28000
+press c4
+press e4
+press g4
+at 30000
+release c4
+release e4
+release g4
+at 32000
+press shift
+at 32300
+tap t1 200
+at 32800
+release shift
+at 34500
+press c4
+press e4
+press g4
+at 36500
+release c4
+release e4
+release g4
+at 38500
+press shift
+at 38800
+tap t1 200
+at 39300
+release shift
+at 41000
+press c4
+press e4
+press g4
+at 43000
+release c4
+release e4
+release g4
+wait 45000
+quit

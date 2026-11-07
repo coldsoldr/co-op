@@ -103,8 +103,10 @@ extern "C" void coop_drop(int src, int dst, int32_t pos, int32_t len, int16_t **
 }
 
 /* Stands in for fast_tape_erase (0x1a54b08): zero every track. */
+extern "C" void coop_markers_clear(void);         /* coop_tape_ui.cc (u4): an erased tape has no markers */
 extern "C" void coop_erase(void)
 {
+    coop_markers_clear();
     g_edit_erases++;
     INVALIDATE_ALL();
     ERASE_PROGRESS = 0;

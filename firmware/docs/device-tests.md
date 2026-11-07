@@ -888,3 +888,140 @@ of a register while multiplying into the other (kept exactly as stock, so it beh
 does).
 
 Result: (pending)
+
+## UI 1 (u5): settings, FX 2, list columns, randomise, solo, markers, bend, overwrite save, rename — device test (pending, 2026-11-07)
+
+The first package of the owner's UI feature set (`docs/ui-features.md`; mocked first in
+`tools/playground/coop-playground.html`). Build tag `u5` (the stats file's `build` word; u1-u4 were earlier cuts of
+the same package, never flashed). Everything from p5g stays in (all rewrite switches on).
+
+- `build/pkg/op1_246_coop_u5_ui.op1` (sha256 `2ad0b6e8034171993a40c3690fc68e20cb0f230e6ef904c3e65284733a388ad4`),
+  copy in Downloads. `--tape-stereo --set-word g_coop_spread=32767` as p5f. `verify_bootloader.py` PASS (no
+  `te-boot.ldr`), `pkg_check` = only `OP1_vdk.ldr` differs. **Flash this one**; p5f is the fall-back.
+
+What is new (`docs/screens.md` "u1 / u2", "u3", "u4", "u5"):
+0. **The stock font** on both coop pages (`core/sdram/coop_text.h`: the firmware's Text object, as kennel's chord
+   plugin draws it), with the manifesto's colour code: the cursor row blue (blue moves it), the value green (green
+   changes it), titles lavender, hints dim; on the FX 2 page the knob numbers in their encoder colours and a pending
+   type in blue.
+1. **Settings menu**: hold synth + drum + tape + mixer (the old Lander combo). Blue moves, right arrow enters, left
+   arrow backs out and leaves at the top, a mode key leaves and acts. Green edits the value (green on screen). VOICES
+   / SPREAD is live (0-100, it is the stereo spread of `g_coop_spread`: 100 at boot from the image word, the file
+   overrides it afterwards); the other VOICES and UI rows show STOCK / BOTTOM / NOT YET and cannot change yet.
+   PLUGINS lists every `.coop` file in `/yaffs2/plugins` with ON / OFF; an encoder push toggles a row, applied at the
+   next boot. Saved to `/yaffs2/user/coop_settings.bin` when the menu closes.
+2. **FX 2 by drop / lift**: on any effect page (synth, drum, master) **drop** focuses FX 2 (its page opens), **lift**
+   focuses FX 1 (it closes). With FX 2 focused, **T3** (T2 on the mixer) switches FX 2 off and on: `FX2 OFF`. The
+   focus is remembered per position: leave with T1 and come back with T3 and the slot last touched is shown. The
+   stock effect page shows `fx2` (blue) or `fx2 off` (grey) in its corner while a slot 2 is chosen. Shift + Help no
+   longer opens the page. Lift / drop on an effect page no longer copy / paste the sound (other pages unchanged).
+   Shift + blue on the page still chooses the type with a blue push to apply.
+3. **The green column on the lists**: shift + T3 (synth, drum, and the mixer's master FX page) opens the stock FX
+   list as before; its empty right half now holds coop's column, `none` then the same rows, in the stock's own
+   green. **Green** moves it (four detents a row, as blue); the cursor starts on the slot's current choice. **T3**
+   closes the list as stock does and, if green was turned, loads the green row into FX 2 of that position and puts
+   FX 2 in focus (so the FX 2 page follows). Any other closing key (a mode key, T1 / T2 / T4) discards the green
+   choice. Shift + T4: the same on the LFO list with `none`, `tremolo`, `value`, `random`: T4 loads it into **LFO
+   2** (one LFO 2 for both instruments for now, its four parameters set to the middle of the stock ranges; no page
+   for them yet). Both saved in `coop_slot2.bin` (now version 3).
+4. **Randomise**: hold **synth** (or **drum**) and press **right**: the page shown gets random values inside the stock
+   ranges (synth T1 engine knobs, T2 envelope A D S R, T3 effect knobs, T4 LFO; drum T2 dynamic envelope, T3, T4;
+   the drum T1 page is per-voice sample data and is left alone; an effect or LFO page that is off is skipped). Hold
+   the key and press **left**: back through the last five. The arrows do nothing else while the key is held (no
+   octave change). A plain tap of synth / drum still goes back to T1 as stock; the tap now acts on the release.
+5. **Help is fn**: a tap opens help as stock (on the release); a hold is the modifier. **Solo**: on the tape,
+   Shift + Help + T1..T4 solos that track (the other three muted through the stock mute, the mixer page shows it),
+   the same combo again restores the mutes as they were; `solo n` top right. Note: the live instrument is monitored through the
+   current track, and the stock mute of that track silences it (op1emu: a stock Shift + T1 mute silences the live
+   chord exactly as the solo of another track does), so soloing a track you are not on silences your playing until
+   the solo is off. If that is not wanted, the solo could leave the current track unmuted: the owner's call.
+6. **Markers**: on the tape page, Shift + an encoder push drops that colour's marker at the playhead (again with the
+   playhead on it: removed; elsewhere: moved); a plain push jumps there (the loop is suspended as for the stock's
+   own jumps). Carets in the encoder colours above the tape, a grey line through the tracks; saved in
+   `/yaffs2/user/coop_markers.bin`, cleared by an erase.
+7. **Per-sound coop data**: a `"coop"` member kept inside the sound's JSON through the stock's own loader (the
+   keep hook), so it travels with slots, user presets, lift / drop; factory and old sounds get defaults.
+8. **Bend amount and time** (shifted T2): hold Shift on T2: the stock page gains two rows, white **bend** (-12..+12
+   semitones, default +12 = the stock range) and orange **time** (off / 1-127 / max, 5 ms .. 2 s). Shift + left /
+   right bends as before, by the amount, over the time. Saved per sound.
+9. **Overwrite save**: hold **synth** (or drum) + a sound key through the clock: "overwriting <name>" shows and the
+   sound replaces its own user preset instead of making a new snapshot; a factory preset or an unsaved sound saves as
+   stock. (A stray empty marker file lands in the snapshot folder; a sampler preset's audio is not re-copied.)
+10. **Rename**: in the preset browser (Shift + a sound key) on a user preset, **orange push** starts naming: blue
+   letters, green digits, white symbols, turn to pick, push to keep, push with nothing picked = space; orange
+   anticlockwise deletes; orange push saves (the list shows the new name); any other key cancels. Factory and sampler
+   presets are refused ("no" blinks).
+
+**What to do** (about 5 minutes):
+1. Boot; play a chord (everything as p5f). Hold the four mode keys: the menu appears, no game. Release.
+2. Blue one detent down (UI), back up (VOICES), right arrow. Green down ten detents: SPREAD 90, and a chord should
+   narrow a little (spread is random per note, listen on headphones). Green back up. Left, left: the menu closes;
+   the synth page is back; play. Hold the combo again: right arrow into VOICES: SPREAD still 100 (the file).
+3. Combo, blue two detents down (PLUGINS), right: the installed `.coop` files (ON). Push blue on one: OFF. Left,
+   left. Power-cycle: the stats `plugins` line should say `disabled 1`, and that plugin is missing from the FX list.
+   Combo again, PLUGINS, push: ON. Left, left (and a power-cycle later brings it back).
+4. Synth, pick phone with shift + T3, T3 to the effect page. **Drop**: the FX 2 page. Shift + blue one detent, blue
+   push: DELAY. Green up: echoes on top of the phone. **T3**: `FX2 OFF`, the echo stops; T3: back. **Lift**: the stock
+   phone page with `FX2` in the corner. Drop, then T1, then T3: the FX 2 page comes back by itself. Lift, T1, T3: the
+   stock page. Mixer T2 (master FX): the same with drop / lift / T2.
+5. **The lists**: synth, T3, shift + T3: the two columns. Blue picks phone (loads at once, as stock). Green two
+   rows down (delay), T3: the FX 2 page opens with delay; play: phone + echoes. Lift, T3 (the phone page), shift +
+   T3 again: the green cursor should sit on delay. Green to `none`, T3: the corner `fx2` mark goes, the echo stops.
+   Then shift + T3, green to grid, **T1** instead of T3: nothing changes (discarded). Mixer, T3 (master FX page),
+   shift + T3: the same for the master. T4, shift + T4: green to tremolo, T4: the sound should wobble (LFO 2 at
+   mid-range); shift + T4, green to none, T4: it stops.
+6. **Randomise**: synth T1, play; hold synth + right: the knobs jump, the sound changes; again; hold synth + left
+   twice: back to the loaded sound. T2, hold synth + right: the envelope changes (the page must stay on T2 while
+   synth is held). T3 with an effect on, T4: the same. Drum: T2 / T3 / T4 the same; T1 does nothing. A plain synth
+   tap from T3: back to T1 as stock. Save the sound and power-cycle: it must load (the values stay inside the stock
+   ranges; a failure is the "Invalid synth patch" boot stop, which p5f's package recovers from by re-flashing).
+7. **Solo and markers**: tape, play a bar on tracks 1 and 2. Shift + Help + T2: only track 2 plays; the mixer page
+   shows 1, 3, 4 muted; Shift + Help + T2 again: all back. Help tapped alone: help, as stock. Shift + blue push:
+   a blue caret under the playhead; move away, blue push: the playhead jumps back; Shift + blue push on it: gone.
+   Four colours. Power-cycle: the markers are still there. Erase the tape: gone.
+8. **Bend**: synth T2, hold Shift: bend +12, time off. Hold Shift + right while playing: an octave up (the stock
+   bend; confirm the interval: the semitone scale of the stock's bend word is inferred). Set bend to +2, time to 60:
+   Shift + right glides up a tone over ~0.1 s. Set bend -12: Shift + right goes DOWN an octave. Save the sound, change
+   slot and back, power-cycle: the values stay.
+9. **Overwrite**: hold S3 through the clock (a normal save: a new snapshot preset). Tweak a knob; hold synth + S3
+   through the clock: "overwriting" and the tick; the browser shows one preset for it, with the tweak. Load a
+   factory sound, hold synth + S4: a normal save (a new snapshot).
+10. **Rename**: Shift + S3 opens the browser; find the snapshot preset; orange push; type a name; orange push:
+   the list shows it. On a factory preset: "no".
+11. Copy `coop_stats.txt` over SysEx: the `plugins` line gains `disabled`, `ui_toggles`, `ui_col2_sets`,
+   `set_opens`, `set_saves`, `rnd`, `rnd_back`, `solo`, `markers`, `jumps`, `help_taps`, `mode_taps`, `mode_holds`,
+   `keeps`, `kept`, `sound_writes`, `bend`, `bend_knobs`, `bend_ramps`, `overwrites`, `saves`, `renames`.
+12. The font: the menu and the FX 2 page should read like the stock lists (op1emu draws them so; the device is the
+   proof), with no "te_new out of memory" on screen changes (each coop text object is built once).
+
+op1emu (2026-11-07, `tests/sim/det_ui_settings.txt`, `det_ui_fx2.txt`, `det_lander_combo.txt`, and for u3
+`det_ui_fxlist.txt`, `det_ui_lfolist.txt`, `det_ui_fxlist_t3.txt`): no fault in any run; the FX list shows the green
+column, delay applied by T3 opens the FX 2 page, the chord plays through phone + delay, the reopened list starts on
+delay and green moves it to grid; the LFO list the same with tremolo (the chord's level rises: mean 412 against ~190
+without), reopened on value; closing the list with T3 leaves FX 1 on (no FX OFF on the phone page); u4
+(`det_ui_random.txt` at spread 0): the chord's level 316 -> 263 after the T1 randomise, 317 after the step back, 533
+after the T2 randomise with the page still on T2, T1 after a plain synth tap; `det_ui_tape.txt`: two markers set
+and saved (35,016 and 70,030 samples), the jump lands on the blue one, `solo 2` drawn; `det_ui_help_tap.txt`: a
+Help tap opens the stock screen and the chord after it sounds; `det_ui_tape_solo.txt` / `det_ui_mute_stock.txt`:
+with track 2 soloed the live chord on track 1 is silent (RMS 63, the floor) and back at 203 when the solo is
+switched off, and the stock Shift + T1 mute gives the same numbers, so that is the stock's monitoring, not the solo; u5 (`det_ui_bend.txt`): the shifted T2 page shows the two coop
+rows (bend -8 after 20 detents down from +12, time 40), the chord sounds through a 2 s bend, no fault;
+`det_ui_save.txt` (kept NAND, op1.db read back): a stock save makes one snapshot row, a knob is turned, then synth +
+the sound key through the clock UPDATEs that same row (one row, the turned knob in it, the name unchanged; the hook's
+trace markers 1-7 complete); an earlier cut hung the guest in the stock's db exec because a LIKE pattern's `%` goes
+through its printf (now GLOB); `det_ui_rename.txt`: after a stock save the browser opens on the snapshot preset, the orange push starts naming, two
+characters deleted, 'a' typed and kept, orange push saves: the row reads `20640101_00a` (`renames 1`); an earlier cut
+refused factory presets as designed; the keep hook runs on
+every sound load (`keeps` 209 at boot) and after the bend edit the slot's row in op1.db carries
+`"coop":{"bend":-8,"bend_t":40,"pan":[...]}`;
+chords sound after the menu closes (peaks ~2,600 RMS). With the image at spread 50 the menu shows 50, green ten
+detents gives 60 on screen and the saved file reads `CST 1 3c` (60 %), no disabled names (the pristine NAND has no
+plugin files: the PLUGINS page says so). The FX 2 scenario: drop opens the page, delay applied at knob 2 = 10, T3
+twice (off, on), lift closes, T1 then T3 stays on the stock page, drop + T1 + T3 brings the page back.
+
+**Device-only questions**: whether the four-key combo is comfortable to hold (the keys must all be down together);
+whether T3 closing the list toggles FX 1 on the device as the key path reads (op1emu says no);
+whether the stock copies the sound on lift before our hook sees the key (it should not: the hook runs first);
+the file writes on the device's yaffs (slot 2's did in p3a).
+
+Result: (pending)

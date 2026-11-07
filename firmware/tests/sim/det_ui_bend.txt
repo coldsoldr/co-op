@@ -1,0 +1,40 @@
+# u5: bend amount / time on the shifted T2 page, and the bend keys. Synth; T2; hold Shift: the playmode page
+# (screen 40) with coop's two rows (bend +12, time off); white 20 detents down (bend -8); orange 40 detents up
+# (time 20); release Shift. A chord held; Shift + right held 2 s (the bend ramps to -8 semitones over the time),
+# released (back); chord released. Hold Shift at the end for the screenshot of the page.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27000
+tap t2 200
+at 28500
+press shift
+at 29500
+turn enc3 ccw 40
+at 31500
+turn enc4 cw 80
+at 33500
+release shift
+at 35000
+press c4
+press e4
+press g4
+at 37000
+press shift
+at 37200
+press right
+at 39500
+release right
+at 39700
+release shift
+at 41500
+release c4
+release e4
+release g4
+at 43000
+press shift
+wait 40000
+screenshot /root/op1emu-work/bnd_a.ppm
+wait 3000
+quit
