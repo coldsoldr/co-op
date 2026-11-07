@@ -62,11 +62,11 @@ static uint32_t rnd(void) { s_rng ^= s_rng << 13; s_rng ^= s_rng >> 17; s_rng ^=
  * families at once need the handover's engine-instance work (F1-F3). */
 #define LIVE_MODE     (*(volatile int *)0xFF801038u)
 extern "C" int coop_tracker_live_family(void) { return LIVE_MODE == 1 ? 1 : 0; }
-extern "C" void coop_xvoice_note(int note, int vel, int on);               /* coop_xvoice.cc (F1): the extra FM voice, inst 2 */
+extern "C" void coop_xvoice_note(int slot, int eng, int note, int vel, int on);   /* coop_xvoice.cc (F1 / F2): coop's extra voices, inst >= 2 */
 extern "C" void coop_xvoice_boot(void);
-static void raw_note(int inst, int note, int vel, int on)
+static void raw_note(int c, int inst, int note, int vel, int on)
 {
-    if (inst == 2) { coop_xvoice_note(note, vel, on); return; }            /* F1: coop's own FM voice, outside the core */
+    if (inst >= 2) { coop_xvoice_note(c, inst - 2, note, vel, on); return; }   /* F2: the channel's own voice, outside the core */
     if ((inst ? 1 : 0) != coop_tracker_live_family() || BANK != LIVE_MODE) return;   /* the other family, or a switch under way */
     struct midi_note n;
     n.note = note; n.velocity = vel; n.on = 1; n.pad[0] = n.pad[1] = n.pad[2] = 0; n.extra = 0;
@@ -75,13 +75,13 @@ static void raw_note(int inst, int note, int vel, int on)
 static void ch_off(int c)
 {
     struct trk_chan *ch = &g_trk.ch[c];
-    if (ch->sounding) { raw_note(ch->inst_sounding, ch->note_sounding, 64, 0); ch->sounding = 0; }
+    if (ch->sounding) { raw_note(c, ch->inst_sounding, ch->note_sounding, 64, 0); ch->sounding = 0; }
 }
 static void ch_on(int c, int inst, int note, int vol)
 {
     ch_off(c);
     int vel = clampi((vol * 127 + 49) / 99, 1, 127);
-    raw_note(inst, note, vel, 1);
+    raw_note(c, inst, note, vel, 1);
     g_trk_notes++;
     struct trk_chan *ch = &g_trk.ch[c];
     ch->sounding = 1; ch->note_sounding = note; ch->inst_sounding = inst;
@@ -89,13 +89,13 @@ static void ch_on(int c, int inst, int note, int vol)
 extern "C" void coop_tracker_all_off(void) { for (int c = 0; c < TRK_CH; c++) ch_off(c); }
 
 /* a preview from the keyboard (the cell's instrument): the key thread asks, the main loop plays */
-static volatile uint32_t s_prev_ring[8];                                   /* inst << 16 | note << 8 | on, 0 = empty */
+static volatile uint32_t s_prev_ring[8];                                   /* ch << 20 | inst << 16 | note << 8 | on, 0 = empty */
 static volatile int s_prev_wr, s_prev_rd;
-extern "C" void coop_tracker_preview(int inst, int note, int on)
+extern "C" void coop_tracker_preview(int ch, int inst, int note, int on)
 {
     int w = s_prev_wr;
     if (((w + 1) & 7) == s_prev_rd) return;                                 /* full: the tap is lost, nothing hangs */
-    s_prev_ring[w] = 0x01000000u | ((uint32_t)(inst & 1) << 16) | ((uint32_t)(note & 127) << 8) | (uint32_t)(on ? 1 : 0);
+    s_prev_ring[w] = 0x01000000u | ((uint32_t)(ch & 7) << 20) | ((uint32_t)(inst & 15) << 16) | ((uint32_t)(note & 127) << 8) | (uint32_t)(on ? 1 : 0);
     s_prev_wr = (w + 1) & 7;
 }
 
@@ -186,7 +186,7 @@ extern "C" void coop_tracker_service(void)                                 /* ma
 {
     while (s_prev_rd != s_prev_wr) {                                       /* the keyboard's previews, in order */
         uint32_t v = s_prev_ring[s_prev_rd]; s_prev_rd = (s_prev_rd + 1) & 7;
-        raw_note((v >> 16) & 1, (v >> 8) & 127, (v & 1) ? 100 : 64, v & 1);
+        raw_note((v >> 20) & 7, (v >> 16) & 15, (v >> 8) & 127, (v & 1) ? 100 : 64, v & 1);
     }
     if (s_save_pending) { s_save_pending = 0; coop_tracker_save(); }
     if (!g_trk.playing) return;

@@ -89,10 +89,19 @@ static void write_note(int idx)
     g_trk_written++;
     g_trk.cur_row = wrapi(g_trk.cur_row + 1, trk_pat_len(cur_pat()));
 }
+static uint32_t s_prev_key[24];                                             /* what each key previewed: ch << 16 | inst << 8 | note, +1 */
 static void preview(int idx, int on)
 {
-    struct trk_cell *x = cur_cell();
-    coop_tracker_preview(x->inst, note_of(x->inst, idx), on);
+    if (on) {
+        struct trk_cell *x = cur_cell();
+        int note = note_of(x->inst, idx);
+        s_prev_key[idx] = 1u + ((uint32_t)g_trk.cur_ch << 16) + ((uint32_t)x->inst << 8) + (uint32_t)note;
+        coop_tracker_preview(g_trk.cur_ch, x->inst, note, 1);
+    } else if (s_prev_key[idx]) {                                           /* the release goes where the press went (the cursor has moved) */
+        uint32_t v = s_prev_key[idx] - 1u;
+        s_prev_key[idx] = 0;
+        coop_tracker_preview((v >> 16) & 7, (v >> 8) & 15, v & 127, 0);
+    }
 }
 static void move_row(int d) { g_trk.cur_row = wrapi(g_trk.cur_row + d, trk_pat_len(cur_pat())); }
 static void move_ch(int d) { g_trk.cur_ch = wrapi(g_trk.cur_ch + d, TRK_CH); }
@@ -114,8 +123,8 @@ extern "C" int coop_tracker_key(int code, int pressed)
     if (code == KEY_SHIFT || code == KEY_TAPE || code <= 0x03 || code == 0x05 || code == 0x2B || code == 0x2C) return 0;   /* the mode keys, shift, help, metronome, mic, com: stock */
     int idx = key_idx[code & 63];
     if (idx >= 0) {
+        preview(idx, 1);                                                   /* with the cell under the cursor (before it moves) */
         if (g_trk.edit && g_trk.view <= 1) write_note(idx);
-        preview(idx, 1);
         s_swallow |= bit;
         return 1;
     }
@@ -150,7 +159,7 @@ static void knob_cell(int knob, int steps, int shift)
         if (x->note == 0 || x->note == TRK_NOTE_OFF) x->note = (uint8_t)(x->inst ? 53 : 60);   /* the first turn places a note */
         else x->note = (uint8_t)clampi(x->note + steps * (shift ? 12 : 1), 1, 127);
         break;
-    case 1: x->inst = (uint8_t)clampi(x->inst + steps, 0, 2); g_song.ch_inst[g_trk.cur_ch] = x->inst; break;   /* syn, drm, fm (F1) */
+    case 1: x->inst = (uint8_t)clampi(x->inst + steps, 0, 5); g_song.ch_inst[g_trk.cur_ch] = x->inst; break;   /* syn, drm, fm, str, dig, dsy (F2) */
     case 2: x->vol = (uint8_t)clampi(x->vol + steps * (shift ? 10 : 1), 0, 99); break;
     case 3:
         if (!shift) {
@@ -294,7 +303,7 @@ static void note_name(char *o, int note)                                    /* "
     int oct = note / 12 - 1;
     o[0] = names[note % 12][0]; o[1] = names[note % 12][1]; o[2] = (char)('0' + clampi(oct, 0, 9)); o[3] = 0;
 }
-static const char *const inst_names[3] = { "syn", "drm", "fm" };
+static const char *const inst_names[6] = { "syn", "drm", "fm", "str", "dig", "dsy" };   /* the live families, then coop's own voices (F2) */
 static const char *const fx_names[TRK_FX_N] = { "---", "arp", "rtg", "cut", "dly", "vol", "prb" };
 static const char fx_letter[TRK_FX_N] = { ' ', 'a', 'r', 'c', 'd', 'v', 'p' };
 static void scat(char *d, const char *s) { int i = 0; while (d[i]) i++; while (*s && i < 30) d[i++] = *s++; d[i] = 0; }
@@ -369,7 +378,7 @@ static void draw_zoom(void *r)
         char nn[4]; note_name(nn, x->note);
         vtext(&s_tx_zoom[i][on ? ZM_NOTE_CUR : ZM_NOTE], r, xs[1], y, 12, on ? c_blue : c_row, nn);
         if (x->note || on) {
-            vtext(&s_tx_zoom[i][on ? ZM_INST_CUR : ZM_INST], r, xs[2], y, 12, on ? c_green : c_dim, inst_names[x->inst > 2 ? 0 : x->inst]);
+            vtext(&s_tx_zoom[i][on ? ZM_INST_CUR : ZM_INST], r, xs[2], y, 12, on ? c_green : c_dim, inst_names[x->inst > 5 ? 0 : x->inst]);
             if (x->vol) num2(b, x->vol); else { b[0] = '-'; b[1] = '-'; b[2] = 0; }
             vtext(&s_tx_zoom[i][on ? ZM_VOL_CUR : ZM_VOL], r, xs[3], y, 12, on ? c_white : c_dim, b);
         }

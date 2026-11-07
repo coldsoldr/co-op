@@ -41,7 +41,7 @@ void coop_tracker_touch(void);
 void coop_tracker_play(int from_start);
 void coop_tracker_stop(void);
 void coop_tracker_all_off(void);
-void coop_tracker_preview(int inst, int note, int on);
+void coop_tracker_preview(int ch, int inst, int note, int on);
 int coop_tracker_save(void);
 void coop_tracker_request_save(void);
 int coop_tracker_on(void);

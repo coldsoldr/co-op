@@ -1122,10 +1122,27 @@ knob has a third instrument, **`fm`**: cells on it play coop's FM voice whatever
 and the FM voice together, no faults, 9.8 k cycles a block for the voice (`xv_max` on the stats "stages" line).
 
 **What to do**: tape, Shift + tape; write a synth note or two on channel 1; Shift + right, green two detents (`fm`
-in the zoom view's instrument column), write notes on channel 2; play: both sound together, the FM voice in tune
-with the synth (op1emu's dump sits an octave low for both: the device says the truth), a plucky FM sound (the
+in the zoom view's instrument column), write notes on channel 2; play: both sound together, the FM voice an octave below the synth
+(its stock patch words carry a 0.5 carrier ratio; the synth itself follows its octave setting), a plucky FM sound (the
 stock's FM patch words, not yet the channel's own). Then the drum kit live (drum, tape): the `fm` channel still
 plays while the drum cells do. The stats file's `xv_max` and `fps` say the cost. Crashes here would point at the
 FM render running outside the voice loop (its parameter block or the sine copy); say what you were doing.
+
+Result: (pending)
+
+## Tracker 3 (t3): F2, a voice per channel from four engine kinds — device test (pending, 2026-11-07)
+
+- `build/pkg/op1_246_coop_t3_tracker_x.op1` (sha256 `c6841f892cc192b6c8cd20cf7e19b8c8a41f30a71cccd97e23a08be6b234afbd`), copy in Downloads. Supersedes t2.
+
+The tracker's green knob now cycles `syn`, `drm` (the live families), then coop's own voices **`fm`, `str`, `dig`,
+`dsy`** (a stock FM, string, digital or dsynth voice rendered by coop's block beside whatever the core plays;
+`docs/tracker.md` "F2"). One voice a channel, mono, centred, mid-value knobs (no patch yet). op1emu: every kind
+sounds, no faults; costs a block fm 10 k, dig 13 k, dsy 25 k, str 30 k; three together 63 k peak (11 %).
+
+**What to do**: tape, Shift + tape; channel 1 a synth note; channels 2-4 on fm / str / dsy (green), a note each;
+play. Four engines at once: listen for dropouts; the stats `xv_max` (cycles a block for the coop voices, the
+cache included), `stage_max`, `cb_max` and `fps` are the measurement the handover asked for (F3). Then the same
+with the live synth set to DSynth: the `dsy` channels clash with the live voices' tables (a known probe limit; say
+what it sounds like). Known: the `fm` voice sounds an octave below the others (its stock patch's carrier ratio).
 
 Result: (pending)

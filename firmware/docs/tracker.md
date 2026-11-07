@@ -165,6 +165,47 @@ block** while the voice sounds (average 9,766 over 952 blocks: the FM render ~6 
 the pitch-word save / restore, the envelope and the pair accumulate), 1.7 % of the 580 k block; silent, nothing.
 Six such voices would be ~10 % in op1emu, times the device's 1.2–1.7 cache factor: inside the budget on paper.
 The FM patch words at `0x01D05880` hold a plucky sound in the pristine NAND (the voice decays in ~0.4 s): the
-channel's own FM patch is the next step. Observation: in op1emu's WAV both the stock synth and the FM voice sit an
-octave below nominal (`c4` at 130 Hz, the FM `c5` at 260.6 Hz: the same factor, so the pitch formula is right and
-the octave is the dump's); the device test listens for the FM voice in tune with the synth.
+channel's own FM patch is the next step. Observation: in op1emu both the stock synth and the FM voice sounded an octave
+below nominal (`c4` at 130 Hz, the FM `c5` at 260.6 Hz); F2 found why: the pristine NAND has the synth octave at −1
+(the core folds it into its pitch words) and the FM patch words carry a 0.5 carrier ratio. The pitch formula is
+right (the string and dsynth land on the nominal note). The device test listens for the FM voice in tune.
+
+## F2: a voice per channel, four engine kinds (2026-11-07)
+
+`coop_xvoice.cc` generalised: every tracker channel owns a slot with one voice object per extra engine kind, all
+built at the tape mount with the stock constructors (in the coop L1 pool while it has room, else SDRAM), and the
+cell's instrument picks the engine at note-on: `syn`, `drm` (the live families, as before) then **`fm`, `str`
+(string), `dig` (digital), `dsy` (dsynth)**. What each engine reads outside its object, and what coop does about
+it, is in the file's header; the short version:
+
+| engine | object | outside the object | coop |
+|---|---|---|---|
+| fm | 60 B | the shared parameter block via `0xFF906F6C` | one coop block, the pointer swapped in around the block |
+| string | 32 B | a 16 KB delay line at `[+0x14]` (`0x010225EC + i * 0x4000` in stock) | a coop buffer each (96 KB of bss) |
+| digital | 32 B | nothing but the pitch words and L1 scratch | nothing |
+| dsynth | 72 B | per-voice tables by the index at `[+0x14]`; the voice envelope at `0xFF801D50` | the slot number is the index (**clashes with the live DSynth's voice i**: probe limit); its envelope written before the render |
+
+Common to all: the pitch words at `0xFF801950` (and the envelope words) are saved once a block, written per voice,
+put back; the sine table is the L1 copy in every block (the package's retarget); the L1 scratch buffers the renders
+use (`0xFF801B50`, `0xFF801E50`, `0xFF801F50`) are free at the stage. Note-off goes to the engine where it has one
+(string sets its release, dsynth its own); the coop envelope (2 ms / 120 ms) shapes everything on top.
+
+Not done: the channel's own patch (the renders get mid-value knobs and the FM voice the stock's FM patch words),
+engines whose voices index state by their scratchpad address (phase / Pd), pulse (its render is in L1), the drum
+family (a coop sample player over the kit's samples), and per-voice pan (centre for now).
+
+**F2 findings (op1emu, 2026-11-07)** [C op1emu]:
+- **The parameter pointer is the slot's 8 knob words**, not 4: dsynth's render reads `+0x8..+0xc`, so a four-word
+  array fed it whatever lay after it (a loud fixed tone in the first three-engine run). And the ranges are per
+  engine: the string's knob 0 `>> 7` indexes a 128-entry table from 128 *down*, so mid-scale 0x4000 is index 0 (an
+  extreme: the string went silent); 0x2000 is the middle. Each engine kind now has its own 8-word set until the
+  channel carries a patch. A peak meter per engine (`xv_peak_*` in the stats) says whether a render makes sound.
+- **Pitch is right.** From the same words (f / 88200 · 2^32) the string and dsynth land on the nominal note; the FM
+  voice an octave down (its stock patch words carry a 0.5 carrier ratio); the stock synth an octave down in op1emu
+  because the pristine NAND's synth octave is −1 (the core folds it into its own pitch words). So no octave bug in
+  coop's words, and the earlier "dump sits an octave low" reading was wrong: it was the FM patch and the octave.
+- **Cost a block, op1emu, one voice sounding (`xv_max`, coop's ~2 k of save / restore and envelope included):**
+  fm ~10–11 k, digital ~13 k, dsynth ~25 k, string ~30 k (its 16 KB delay line). The three-engine run (fm +
+  string + dsynth beside the live synth, `tests/sim/det_ui_tracker_x.txt`): **63.0 k peak, 45.6 k average** a
+  block, 11 % of the 580 k block at peak, additive: op1emu models no cache, so the I-cache cost of mixed engines
+  stays a device question (the stats` xv_max` on the device answers it).
