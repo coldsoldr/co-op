@@ -241,3 +241,24 @@ orange write nothing there.
   to rewrite an effect-page id to FX 2's type while in focus, since every handled key reposts FX 1's. A plugin or
   nothing in FX 2 keeps coop's own page. The knob-touched bytes (0x01DD7F74 + k) are set when coop takes a turn so the
   stock highlights the dial.
+
+## t1: the tracker in place of the tape view (2026-11-07) [I until the device]
+
+- `docs/tracker.md` has the feature. Drawing: in tape mode with the tracker on, `coop_ui_frame` lets the stock draw
+  the tape screen, then paints the whole raster black (41 thin overlapping strokes, as the settings menu) and draws
+  the view: ~60 stock-font texts and ~50 strokes a frame.
+- **Text through a matrix** (tried, found): `coop_text_draw_m` (coop_text.h) makes the Text object at the origin
+  and draws it with a caller-supplied 3 x 3 matrix, kennel's row-vector convention `[a b 0; c d 0; tx ty 1]` in
+  Q10 (op1_plugin.h `op1_node_rotate`). op1emu showed the stock takes only the translation (m[6], m[7]) for a
+  Text: the glyphs stayed upright at the turned place. So the matrix places text, it does not rotate it.
+- **Portrait text** is kennel's stroke font (capitals on a 4 x 6 grid) with every segment put through the
+  transform (`ptext`), 1 px strokes, scale 1536 (9 px a character) or 1280 (7.5 px). No objects, no heap.
+- **The landscape pool**: a Text object bakes place, size and colour, so the tracker keeps one per (view, row,
+  field, colour variant): overview 21 x 26, zoom 21 x 12, song 21 x 6, setup 8, header 4 (rows beyond 9 unused
+  in landscape; ~180 KB of bss), made at their first draw. A coop_text string is at most 23 characters: the header
+  is `trk p00 01/01 120 syn`.
+- Lines and fills go through `xf()`: view (x, y) -> screen; fills are strokes along the screen's rows after the
+  transform (vfill), so they work in either orientation.
+- Keys: `coop_tracker_key` sits in `coop_ui_key` before the tape's handlers (solo, markers) and takes everything on
+  the tape page but the mode keys, Shift, Help, metronome, mic and COM while the tracker is on; both edges of a taken
+  press (s_swallow). Encoders: `coop_tracker_knob` right after the settings menu in `coop_ui_knob`.

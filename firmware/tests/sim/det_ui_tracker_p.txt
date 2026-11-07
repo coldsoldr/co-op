@@ -1,0 +1,74 @@
+# t1: the tracker in portrait. As det_ui_tracker up to the notes, then T4 (setup) and orange one detent: portrait a
+# (the view's top at the screen's right edge: the device turned anticlockwise); T1 the overview, T2 the zoom; T4 and
+# orange another detent: portrait b (the left edge); T1. The turned views draw kennel's stroke font through the
+# transform (the stock Text object takes only its matrix's translation). Screenshots wall-timed: at the end.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tape 200
+at 27500
+press shift
+at 27700
+tap tape 200
+at 28200
+release shift
+at 29500
+tap c4 150
+at 30000
+tap e4 150
+at 30500
+tap g4 150
+at 31000
+tap c5 150
+at 31800
+tap stop 150
+at 32300
+press shift
+at 32500
+tap right 120
+at 32800
+tap right 120
+at 33100
+tap right 120
+at 33400
+tap right 120
+at 33700
+release shift
+at 34200
+tap f3 150
+at 34600
+tap right 120
+at 34900
+tap g3 150
+at 35600
+tap stop 150
+at 36300
+tap t4 150
+at 37000
+turn enc4 cw 2
+at 38500
+tap t1 150
+at 40500
+tap t2 150
+at 42000
+tap t4 150
+at 42600
+turn enc4 cw 2
+at 43500
+tap t1 150
+at 45500
+tap t2 150
+wait 38500
+screenshot /root/op1emu-work/trkp_a.ppm
+wait 2500
+screenshot /root/op1emu-work/trkp_b.ppm
+wait 2500
+screenshot /root/op1emu-work/trkp_c.ppm
+wait 2500
+screenshot /root/op1emu-work/trkp_d.ppm
+wait 2500
+screenshot /root/op1emu-work/trkp_e.ppm
+wait 2500
+screenshot /root/op1emu-work/trkp_f.ppm
+wait 4000
+quit

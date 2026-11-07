@@ -1,0 +1,136 @@
+# The tracker (t1): first pass, 2026-11-07
+
+The owner's brief is `docs/tracker-handover.md`; its decisions 1-7 stand. This is the first build, made with the
+owner away ("make your best guesses… I'll have a look at the first pass… try make it both ways [portrait and
+landscape]"). Everything marked **guess** is mine and is easy to change. [I] until the device; the op1emu gate is
+in `docs/device-tests.md` "Tracker 1 (t1)".
+
+Code: `core/sdram/coop_tracker.cc` (data, clock, sequencer, file), `core/sdram/coop_tracker_ui.cc` (views, keys,
+encoders, the orientation transform), `core/sdram/coop_tracker.h`, `coop_text.h` (`coop_text_draw_m`: stock text
+through a matrix), hooks in `coop_ui.cc` (keys, knobs, frame, service), `stereo_bus.cc` (the clock), `tape_io.cc`
+(boot), `coop_settings.cc` (the UI page's "tape view" row).
+
+## What it is
+
+- **Tracker mode replaces the tape view** (decision 4). While it is on, tape mode paints black over the stock tape
+  screen and shows the tracker; the tape's keys and encoders are taken. The tape itself is untouched (its engine
+  keeps running; its audio still records what plays, since the voices are the stock's). Switch: **Shift + tape** on
+  the tape page (guess), or settings → UI → **tape view**: tape / tracker (green). The choice is saved.
+- **The tracker plays live** (decision 1) through the stock voices: each note is a `VoiceCtl::NoteOn` /
+  `NoteOff` (`0x01A85750` / `0x01A85840`) with the bank word `[0x01DE4C40]` set to the cell's family for the call
+  (0 synth, 1 drum), the same path every stock sequencer uses. Velocity carries the volume.
+- **Channels are monophonic** (decision 2): six of them, a new note on a channel chokes its last one.
+- **One family at a time, for now** [C in op1emu]. The core has ONE live play mode, `[0xFF801038]` (0 synth,
+  1 drum): its voice loop renders that family's voices, and the note paths assert on the other one
+  (`VoiceCtl.cpp:387 core_playMode == shared::PmDrum`; the UI's bank word `[0x01DE4C40]` is only the switch
+  request, which the core applies at its own moment, cutting the old family's voices). The first t1 build flipped the
+  bank word per note and hit that assert at the first drum cell. So t1 plays the cells whose family is the live one
+  (the header says `syn` or `drm`: the mode you were in before the tape) and skips the rest; every synth channel
+  plays the current synth sound, every drum channel the current kit. Synth + drums together, and engines per
+  channel, need the handover's engine-instance work (F1-F3). The first pass therefore answers the workflow
+  questions (views, controls, orientation), not the engine-count question.
+- **Render to tape**: not in t1. (The tape records what plays, so pressing the tape's record before switching to
+  the tracker and playing the song is a crude version; a proper one-way export comes later.)
+- **Tempo**: the tracker's own bpm (setup view), not the stock's; 4 rows a beat, `speed` ticks a row (default 6).
+  The clock is counted in the audio block (`coop_tracker_block` from `coop_stereo_block_start`: samples per tick
+  from bpm × 4 × speed); the notes are dispatched by the main loop (`coop_tracker_service` from `coop_fx_service`),
+  so no stock call happens in the interrupt. Timing jitter = the main loop's pass interval: measured in the gate
+  (the WAV's onset grid), to be measured on the device.
+
+## Song structure (guess: PC-style)
+
+16 patterns × up to 64 rows × 6 channels; an order list of up to 32 pattern numbers (the song); the pattern length
+is per pattern (default 16). A cell: note (none / c-0..g-9 / `off`), instrument (`syn` / `drm`), volume 0..99
+(`--` = the channel's default 80), one effect word with a value.
+
+Effects (tick resolution, guess at the set; words, not hex):
+
+| word | value | does |
+|---|---|---|
+| `arp` | two digits `xy` (default 37) | the note, +x, +y semitones, a tick each, round and round |
+| `rtg` | n ticks | retrigger the note every n ticks |
+| `cut` | n | note off at tick n of the row |
+| `dly` | n | note on at tick n instead of 0 |
+| `vol` | 0..99 | the channel's default volume from this row on |
+| `prb` | 0..100 % | the note plays with this probability |
+
+Not in t1: slides (`sld`) and pan (`pan`) need per-voice pitch and pan control the stock does not expose to a
+sequencer (pan would come with the per-voice pan of S3 / u6 later).
+
+## Views
+
+T1 **overview**: all six channels side by side, one row a line, the row number left; a note as `c-4`, a `.` for
+an empty cell, drum cells in green, the cursor cell in blue, an orange letter after the note for an effect
+(`a r c d v p`). Small marks above the columns, the cursor's channel blue. The cursor row has a dark bar, the
+playhead row a dark green one; the view follows the playhead while playing.
+
+T2 **zoom**: one channel: row, note, `syn`/`drm`, volume, effect word and value; at the right a strip of six dots,
+one per channel, big where that channel has a note on that row (the shown channel's dot blue). Landscape only has
+the strip (portrait has no room).
+
+T3 **song**: the order list: position, `p03`, its length in rows. T4 **setup**: bpm, speed, octave, view
+(landscape / portrait a / portrait b), each in its encoder's colour.
+
+Header: `tracker  p03  01/04  120` (pattern, position / song length, bpm) and `play` / `stop`, `edit`.
+
+## Controls (guess, from the handover's draft)
+
+| control | overview / zoom | song (T3) | setup (T4) |
+|---|---|---|---|
+| blue | note ±1 semitone (Shift: ±12); an empty cell gets c-4 (drum: f-3) first | position | bpm (Shift: ±10) |
+| green | instrument `syn` / `drm` (also the channel's default) | the pattern at that position | speed 1..16 |
+| white | volume ±1 (Shift: ±10) | song length | keyboard octave 0..6 |
+| orange | effect word (Shift: its value) | that pattern's length (Shift: ±16) | orientation |
+| blue push | note → `off` marker → empty | | |
+| white / orange push | volume back to default / clear the effect | | |
+| left / right | a row up / down (wraps); Shift: a channel left / right | a position | |
+| keyboard | writes the note (with `edit` on), moves down a row; previews with the cell's family | | |
+| play | play from the cursor row; again: stop. Shift + play: from the song's start | | |
+| stop | stop; stopped: the cursor to row 0 | | |
+| rec | `edit` on / off (off: the keyboard only previews) | | |
+| lift / drop / scissors | copy / paste / clear the cell | | |
+| T1..T4 | the view | | |
+
+The mode keys, Shift, Help, metronome, mic, COM pass to the stock. The tracker keeps playing when you leave tape
+mode (play the song while on the synth page), and stops when the tracker is switched off.
+
+## Orientation
+
+Landscape (320 × 160, 9 rows), or portrait (160 × 320, 21 rows): **a** puts the view's top at the screen's right edge (the
+device turned anticlockwise: the keyboard runs down the left), **b** at the left edge (clockwise). One transform maps view coordinates
+to the screen: lines and fills by their endpoints. Text: landscape uses the stock font (Text objects bake place,
+size and colour, so a pool holds one per (view, row, field, colour)). Portrait tried the stock Text object's 3 × 3
+matrix (kennel's row-vector convention `[a b 0; c d 0; tx ty 1]`, Q10; `coop_text_draw_m`): **the stock takes only
+the translation; the glyphs stay upright** [C op1emu]. So the portrait views draw kennel's stroke font (capitals,
+4 × 6 grid) with every segment transformed: 9 px a character in the zoom / song / setup views, 7.5 px in the
+overview and header. Not the stock font, but turnable; the owner judges whether that is acceptable (a rotated
+stock font would mean rendering its glyph outlines ourselves). In portrait the arrows still mean "a row up / down";
+the encoders keep their colours.
+
+## Storage
+
+`/yaffs2/user/coop_song.bin`: the `trk_song` struct as is ("CSNG", version 1, ~37 KB), written by the main loop
+two seconds after the last edit and when the tracker is switched off; read after the tape mounts (header first into
+a small buffer, the patterns straight into place). One song for now; files / SysEx transfer later.
+
+## Cost
+
+The tracker adds nothing to the audio block but a counter; the drawing is ~60 stock text draws and ~50 strokes a
+frame in tape mode only. The gate's `trk_frames` and the device's fps are the measure. `g_song` and the text pool
+add ~190 KB of bss (region A has room).
+
+## Open questions for the owner (the handover's §7, with what t1 did)
+
+1. Per-channel effects: t1 shares the stock's one instrument effect (and coop's FX 2). Per channel needs per-channel
+   voices.
+2. Engine per row: t1 has the family per cell, and only the live family sounds (above). The F1-F3 work (a second
+   voice set rendered in the same block, outside the core's single play mode) is the next step if the workflow is
+   what the owner wants; it decides engines per channel too.
+3. Drum channels: mono like the others (a new hit cuts the last) in t1.
+4. Pattern length and structure: PC-style patterns + order list, 16 patterns, 1..64 rows each.
+5. Effect display: words.
+6. Keys: Shift + tape enters; T1 / T2 switch overview / zoom; render to tape not yet.
+7. Stems or a mix: not yet.
+8. Orientation: both built; the setup view's orange picks. Which one feels right, and which way round?
+Plus: is the main-loop dispatch tight enough on the device (listen for swing in a straight pattern)? Should the
+keyboard write without `edit` by default (it does)? Should the tracker's tempo follow the stock's bpm instead?

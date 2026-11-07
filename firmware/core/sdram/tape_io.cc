@@ -215,6 +215,7 @@ extern "C" void coop_tape_clamp_track(void);   /* tape_stereo.cc */
 extern "C" void coop_l1_sine_copy(void);          /* l1_pool.cc (T4c): as early as coop runs on the main thread */
 extern "C" void coop_plugins_boot(void);          /* plugin_host.cc (P1): after the mount, the filesystem is up */
 extern "C" void coop_tape_ui_boot(void);          /* coop_tape_ui.cc (u4): the markers file */
+extern "C" void coop_tracker_boot(void);          /* coop_tracker.cc (t1): the song file */
 extern "C" int coop_tape_mount_and_index(void)
 {
     coop_l1_sine_copy();
@@ -231,6 +232,7 @@ extern "C" int coop_tape_mount_and_index(void)
     ALBUM_B_BASE = track_data_off(1);
     coop_plugins_boot();
     coop_tape_ui_boot();
+    coop_tracker_boot();
     return 0;
 }
 

@@ -1076,3 +1076,37 @@ effect page with a stock type in FX 2 (the stock page of that type, its dials mo
 octave; bend 2, time max: a slow tone; the drum's T2 + Shift: the PAN page, blue pans the last key.
 
 Result: (pending)
+
+## Tracker 1 (t1): the tracker sequencer in place of the tape view — device test (pending, 2026-11-07)
+
+- `build/pkg/op1_246_coop_t1_tracker.op1` (sha256 `ef4d86b2b3390ee1b6117c416b025d62ff4d93e19fcde6750f95f08ec6096092`), copy in Downloads. `--tape-stereo
+  --set-word g_coop_spread=32767` as u7; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build
+  tag `t1`. Includes u7 plus the overwrite / rename fix (the row's JSON spelling: `"name":"x"`, `"name": "x"` and
+  `"name" : "x"` all match now). If the overwritten sound still comes back unchanged, the next hypothesis is
+  that the reload reads the preset FILE in the folder, not the db row coop updates: then the overwrite must rewrite
+  the file the stock save writes (its path is in the save hooks, coop_save.cc).
+
+What it is: `docs/tracker.md` (the first pass, with every guess marked). Tape mode, **Shift + tape** (or settings
+→ UI → tape view) switches to the tracker: T1 overview, T2 zoom, T3 song, T4 setup; the keyboard writes notes,
+blue / green / white / orange edit the cell, play / stop / rec the transport and edit flag, lift / drop / scissors
+copy / paste / clear; setup's orange turns the screen (landscape, portrait a, portrait b).
+
+**One family at a time** [C op1emu]: the core's play mode (`[0xFF801038]`) renders synth OR drum voices and asserts
+on a note for the other family (`VoiceCtl.cpp:387`; the first t1 build died on it). The tracker plays the cells of
+the live family (the header says `syn` / `drm`: the mode you were in before the tape) and skips the rest.
+
+op1emu (`tests/sim/det_ui_tracker.txt`, `det_ui_tracker_p.txt`): no faults; four synth notes and three drum cells
+written; play runs the 16-row pattern with the playhead bar following; the WAV repeats the pattern every 2.00 s
+(16 rows x 125 ms at 120 bpm, speed 6: the clock is right on average; the row jitter is the main loop's pass
+interval, to be heard on the device); the zoom, song and setup views draw; portrait a and b draw the stroke font
+turned, b mirrored (the stock Text object takes only the translation of its matrix, docs/screens.md "t1"); the stock tape page (det_ui_tape) is untouched with the tracker off. Stats
+`trk_rows 82 trk_notes 38` in the landscape run.
+
+**What to do**: tape, Shift + tape (the tracker); write a few notes on the synth (the keyboard; the cursor moves
+down); play (is the row grid even? listen for swing); T2, T3, T4; setup orange one detent (portrait a: turn the
+device anticlockwise, the keyboard on the left), another (portrait b: clockwise); back; drum mode, tape: the drum cells play now (the synth ones are
+skipped); Shift + tape again: the tape page comes back (the markers, solo as u7). Say what feels wrong in the
+controls and the orientation: everything in `docs/tracker.md` is a guess for you to react to. The stats file
+(`trk_*`) and the fps line say the cost of the drawing.
+
+Result: (pending)

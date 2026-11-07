@@ -137,12 +137,14 @@ extern "C" void coop_tape_clamp_track(void);           /* tape_stereo.cc: a save
 extern "C" void coop_eng_block_end(void);          /* coop_stats.cc: the previous block's per-engine render sums */
 extern "C" void coop_runner_block(void);           /* coop_runner.cc (p5b): this block's scripted keys and turns */
 extern "C" void coop_bend_block(void);             /* coop_bend.cc (u5) */
+extern "C" void coop_tracker_block(void);          /* coop_tracker.cc (t1): the tracker clock */
 extern "C" int16_t coop_drumpan_q15(void);         /* coop_drumpan.cc (u6): the last played key's pan */
 extern "C" void coop_stereo_block_start(void)
 {
     coop_eng_block_end();
     coop_runner_block();                               /* after the render sums close: a mark's section includes them */
     coop_bend_block();                                 /* u5: the bend ramp (coop_bend.cc) */
+    coop_tracker_block();                              /* t1: the tracker ticks (coop_tracker.cc) */
     coop_l1_sine_copy();                               /* before the stock callback's first block (T4c) */
     if (!g_inited) stereo_init();
     coop_tape_clamp_track();

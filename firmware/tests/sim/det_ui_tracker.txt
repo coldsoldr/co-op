@@ -1,0 +1,75 @@
+# t1: the tracker in landscape. Tape mode; Shift + tape switches the tape view to the tracker (overview, black).
+# The keyboard writes c4 e4 g4 c5 down channel 1 (the cursor moves a row each); stop puts the cursor back on row 0;
+# Shift + right four times moves to channel 5 (a drum channel); f3, right, g3, right, f3 write drum hits; stop; T2
+# shows channel 1 zoomed, T3 the song, T4 the setup, T1 the overview again; play runs the 16-row pattern (120 bpm,
+# speed 6: a row every 125 ms, the pattern every 2 s) for ~6 s while the screenshots are taken; stop. The NAND is
+# kept: coop_stats.txt says how many rows and notes played; the WAV shows the row grid. Screenshots wall-timed: at
+# the end, during play (overview), then after T2 / T3 / T4.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tape 200
+at 27500
+press shift
+at 27700
+tap tape 200
+at 28200
+release shift
+at 29500
+tap c4 150
+at 30000
+tap e4 150
+at 30500
+tap g4 150
+at 31000
+tap c5 150
+at 31800
+tap stop 150
+at 32300
+press shift
+at 32500
+tap right 120
+at 32800
+tap right 120
+at 33100
+tap right 120
+at 33400
+tap right 120
+at 33700
+release shift
+at 34200
+tap f3 150
+at 34600
+tap right 120
+at 34900
+tap g3 150
+at 35300
+tap right 120
+at 35600
+tap f3 150
+at 36200
+tap stop 150
+at 37000
+tap play 150
+at 46000
+tap t2 150
+at 48500
+tap t3 150
+at 51000
+tap t4 150
+at 53500
+tap t1 150
+at 55000
+tap stop 150
+wait 44000
+screenshot /root/op1emu-work/trk_a.ppm
+wait 2500
+screenshot /root/op1emu-work/trk_b.ppm
+wait 2500
+screenshot /root/op1emu-work/trk_c.ppm
+wait 2500
+screenshot /root/op1emu-work/trk_d.ppm
+wait 2500
+screenshot /root/op1emu-work/trk_e.ppm
+wait 6000
+quit

@@ -45,4 +45,28 @@ static inline void coop_text_draw(struct coop_text *t, void *r, int32_t x, int32
     }
     op1_text_draw(t->obj, r, coop_text_ident);
 }
+
+/* t1: the same, placed by the matrix (kennel's row-vector convention [a b 0; c d 0; tx ty 1], Q10): the object is
+ * made at the origin, and m9 carries the place. Found in op1emu (t1, 2026-11-07): the stock takes only the
+ * TRANSLATION (tx, ty at m[6], m[7], Q10) for a Text; the rotation part leaves the glyphs upright. So this places
+ * text, it does not turn it; the tracker's portrait views use the stroke font instead. Kept for placing. */
+static inline void coop_text_draw_m(struct coop_text *t, void *r, int32_t size, const uint8_t *rgba, const char *s, int align,
+                                    const int32_t *m9)
+{
+    if (!t->made) {
+        op1_text_ctor(t->obj, 0, 0, size, rgba);
+        if (align) *(int32_t *)((uint8_t *)t->obj + 0x60) = align;
+        t->made = 1;
+        t->shown[0] = 1; t->shown[1] = 0;
+    }
+    int same = 1;
+    for (int i = 0; ; i++) { if (t->shown[i] != s[i]) { same = 0; break; } if (!s[i]) break; }
+    if (!same) {
+        int k = 0;
+        for (; s[k] && k < 23; k++) t->shown[k] = s[k];
+        t->shown[k] = 0;
+        op1_text_set(t->obj, t->shown);
+    }
+    op1_text_draw(t->obj, r, m9);
+}
 #endif
