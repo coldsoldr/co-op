@@ -31,7 +31,7 @@
 #include "coop_stereo.h"
 
 #define XSLOTS 6
-enum { XE_FM, XE_STRING, XE_DIGITAL, XE_DSYNTH, XE_PHASE, XE_N };
+enum { XE_FM, XE_STRING, XE_DIGITAL, XE_DSYNTH, XE_PHASE, XE_VOLTAGE, XE_CLUSTER, XE_N };
 typedef void *(*ctor_fn)(void *);
 typedef void (*render_fn)(void *, int16_t *, const int16_t *);
 typedef void (*note_fn)(void *, const int16_t *);
@@ -43,6 +43,8 @@ static const struct xeng engs[XE_N] = {
     { 0x01A51F28u, 32, 0x01A51F7Au, 0x01A521E2u, 0,           0 },            /* digital (T10.cpp) */
     { 0x0197E058u, 72, 0x0197E1D8u, 0x0197E0EEu, 0x0197E168u, 0x0197E0B0u },  /* dsynth: setup(this, i) sets the index */
     { 0x01A0BC14u, 32, 0x01A0BC5Cu, 0x01A0BE82u, 0,           0 },            /* phase (Pd.cpp): adds to the level word 0x01DE4B8C, harmless */
+    { 0,           64, 0x01A49BF4u, 0x01A49B94u, 0x01A49B4Eu, 0 },            /* voltage (Slump.cpp): built by hand (build_voltage); writes the display copy 0x01DF6154 */
+    { 0,          112, 0x01960288u, 0x01960664u, 0x01960248u, 0 },            /* cluster (Cls.cpp): built by hand (build_cluster); reads the shared words 0x01BAA91C.. */
 };
 #define FM_SETUP     ((void (*)(void))0x019A3D84u)
 #define FM_PARAM_PTR (*(volatile uint32_t *)0xFF906F6Cu)
@@ -82,9 +84,11 @@ static const int16_t s_knobs[XE_N][8] = {
     { 0x4000, 0x4000, 0x4000, 0x4000, 0, 0, 0, 0 },
     { 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000 },
     { 0x4000, 0x4000, 0x4000, 0x4000, 0, 0, 0, 0 },
+    { 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000 },
+    { 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000 },
 };
 volatile uint32_t g_xvoice_peak[XE_N];                                        /* the loudest |sample| each engine made: is it audible at all? */
-static const int16_t s_knob_max[XE_N] = { 0x7FFF, 0x3FFF, 0x7FFF, 0x7FFF, 0x7FFF };   /* the top of each engine's knob range (string: index 0 at 0x4000) */
+static const int16_t s_knob_max[XE_N] = { 0x7FFF, 0x3FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF };   /* the top of each engine's knob range (string: index 0 at 0x4000) */
 static int16_t s_slot_knobs[XSLOTS][8];                                       /* the channel's patch, as the render reads it */
 static coop_pan_delta s_slot_pan[XSLOTS];
 static int s_slot_has_patch[XSLOTS];
@@ -116,6 +120,26 @@ static uint32_t inc_of(int note)
     return (uint32_t)v;
 }
 
+/* Engines whose getter builds the voice inline at the scratchpad address (no constructor to call): the same words
+ * and sub-constructors, on coop's object (OP1_vdk.dis getters 0x01A49EF8, 0x019607E4). 0x019F15F8 is the stock's
+ * small sub-object constructor, 0x01AA3862(dst, n, size, ctor) its array constructor (the ctor on the stack). */
+#define SUB_CTOR   ((void (*)(void *))0x019F15F8u)
+#define ARRAY_CTOR ((void (*)(void *, int, int, void *))0x01AA3862u)
+#define CLUSTER_ELEM_CTOR ((void *)0x01960210u)
+static void build_voltage(uint8_t *o)
+{
+    for (int i = 0; i < 64; i++) o[i] = 0;
+    *(uint32_t *)o = 0x0191185Cu;                                             /* the vtable */
+    SUB_CTOR(o + 0x4); SUB_CTOR(o + 0xC); SUB_CTOR(o + 0x14); SUB_CTOR(o + 0x1C);
+}
+static void build_cluster(uint8_t *o)
+{
+    for (int i = 0; i < 112; i++) o[i] = 0;
+    *(uint32_t *)o = 0x0190F67Cu;
+    ARRAY_CTOR(o + 0x4, 8, 8, (void *)(uintptr_t)SUB_CTOR);
+    ARRAY_CTOR(o + 0x44, 8, 2, CLUSTER_ELEM_CTOR);
+    ARRAY_CTOR(o + 0x5A, 8, 2, CLUSTER_ELEM_CTOR);
+}
 /* main thread, once (the tape mount): every slot's objects */
 extern "C" void coop_xvoice_boot(void)
 {
@@ -130,7 +154,9 @@ extern "C" void coop_xvoice_boot(void)
             void *o = coop_l1_alloc(engs[e].size);
             if (o) g_xvoice_l1++; else o = s_obj_sdram[s][e];
             s_slot[s].obj[e] = o;
-            ((ctor_fn)(uintptr_t)engs[e].ctor)(o);
+            if (e == XE_VOLTAGE) build_voltage((uint8_t *)o);
+            else if (e == XE_CLUSTER) build_cluster((uint8_t *)o);
+            else ((ctor_fn)(uintptr_t)engs[e].ctor)(o);
             if (engs[e].setup) ((setup_fn)(uintptr_t)engs[e].setup)(o, s);
             if (e == XE_STRING) *(uint32_t *)((uint8_t *)o + 0x14) = (uint32_t)(uintptr_t)s_string_buf[s];   /* our delay line, not the stock's */
         }

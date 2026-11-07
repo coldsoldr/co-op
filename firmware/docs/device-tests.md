@@ -1185,11 +1185,25 @@ Result: (pending)
 - `build/pkg/op1_246_coop_t6_tracker_pha.op1` (sha256 `8cdaed073317267c7a5e03f95785abed7a5159922f1634292a8c3df9515d66f5`),
   copy in Downloads. Supersedes t5 (everything so far; the green knob now also offers `pha`).
 
-The tracker\x27s coop voices are fm, str, dig, dsy and **pha** (the stock phase engine, Pd.cpp); op1emu: it sounds
+The tracker's coop voices are fm, str, dig, dsy and **pha** (the stock phase engine, Pd.cpp); op1emu: it sounds
 (a bright harmonic series at the nominal note), 11.7 k cycles a block, no faults; the three-engine run unchanged.
 All 30 voice objects sit in the coop L1 pool (`xv_l1 30`). Voltage, dna, drwave, cluster and pulse are not
 offered: their getters build the voice inline at the scratchpad address (no constructor to call on coop memory).
 
 **What to do**: the t5 / t4 / t3 tests on this image, plus a `pha` channel beside the others.
+
+Result: (pending)
+
+## Tracker 7 (t7): voltage and cluster as coop voices — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_t7_tracker_engines.op1` (sha256 `1964cd9110a8ebd44ecaf6113935cfa4e66adef2ad8646c6b7e459a3b7a1fd9d`),
+  copy in Downloads. Supersedes t6: the green knob now offers `syn drm fm str dig dsy pha vol clu`.
+
+Voltage and cluster voices are built by hand on coop memory (their stock getters construct inline at the
+scratchpad address). op1emu: both sound at the nominal note, 14 k and 18 k cycles a block, no faults; all 42
+voice objects (6 channels x 7 kinds) sit in the coop L1 pool. dna, drwave and pulse stay out (docs/tracker.md).
+
+**What to do**: the t5 / t4 / t3 tests on this image; a song with one channel per engine kind; the stats
+`xv_max` with several kinds sounding together is the mixed-engine cache number.
 
 Result: (pending)

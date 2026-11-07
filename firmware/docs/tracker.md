@@ -200,10 +200,15 @@ put back; the sine table is the L1 copy in every block (the package's retarget);
 use (`0xFF801B50`, `0xFF801E50`, `0xFF801F50`) are free at the stage. Note-off goes to the engine where it has one
 (string sets its release, dsynth its own); the coop envelope (2 ms / 120 ms) shapes everything on top.
 
-Not done: voltage, dna, drwave, cluster and pulse: their getters construct the voice inline (vtable word,
-sub-objects, the stock vector constructor) at the scratchpad address, with no separate constructor to call on
-coop's memory, so each needs its construction replicated by hand; the drum family (above). The channel's patch
-and pan came in F2b, phase in F2c.
+**F2d: voltage and cluster** join as `vol` and `clu`: their getters build the voice inline at the scratchpad
+address (vtable word, the stock's small sub-object constructor `0x019F15F8`, its array constructor
+`0x01AA3862(dst, n, size, ctor)`), so coop replays the same words and constructors on its own object
+(`build_voltage`, `build_cluster` in coop_xvoice.cc). Voltage writes the live engine's 32-sample display copy
+(`0x01DF6154`), cluster reads the engine's shared parameter words (`0x01BAA91C..`) and the shared LCG: harmless.
+
+Not offered: **dna** (its render takes the voice index from `this - 0xFFB00000` for per-voice tables), **drwave**
+(a voice index at `+0x1C` for per-voice tables, like dsynth, plus a web of globals) and **pulse** (its render is
+L1 code); the drum family (above). The channel's patch and pan came in F2b, phase in F2c.
 
 **F2 findings (op1emu, 2026-11-07)** [C op1emu]:
 - **The parameter pointer is the slot's 8 knob words**, not 4: dsynth's render reads `+0x8..+0xc`, so a four-word
@@ -216,7 +221,8 @@ and pan came in F2b, phase in F2c.
   because the pristine NAND's synth octave is −1 (the core folds it into its own pitch words). So no octave bug in
   coop's words, and the earlier "dump sits an octave low" reading was wrong: it was the FM patch and the octave.
 - **Cost a block, op1emu, one voice sounding (`xv_max`, coop's ~2 k of save / restore and envelope included):**
-  fm ~10–11 k, phase ~12 k, digital ~13 k, dsynth ~25 k, string ~30 k (its 16 KB delay line). The three-engine run (fm +
+  fm ~10–11 k, phase ~12 k, digital ~13 k, voltage ~14 k, cluster ~18 k, dsynth ~25 k, string ~30 k (its 16 KB
+  delay line). The three-engine run (fm +
   string + dsynth beside the live synth, `tests/sim/det_ui_tracker_x.txt`): **63.0 k peak, 45.6 k average** a
   block, 11 % of the 580 k block at peak, additive: op1emu models no cache, so the I-cache cost of mixed engines
   stays a device question (the stats` xv_max` on the device answers it).
