@@ -149,5 +149,5 @@ slot 1, with the four knob words in the filter ranges and `params[4] = 0x5300 + 
 
 ## Performance rules for plugins
 
-Every plugin follows `docs/plugin-performance.md` (the SDK guide: the block budget, the per-sample loop rules, how a
+Every plugin follows `guide/plugin-guidelines.md` (the contract: controls, parameters, screens, stereo, porting) and `docs/plugin-performance.md` (the SDK guide: the block budget, the per-sample loop rules, how a
 plugin is measured with the stats file's cost line). A plugin over 60 k cycles a block is a bug to fix before release.

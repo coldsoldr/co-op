@@ -24,3 +24,5 @@ documents. Read `docs/brick-safety.md` before producing anything that goes on th
   any hand-written address.
 - Python tools are stdlib only, Python 3.8 compatible (WSL has 3.8.2).
 - Docs state confidence: [C] confirmed on device or in bytes, [I] inferred.
+- UI features and plugin screens are mocked in the playground (`tools/playground/coop-playground.html`) before they
+  are built; the owner's UI decisions are in `docs/ui-features.md`, the plugin rules in `guide/plugin-guidelines.md`.

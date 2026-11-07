@@ -38,7 +38,7 @@ state** ("dual-mono"). The left and right instances never interact.
 
 When porting a kennel (.knl) or opus plugin to a coop FX, the port MUST satisfy:
 
-1. **Present stereo in / stereo out** to the coop core. `render(slot, inL, inR, outL, outR, params, n)`
+1. **Present stereo in / stereo out** to the coop core. `render(slot, l, r, params, n)` (in place, ABI v1)
    processes a stereo block.
 2. **A mono DSP core is wrapped dual-mono by the port:** two independent instances of the effect's
    state, one driven by L, one by R. The port MUST allocate **separate per-channel state** (delay
