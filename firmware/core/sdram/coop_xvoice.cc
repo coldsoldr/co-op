@@ -82,6 +82,24 @@ static const int16_t s_knobs[XE_N][8] = {
     { 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000 },
 };
 volatile uint32_t g_xvoice_peak[XE_N];                                        /* the loudest |sample| each engine made: is it audible at all? */
+static const int16_t s_knob_max[XE_N] = { 0x7FFF, 0x3FFF, 0x7FFF, 0x7FFF };   /* the top of each engine's knob range (string: index 0 at 0x4000) */
+static int16_t s_slot_knobs[XSLOTS][8];                                       /* the channel's patch, as the render reads it */
+static coop_pan_delta s_slot_pan[XSLOTS];
+static int s_slot_has_patch[XSLOTS];
+
+/* the tracker (main loop), before a note: the channel's four knobs (0..99 %) and pan (-50..50) for this engine */
+extern "C" void coop_xvoice_set(int slot, int eng, const uint8_t *knob_pct, int pan_pct)
+{
+    if (slot < 0 || slot >= XSLOTS || eng < 0 || eng >= XE_N) return;
+    for (int k = 0; k < 4; k++) {
+        int p = knob_pct[k] > 99 ? 99 : knob_pct[k];
+        int16_t v = (int16_t)((int32_t)s_knob_max[eng] * p / 99);
+        s_slot_knobs[slot][k] = v; s_slot_knobs[slot][k + 4] = v;
+    }
+    if (pan_pct < -50) pan_pct = -50; else if (pan_pct > 50) pan_pct = 50;
+    s_slot_pan[slot] = coop_pan_deltas((int16_t)(pan_pct * 32767 / 50));
+    s_slot_has_patch[slot] = 1;
+}
 static const uint32_t semi_q24[12] = {                                        /* 2^(k/12), Q24 */
     16777216u, 17774841u, 18831788u, 19951586u, 21137968u, 22394886u, 23726566u, 25137472u, 26632357u, 28216230u, 29894287u, 31671998u };
 
@@ -146,7 +164,7 @@ extern "C" void coop_xvoice_render(int32_t *L, int32_t *R)
                 x->eng = eng;
                 x->inc = inc_of(note);
                 x->gain = (int16_t)(vel * 258 > 32767 ? 32767 : vel * 258);
-                ((note_fn)(uintptr_t)engs[eng].noteon)(x->obj[eng], s_knobs[eng]);
+                ((note_fn)(uintptr_t)engs[eng].noteon)(x->obj[eng], s_slot_has_patch[s] ? s_slot_knobs[s] : s_knobs[eng]);
                 x->gate = 1; x->sounding = 1;
                 g_xvoice_notes++;
             } else {
@@ -175,9 +193,9 @@ extern "C" void coop_xvoice_render(int32_t *L, int32_t *R)
         x->env_q15 = e;
         for (int i = 0; i < COOP_VBLK; i++) PITCH[i] = x->inc;
         if (x->eng == XE_DSYNTH) for (int i = 0; i < COOP_VBLK; i++) VENV[i] = s_env[i];   /* dsynth reads the voice envelope itself */
-        ((render_fn)(uintptr_t)engs[x->eng].render)(x->obj[x->eng], s_out, s_knobs[x->eng]);
+        ((render_fn)(uintptr_t)engs[x->eng].render)(x->obj[x->eng], s_out, s_slot_has_patch[s] ? s_slot_knobs[s] : s_knobs[x->eng]);
         { uint32_t pk = g_xvoice_peak[x->eng]; for (int i = 0; i < COOP_VBLK; i++) { int32_t a = s_out[i] < 0 ? -s_out[i] : s_out[i]; if ((uint32_t)a > pk) pk = (uint32_t)a; } g_xvoice_peak[x->eng] = pk; }
-        coop_pan_delta d = { 0, 0 };
+        coop_pan_delta d = s_slot_has_patch[s] ? s_slot_pan[s] : coop_pan_deltas(0);
         coop_pair_accum_synth(L, R, s_out, s_env, x->gain, d);
         if (!x->gate && e == 0) x->sounding = 0;
     }

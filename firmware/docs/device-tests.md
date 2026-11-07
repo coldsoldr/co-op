@@ -1146,3 +1146,19 @@ with the live synth set to DSynth: the `dsy` channels clash with the live voices
 what it sounds like). Known: the `fm` voice sounds an octave below the others (its stock patch's carrier ratio).
 
 Result: (pending)
+
+## Tracker 4 (t4): F2b, the channel's patch — device test (pending, 2026-11-07)
+
+- `build/pkg/op1_246_coop_t4_tracker_patch.op1` (sha256 `90a809dad6f52e846f5c63c926644251f8966a0fbee3336bf6ae3b54daab9462`),
+  copy in Downloads. Supersedes t3 (same code plus the patch view; the song file is version 2, an older one is
+  ignored).
+
+**Shift + T2** on a channel whose instrument is a coop voice (`fm` `str` `dig` `dsy`): four bars in the encoder
+colours, the engine's knobs 0..99, pan top right (Shift + blue). The values apply live while the voice sounds and
+are saved with the song. op1emu: the view draws, the string plays with the patch, no faults.
+
+**What to do**: a `str` channel with a note, Shift + T2, turn the four encoders while it plays (the bars move, the
+sound changes), Shift + blue to pan it; power-cycle: the patch comes back. Then t3's four-engines test on this
+image (it is the same code).
+
+Result: (pending)

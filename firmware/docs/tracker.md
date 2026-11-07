@@ -1,4 +1,4 @@
-# The tracker (t1): first pass, 2026-11-07
+| T1..T4 | the view (Shift + T2: the channel's patch for its coop voice, F2b) | | |# The tracker (t1): first pass, 2026-11-07
 
 The owner's brief is `docs/tracker-handover.md`; its decisions 1-7 stand. This is the first build, made with the
 owner away ("make your best guesses… I'll have a look at the first pass… try make it both ways [portrait and
@@ -209,3 +209,22 @@ family (a coop sample player over the kit's samples), and per-voice pan (centre 
   string + dsynth beside the live synth, `tests/sim/det_ui_tracker_x.txt`): **63.0 k peak, 45.6 k average** a
   block, 11 % of the 580 k block at peak, additive: op1emu models no cache, so the I-cache cost of mixed engines
   stays a device question (the stats` xv_max` on the device answers it).
+
+## F2b: the channel's patch (2026-11-07)
+
+**Shift + T2** opens the channel's patch view for its coop voice: four bars in the encoder colours, the engine's
+four knobs (0..99 %, mapped onto each engine's own range: the string's knob 0 tops out at 0x3FFF, the others at
+0x7FFF), and **pan** (Shift + blue, l50..r50) top right. The values are the song's (`ch_knob`, `ch_pan`; song
+file version 2) and apply live while the voice sounds (coop_xvoice_set rewrites the slot's knob words and pan
+delta); the keyboard previews with them. A channel whose default instrument is a live family shows "a live
+family: no patch here" (the stock's own page is its patch). Guess: the four knobs mean what the stock engine's
+four encoders mean; the owner's engine screens would be the next step for reading them.
+
+**Drums beside the synth (not done, looked at):** the stock drum voices are not self-contained objects like the
+synth engines: the drum note-on (`0x01A84BA0`) allocates one of 12 voices in an L1 flag array (`0xFF801070`) and
+writes per-voice pitch / level / position words into L1 arrays (`0xFF8010F4`, `0xFF801124`, `0xFF8012EC`,
+`0xFF801304`, `0xFF801334`, through the float helpers) that the drum render reads, and the voice objects live in
+the scratchpad with the kit's sample memory behind them. A coop drum player therefore means either reproducing
+that L1 state for a second voice set, or a coop one-shot sampler over the kit's sample buffers (their base and the
+per-key start / end from the drum patch). Both need another RE pass; until then drum channels play when the kit
+is the live family.

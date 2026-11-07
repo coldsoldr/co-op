@@ -130,7 +130,7 @@ extern "C" int coop_tracker_key(int code, int pressed)
     }
     s_swallow |= bit;
     switch (code) {
-    case KEY_T1: case KEY_T1 + 1: case KEY_T1 + 2: case KEY_T1 + 3: g_trk.view = code - KEY_T1; break;
+    case KEY_T1: case KEY_T1 + 1: case KEY_T1 + 2: case KEY_T1 + 3: g_trk.view = (SHIFT_HELD && code == KEY_T1 + 1) ? 4 : code - KEY_T1; break;   /* Shift + T2: the channel's patch (F2b) */
     case KEY_LEFT: if (SHIFT_HELD) move_ch(-1); else if (g_trk.view == 2) g_trk.cur_pos = wrapi(g_trk.cur_pos - 1, g_song.order_len); else move_row(-1); break;
     case KEY_RIGHT: if (SHIFT_HELD) move_ch(1); else if (g_trk.view == 2) g_trk.cur_pos = wrapi(g_trk.cur_pos + 1, g_song.order_len); else move_row(1); break;
     case KEY_PLAY:
@@ -186,6 +186,15 @@ static void knob_song(int knob, int steps, int shift)
     }
     coop_tracker_touch();
 }
+extern "C" void coop_xvoice_set(int slot, int eng, const uint8_t *knob_pct, int pan_pct);   /* coop_xvoice.cc */
+static void knob_patch(int knob, int steps, int shift)                       /* the channel's four engine knobs; Shift + blue: pan */
+{
+    int c = g_trk.cur_ch;
+    if (knob == 0 && shift) g_song.ch_pan[c] = (int8_t)clampi(g_song.ch_pan[c] + steps, -50, 50);
+    else g_song.ch_knob[c][knob] = (uint8_t)clampi(g_song.ch_knob[c][knob] + steps * (shift ? 10 : 1), 0, 99);
+    if (g_song.ch_inst[c] >= 2) coop_xvoice_set(c, g_song.ch_inst[c] - 2, g_song.ch_knob[c], g_song.ch_pan[c]);   /* live, while it sounds */
+    coop_tracker_touch();
+}
 static void knob_setup(int knob, int steps, int shift)
 {
     switch (knob) {
@@ -202,7 +211,8 @@ extern "C" int coop_tracker_knob(int knob, int steps)
     if (knob < 0 || knob > 3 || !steps) return 1;
     int shift = SHIFT_HELD;
     g_trk_knobs++;
-    if (g_trk.view == 2) knob_song(knob, steps, shift);
+    if (g_trk.view == 4) knob_patch(knob, steps, shift);
+    else if (g_trk.view == 2) knob_song(knob, steps, shift);
     else if (g_trk.view == 3) knob_setup(knob, steps, shift);
     else knob_cell(knob, steps, shift);
     return 1;
@@ -228,6 +238,7 @@ static struct coop_text s_tx_over[ROWS_MAX][OV_N];
 static struct coop_text s_tx_zoom[ROWS_MAX][ZM_N];
 static struct coop_text s_tx_song[ROWS_MAX][SG_N];
 static struct coop_text s_tx_setup[4][2];
+static struct coop_text s_tx_patch[8];
 static struct coop_text s_tx_head[4];
 
 static int VW(void) { return s_or ? 160 : 320; }
@@ -427,6 +438,27 @@ static void draw_setup(void *r)
         vtext(&s_tx_setup[i][1], r, xv, y, 12, c_knob[i], v);
     }
 }
+static void draw_patch(void *r)                                              /* Shift + T2: the channel's patch for its coop voice */
+{
+    int c = g_trk.cur_ch, inst = g_song.ch_inst[c] > 5 ? 0 : g_song.ch_inst[c];
+    char t[32], b[8];
+    t[0] = 0; scat(t, "channel "); b[0] = (char)('1' + c); b[1] = 0; scat(t, b); scat(t, "  "); scat(t, inst_names[inst]);
+    vtext(&s_tx_patch[0], r, s_or ? 4 : 24, 28, 12, c_row, t);
+    if (inst < 2) { vtext(&s_tx_patch[6], r, s_or ? 4 : 24, 46, 12, c_dim, s_or ? "live family" : "a live family: no patch here"); return; }
+    int pan = g_song.ch_pan[c];
+    t[0] = 0; scat(t, "pan ");
+    if (pan == 0) scat(t, "c"); else { scat(t, pan < 0 ? "l" : "r"); num2(b, pan < 0 ? -pan : pan); scat(t, b); }
+    vtext(&s_tx_patch[1], r, s_or ? 100 : 230, 28, 12, c_blue, t);
+    int col = VW() / 4, bottom = VH() - 36, hmax = VH() - 100;
+    for (int k = 0; k < 4; k++) {
+        int v = g_song.ch_knob[c][k], x = col * k + col / 2;
+        int h = hmax * v / 99;
+        vfill(r, x - 7, bottom - hmax, x + 7, bottom, c_bar_cur);          /* the track */
+        if (h > 0) vfill(r, x - 5, bottom - h, x + 5, bottom, c_knob[k]);  /* the value */
+        num2(b, v);
+        vtext(&s_tx_patch[2 + k], r, x - 7, bottom + 6, 12, c_knob[k], b);
+    }
+}
 extern "C" void coop_tracker_draw(void *r)
 {
     int o = clampi(g_song.orient, 0, 2);
@@ -438,6 +470,7 @@ extern "C" void coop_tracker_draw(void *r)
     case 1: draw_zoom(r); break;
     case 2: draw_song(r); break;
     case 3: draw_setup(r); break;
+    case 4: draw_patch(r); break;
     default: draw_overview(r); break;
     }
 }

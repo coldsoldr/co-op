@@ -64,9 +64,14 @@ static uint32_t rnd(void) { s_rng ^= s_rng << 13; s_rng ^= s_rng >> 17; s_rng ^=
 extern "C" int coop_tracker_live_family(void) { return LIVE_MODE == 1 ? 1 : 0; }
 extern "C" void coop_xvoice_note(int slot, int eng, int note, int vel, int on);   /* coop_xvoice.cc (F1 / F2): coop's extra voices, inst >= 2 */
 extern "C" void coop_xvoice_boot(void);
+extern "C" void coop_xvoice_set(int slot, int eng, const uint8_t *knob_pct, int pan_pct);   /* the slot's knob words and pan */
 static void raw_note(int c, int inst, int note, int vel, int on)
 {
-    if (inst >= 2) { coop_xvoice_note(c, inst - 2, note, vel, on); return; }   /* F2: the channel's own voice, outside the core */
+    if (inst >= 2) {                                                        /* F2: the channel's own voice, outside the core */
+        if (on) coop_xvoice_set(c, inst - 2, g_song.ch_knob[c], g_song.ch_pan[c]);   /* its patch: the channel's knobs and pan */
+        coop_xvoice_note(c, inst - 2, note, vel, on);
+        return;
+    }
     if ((inst ? 1 : 0) != coop_tracker_live_family() || BANK != LIVE_MODE) return;   /* the other family, or a switch under way */
     struct midi_note n;
     n.note = note; n.velocity = vel; n.on = 1; n.pad[0] = n.pad[1] = n.pad[2] = 0; n.extra = 0;
@@ -110,8 +115,8 @@ static void defaults(void)
     g_song.order_len = 1;
     for (int i = 0; i < 32; i++) g_song.order[i] = 0;
     g_song.bpm = 120; g_song.speed = 6; g_song.octave = 1; g_song.orient = 0; g_song.on = 0;
-    for (int c = 0; c < TRK_CH; c++) { g_song.ch_inst[c] = c >= 4 ? 1 : 0; g_song.ch_vol[c] = 80; }
-    g_song.magic[0] = 'C'; g_song.magic[1] = 'S'; g_song.magic[2] = 'N'; g_song.magic[3] = 'G'; g_song.version = 1;
+    for (int c = 0; c < TRK_CH; c++) { g_song.ch_inst[c] = c >= 4 ? 1 : 0; g_song.ch_vol[c] = 80; g_song.ch_pan[c] = 0; for (int k = 0; k < 4; k++) g_song.ch_knob[c][k] = 50; }
+    g_song.magic[0] = 'C'; g_song.magic[1] = 'S'; g_song.magic[2] = 'N'; g_song.magic[3] = 'G'; g_song.version = 2;
 }
 
 /* ---- the clock (audio block) ---- */
@@ -218,7 +223,7 @@ extern "C" void coop_tracker_boot(void)                                    /* af
     const int hdr = (int)(sizeof g_song - sizeof g_song.pat);             /* the header first, into a small buffer (no 36 KB on the stack) */
     uint8_t h[128];
     int got = Y_READ(fd, h, hdr);
-    if (got != hdr || h[0] != 'C' || h[1] != 'S' || h[2] != 'N' || h[3] != 'G' || h[4] != 1) { Y_CLOSE(fd); return; }
+    if (got != hdr || h[0] != 'C' || h[1] != 'S' || h[2] != 'N' || h[3] != 'G' || h[4] != 2) { Y_CLOSE(fd); return; }
     got = Y_READ(fd, &g_song.pat, (int)sizeof g_song.pat);                 /* the patterns straight into place */
     Y_CLOSE(fd);
     if (got != (int)sizeof g_song.pat) { defaults(); return; }

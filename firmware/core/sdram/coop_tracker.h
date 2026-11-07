@@ -17,7 +17,9 @@ struct trk_song {
     uint8_t order[32];
     uint8_t pat_len[16];
     uint8_t ch_inst[TRK_CH], ch_vol[TRK_CH];
-    uint8_t reserved[20];
+    int8_t ch_pan[TRK_CH];                                                /* v2: -50..50, the coop voices' pan */
+    uint8_t ch_knob[TRK_CH][4];                                           /* v2: the coop voices' four engine knobs, 0..99 */
+    uint8_t reserved[14];
     struct trk_cell pat[16][64][TRK_CH];
 };
 struct trk_chan { int sounding, note_sounding, inst_sounding; int fx, fxv, arp_step, pending; int note_cell, inst_cell, vol_cell; };
