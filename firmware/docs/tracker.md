@@ -134,3 +134,37 @@ add ~190 KB of bss (region A has room).
 8. Orientation: both built; the setup view's orange picks. Which one feels right, and which way round?
 Plus: is the main-loop dispatch tight enough on the device (listen for swing in a straight pattern)? Should the
 keyboard write without `edit` by default (it does)? Should the tracker's tempo follow the stock's bpm instead?
+
+## F1: a second engine at the same time (2026-11-07)
+
+The owner asked whether notes from different engines can sound together. Through the stock's note API: no (the core
+has one play mode, above). Rendered by coop: yes, and F1 is the probe (`core/sdram/coop_xvoice.cc`):
+
+- One stock **FM voice** (Fm.cpp, engine 0) is built in coop memory with the stock's own constructor (`0x019A21D8`,
+  60 bytes, in the coop L1 pool when it is taken), with its own parameter block filled by the engine's setup
+  (`0x019A3D84`, from the FM patch words at `0x01D05880`).
+- Every block, from coop's instrument stage (before the pair is decimated), the voice is rendered with the stock
+  render (`0x019A23D4`) and placed into the stereo pair exactly like a stock voice. The render reads the per-sample
+  pitch words at `0xFF801950` and the shared parameter pointer at `0xFF906F6C`: both are swapped in for the call
+  and put back, so the live engine never sees a change. The sine table is already the L1 copy in every block.
+- The ADSR the stock applies after render is coop's own here: a linear 2 ms attack and 120 ms release in Q15. Pitch
+  is `f / 88200 * 2^32` from the MIDI note (a 12-entry 2^(k/12) table and a shift).
+- The tracker's instrument field has a third value, **`fm`** (green: syn, drm, fm). Cells on `fm` go to this voice
+  whatever the core's play mode; it is monophonic (one voice for the whole tracker in F1).
+- Cost: `xv_max` / `xv_sum` / `xv_blocks` on the stats "stages" line, cycles per block while the voice sounds.
+  Silent, it costs a few loads.
+
+What F1 does not answer yet: a second *instance* of the live engine type (two patches of one engine), engines whose
+voices depend on the scratchpad address (`this - 0xFFB00000`: Pd does), and the I-cache cost of several different
+engines' render loops in one block. Those are F2 / F3.
+
+**F1 result (op1emu, 2026-11-07, `tests/sim/det_ui_tracker_fm.txt`)** [C op1emu]: with the stock synth live, a
+channel on `fm` sounds together with a synth channel: at every pattern start the WAV carries the FM voice's
+spectrum (its `e4`, then `c5` at row 2) over the synth's `c4` / `g4`; no faults. Cost: **`xv_max` 9,795 cycles a
+block** while the voice sounds (average 9,766 over 952 blocks: the FM render ~6 k as the stock loop pays it, plus
+the pitch-word save / restore, the envelope and the pair accumulate), 1.7 % of the 580 k block; silent, nothing.
+Six such voices would be ~10 % in op1emu, times the device's 1.2–1.7 cache factor: inside the budget on paper.
+The FM patch words at `0x01D05880` hold a plucky sound in the pristine NAND (the voice decays in ~0.4 s): the
+channel's own FM patch is the next step. Observation: in op1emu's WAV both the stock synth and the FM voice sit an
+octave below nominal (`c4` at 130 Hz, the FM `c5` at 260.6 Hz: the same factor, so the pitch formula is right and
+the octave is the dump's); the device test listens for the FM voice in tune with the synth.

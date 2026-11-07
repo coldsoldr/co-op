@@ -46,6 +46,7 @@ extern "C" volatile uint32_t g_coop_fast_dsynth, g_coop_fast_stage, g_coop_fast_
     g_coop_fast_nitro, g_coop_fast_grid, g_coop_fast_spring, g_coop_fast_delay, g_coop_fast_voltage, g_coop_fast_phase;   /* stereo_bus.cc */
 extern volatile uint32_t g_plugins_seen, g_plugins_loaded, g_plugins_failed, g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks, g_fx_stock_stereo_blocks, g_fx_stock_ctor, g_s2_blocks[2], g_s2_changes, g_tank_bound, g_tank_short, g_ui_opens, g_ui_applies, g_plugins_disabled, g_ui_toggles, g_set_opens, g_set_saves, g_ui_col2_sets, g_rnd_count, g_rnd_backs, g_rnd_refused, g_solo_sets, g_marker_sets, g_marker_jumps, g_fn_taps, g_mode_key_taps, g_mode_key_holds, g_sound_keeps, g_sound_kept, g_sound_writes, g_bend_presses, g_bend_knobs, g_bend_ramps, g_over_saves, g_over_armed, g_over_stock, g_rename_starts, g_rename_saves, g_rename_refused, g_drumpan_knobs, g_rename_pushes, g_fx2view_params, g_fx2view_disp, g_fx2view_pops, g_trk_toggles, g_trk_written, g_trk_plays, g_trk_frames, g_trk_knobs, g_trk_rows, g_trk_notes;   /* plugin_host.cc, coop_ui.cc, coop_settings.cc, coop_tracker*.cc */
 extern const char *volatile g_plugins_last_error;
+extern volatile uint32_t g_xvoice_cycles_max, g_xvoice_cycles_sum, g_xvoice_blocks, g_xvoice_notes;   /* coop_xvoice.cc (F1) */
 extern volatile uint32_t g_st0_builds, g_st0_dry_blocks;           /* plugin_host.cc: slot 1's twin built off the audio path */
 extern char g_plugins_last_name[];                                 /* l1_pool.cc */
 extern "C" int coop_tape_write_tail(const char *text, int len);   /* tape_io.cc: the last 8 KiB of track 4's audio */
@@ -313,7 +314,7 @@ static void write_file(void)
     put("coop_stats 3 build " STATS_BUILD "\n");
     put("cb"); kv("blocks", g_blocks); kv("max", g_max); kv("last", g_last); kv("cycles", now_cycles()); put("\n");
     put("stages"); kv("rec_max", g_tape_rec_cycles_max); kv("mix_max", g_stereo_mix_cycles_max);
-    kv("hook_max", g_stereo_hook_cycles_max); kv("stage_max", g_stereo_stage_cycles_max); kv("stage_calls", g_stereo_stage_calls); kv("lfo2_max", g_lfo2_cycles_max); kv("master_max", g_master_cycles);
+    kv("hook_max", g_stereo_hook_cycles_max); kv("stage_max", g_stereo_stage_cycles_max); kv("stage_calls", g_stereo_stage_calls); kv("lfo2_max", g_lfo2_cycles_max); kv("master_max", g_master_cycles); kv("xv_max", g_xvoice_cycles_max); kv("xv_sum", g_xvoice_cycles_sum); kv("xv_blocks", g_xvoice_blocks); kv("xv_notes", g_xvoice_notes);
     kv("fx_max", g_fx_cycles); kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
     put_cost_lines();
     put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");

@@ -62,8 +62,11 @@ static uint32_t rnd(void) { s_rng ^= s_rng << 13; s_rng ^= s_rng >> 17; s_rng ^=
  * families at once need the handover's engine-instance work (F1-F3). */
 #define LIVE_MODE     (*(volatile int *)0xFF801038u)
 extern "C" int coop_tracker_live_family(void) { return LIVE_MODE == 1 ? 1 : 0; }
+extern "C" void coop_xvoice_note(int note, int vel, int on);               /* coop_xvoice.cc (F1): the extra FM voice, inst 2 */
+extern "C" void coop_xvoice_boot(void);
 static void raw_note(int inst, int note, int vel, int on)
 {
+    if (inst == 2) { coop_xvoice_note(note, vel, on); return; }            /* F1: coop's own FM voice, outside the core */
     if ((inst ? 1 : 0) != coop_tracker_live_family() || BANK != LIVE_MODE) return;   /* the other family, or a switch under way */
     struct midi_note n;
     n.note = note; n.velocity = vel; n.on = 1; n.pad[0] = n.pad[1] = n.pad[2] = 0; n.extra = 0;
@@ -209,6 +212,7 @@ extern "C" void coop_tracker_boot(void)                                    /* af
 {
     defaults();
     g_trk.edit = 1;                                                        /* the keyboard writes until rec switches it off */
+    coop_xvoice_boot();                                                    /* F1: the extra FM voice object (main thread) */
     int fd = Y_OPEN(SONG_FILE, 0, 0);
     if (fd < 0) return;
     const int hdr = (int)(sizeof g_song - sizeof g_song.pat);             /* the header first, into a small buffer (no 36 KB on the stack) */

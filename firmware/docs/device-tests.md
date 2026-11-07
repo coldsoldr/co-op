@@ -1110,3 +1110,22 @@ controls and the orientation: everything in `docs/tracker.md` is a guess for you
 (`trk_*`) and the fps line say the cost of the drawing.
 
 Result: (pending)
+
+## Tracker 2 (t2): F1, a second engine at the same time — device test (pending, 2026-11-07)
+
+- `build/pkg/op1_246_coop_t2_tracker_fm.op1` (sha256 `08d806639a205343d9cbaa2f399fe2530b200b0c9e74b2e2a8e5b86a2dd8116e`),
+  copy in Downloads. Supersedes t1 (everything in it, plus the FM voice). Build tag `t1` still.
+
+The question "can notes from different engines sound together" answered by rendering a stock FM voice in coop's own
+block, outside the core's play mode (`docs/tracker.md` "F1", `core/sdram/coop_xvoice.cc`). The tracker's green
+knob has a third instrument, **`fm`**: cells on it play coop's FM voice whatever the live family. op1emu: the synth
+and the FM voice together, no faults, 9.8 k cycles a block for the voice (`xv_max` on the stats "stages" line).
+
+**What to do**: tape, Shift + tape; write a synth note or two on channel 1; Shift + right, green two detents (`fm`
+in the zoom view's instrument column), write notes on channel 2; play: both sound together, the FM voice in tune
+with the synth (op1emu's dump sits an octave low for both: the device says the truth), a plucky FM sound (the
+stock's FM patch words, not yet the channel's own). Then the drum kit live (drum, tape): the `fm` channel still
+plays while the drum cells do. The stats file's `xv_max` and `fps` say the cost. Crashes here would point at the
+FM render running outside the voice loop (its parameter block or the sine copy); say what you were doing.
+
+Result: (pending)

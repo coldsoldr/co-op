@@ -80,7 +80,7 @@ static void set_on(int on)
 }
 
 /* ---- editing (KeyHandler thread) ---- */
-static int note_of(int inst, int idx) { return inst ? 53 + idx : clampi(41 + 12 * clampi(g_song.octave, 0, 6) + idx, 1, 127); }
+static int note_of(int inst, int idx) { return inst == 1 ? 53 + idx : clampi(41 + 12 * clampi(g_song.octave, 0, 6) + idx, 1, 127); }
 static void write_note(int idx)
 {
     struct trk_cell *x = cur_cell();
@@ -150,7 +150,7 @@ static void knob_cell(int knob, int steps, int shift)
         if (x->note == 0 || x->note == TRK_NOTE_OFF) x->note = (uint8_t)(x->inst ? 53 : 60);   /* the first turn places a note */
         else x->note = (uint8_t)clampi(x->note + steps * (shift ? 12 : 1), 1, 127);
         break;
-    case 1: x->inst = (uint8_t)(steps > 0 ? 1 : 0); g_song.ch_inst[g_trk.cur_ch] = x->inst; break;
+    case 1: x->inst = (uint8_t)clampi(x->inst + steps, 0, 2); g_song.ch_inst[g_trk.cur_ch] = x->inst; break;   /* syn, drm, fm (F1) */
     case 2: x->vol = (uint8_t)clampi(x->vol + steps * (shift ? 10 : 1), 0, 99); break;
     case 3:
         if (!shift) {
@@ -294,6 +294,7 @@ static void note_name(char *o, int note)                                    /* "
     int oct = note / 12 - 1;
     o[0] = names[note % 12][0]; o[1] = names[note % 12][1]; o[2] = (char)('0' + clampi(oct, 0, 9)); o[3] = 0;
 }
+static const char *const inst_names[3] = { "syn", "drm", "fm" };
 static const char *const fx_names[TRK_FX_N] = { "---", "arp", "rtg", "cut", "dly", "vol", "prb" };
 static const char fx_letter[TRK_FX_N] = { ' ', 'a', 'r', 'c', 'd', 'v', 'p' };
 static void scat(char *d, const char *s) { int i = 0; while (d[i]) i++; while (*s && i < 30) d[i++] = *s++; d[i] = 0; }
@@ -345,7 +346,7 @@ static void draw_overview(void *r)
             int on = row == g_trk.cur_row && c == g_trk.cur_ch;
             char nn[4]; note_name(nn, x->note);
             if (!x->note && !on) { nn[0] = '.'; nn[1] = 0; }
-            vtext(&s_tx_over[i][(on ? OV_NOTE_CUR : (x->inst ? OV_NOTE_DRM : OV_NOTE)) + c], r, x0 + c * step, y, size, on ? c_blue : (x->inst ? c_green : c_row), nn);
+            vtext(&s_tx_over[i][(on ? OV_NOTE_CUR : (x->inst == 1 ? OV_NOTE_DRM : OV_NOTE)) + c], r, x0 + c * step, y, size, on ? c_blue : (x->inst == 1 ? c_green : c_row), nn);
             if (x->fx && !s_or) { char fl[2]; fl[0] = fx_letter[x->fx]; fl[1] = 0; vtext(&s_tx_over[i][OV_FX + c], r, x0 + c * step + 26, y, size, c_orange, fl); }
             else if (x->fx) vdot(r, x0 + c * step + 20, y + 10, 2, c_orange);
         }
@@ -368,7 +369,7 @@ static void draw_zoom(void *r)
         char nn[4]; note_name(nn, x->note);
         vtext(&s_tx_zoom[i][on ? ZM_NOTE_CUR : ZM_NOTE], r, xs[1], y, 12, on ? c_blue : c_row, nn);
         if (x->note || on) {
-            vtext(&s_tx_zoom[i][on ? ZM_INST_CUR : ZM_INST], r, xs[2], y, 12, on ? c_green : c_dim, x->inst ? "drm" : "syn");
+            vtext(&s_tx_zoom[i][on ? ZM_INST_CUR : ZM_INST], r, xs[2], y, 12, on ? c_green : c_dim, inst_names[x->inst > 2 ? 0 : x->inst]);
             if (x->vol) num2(b, x->vol); else { b[0] = '-'; b[1] = '-'; b[2] = 0; }
             vtext(&s_tx_zoom[i][on ? ZM_VOL_CUR : ZM_VOL], r, xs[3], y, 12, on ? c_white : c_dim, b);
         }

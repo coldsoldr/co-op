@@ -390,12 +390,14 @@ struct coop_stage_io {                                                 /* coop_s
 extern "C" int coop_stage_asm(struct coop_stage_io *io);
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_stage = 1; }   /* 0: the C path (A/B) */
 
+extern "C" void coop_xvoice_render(int32_t *L, int32_t *R);   /* coop_xvoice.cc (F1): the extra FM voice into the pair */
 extern "C" void coop_instr_stage(void)
 {
     uint32_t t0 = coop_cycles();
     coop_mark_at(0x30, t0);
     if (!g_inited) stereo_init();
     g_stereo_stage_calls++;
+    coop_xvoice_render(g_vL, g_vR);                                    /* F1: the extra voice joins the stock ones */
     int dbg = g_coop_dbg_cmp != 0;
     if (dbg) {
         g_dbg_blocks++;
