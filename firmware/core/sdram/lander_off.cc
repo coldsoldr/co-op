@@ -18,6 +18,7 @@
 
 #define KEY_DISPATCH   ((void (*)(int, int))0x019B6C74u)                          /* the stock key dispatch (code, pressed) */
 #define CUR_MODE       (*(volatile int *)0xFF907D58u)                             /* 0 synth, 1 drum, 2 tape, 3 mixer */
+#define SHIFT_HELD     (*(volatile uint8_t *)0x01DD7F78u)
 
 volatile uint32_t g_lander_swallowed, g_mode_key_taps, g_mode_key_holds;
 extern "C" int coop_ui_key(int code, int pressed);   /* coop_ui.cc: the slot 2 page and the settings menu */
@@ -46,7 +47,7 @@ extern "C" void coop_key_event(int code, int pressed)
         else if ((mode_keys | bit) == 0x0F && !(mode_keys & bit)) { mode_keys |= bit; g_lander_swallowed++; coop_settings_open(); return; }
         else {
             mode_keys |= bit;
-            if ((code == 0x02 && CUR_MODE == 0) || (code == 0x03 && CUR_MODE == 1)) { deferred |= bit; return; }   /* on its own mode: wait */
+            if (!SHIFT_HELD && ((code == 0x02 && CUR_MODE == 0) || (code == 0x03 && CUR_MODE == 1))) { deferred |= bit; return; }   /* on its own mode, no Shift: wait (Shift + synth is a stock combo on the press) */
         }
     }
     KEY_DISPATCH(code, pressed);

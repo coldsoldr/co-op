@@ -684,8 +684,13 @@ extern "C" void coop_fx_init_mono(void *self, int pos)
 }
 
 /* Main loop (coop_sysex_service, every pass): build a requested twin. */
+extern "C" int coop_slot2_save(void);                                      /* below (S2) */
+extern volatile int g_s2_save_req;
+extern "C" void coop_ui_service(void);                                    /* coop_ui.cc (u7): the UI's pending file writes */
 extern "C" void coop_fx_service(void)
 {
+    coop_ui_service();
+    if (g_s2_save_req) { g_s2_save_req = 0; coop_slot2_save(); }
     uint32_t seq = g_st0_req_seq;
     if (seq == g_st0_pub_seq) return;
     int t = g_st0_req_type;                                               /* read after seq: a newer request only makes
@@ -779,6 +784,20 @@ static struct slot2 g_s2[2];
 /* u1: FX 2 off / on (the page's T key, coop_ui.cc); the effect stays chosen and constructed, it just does not run */
 extern "C" void coop_slot2_bypass(int pos, int off) { g_s2[pos & 1].off = off ? 1 : 0; }
 extern "C" int coop_slot2_bypassed(int pos) { return g_s2[pos & 1].off; }
+
+/* u7: FX 2 on the stock effect page (coop_fx2view.cc): the stock type running at slot 2 (-1: none or a plugin), its
+ * knobs, and its twin's display words (the slot-2 twin keeps the stock display slots 2-3 of its own: slots[0..3] the
+ * left words, [4..7] the right; the master's page sums L + R as the stock getter does) */
+extern "C" int coop_slot2_type(int pos2) { struct slot2 *s = &g_s2[pos2 & 1]; return s->kind_on == 1 ? s->id_on : -1; }
+extern "C" int coop_slot2_req_type(int pos2) { struct slot2 *s = &g_s2[pos2 & 1]; return s->kind == 1 ? s->id : -1; }   /* the type asked for (the build is asynchronous) */
+extern "C" int coop_slot2_knob_q15(int pos2, int k) { return g_s2[pos2 & 1].knob[k & 3]; }
+extern "C" int coop_slot2_disp(int pos2, int i)
+{
+    const volatile int16_t *w = (const volatile int16_t *)g_st[1 + (pos2 & 1)].slots;
+    int v = w[i & 7];
+    if (pos2) { v += w[8 + (i & 7)]; if (v > 32767) v = 32767; if (v < -32768) v = -32768; }
+    return v;
+}
 volatile uint32_t g_s2_blocks[2], g_s2_changes, g_s2_trace;   /* g_s2_trace: debug progress marker */
 
 extern "C" int coop_slot2_set(int pos, int kind, int id, const uint16_t *knob)
@@ -835,6 +854,8 @@ extern "C" int coop_plugin_list(char *out, int cap)
 extern "C" void coop_lfo2_words_get(uint8_t *out17);                     /* lfo2.cc */
 extern "C" void coop_lfo2_words_set(const uint8_t *in17);
 #define S2_LEN 43
+volatile int g_s2_save_req;                                               /* u7: the KeyHandler thread asks, the main loop writes */
+extern "C" void coop_slot2_request_save(void) { g_s2_save_req = 1; }
 extern "C" int coop_slot2_save(void)
 {
     uint8_t b[S2_LEN];

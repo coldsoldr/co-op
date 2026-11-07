@@ -1,23 +1,24 @@
 /*
- * coop-fw u1: the settings menu (docs/ui-features.md §1).
+ * coop-fw u1 / u7: the settings menu (docs/ui-features.md §1).
  *
  * Opened by the four mode keys held together (synth + drum + tape + mixer), the combo that entered the Lander game
  * (lander_off.cc swallows the fourth key and calls coop_settings_open). An overlay drawn from coop_ui_frame over the
  * stock screen (kennel's overlay model, docs/screens.md): no screen object, no SVG, no TE heap.
  *
- * Blue turn moves the cursor; the right arrow enters a submenu; the left arrow goes back a level and, at the top,
- * leaves; a mode key leaves and then acts as usual. Green turn changes the selected value (drawn in green); an
- * encoder push on a Plugins row enables / disables that file, applied at the next boot. The keyboard plays through.
+ * Blue turn moves the cursor; the right arrow or a blue push enters a submenu; the left arrow goes back a level and,
+ * at the top, leaves; a mode key leaves and then acts as usual. Green turn changes the selected value (drawn in
+ * green); an encoder push on a Plugins row enables / disables that file, applied at the next boot. The keyboard
+ * plays through. No hints on screen (the owner, 2026-11-07).
  *
- * Submenus: VOICES (spread 0-100, the only live setting; drum ADSR, master EQ, master compression stay "STOCK" with
- * their alternatives greyed until they exist), UI (tape position bottom; date and time: not yet), PLUGINS (every
- * .coop file in /yaffs2/plugins, ON / OFF).
+ * Submenus: VOICES (spread 0-100, the only live setting; drum ADSR, master EQ, master compression stay "stock" with
+ * "not yet"), UI (tape position bottom; date and time: not yet), PLUGINS (every .coop file in /yaffs2/plugins).
  *
  * Persisted in /yaffs2/user/coop_settings.bin ("CST", version 1: spread %, four choice bytes, the disabled file
- * names) when the menu closes; read at boot before the plugin scan (coop_plugins_boot), where a file present
- * overrides the image's g_coop_spread word. Threads: keys and encoders in the KeyHandler thread, drawing in the Gfx
- * thread, the boot load on the main thread. Fixed point only, no libc. u2: drawn in the stock font (coop_text.h)
- * with the manifesto's colour code: the cursor row is blue (blue moves it), the value green (green changes it).
+ * names). u7: the file is written by the main loop (coop_settings_service from coop_fx_service), never from the
+ * KeyHandler thread: a yaffs write from that thread crashed the device (u5, SEQSTAT 0x2a on leaving the menu after a
+ * plugin toggle). Read at boot before the plugin scan (coop_plugins_boot), where a file present overrides the image's
+ * g_coop_spread word. Threads: keys and encoders in the KeyHandler thread, drawing in the Gfx thread, files on the
+ * main thread. Fixed point only, no libc. Drawn in the stock font (coop_text.h) with the manifesto's colour code.
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  * The stroke font is hundekraft's (kennel 3.1), GPL-3.0-or-later.
@@ -50,7 +51,6 @@ extern volatile uint32_t g_coop_spread;                                 /* stere
 
 static const char *const top_names[3] = { "voices", "ui", "plugins" };          /* lower case: the stock font */
 static const char *const voices_rows[4] = { "spread", "drum adsr", "master eq", "master comp" };
-static const char *const voices_alt[4] = { "", "transient", "advanced", "advanced" };
 static const char *const ui_rows[3] = { "tape position", "date", "time" };
 
 volatile uint32_t g_set_opens, g_set_saves, g_set_loaded;              /* stats / tests */
@@ -62,6 +62,7 @@ static uint8_t s_choice[4];                                             /* drum 
 static char s_dis[DIS_MAX][NAME_LEN];                                   /* disabled plugin files */
 static int s_ndis;
 static int s_dirty;
+static volatile int s_save_pending;                                     /* the main loop writes the file */
 
 static int is_note(int c)                                               /* IsNoteKey 0x019C316C's 24 codes (screen-interface.md §7) */
 {
@@ -85,7 +86,7 @@ static int rows(void)
 }
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-/* ---- the file (main thread at boot, KeyHandler thread on close) ---- */
+/* ---- the file (main thread: boot, and the service pass) ---- */
 static int save_file(void)
 {
     uint8_t b[8 + DIS_MAX * NAME_LEN];                                  /* zeroed by hand: no libc, so no memset */
@@ -102,6 +103,12 @@ static int save_file(void)
     ok = (Y_CLOSE(fd) == 0) && ok;
     if (ok) g_set_saves++;
     return ok;
+}
+extern "C" void coop_settings_service(void)                             /* main loop (coop_fx_service) */
+{
+    if (!s_save_pending) return;
+    s_save_pending = 0;
+    save_file();
 }
 extern "C" void coop_settings_boot(void)
 {
@@ -139,9 +146,8 @@ static void close_menu(void)
 {
     if (!s_open) return;
     s_open = 0;
-    if (s_dirty) { save_file(); s_dirty = 0; }
+    if (s_dirty) { s_dirty = 0; s_save_pending = 1; }
 }
-
 static void toggle_plugin(int i)
 {
     const char *name = coop_plugin_file_name(i);
@@ -154,6 +160,7 @@ static void toggle_plugin(int i)
         }
     if (s_ndis < DIS_MAX) { scpy(s_dis[s_ndis++], name, NAME_LEN); s_dirty = 1; }
 }
+static void enter(void) { if (!s_level) { s_level = 1; s_cur[1] = 0; } }
 
 /* 1 = consumed; a mode key closes the menu and then acts; the keyboard and shift play through */
 extern "C" int coop_settings_key(int code, int pressed)
@@ -163,8 +170,11 @@ extern "C" int coop_settings_key(int code, int pressed)
     if (is_note(code) || code == KEY_SHIFT) return 0;
     if (!pressed) return 1;
     if (code == KEY_LEFT) { if (s_level) s_level = 0; else close_menu(); return 1; }
-    if (code == KEY_RIGHT) { if (!s_level) { s_level = 1; s_cur[1] = 0; } return 1; }
-    if (code >= KEY_ENC0 && code <= KEY_ENC0 + 3 && s_level == 1 && s_cur[0] == 2) toggle_plugin(s_cur[1]);
+    if (code == KEY_RIGHT) { enter(); return 1; }
+    if (code >= KEY_ENC0 && code <= KEY_ENC0 + 3) {                     /* a push: enter at the top, toggle a plugin row */
+        if (!s_level) enter();
+        else if (s_cur[0] == 2) toggle_plugin(s_cur[1]);
+    }
     return 1;
 }
 
@@ -189,8 +199,8 @@ static const uint8_t c_title[4] = { 0xAE, 0xB1, 0xDC, 255 };          /* lavende
 static const uint8_t c_blue[4] = { 0x69, 0x8E, 0xFF, 255 };           /* the cursor row: blue moves it */
 static const uint8_t c_green[4] = { 0x00, 0xED, 0x95, 255 };          /* the value: green changes it */
 static const uint8_t c_row[4] = { 0xB9, 0xB9, 0xC9, 255 };            /* the other rows and their values */
-static const uint8_t c_grey[4] = { 0x62, 0x5D, 0x77, 255 };           /* not yet, hints */
-enum { TX_TITLE, TX_HINT, TX_EMPTY, TX_ROW0 };
+static const uint8_t c_grey[4] = { 0x62, 0x5D, 0x77, 255 };           /* not yet */
+enum { TX_TITLE, TX_EMPTY, TX_ROW0 };
 enum { RT_NAME_BLUE, RT_NAME_ROW, RT_VAL_GREEN, RT_VAL_ROW, RT_VAL_GREY, ROW_TX };
 static struct coop_text s_tx[TX_ROW0 + ROWS_SHOWN * ROW_TX];        /* one object per place, size and colour */
 
@@ -238,8 +248,6 @@ extern "C" void coop_settings_draw(void *r)
 
     int n = rows(), cur = s_cur[s_level];
     int start = clampi(cur - 3, 0, n > ROWS_SHOWN ? n - ROWS_SHOWN : 0);
-    const char *hint = "blue move   right enter   left leave";
-    char alt[32];
     for (int i = start; i < n && i < start + ROWS_SHOWN; i++) {
         int row = i - start, on = i == cur;
         char label[16];
@@ -260,14 +268,6 @@ extern "C" void coop_settings_draw(void *r)
         }
         row_text(r, row, on ? RT_NAME_BLUE : RT_NAME_ROW, name);
         if (val) row_text(r, row, vgrey ? RT_VAL_GREY : (on ? RT_VAL_GREEN : RT_VAL_ROW), val);
-        if (on && s_level) {
-            if (s_cur[0] == 0) {
-                if (i == 0) hint = "green value";
-                else { int k = 0; for (const char *q = voices_alt[i]; *q; q++) alt[k++] = *q; for (const char *q = "  not yet"; *q; q++) alt[k++] = *q; alt[k] = 0; hint = alt; }
-            } else if (s_cur[0] == 1) hint = i == 0 ? "top  not yet" : "not yet";
-            else hint = "push on off   at next boot";
-        }
     }
     if (s_level && s_cur[0] == 2 && n == 0) coop_text_draw(&s_tx[TX_EMPTY], r, 24, 26, 12, c_grey, "no plugin files", 0);
-    coop_text_draw(&s_tx[TX_HINT], r, 12, 132, 12, c_grey, hint, 0);
 }

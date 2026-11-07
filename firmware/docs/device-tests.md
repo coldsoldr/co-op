@@ -889,7 +889,7 @@ does).
 
 Result: (pending)
 
-## UI 1 (u6): settings, FX 2, list columns, randomise, solo, markers, bend, overwrite save, rename, drum pan — device test (pending, 2026-11-07)
+## UI 1 (u6): settings, FX 2, list columns, randomise, solo, markers, bend, overwrite save, rename, drum pan — device test (DONE 2026-11-07, u5 flashed: see the u7 entry)
 
 The first package of the owner's UI feature set (`docs/ui-features.md`; mocked first in
 `tools/playground/coop-playground.html`). Build tag `u6` (the stats file's `build` word; u1-u4 were earlier cuts of
@@ -1029,5 +1029,50 @@ twice (off, on), lift closes, T1 then T3 stays on the stock page, drop + T1 + T3
 whether T3 closing the list toggles FX 1 on the device as the key path reads (op1emu says no);
 whether the stock copies the sound on lift before our hook sees the key (it should not: the hook runs first);
 the file writes on the device's yaffs (slot 2's did in p3a).
+
+Result: (pending)
+
+**Result (owner, 2026-11-07, u5 flashed; files `docs/device-stats/u5_2026-11-07_*`):** the lists' blue and green
+columns work and the focusing works; the settings menu looks right; randomise is great; the markers and solo work;
+`keeps 948 kept 1`, `bend 16`, `overwrites 1`, `rename_refused 4`. Found: a crash (SEQSTAT 0x2a) leaving the settings
+menu after a plugin toggle (a yaffs write from the KeyHandler thread); FX 2 should look like the stock effect page,
+no corner marks; no hints in the menu, a blue push should enter; Shift + synth must act on the press; solo wanted
+on the mixer too and as a set, no text; markers as flags; the bend bent an octave slowly whatever the amount (the
+stock word is a rate); overwrite did nothing outside the snapshot folder; rename refused (sampler or factory
+presets: `rename_starts 0`); the drum pan wanted its own PAN page on the drum's shifted T2 with blue. The p5a runner
+script ran on this image too (`u5_2026-11-07_p5a_run.txt`: engines and effects as p5f; one slow block of 2.08 M
+during an FX 2 change, which still builds in the interrupt).
+
+## UI 2 (u7): the corrections from the first device run — device test (pending, 2026-11-07)
+
+- `build/pkg/op1_246_coop_u7_ui.op1` (sha256 `85cc21adadb1b4eae30fd06d98bcf01dc6b4c71cc21c99056c32f0951f2291c3`), copy in Downloads. `--tape-stereo --set-word
+  g_coop_spread=32767` as before; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `u7`.
+
+What changed (`docs/screens.md` "u7"):
+1. **The crash**: every coop file and database write now runs on the main loop (a pending flag from the key thread).
+2. **Settings**: a blue push enters a submenu (as the right arrow); no hints on screen.
+3. **FX 2 looks like stock**: with a stock type in FX 2, drop shows the stock effect page of THAT type with FX 2's
+   knobs and animation (the page's dial getters are fed slot 2); lift shows FX 1's page with nothing added. Only two
+   additions on the FX 2 page: `fx2 off` top right when T3 switched it off, and the pending type (Shift + blue) in
+   blue top left until the blue push applies it. A plugin in FX 2 keeps coop's own page (the stock has none).
+   Known: the stock page's own big "FX OFF" is FX 1's flag and still shows on FX 2's page while FX 1 is off (op1emu;
+   the flag's reader in the page is not mapped yet).
+4. **Shift + synth** acts on the press as stock (the deferral only applies without Shift).
+5. **Solo** is a set: Shift + Help + several T keys solo several tracks; on the tape and the mixer; nothing drawn.
+6. **Markers** are little flags (a pole and a ">" pennant).
+7. **Bend**: amount 0..12, the same both ways; coop drives the live bend word the MIDI handler writes, so the amount
+   and the time both apply (op1emu, pitch-tracked: amount 2 gives x1.122 after the table fix; time 63 ramps in
+   ~100 ms). Please listen: +12 should be an octave, +2 a tone; MAX time ~2 s.
+8. **Overwrite** works for user presets in any folder.
+9. **Rename**: unchanged in what it accepts; factory and SAMPLER presets refuse (a sampler's audio file is named after
+   it: its rename needs the stock's file rename, not mapped). The stats say how many pushes it saw (`rename_pushes`).
+   If your user presets are samples, say so and the file rename goes on the list.
+10. **Drum pan**: Shift on the drum's T2 page shows coop's PAN page ("pan" and the value in blue, the key in grey);
+    **blue** pans the last played key.
+
+**What to do**: the u6 script's steps, plus: leave the settings menu after a plugin toggle (no crash); drop on an
+effect page with a stock type in FX 2 (the stock page of that type, its dials moving with the four encoders); T3
+(`fx2 off`); lift (the stock FX 1 page, nothing added); synth T2 + Shift: bend 12, time off: Shift + right = an
+octave; bend 2, time max: a slow tone; the drum's T2 + Shift: the PAN page, blue pans the last key.
 
 Result: (pending)

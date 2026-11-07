@@ -1,0 +1,38 @@
+# u7 diagnostic: the stock effect page's FX OFF display with FX 2 in focus (one end state per run). Synth, T3 (the
+# sound's own effect page); shift + T3, blue four rows (phone, loaded on the turn), seq closes; synth, T3.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 32
+at 33000
+tap seq 200
+at 34000
+tap synth 200
+at 35000
+tap t3 200
+at 36500
+tap drop 200
+at 38000
+press shift
+at 38200
+turn enc1 cw 2
+at 39000
+release shift
+at 40000
+tap enc1 200
+at 42000
+tap lift 200
+wait 36000
+screenshot /root/op1emu-work/fo_e.ppm
+wait 3000
+quit

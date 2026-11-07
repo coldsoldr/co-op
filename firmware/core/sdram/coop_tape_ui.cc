@@ -1,26 +1,26 @@
 /*
- * coop-fw u4: the tape page's solo and markers, and Help as the fn key (docs/ui-features.md §9, §11).
+ * coop-fw u4 / u7: the tape's solo and markers, and Help as the fn key (docs/ui-features.md §9, §11).
  *
  * Help as fn: the manifesto's deep layer and the solo combo hold Help with another key. Stock enters help mode on
  * the Help press, so coop swallows the press, and on the release sends the stock a press + release only if nothing
  * used Help while it was down: a tap still opens help, a hold is a modifier (coop_fn_held).
  *
- * Solo: on the tape (mode 2), Shift + Help + T1..T4 solos that track, exclusive: the other three are muted through the
- * stock's own mute flags (u8[4] at 0xFF8010A0, 1 = muted; Core::update_mutes 0x01967ED0 applies them, as the stock's
- * Shift + Tn mute does; the mixer page follows from the same flags), the flags before the first solo are kept and
- * come back when the solo is switched off (Shift + Help + the same key). "solo n" is drawn in the corner. Mutes
- * are volatile across boots in stock, so is the solo.
+ * Solo (u7, the owner's rules): on the tape or the mixer, Shift + Help + T1..T4 toggles that track in the SOLO SET;
+ * several keys together solo several tracks (as the stock's Shift + T1 + T2 mutes both). While the set is not empty
+ * every track outside it is muted through the stock's own mute flags (u8[4] at 0xFF8010A0, Core::update_mutes
+ * 0x01967ED0, the same path as the stock mute; the mixer page shows the flags); the flags before the first solo come
+ * back when the set empties. Nothing is drawn: the mutes say it. Mutes are volatile across boots in stock.
  *
  * Markers: four, one per encoder colour. On the tape page Shift + an encoder push places that colour's marker at
  * the playhead ([0xFF802974], 1/64 samples), removes it when the playhead is on it (within 3 px at the current
  * zoom), moves it otherwise; a plain push locates to it (the stock tape_locate 0x01A55024, which suspends the loop
- * as the stock's own jumps do). Drawn as kennel's markers are (tape/markers.c, hundekraft 3.1.4): the tape scrolls
- * under a fixed centre line at x 160.13, zoom = the stock float px/s at 0x018C183C read as bits (no soft-float),
- * a grey line through the tracks and a caret above. Saved at once to /yaffs2/user/coop_markers.bin ("CMK" 1, four
- * int32 samples, -1 = none), read after the tape mounts, cleared by an erase. The pushes are free on the tape page
- * in stock (screen-interface.md §7).
+ * as the stock's own jumps do). Drawn as little flags above the tape (u7: a pole and a ">" pennant in the encoder
+ * colour, a grey line through the tracks), the tape scrolling under the fixed centre line at x 160.13 (kennel's
+ * geometry; zoom = the stock float px/s at 0x018C183C read as bits). Saved to /yaffs2/user/coop_markers.bin ("CMK"
+ * 1, four int32 samples, -1 = none) by the main loop (coop_markers_service), read after the tape mounts, cleared by
+ * an erase. The pushes are free on the tape page in stock.
  *
- * KeyHandler thread for keys, Gfx thread for drawing, main thread for the boot load. Fixed point only, no libc.
+ * KeyHandler thread for keys, Gfx thread for drawing, main thread for the files. Fixed point only, no libc.
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  * The marker geometry follows hundekraft's markers.c (GPL-3.0-or-later).
@@ -53,13 +53,13 @@ typedef struct { int32_t x, y; } op1_pt;
 #define op1_raster_line(r, p0, p1, w_q10, rgba) \
     (((void (*)(void *, const op1_pt *, const op1_pt *, int32_t, const uint8_t *))0x01A24A4Cu)((r), (p0), (p1), (w_q10), (rgba)))
 #include "../../third_party/kennel/synth_sdk/screens/stroke_font.h"
-#include "coop_text.h"
 
 volatile uint32_t g_solo_sets, g_marker_sets, g_marker_jumps, g_fn_taps;   /* stats / tests */
 static int s_fn_held, s_fn_used;
-static int s_solo = -1;                                                 /* the soloed track, -1 none */
+static uint8_t s_solo_mask;                                             /* the soloed tracks, bit t */
 static uint8_t s_mute_before[4];
 static int32_t s_mk[4] = { -1, -1, -1, -1 };
+static volatile int s_mk_pending;                                       /* the main loop writes the file */
 static uint64_t s_swallow;
 
 /* ---- Help as fn ---- */
@@ -74,11 +74,12 @@ extern "C" int coop_fn_key(int code, int pressed)                      /* 1 = co
 }
 
 /* ---- solo ---- */
-static void apply_solo(int n)
+static void solo_toggle(int n)
 {
-    if (s_solo < 0) for (int t = 0; t < 4; t++) s_mute_before[t] = MUTE(t);
-    if (s_solo == n) { for (int t = 0; t < 4; t++) MUTE(t) = s_mute_before[t]; s_solo = -1; }
-    else { for (int t = 0; t < 4; t++) MUTE(t) = (uint8_t)(t != n); s_solo = n; }
+    if (!s_solo_mask) for (int t = 0; t < 4; t++) s_mute_before[t] = MUTE(t);
+    s_solo_mask ^= (uint8_t)(1u << n);
+    if (!s_solo_mask) for (int t = 0; t < 4; t++) MUTE(t) = s_mute_before[t];
+    else for (int t = 0; t < 4; t++) MUTE(t) = (uint8_t)!(s_solo_mask & (1u << t));
     UPDATE_MUTES();
     TAPE_REDRAW = 1;
     g_solo_sets++;
@@ -94,7 +95,7 @@ static int32_t zoom_q10(void)                                           /* float
     uint32_t m = (b & 0x7FFFFF) | 0x800000;
     return (int32_t)(m >> (13 - e));
 }
-static int save_markers(void)
+static int save_markers(void)                                           /* main thread */
 {
     uint8_t b[20] = { 'C', 'M', 'K', 1 };
     for (int i = 0; i < 4; i++) for (int k = 0; k < 4; k++) b[4 + 4 * i + k] = (uint8_t)((uint32_t)s_mk[i] >> (8 * k));
@@ -102,6 +103,12 @@ static int save_markers(void)
     if (fd < 0) return 0;
     int ok = Y_WRITE(fd, b, 20) == 20;
     return (Y_CLOSE(fd) == 0) && ok;
+}
+extern "C" void coop_markers_service(void)                              /* main loop (coop_fx_service) */
+{
+    if (!s_mk_pending) return;
+    s_mk_pending = 0;
+    save_markers();
 }
 extern "C" void coop_tape_ui_boot(void)                                 /* main thread, after the tape mounts */
 {
@@ -118,7 +125,7 @@ extern "C" void coop_tape_ui_boot(void)                                 /* main 
         if (s_mk[i] < 0 || s_mk[i] > TAPE_MAX) s_mk[i] = -1;
     }
 }
-extern "C" void coop_markers_clear(void)                                /* the erase (tape_edit.cc) */
+extern "C" void coop_markers_clear(void)                                /* the erase (tape_edit.cc, main thread) */
 {
     for (int i = 0; i < 4; i++) s_mk[i] = -1;
     save_markers();
@@ -132,7 +139,7 @@ static void marker_push(int e)
         int32_t tol = (3 * 1024 * 44100) / zoom_q10();
         int32_t d = s_mk[e] < 0 ? -1 : (s_mk[e] > pos ? s_mk[e] - pos : pos - s_mk[e]);
         s_mk[e] = (d >= 0 && d <= tol) ? -1 : pos;                      /* on it: remove; elsewhere or none: here */
-        save_markers();
+        s_mk_pending = 1;
         g_marker_sets++;
     } else if (s_mk[e] >= 0) {
         TAPE_LOCATE(s_mk[e]);
@@ -146,14 +153,14 @@ extern "C" int coop_tape_key(int code, int pressed)
 {
     uint64_t bit = (uint64_t)1 << (code & 63);
     if (!pressed) { if (s_swallow & bit) { s_swallow &= ~bit; return 1; } return 0; }
-    if (CUR_MODE != 2) return 0;
-    if (code >= KEY_T1 && code <= KEY_T1 + 3 && SHIFT_HELD && s_fn_held) {   /* Shift + Help + Tn: solo */
+    int mode = CUR_MODE;
+    if (code >= KEY_T1 && code <= KEY_T1 + 3 && SHIFT_HELD && s_fn_held && (mode == 2 || mode == 3)) {   /* Shift + Help + Tn: solo */
         s_fn_used = 1;
-        apply_solo(code - KEY_T1);
+        solo_toggle(code - KEY_T1);
         s_swallow |= bit;
         return 1;
     }
-    if (code >= KEY_ENC0 && code <= KEY_ENC0 + 3 && CUR_SCREEN == TAPE_SCREEN) {   /* the pushes: markers */
+    if (mode == 2 && code >= KEY_ENC0 && code <= KEY_ENC0 + 3 && CUR_SCREEN == TAPE_SCREEN) {   /* the pushes: markers */
         marker_push(code - KEY_ENC0);
         s_swallow |= bit;
         return 1;
@@ -163,17 +170,12 @@ extern "C" int coop_tape_key(int code, int pressed)
 
 /* ---- drawing (Gfx thread), over the stock tape screen ---- */
 static const uint8_t c_enc[4][4] = { { 0x69, 0x8E, 0xFF, 255 }, { 0x00, 0xED, 0x95, 255 }, { 0xFF, 0xFF, 0xFF, 255 }, { 0xFF, 0x3A, 0x5D, 255 } };
-static const uint8_t c_grey[4] = { 0x62, 0x5D, 0x77, 255 }, c_green[4] = { 0x00, 0xED, 0x95, 255 };
-static struct coop_text s_tx_solo[4];
+static const uint8_t c_grey[4] = { 0x62, 0x5D, 0x77, 255 };
 static void line(void *r, int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t w, const uint8_t *c) { sf_line(r, x0, y0, x1, y1, w, c); }
 
 extern "C" void coop_tape_draw(void *r)
 {
     if (CUR_MODE != 2 || CUR_SCREEN != TAPE_SCREEN) return;
-    if (s_solo >= 0) {
-        static const char *const names[4] = { "solo 1", "solo 2", "solo 3", "solo 4" };
-        coop_text_draw(&s_tx_solo[s_solo], r, 262, 2, 12, c_green, names[s_solo], 0);
-    }
     int32_t c = TAPE_POS_Q6 >> 6, z = zoom_q10();
     int32_t k = (int32_t)(((int64_t)z << 16) / 44100);                 /* Q10 px per sample, << 16 */
     for (int i = 0; i < 4; i++) {
@@ -182,7 +184,8 @@ extern "C" void coop_tape_draw(void *r)
         if (x < (3 << 10) || x > (317 << 10)) continue;
         int32_t xi = (int32_t)x;
         line(r, xi, 124 << 10, xi, 146 << 10, 0x400, c_grey);          /* through the tracks */
-        line(r, xi - (3 << 10), 115 << 10, xi, 120 << 10, 0x600, c_enc[i]);   /* the caret */
-        line(r, xi + (3 << 10), 115 << 10, xi, 120 << 10, 0x600, c_enc[i]);
+        line(r, xi, 110 << 10, xi, 122 << 10, 0x600, c_enc[i]);        /* the pole */
+        line(r, xi, 110 << 10, xi + (7 << 10), 113 << 10, 0x600, c_enc[i]);   /* the pennant: a ">" */
+        line(r, xi + (7 << 10), 113 << 10, xi, 116 << 10, 0x600, c_enc[i]);
     }
 }

@@ -42,6 +42,9 @@
 #define SQL_MAX       8192
 #define Y_UNLINK      ((int (*)(const char *))0x01A9A3FCu)
 #define SNAPSHOT_DIR  "/yaffs2/user/audio/preset_synth/snapshot/"
+#define Y_OPEN        ((int (*)(const char *, int, int))0x01A997F4u)
+#define Y_CLOSE       ((int (*)(int))0x01A99908u)
+#define Y_LSEEK       ((int (*)(int, int, int))0x01A9A0E4u)                 /* whence 0 / 1 / 2 (kennel) */
 
 extern "C" uint8_t coop_mode_keys_held(void);                              /* lander_off.cc */
 extern "C" void coop_mode_key_used(void);
@@ -72,18 +75,22 @@ static int origin(int bank)
     if (((const uint8_t *)n)[8] != 4) return 0;                             /* not a string */
     scpy(s_name, *(const char *const *)n, sizeof s_name);
     scpy(s_folder, std_str(e + 0x14), sizeof s_folder);
-    if (!s_name[0]) return 0;
-    const char *q = "snapshot";
-    for (int k = 0; ; k++) { if (s_folder[k] != q[k]) return 0; if (!q[k]) break; }   /* only the presets the device made */
-    return 1;
+    return s_name[0] != 0;                                                  /* any user folder (u7) */
 }
+static int is_snapshot(void) { const char *q = "snapshot"; for (int k = 0; ; k++) { if (s_folder[k] != q[k]) return 0; if (!q[k]) return 1; } }
 static void drop_marker(void)                                               /* the stock makes snapshot/<name>.raw and, when it exists,
                                                                                appends _n to the NAME: remove it first (a sampler's audio
                                                                                is re-copied there by the stock: the overwrite) */
 {
     char path[80]; char *p = path; const char *end = path + sizeof path;
     p = scat(p, SNAPSHOT_DIR, end); p = scat(p, s_name, end); p = scat(p, ".raw", end);
-    Y_UNLINK(path);
+    if (is_snapshot()) { Y_UNLINK(path); return; }                        /* the preset's own marker or audio: the stock remakes it */
+    int fd = Y_OPEN(path, 0, 0);                                            /* another folder's preset: only an EMPTY marker of the same
+                                                                               name may go (a snapshot preset's audio of that name stays) */
+    if (fd < 0) return;
+    int size = Y_LSEEK(fd, 0, 2);
+    Y_CLOSE(fd);
+    if (size == 0) Y_UNLINK(path);
 }
 
 /* the stamp: the stock's snprintf(buf, 16, "%i%02i%02i_%02i%02i", y, m, d, h, min) */

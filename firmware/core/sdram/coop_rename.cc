@@ -45,7 +45,8 @@ typedef struct { int32_t x, y; } op1_pt;
     (((void (*)(void *, const op1_pt *, const op1_pt *, int32_t, const uint8_t *))0x01A24A4Cu)((r), (p0), (p1), (w_q10), (rgba)))
 #include "../../third_party/kennel/synth_sdk/screens/stroke_font.h"
 
-volatile uint32_t g_rename_starts, g_rename_saves, g_rename_refused;      /* stats / tests */
+volatile uint32_t g_rename_starts, g_rename_saves, g_rename_refused, g_rename_pushes;   /* stats / tests */
+static volatile int s_sql_pending;                                          /* the main loop runs the UPDATE */
 static int s_on;                                                            /* naming */
 static int s_entry;                                                         /* the preset's array index */
 static char s_buf[NAME_MAX + 1], s_old[NAME_MAX + 1], s_folder[16];
@@ -94,13 +95,19 @@ static int save(void)
     p = scat(p, "\"','\"name\":\"", end); p = scat(p, s_buf, end);
     p = scat(p, "\"') WHERE folder='", end); p = scat(p, s_folder, end);
     p = scat(p, "' AND patch GLOB '*\"name\":\"", end); p = scat(p, s_old, end); p = scat(p, "\"*'", end);   /* GLOB: a % would hang the stock exec */
+    s_sql_pending = 1;                                                      /* the main loop runs it (coop_rename_service) */
+    g_rename_saves++;
+    return 1;
+}
+extern "C" void coop_rename_service(void)                                   /* main loop (coop_fx_service) */
+{
+    if (!s_sql_pending) return;
+    s_sql_pending = 0;
     void *db = DB_USER();
-    if (!db) return 0;
+    if (!db) return;
     DB_EXEC(db, s_sql);
     PRESETS_LOAD();
     LIST_REFILL();
-    g_rename_saves++;
-    return 1;
 }
 
 /* from coop_ui_key: 1 = consumed */
@@ -108,6 +115,7 @@ extern "C" int coop_rename_key(int code, int pressed)
 {
     if (!pressed) return s_on && code >= KEY_ENC0 && code <= KEY_ENC0 + 3;   /* the pushes' releases while naming */
     if (!s_on) {
+        if (code >= KEY_ENC0 && code <= KEY_ENC0 + 3 && on_preset_browser()) g_rename_pushes++;
         if (code == KEY_ENC0 + 3 && on_preset_browser()) { if (!start()) { s_blink = 60; g_rename_refused++; } return 1; }
         return 0;
     }

@@ -1,5 +1,5 @@
-# u1: FX 2 by drop / lift / T3 (replaces det_ui_slot2's Shift + Help). Phone at the synth position (as
-# det_fx_stock_phone), back to the FX page (T3), drop opens instrument FX 2; green turns knob 2 up ten detents;
+# u1 / u7: FX 2 by drop / lift / T3. Phone at the synth position (as det_fx_stock_phone), back to the FX page (T3),
+# drop focuses instrument FX 2 (u7: with a stock type the STOCK page of that type shows, fed slot 2's knobs); green turns knob 2 up ten detents;
 # Shift + blue one detent picks the next effect (none -> delay), a blue push applies it; T3 switches FX 2 off,
 # T3 again on; lift focuses FX 1 (the page closes); T1 then T3: the page stays closed (FX 1 in focus); drop, T1,
 # T3: the page comes back (FX 2 was last touched); a chord with the page up. Screenshots wall-timed, at the end.

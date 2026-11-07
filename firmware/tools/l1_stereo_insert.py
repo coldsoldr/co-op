@@ -121,6 +121,12 @@ UI_KNOB_SITE = 0x019c2e94                                          # KeyHandler 
 UI_KNOB_FN = 0x019b6c0c
 SAVE_SITES = [(0x019ad220, 0x01a9ce04, 192, 'stamp'), (0x019ad5a6, 0x01a9ce04, 208, 'stamp'),   # u5 overwrite save (coop_save.cc)
               (0x019ad3dc, 0x01995938, 224, 'insert_s'), (0x019ad762, 0x01995b80, 240, 'insert_d')]
+FXVIEW_PARAM_FN = 0x01a28da0                                     # read_fx_param(slot, pos): the effect screens' dials (u7)
+FXVIEW_PARAM_SITES = [0x019427b8, 0x01984f60, 0x019a74d4, 0x019b05f8, 0x019e6a48, 0x019e832c, 0x01a1cfd2, 0x01a33fb2]
+FXVIEW_DISP_FN = 0x01a28b34                                      # the display-slot getter(pos, n, a): the animation
+FXVIEW_DISP_SITES = [0x019427c6, 0x01984f6c, 0x019a74e2, 0x019b0604, 0x019e6a56, 0x019e8338, 0x01a1cfde, 0x01a33d1c]
+SCREEN_POP_SITE = 0x01a3bb40                                     # screens_update: CALL the screen-event pop
+SCREEN_POP_FN = 0x019d7d70
 KEEP_SITE = 0x01a044a8                                            # parse_patch_json: CALL Value::operator=(patch, fresh) -> coop_keep (u5, kennel hook_dpkeep)
 JV_ASSIGN_FN = 0x019bddc0
 KEYEV_SITE = 0x019c2d3e                                           # KeyHandler dispatch: CALL key_dispatch (code, pressed)
@@ -424,6 +430,12 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
     if thunks_global.get('stamp'):
         for site, fn, off, _ in SAVE_SITES:
             out.append((site, call24(site, fn), call24(site, sdram_tramp_at + off)))
+    if thunks_global.get('fxparam'):                           # u7: FX 2 on the stock effect page (coop_fx2view.cc)
+        for site in FXVIEW_PARAM_SITES:
+            out.append((site, call24(site, FXVIEW_PARAM_FN), call24(site, sdram_tramp_at + 256)))
+        for site in FXVIEW_DISP_SITES:
+            out.append((site, call24(site, FXVIEW_DISP_FN), call24(site, sdram_tramp_at + 272)))
+        out.append((SCREEN_POP_SITE, call24(SCREEN_POP_SITE, SCREEN_POP_FN), call24(SCREEN_POP_SITE, sdram_tramp_at + 288)))
     if thunks_global.get('keyev'):                             # the Lander combo swallowed (the getter sites stay stock:
         out.append((KEYEV_SITE, call24(KEYEV_SITE, KEY_DISPATCH), call24(KEYEV_SITE, sdram_tramp_at + 112)))   # a stub screen hung the boot in op1emu)
     return out + list(TAPE_BYTE_PATCHES)
@@ -486,7 +498,8 @@ def thunk_addresses(elf):
     except Exception:
         ui = {}
     if ui:                                             # u5: the sound JSON keep hook and the overwrite save; an ELF with the
-        for key, name in (('keep', 'coop_keep'), ('stamp', 'coop_stamp'), ('insert_s', 'coop_insert_synth'), ('insert_d', 'coop_insert_drum')):
+        for key, name in (('keep', 'coop_keep'), ('stamp', 'coop_stamp'), ('insert_s', 'coop_insert_synth'), ('insert_d', 'coop_insert_drum'),
+                          ('fxparam', 'coop_fx_param_read'), ('fxdisp', 'coop_fx_disp_read'), ('pop', 'coop_screen_pop')):
             try:                                       # UI hooks must have them (a missing one is a dropped symbol: Makefile --undefined)
                 ui[key] = symbol_address(syms, name)[0]
             except Exception:
@@ -640,6 +653,10 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
                 raise SystemExit('region-C trampolines: the save hooks need +192 (have {})'.format(len(sdram_blob)))
             sdram_blob += build_jump_tramp(thunks['stamp']) + build_jump_tramp(thunks['stamp'])                            # +192, +208
             sdram_blob += build_jump_tramp(thunks['insert_s']) + build_jump_tramp(thunks['insert_d'])                      # +224, +240
+        if thunks.get('fxparam'):
+            if len(sdram_blob) != 256:
+                raise SystemExit('region-C trampolines: the FX 2 view needs +256 (have {})'.format(len(sdram_blob)))
+            sdram_blob += build_jump_tramp(thunks['fxparam']) + build_jump_tramp(thunks['fxdisp']) + build_jump_tramp(thunks['pop'])   # +256, +272, +288
     dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, sdram_blob))
     for name, a, b in tramps:
         lines.append('tramp_{} at {:#x} ({} B) -> {:#x}'.format(name, a, len(b), thunks[name]))

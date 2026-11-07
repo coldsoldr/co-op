@@ -198,3 +198,46 @@ starts, the stereo stage (stereo_bus.cc) takes that key's pan instead of a rando
 synth's. The owner chose the T2 page because the stock takes all four shifted encoders on the drum's T1 page
 (reverse, start fine, end fine, volume); shifted blue on T2 is the dynamic envelope's fifth word, green / white /
 orange write nothing there.
+
+## u7: the owner's corrections after the first device run of u5 (2026-11-07) [I until the device]
+
+- **The crash** (SEQSTAT 0x2a, RETX 0x2c011ba6, leaving the settings menu after a plugin toggle): coop wrote files
+  from the KeyHandler thread (the settings file, the slot file, the markers; the rename's db exec too). All coop file
+  and database work now runs on the main loop: the KeyHandler thread sets a pending flag, `coop_ui_service`
+  (called from `coop_fx_service` every pass) does the write (coop_settings_service, coop_markers_service,
+  coop_rename_service, the slot file through coop_slot2_request_save). The overwrite hooks already ran in the main
+  loop (the stock's save path).
+- **Settings**: a blue push enters a submenu as the right arrow does; no hints on screen.
+- **The mode-key deferral** (randomise) is skipped while Shift is held: Shift + synth is a stock combo on the press.
+- **Solo** is a set: Shift + Help + several T keys solo several tracks; works on the tape and the mixer; nothing drawn.
+- **Markers** are flags: a pole from y 110 to 122 and a ">" pennant in the encoder colour.
+- **FX 1 in focus** shows the stock page alone (no corner mark). FX 2 is to look exactly like the stock effect page
+  of its type: the stock effect screen's data sources are being mapped for that.
+- **Bend**: the device showed the stock word W[0xFF8016DC] is a RATE toward a fixed octave (a small value bent an
+  octave slowly, the time did nothing). u7 ramps the live bend word W[0xFF80104C] (the one the MIDI pitch-bend
+  handler 0x01A84EFA writes directly) every block toward -16384 * amount / 12 (down) or 32764 * amount / 12 (up), over
+  the bend time, and back to 0 on the release, with the MIDI handler's state bytes; the keyboard word stays 0.
+  Amount is 0..12, the same both ways. [I: full MIDI scale = an octave, from the 1:2 asymmetry shared with the
+  keyboard word; the device test listens for it.]
+- **Overwrite** applies to user presets in any folder; the snapshot marker is unlinked only when it is the preset's
+  own (snapshot folder) or an empty marker of the same name (size 0: yaffs lseek 0x01A9A0E4), so another preset's
+  audio of that name is never touched.
+- **Rename** counts the pushes seen in the browser (`rename_pushes`); the device's `rename_refused 4` with
+  `rename_starts 0` means the pushes arrived and were refused: factory or sampler presets (a sampler's audio file is
+  named after it; its rename needs the stock's file rename, not mapped yet).
+- **Drum pan**: with Shift held on the drum's T2 page coop draws its own PAN page (black; "pan" and the value in
+  blue, the key in grey), and the **blue** encoder pans the last played key; the stock's shifted blue there (the
+  dynamic envelope's fifth word) is taken over.
+- **FX 2 on the stock page** (`core/sdram/coop_fx2view.cc`, from the stock screens mapped 2026-11-07): every effect
+  screen's Update reads its dials through read_fx_param (0x01A28DA0(slot, pos) -> a static std::vector<float>, the
+  position's knob words normalised with the range table) and its animation through the display getter
+  (0x01A28B34(pos, n, a) -> the display slots 0xFF801774 as floats), one CALL of each per Update at sixteen sites
+  (cwo 0x019427B8 / C6, delay 0x01984F60 / 6C, nitro 0x019A74D4 / E2, grid 0x019B05F8 / 0604, punch 0x019E6A48 / 56,
+  filter 0x019E832C / 38, phone 0x01A1CFD2 / DE, spring 0x01A33FB2 / 0x01A33D1C). coop retargets them (trampolines
+  +256 / +272) at wrappers that call the stock, then, while FX 2 of that position is in focus with a stock type,
+  overwrite the vector's floats with slot 2's knobs (q15 / 32767 through the stock's own soft-float 0x01AA7050 and
+  0x01AA54C8) and the slot-2 twin's display words. The screen id is posted like a key event (0x019D7C94(id, slot,
+  pos)) on focus changes, and the pop CALL in screens_update (0x01A3BB40 -> 0x019D7D70, trampoline +288) is wrapped
+  to rewrite an effect-page id to FX 2's type while in focus, since every handled key reposts FX 1's. A plugin or
+  nothing in FX 2 keeps coop's own page. The knob-touched bytes (0x01DD7F74 + k) are set when coop takes a turn so the
+  stock highlights the dial.
