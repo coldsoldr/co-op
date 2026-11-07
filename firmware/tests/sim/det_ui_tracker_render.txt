@@ -1,0 +1,49 @@
+# Render to tape. Tape, Shift + tape (the tracker); c4 at row 0, right, g4 at row 2 on channel 1 (the live synth);
+# stop; Shift + play: coop pushes rec + play for the tape and plays the song (one 16-row pattern, 2 s) from its
+# start, then pushes stop when the order list wraps ("rec" in orange in the header while it runs). Then Shift +
+# tape (the tape view, with the new clip on the track) and play: the tape plays the recording back (the two notes
+# again in the WAV, ~2 s), stop. Stats: trk_renders 1. Screenshots: at the end (the tape page with the clip).
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tape 200
+at 27500
+press shift
+at 27700
+tap tape 200
+at 28200
+release shift
+at 29500
+tap c4 150
+at 30000
+tap right 120
+at 30300
+tap g4 150
+at 31000
+tap stop 150
+at 32000
+press shift
+at 32200
+tap play 150
+at 32500
+release shift
+at 37000
+press shift
+at 37200
+tap tape 200
+at 37500
+release shift
+at 38500
+tap stop 150
+at 39200
+tap stop 150
+at 40000
+tap play 150
+at 43500
+tap stop 150
+wait 38000
+screenshot /root/op1emu-work/trkr_a.ppm
+wait 3000
+screenshot /root/op1emu-work/trkr_b.ppm
+wait 4000
+quit

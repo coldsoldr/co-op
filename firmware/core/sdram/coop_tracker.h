@@ -29,6 +29,7 @@ struct trk_state {
     int cur_pos, cur_row, cur_ch, cur_field;                              /* the cursor */
     int view;                                                             /* 0 overview, 1 zoom, 2 song, 3 settings */
     int edit;                                                             /* the keyboard writes notes */
+    int render;                                                           /* render to tape: 1 asked, 2 recording, 3 the song ended */
     struct trk_chan ch[TRK_CH];
 };
 extern struct trk_song g_song;
@@ -49,6 +50,8 @@ void coop_tracker_request_save(void);
 int coop_tracker_on(void);
 int coop_tracker_live_family(void);                                       /* the core's play mode: 0 synth, 1 drum */
 void coop_tracker_set_on(int on);
+void coop_tracker_render(void);                                           /* Shift + play: record the song once onto the tape */
+int coop_tracker_injected(int code);                                      /* a key coop pushed itself: let the stock have it */
 #ifdef __cplusplus
 }
 #endif

@@ -1,0 +1,37 @@
+# Debug (g_coop_trk_passkeys=1 image): with the tracker ON, the REAL rec / play / stop keys reach the stock tape.
+# Tape, Shift + tape; hold REC, tap PLAY, a chord on the keyboard (the tracker previews it on the synth), release
+# REC, STOP, STOP, PLAY: the chord again in the WAV if the tape recorded with the tracker on.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tape 200
+at 27500
+press shift
+at 27700
+tap tape 200
+at 28200
+release shift
+at 32000
+press rec
+at 32200
+tap play 300
+at 32600
+release rec
+at 33000
+press c4
+press e4
+press g4
+at 34000
+release c4
+release e4
+release g4
+at 36000
+tap stop 300
+at 37000
+tap stop 300
+at 38000
+tap play 300
+at 43000
+tap stop 300
+wait 45000
+quit

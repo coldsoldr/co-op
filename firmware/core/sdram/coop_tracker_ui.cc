@@ -54,6 +54,7 @@ typedef struct { int32_t x, y; } op1_pt;
 #define PITCH 14
 
 volatile uint32_t g_trk_toggles, g_trk_written, g_trk_plays, g_trk_frames, g_trk_knobs;   /* stats / tests */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_trk_passkeys = 0; }   /* debug: 1 = rec / play / stop reach the stock while the tracker is on */
 static uint64_t s_swallow;
 static struct trk_cell s_clip;                                              /* lift / drop */
 static int s_clip_full;
@@ -110,6 +111,10 @@ static void move_ch(int d) { g_trk.cur_ch = wrapi(g_trk.cur_ch + d, TRK_CH); }
 extern "C" int coop_tracker_key(int code, int pressed)
 {
     uint64_t bit = (uint64_t)1 << (code & 63);
+    if (coop_tracker_injected(code)) {                                      /* a key coop pushed for the tape (render), either edge: the stock has it */
+        if (code == KEY_PLAY && !pressed && g_trk.render == 1) { g_trk.render = 2; coop_tracker_play(1); }   /* the tape rolls: the song from its start */
+        return 0;
+    }
     if (!pressed) {
         if (s_swallow & bit) {
             s_swallow &= ~bit;
@@ -128,16 +133,18 @@ extern "C" int coop_tracker_key(int code, int pressed)
         s_swallow |= bit;
         return 1;
     }
+    if (g_coop_trk_passkeys && (code == KEY_REC || code == KEY_PLAY || code == KEY_STOP)) return 0;   /* debug: the tape has the transport */
     s_swallow |= bit;
     switch (code) {
     case KEY_T1: case KEY_T1 + 1: case KEY_T1 + 2: case KEY_T1 + 3: g_trk.view = (SHIFT_HELD && code == KEY_T1 + 1) ? 4 : code - KEY_T1; break;   /* Shift + T2: the channel's patch (F2b) */
     case KEY_LEFT: if (SHIFT_HELD) move_ch(-1); else if (g_trk.view == 2) g_trk.cur_pos = wrapi(g_trk.cur_pos - 1, g_song.order_len); else move_row(-1); break;
     case KEY_RIGHT: if (SHIFT_HELD) move_ch(1); else if (g_trk.view == 2) g_trk.cur_pos = wrapi(g_trk.cur_pos + 1, g_song.order_len); else move_row(1); break;
     case KEY_PLAY:
-        if (g_trk.playing && !SHIFT_HELD) coop_tracker_stop();
-        else { coop_tracker_play(SHIFT_HELD); g_trk_plays++; }
+        if (SHIFT_HELD) coop_tracker_render();                             /* Shift + play: record the song once onto the tape */
+        else if (g_trk.playing) coop_tracker_stop();
+        else { coop_tracker_play(0); g_trk_plays++; }
         break;
-    case KEY_STOP: if (g_trk.playing) coop_tracker_stop(); else g_trk.cur_row = 0; break;
+    case KEY_STOP: if (g_trk.playing) coop_tracker_stop(); else if (g_trk.cur_row) g_trk.cur_row = 0; else g_trk.cur_pos = 0; break;   /* stopped: row 0, then the song start */
     case KEY_REC: g_trk.edit = !g_trk.edit; break;
     case KEY_LIFT: cell_copy(&s_clip, cur_cell()); s_clip_full = 1; break;
     case KEY_DROP: if (s_clip_full) { cell_copy(cur_cell(), &s_clip); coop_tracker_touch(); } break;
@@ -337,9 +344,9 @@ static void draw_header(void *r)
     scat(l, coop_tracker_live_family() ? " drm" : " syn");                 /* the family the core plays (t1: one at a time) */
     vtext(&s_tx_head[0], r, 4, 4, s_or ? 10 : 12, c_head, l);
     rt[0] = 0;
-    scat(rt, g_trk.playing ? "play" : "stop");
+    scat(rt, g_trk.render ? "rec" : (g_trk.playing ? "play" : "stop"));
     if (g_trk.edit && !s_or) scat(rt, "  edit");
-    vtext(&s_tx_head[g_trk.playing ? 1 : 2], r, VW() - (s_or ? 32 : 80), 4, s_or ? 10 : 12, g_trk.playing ? c_green : c_dim, rt);
+    vtext(&s_tx_head[g_trk.render ? 3 : (g_trk.playing ? 1 : 2)], r, VW() - (s_or ? 32 : 80), 4, s_or ? 10 : 12, g_trk.render ? c_orange : (g_trk.playing ? c_green : c_dim), rt);
     if (g_trk.edit && s_or) vdot(r, 155, 9, 3, c_white);                   /* portrait: edit is a white dot */
     vfill(r, 0, 19, VW(), 20, c_dim);
 }

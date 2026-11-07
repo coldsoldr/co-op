@@ -29,8 +29,16 @@ through a matrix), hooks in `coop_ui.cc` (keys, knobs, frame, service), `stereo_
   plays the current synth sound, every drum channel the current kit. Synth + drums together, and engines per
   channel, need the handover's engine-instance work (F1-F3). The first pass therefore answers the workflow
   questions (views, controls, orientation), not the engine-count question.
-- **Render to tape**: not in t1. (The tape records what plays, so pressing the tape's record before switching to
-  the tracker and playing the song is a crude version; a proper one-way export comes later.)
+- **Render to tape** (decision 5, one way; t5): **Shift + play** in the tracker. coop pushes the keys the user would
+  press for the stock recording (rec held + play, KeyHandler::PushKey 0x019C2F24 as the test runner does; those keys
+  are marked so the tracker lets them through), starts the song from its beginning when the play release has gone
+  through, and pushes stop when the order list wraps: the tape holds one pass of the song on the current track at
+  the current position, in the stock's own format, FX included. "rec" shows in orange in the header meanwhile; stop
+  cancels (and stops the tape). Found in op1emu: the pushed keys must be spaced (~100 ms, a main-loop queue) and
+  must wait for **Shift to be released** (Shift + play asked for the render, and shifted rec / play mean other
+  things in stock); back-to-back pushes under Shift recorded nothing. Verified: the song plays, the tape holds the
+  clip, and plays it back (`tests/sim/det_ui_tracker_render.txt`). Recording from the tape page with the tracker
+  on works with real keys too (`det_ui_tracker_recreal.txt` on a `g_coop_trk_passkeys=1` image).
 - **Tempo**: the tracker's own bpm (setup view), not the stock's; 4 rows a beat, `speed` ticks a row (default 6).
   The clock is counted in the audio block (`coop_tracker_block` from `coop_stereo_block_start`: samples per tick
   from bpm × 4 × speed); the notes are dispatched by the main loop (`coop_tracker_service` from `coop_fx_service`),
@@ -85,8 +93,8 @@ Header: `tracker  p03  01/04  120` (pattern, position / song length, bpm) and `p
 | white / orange push | volume back to default / clear the effect | | |
 | left / right | a row up / down (wraps); Shift: a channel left / right | a position | |
 | keyboard | writes the note (with `edit` on), moves down a row; previews with the cell's family | | |
-| play | play from the cursor row; again: stop. Shift + play: from the song's start | | |
-| stop | stop; stopped: the cursor to row 0 | | |
+| play | play from the cursor row; again: stop. **Shift + play: render to tape** (below) | | |
+| stop | stop; stopped: the cursor to row 0, then (again) to the song's start | | |
 | rec | `edit` on / off (off: the keyboard only previews) | | |
 | lift / drop / scissors | copy / paste / clear the cell | | |
 | T1..T4 | the view | | |
@@ -129,8 +137,9 @@ add ~190 KB of bss (region A has room).
 3. Drum channels: mono like the others (a new hit cuts the last) in t1.
 4. Pattern length and structure: PC-style patterns + order list, 16 patterns, 1..64 rows each.
 5. Effect display: words.
-6. Keys: Shift + tape enters; T1 / T2 switch overview / zoom; render to tape not yet.
-7. Stems or a mix: not yet.
+6. Keys: Shift + tape enters; T1 / T2 switch overview / zoom; Shift + T2 the channel patch; Shift + play renders.
+7. Stems or a mix: t5 records the instrument mix onto the current tape track (the stock recording); stems would
+   mean four passes with channels soloed, or a coop record tap per group.
 8. Orientation: both built; the setup view's orange picks. Which one feels right, and which way round?
 Plus: is the main-loop dispatch tight enough on the device (listen for swing in a straight pattern)? Should the
 keyboard write without `edit` by default (it does)? Should the tracker's tempo follow the stock's bpm instead?

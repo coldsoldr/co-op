@@ -47,6 +47,7 @@ static int32_t s_tick_acc;                                                /* sam
 static volatile int s_dirty, s_save_pending;
 static int32_t s_dirty_age;
 static uint32_t s_rng = 0x2545F491u;
+static volatile uint32_t s_blocks;                                          /* audio blocks, counted in coop_tracker_block */
 volatile uint32_t g_trk_rows, g_trk_notes;                                /* stats / tests */
 
 /* a MidiNote as MakeMidiNote fills it: note, velocity, a flag, a word (16 bytes: the stock's layout, note at +0) */
@@ -122,6 +123,7 @@ static void defaults(void)
 /* ---- the clock (audio block) ---- */
 extern "C" void coop_tracker_block(void)
 {
+    s_blocks++;
     if (s_dirty && !s_save_pending) { if (++s_dirty_age > SAVE_DELAY_BLOCKS) { s_dirty = 0; s_save_pending = 1; } }
     if (!g_trk.playing) return;
     int bpm = clampi(g_song.bpm, 40, 300), speed = clampi(g_song.speed, 1, 16);
@@ -172,7 +174,7 @@ static void advance_row(void)
     int pat = g_song.order[g_trk.pos & 31] & 15;
     if (++g_trk.row >= trk_pat_len(pat)) {
         g_trk.row = 0;
-        if (++g_trk.pos >= (g_song.order_len < 1 ? 1 : g_song.order_len)) g_trk.pos = 0;
+        if (++g_trk.pos >= (g_song.order_len < 1 ? 1 : g_song.order_len)) { g_trk.pos = 0; if (g_trk.render == 2) g_trk.render = 3; }   /* a render ends with the song */
     }
 }
 extern "C" void coop_tracker_play(int from_start)
@@ -182,13 +184,57 @@ extern "C" void coop_tracker_play(int from_start)
     g_trk.tick = 0; s_tick_acc = 0; s_ticks_done = g_trk_ticks;
     g_trk.playing = 1; g_trk.row_pending = 1;                              /* the first row plays on the next service pass */
 }
+/* Render to tape (the owner's decision 5, one way): the stock's own recording. coop pushes the keys the user would
+ * press (KeyHandler::PushKey 0x019C2F24, as the test runner does): rec held, play, then rec up, which starts the tape
+ * recording the instrument; those keys are marked so coop_tracker_key lets them through to the stock. When the play
+ * release has gone through, the song plays from its start; when the order list wraps, the tracker stops and pushes
+ * stop: the tape holds one pass of the song. */
+#define PUSH_KEY ((void (*)(int))0x019C2F24u)
+#define WAKE_KEYS ((void (*)(void))0x019C2F04u)                                /* post the KeyHandler semaphore (the runner does) */
+#define KEY_REC 0x21
+#define KEY_PLAY 0x22
+#define KEY_STOP 0x23
+static volatile uint8_t s_pass[64];
+volatile uint32_t g_trk_renders;
+/* the pushed keys are spaced ~100 ms apart (the stock reads rec held across frames: back-to-back pushes in one
+ * KeyHandler drain recorded nothing in op1emu): a small queue the main loop drains one key per INJ_GAP blocks */
+#define INJ_GAP 70
+static uint16_t s_inj[8]; static int s_inj_n, s_inj_rd; static uint32_t s_inj_due;
+
+static void push_key(int code, int pressed) { if (s_inj_n < 8) s_inj[s_inj_n++] = (uint16_t)((code & 63) | (pressed ? 0x100 : 0)); }
+static void inj_service(void)
+{
+    if (s_inj_rd >= s_inj_n) { s_inj_rd = s_inj_n = 0; return; }
+    if ((int32_t)(s_blocks - s_inj_due) < 0) return;
+    if (*(volatile uint8_t *)0x01DD7F78u) return;                           /* Shift still down (Shift + play asked for this): shifted rec / play mean other things */
+    uint16_t k = s_inj[s_inj_rd++];
+    s_pass[k & 63]++;
+    PUSH_KEY(k);
+    WAKE_KEYS();
+    s_inj_due = s_blocks + INJ_GAP;
+}
+extern "C" int coop_tracker_injected(int code)
+{
+    if (!s_pass[code & 63]) return 0;
+    s_pass[code & 63]--;
+    return 1;
+}
+extern "C" void coop_tracker_render(void)
+{
+    if (g_trk.playing) coop_tracker_stop();
+    g_trk.render = 1;
+    g_trk_renders++;
+    push_key(KEY_REC, 1); push_key(KEY_PLAY, 1); push_key(KEY_PLAY, 0); push_key(KEY_REC, 0);
+}
 extern "C" void coop_tracker_stop(void)
 {
     g_trk.playing = 0;
     coop_tracker_all_off();
+    if (g_trk.render) { g_trk.render = 0; push_key(KEY_STOP, 1); push_key(KEY_STOP, 0); }   /* the tape stops with the song */
 }
 extern "C" void coop_tracker_service(void)                                 /* main loop (coop_fx_service), every pass */
 {
+    inj_service();                                                         /* the render's pushed keys, spaced */
     while (s_prev_rd != s_prev_wr) {                                       /* the keyboard's previews, in order */
         uint32_t v = s_prev_ring[s_prev_rd]; s_prev_rd = (s_prev_rd + 1) & 7;
         raw_note((v >> 20) & 7, (v >> 16) & 15, (v >> 8) & 127, (v & 1) ? 100 : 64, v & 1);
@@ -203,6 +249,7 @@ extern "C" void coop_tracker_service(void)                                 /* ma
         if (++g_trk.tick >= speed) { g_trk.tick = 0; advance_row(); row_start(); }
         else row_tick(g_trk.tick);
     }
+    if (g_trk.render == 3) coop_tracker_stop();                            /* the song ended: the tape stops too */
 }
 
 /* ---- the file (main thread) ---- */

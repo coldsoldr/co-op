@@ -1162,3 +1162,20 @@ sound changes), Shift + blue to pan it; power-cycle: the patch comes back. Then 
 image (it is the same code).
 
 Result: (pending)
+
+## Tracker 5 (t5): render to tape — device test (pending, 2026-11-07)
+
+- `build/pkg/op1_246_coop_t5_tracker_render.op1` (sha256 `665fb3d3ec20535e1f79729301799ce447a13359086ed55d99fcf78d1b265e2c`),
+  copy in Downloads. Supersedes t4 (everything so far plus the render).
+
+**Shift + play** in the tracker renders the song once onto the current tape track at the current position: coop
+pushes the stock's own rec + play (spaced, after Shift is up), plays the song from its start when the tape rolls,
+and pushes stop when the order list wraps. "rec" in orange in the header meanwhile; stop cancels. Transport
+change: stop when stopped puts the cursor on row 0, a second stop at the song's start (plain play always starts
+from the cursor). op1emu: the song plays, the tape holds the clip (the red bar on the track), it plays back.
+
+**What to do**: a short song (a pattern or two); Shift + play; watch the tape counter run and "rec" show; when it
+stops, Shift + tape: the clip is on the track; stop, stop, play: the song from tape. Also with `fm` / `str`
+channels in the song (the coop voices go through the same record tap). Then the t4 and t3 tests on this image.
+
+Result: (pending)
