@@ -91,10 +91,17 @@ static int save(void)
     if (seq(s_buf, s_old)) return 1;
     const char *end = s_sql + SQL_MAX;
     char *p = s_sql;
-    p = scat(p, "UPDATE synth_user SET patch=replace(patch,'\"name\":\"", end); p = scat(p, s_old, end);      /* the rows are compact JSON */
+    /* the three spellings of the member (compact, pretty-printed): nested replace()s, GLOB matches (a % would hang the stock exec) */
+    p = scat(p, "UPDATE synth_user SET patch=replace(replace(replace(patch,'\"name\":\"", end); p = scat(p, s_old, end);
     p = scat(p, "\"','\"name\":\"", end); p = scat(p, s_buf, end);
+    p = scat(p, "\"'),'\"name\": \"", end); p = scat(p, s_old, end);
+    p = scat(p, "\"','\"name\": \"", end); p = scat(p, s_buf, end);
+    p = scat(p, "\"'),'\"name\" : \"", end); p = scat(p, s_old, end);
+    p = scat(p, "\"','\"name\" : \"", end); p = scat(p, s_buf, end);
     p = scat(p, "\"') WHERE folder='", end); p = scat(p, s_folder, end);
-    p = scat(p, "' AND patch GLOB '*\"name\":\"", end); p = scat(p, s_old, end); p = scat(p, "\"*'", end);   /* GLOB: a % would hang the stock exec */
+    p = scat(p, "' AND (patch GLOB '*\"name\":\"", end); p = scat(p, s_old, end); p = scat(p, "\"*'", end);
+    p = scat(p, " OR patch GLOB '*\"name\": \"", end); p = scat(p, s_old, end); p = scat(p, "\"*'", end);
+    p = scat(p, " OR patch GLOB '*\"name\" : \"", end); p = scat(p, s_old, end); p = scat(p, "\"*')", end);
     s_sql_pending = 1;                                                      /* the main loop runs it (coop_rename_service) */
     g_rename_saves++;
     return 1;

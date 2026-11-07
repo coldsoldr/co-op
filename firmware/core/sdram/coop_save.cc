@@ -114,8 +114,11 @@ static int update_row(const char *table, const void *entry)
     char *p = s_sql;
     p = scat(p, "UPDATE ", end); p = scat(p, table, end); p = scat(p, " SET patch='", end);
     p = scat(p, text, end); p = scat(p, "' WHERE folder='", end); p = scat(p, s_folder, end);
-    p = scat(p, "' AND patch GLOB '*\"name\":\"", end); p = scat(p, s_name, end); p = scat(p, "\"*'", end);   /* compact JSON; GLOB, never LIKE:
-                                                                                                             the stock exec formats the SQL again, a % hangs it */
+    /* the stock writes compact JSON ("name":"x"); presets installed by other tools may be pretty-printed: match the
+     * three spellings. GLOB, never LIKE: the stock exec formats the SQL again and a % hangs it */
+    p = scat(p, "' AND (patch GLOB '*\"name\":\"", end); p = scat(p, s_name, end); p = scat(p, "\"*'", end);
+    p = scat(p, " OR patch GLOB '*\"name\": \"", end); p = scat(p, s_name, end); p = scat(p, "\"*'", end);
+    p = scat(p, " OR patch GLOB '*\"name\" : \"", end); p = scat(p, s_name, end); p = scat(p, "\"*')", end);
     if (p >= end - 1) return 0;                                             /* did not fit: do nothing */
     void *db = DB_USER();
     if (!db) return 0;
