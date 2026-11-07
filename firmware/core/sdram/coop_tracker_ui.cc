@@ -166,7 +166,7 @@ static void knob_cell(int knob, int steps, int shift)
         if (x->note == 0 || x->note == TRK_NOTE_OFF) x->note = (uint8_t)(x->inst ? 53 : 60);   /* the first turn places a note */
         else x->note = (uint8_t)clampi(x->note + steps * (shift ? 12 : 1), 1, 127);
         break;
-    case 1: x->inst = (uint8_t)clampi(x->inst + steps, 0, 5); g_song.ch_inst[g_trk.cur_ch] = x->inst; break;   /* syn, drm, fm, str, dig, dsy (F2) */
+    case 1: x->inst = (uint8_t)clampi(x->inst + steps, 0, 6); g_song.ch_inst[g_trk.cur_ch] = x->inst; break;   /* syn, drm, fm, str, dig, dsy, pha */
     case 2: x->vol = (uint8_t)clampi(x->vol + steps * (shift ? 10 : 1), 0, 99); break;
     case 3:
         if (!shift) {
@@ -321,7 +321,7 @@ static void note_name(char *o, int note)                                    /* "
     int oct = note / 12 - 1;
     o[0] = names[note % 12][0]; o[1] = names[note % 12][1]; o[2] = (char)('0' + clampi(oct, 0, 9)); o[3] = 0;
 }
-static const char *const inst_names[6] = { "syn", "drm", "fm", "str", "dig", "dsy" };   /* the live families, then coop's own voices (F2) */
+static const char *const inst_names[7] = { "syn", "drm", "fm", "str", "dig", "dsy", "pha" };   /* the live families, then coop's own voices (F2) */
 static const char *const fx_names[TRK_FX_N] = { "---", "arp", "rtg", "cut", "dly", "vol", "prb" };
 static const char fx_letter[TRK_FX_N] = { ' ', 'a', 'r', 'c', 'd', 'v', 'p' };
 static void scat(char *d, const char *s) { int i = 0; while (d[i]) i++; while (*s && i < 30) d[i++] = *s++; d[i] = 0; }
@@ -396,7 +396,7 @@ static void draw_zoom(void *r)
         char nn[4]; note_name(nn, x->note);
         vtext(&s_tx_zoom[i][on ? ZM_NOTE_CUR : ZM_NOTE], r, xs[1], y, 12, on ? c_blue : c_row, nn);
         if (x->note || on) {
-            vtext(&s_tx_zoom[i][on ? ZM_INST_CUR : ZM_INST], r, xs[2], y, 12, on ? c_green : c_dim, inst_names[x->inst > 5 ? 0 : x->inst]);
+            vtext(&s_tx_zoom[i][on ? ZM_INST_CUR : ZM_INST], r, xs[2], y, 12, on ? c_green : c_dim, inst_names[x->inst > 6 ? 0 : x->inst]);
             if (x->vol) num2(b, x->vol); else { b[0] = '-'; b[1] = '-'; b[2] = 0; }
             vtext(&s_tx_zoom[i][on ? ZM_VOL_CUR : ZM_VOL], r, xs[3], y, 12, on ? c_white : c_dim, b);
         }
@@ -447,7 +447,7 @@ static void draw_setup(void *r)
 }
 static void draw_patch(void *r)                                              /* Shift + T2: the channel's patch for its coop voice */
 {
-    int c = g_trk.cur_ch, inst = g_song.ch_inst[c] > 5 ? 0 : g_song.ch_inst[c];
+    int c = g_trk.cur_ch, inst = g_song.ch_inst[c] > 6 ? 0 : g_song.ch_inst[c];
     char t[32], b[8];
     t[0] = 0; scat(t, "channel "); b[0] = (char)('1' + c); b[1] = 0; scat(t, b); scat(t, "  "); scat(t, inst_names[inst]);
     vtext(&s_tx_patch[0], r, s_or ? 4 : 24, 28, 12, c_row, t);

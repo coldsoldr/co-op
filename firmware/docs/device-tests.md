@@ -1179,3 +1179,17 @@ stops, Shift + tape: the clip is on the track; stop, stop, play: the song from t
 channels in the song (the coop voices go through the same record tap). Then the t4 and t3 tests on this image.
 
 Result: (pending)
+
+## Tracker 6 (t6): the phase engine as a coop voice — device test (pending, 2026-11-07)
+
+- `build/pkg/op1_246_coop_t6_tracker_pha.op1` (sha256 `8cdaed073317267c7a5e03f95785abed7a5159922f1634292a8c3df9515d66f5`),
+  copy in Downloads. Supersedes t5 (everything so far; the green knob now also offers `pha`).
+
+The tracker\x27s coop voices are fm, str, dig, dsy and **pha** (the stock phase engine, Pd.cpp); op1emu: it sounds
+(a bright harmonic series at the nominal note), 11.7 k cycles a block, no faults; the three-engine run unchanged.
+All 30 voice objects sit in the coop L1 pool (`xv_l1 30`). Voltage, dna, drwave, cluster and pulse are not
+offered: their getters build the voice inline at the scratchpad address (no constructor to call on coop memory).
+
+**What to do**: the t5 / t4 / t3 tests on this image, plus a `pha` channel beside the others.
+
+Result: (pending)

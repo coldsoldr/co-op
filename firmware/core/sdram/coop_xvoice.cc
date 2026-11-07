@@ -31,7 +31,7 @@
 #include "coop_stereo.h"
 
 #define XSLOTS 6
-enum { XE_FM, XE_STRING, XE_DIGITAL, XE_DSYNTH, XE_N };
+enum { XE_FM, XE_STRING, XE_DIGITAL, XE_DSYNTH, XE_PHASE, XE_N };
 typedef void *(*ctor_fn)(void *);
 typedef void (*render_fn)(void *, int16_t *, const int16_t *);
 typedef void (*note_fn)(void *, const int16_t *);
@@ -42,6 +42,7 @@ static const struct xeng engs[XE_N] = {
     { 0x01A4EF38u, 32, 0x01A4F098u, 0x01A4EFC8u, 0x01A4EFAEu, 0x01A4EF64u },  /* string (St.cpp): setup(this, i) sets the buffer */
     { 0x01A51F28u, 32, 0x01A51F7Au, 0x01A521E2u, 0,           0 },            /* digital (T10.cpp) */
     { 0x0197E058u, 72, 0x0197E1D8u, 0x0197E0EEu, 0x0197E168u, 0x0197E0B0u },  /* dsynth: setup(this, i) sets the index */
+    { 0x01A0BC14u, 32, 0x01A0BC5Cu, 0x01A0BE82u, 0,           0 },            /* phase (Pd.cpp): adds to the level word 0x01DE4B8C, harmless */
 };
 #define FM_SETUP     ((void (*)(void))0x019A3D84u)
 #define FM_PARAM_PTR (*(volatile uint32_t *)0xFF906F6Cu)
@@ -80,9 +81,10 @@ static const int16_t s_knobs[XE_N][8] = {
     { 0x2000, 0x2000, 0x2000, 0x2000, 0, 0, 0, 0 },
     { 0x4000, 0x4000, 0x4000, 0x4000, 0, 0, 0, 0 },
     { 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000 },
+    { 0x4000, 0x4000, 0x4000, 0x4000, 0, 0, 0, 0 },
 };
 volatile uint32_t g_xvoice_peak[XE_N];                                        /* the loudest |sample| each engine made: is it audible at all? */
-static const int16_t s_knob_max[XE_N] = { 0x7FFF, 0x3FFF, 0x7FFF, 0x7FFF };   /* the top of each engine's knob range (string: index 0 at 0x4000) */
+static const int16_t s_knob_max[XE_N] = { 0x7FFF, 0x3FFF, 0x7FFF, 0x7FFF, 0x7FFF };   /* the top of each engine's knob range (string: index 0 at 0x4000) */
 static int16_t s_slot_knobs[XSLOTS][8];                                       /* the channel's patch, as the render reads it */
 static coop_pan_delta s_slot_pan[XSLOTS];
 static int s_slot_has_patch[XSLOTS];

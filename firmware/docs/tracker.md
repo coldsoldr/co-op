@@ -1,3 +1,4 @@
+| phase | 28 B | adds to the level word `0x01DE4B8C` (the live engine's display) | nothing: harmless (F2c, `pha`) |
 | T1..T4 | the view (Shift + T2: the channel's patch for its coop voice, F2b) | | |# The tracker (t1): first pass, 2026-11-07
 
 The owner's brief is `docs/tracker-handover.md`; its decisions 1-7 stand. This is the first build, made with the
@@ -199,9 +200,10 @@ put back; the sine table is the L1 copy in every block (the package's retarget);
 use (`0xFF801B50`, `0xFF801E50`, `0xFF801F50`) are free at the stage. Note-off goes to the engine where it has one
 (string sets its release, dsynth its own); the coop envelope (2 ms / 120 ms) shapes everything on top.
 
-Not done: the channel's own patch (the renders get mid-value knobs and the FM voice the stock's FM patch words),
-engines whose voices index state by their scratchpad address (phase / Pd), pulse (its render is in L1), the drum
-family (a coop sample player over the kit's samples), and per-voice pan (centre for now).
+Not done: voltage, dna, drwave, cluster and pulse: their getters construct the voice inline (vtable word,
+sub-objects, the stock vector constructor) at the scratchpad address, with no separate constructor to call on
+coop's memory, so each needs its construction replicated by hand; the drum family (above). The channel's patch
+and pan came in F2b, phase in F2c.
 
 **F2 findings (op1emu, 2026-11-07)** [C op1emu]:
 - **The parameter pointer is the slot's 8 knob words**, not 4: dsynth's render reads `+0x8..+0xc`, so a four-word
@@ -214,7 +216,7 @@ family (a coop sample player over the kit's samples), and per-voice pan (centre 
   because the pristine NAND's synth octave is −1 (the core folds it into its own pitch words). So no octave bug in
   coop's words, and the earlier "dump sits an octave low" reading was wrong: it was the FM patch and the octave.
 - **Cost a block, op1emu, one voice sounding (`xv_max`, coop's ~2 k of save / restore and envelope included):**
-  fm ~10–11 k, digital ~13 k, dsynth ~25 k, string ~30 k (its 16 KB delay line). The three-engine run (fm +
+  fm ~10–11 k, phase ~12 k, digital ~13 k, dsynth ~25 k, string ~30 k (its 16 KB delay line). The three-engine run (fm +
   string + dsynth beside the live synth, `tests/sim/det_ui_tracker_x.txt`): **63.0 k peak, 45.6 k average** a
   block, 11 % of the 580 k block at peak, additive: op1emu models no cache, so the I-cache cost of mixed engines
   stays a device question (the stats` xv_max` on the device answers it).
