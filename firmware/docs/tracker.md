@@ -1,6 +1,11 @@
 | phase | 28 B | adds to the level word `0x01DE4B8C` (the live engine's display) | nothing: harmless (F2c, `pha`) |
 | T1..T4 | the view (Shift + T2: the channel's patch for its coop voice, F2b) | | |# The tracker (t1): first pass, 2026-11-07
 
+**Status 2026-11-08:** t1 (the tracker, both orientations) → F1/F2 (coop voices from seven stock engine kinds
+beside the live family) → F2b (the channel patch) → t5 (render to tape). One package carries it all:
+`build/pkg/op1_246_coop_t7_tracker_engines.op1` (device tests "Tracker 1..7" in docs/device-tests.md, all pending
+the owner). Everything below marked **guess** waits for the owner's reaction.
+
 The owner's brief is `docs/tracker-handover.md`; its decisions 1-7 stand. This is the first build, made with the
 owner away ("make your best guesses… I'll have a look at the first pass… try make it both ways [portrait and
 landscape]"). Everything marked **guess** is mine and is easy to change. [I] until the device; the op1emu gate is
