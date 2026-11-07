@@ -31,8 +31,10 @@ Process rule (the owner): **mock up everything before building it.**
 - Encoders: white = amount, orange = rate [I: to verify that stock leaves both free on that page; blue = play mode
   and green = portamento in stock].
 
-## 3. Drum per-voice pan (per drum preset) — storage built in u5; the control is not placed: the stock takes all four shifted encoders on the drum T1 page (reverse, start fine, end fine, volume), owner to choose another home
-- Shifted T1 on the drum page: blue = pan of the **last played voice**, shown `L50 … C … R50`.
+## 3. Drum per-voice pan (per drum preset) — built in u6 (2026-11-07): the owner moved it to the drum's shifted T2 page (the stock takes all four shifted encoders on T1); green pans the last played key, saved in the kit's "coop" member
+- Shifted **T2** on the drum page (decided 2026-11-07, after the first build found the T1 shift layer taken):
+  **green** = pan of the **last played key** (the 24 drum keys), shown `L50 … C … R50`; the readout is drawn in
+  green while Shift is held. Stock's shifted blue on that page is the dynamic envelope's fifth word.
 - Spread does not apply to drums. White and orange on that layer stay empty.
 
 ## 4. Overwrite save — built in u5 (2026-11-07), device test pending (sampler presets: the audio is not re-copied)

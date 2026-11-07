@@ -889,17 +889,17 @@ does).
 
 Result: (pending)
 
-## UI 1 (u5): settings, FX 2, list columns, randomise, solo, markers, bend, overwrite save, rename — device test (pending, 2026-11-07)
+## UI 1 (u6): settings, FX 2, list columns, randomise, solo, markers, bend, overwrite save, rename, drum pan — device test (pending, 2026-11-07)
 
 The first package of the owner's UI feature set (`docs/ui-features.md`; mocked first in
-`tools/playground/coop-playground.html`). Build tag `u5` (the stats file's `build` word; u1-u4 were earlier cuts of
-the same package, never flashed). Everything from p5g stays in (all rewrite switches on).
+`tools/playground/coop-playground.html`). Build tag `u6` (the stats file's `build` word; u1-u4 were earlier cuts of
+the same package, never flashed; u5 = u6 without the drum pan, flashed 2026-11-07). Everything from p5g stays in.
 
-- `build/pkg/op1_246_coop_u5_ui.op1` (sha256 `2ad0b6e8034171993a40c3690fc68e20cb0f230e6ef904c3e65284733a388ad4`),
+- `build/pkg/op1_246_coop_u6_ui.op1` (sha256 `baa05379dd4945052d9b5cd3a3dc0978f16fd6825a488618d4a8bbab29ee2f1c`),
   copy in Downloads. `--tape-stereo --set-word g_coop_spread=32767` as p5f. `verify_bootloader.py` PASS (no
   `te-boot.ldr`), `pkg_check` = only `OP1_vdk.ldr` differs. **Flash this one**; p5f is the fall-back.
 
-What is new (`docs/screens.md` "u1 / u2", "u3", "u4", "u5"):
+What is new (`docs/screens.md` "u1 / u2", "u3", "u4", "u5", "u6"):
 0. **The stock font** on both coop pages (`core/sdram/coop_text.h`: the firmware's Text object, as kennel's chord
    plugin draws it), with the manifesto's colour code: the cursor row blue (blue moves it), the value green (green
    changes it), titles lavender, hints dim; on the FX 2 page the knob numbers in their encoder colours and a pending
@@ -951,6 +951,8 @@ What is new (`docs/screens.md` "u1 / u2", "u3", "u4", "u5"):
    letters, green digits, white symbols, turn to pick, push to keep, push with nothing picked = space; orange
    anticlockwise deletes; orange push saves (the list shows the new name); any other key cancels. Factory and sampler
    presets are refused ("no" blinks).
+11. **Drum per-voice pan**: drum T2 with Shift held: **green** pans the key last played, L50 .. C .. R50 ("pan 7 l50"
+   in green); each key keeps its own, saved with the kit. The drum's spread is gone: a key plays where it is panned.
 
 **What to do** (about 5 minutes):
 1. Boot; play a chord (everything as p5f). Hold the four mode keys: the menu appears, no game. Release.
@@ -988,10 +990,12 @@ What is new (`docs/screens.md` "u1 / u2", "u3", "u4", "u5"):
    factory sound, hold synth + S4: a normal save (a new snapshot).
 10. **Rename**: Shift + S3 opens the browser; find the snapshot preset; orange push; type a name; orange push:
    the list shows it. On a factory preset: "no".
-11. Copy `coop_stats.txt` over SysEx: the `plugins` line gains `disabled`, `ui_toggles`, `ui_col2_sets`,
+11. **Drum pan**: drum, hit a key, T2, hold Shift: green to L50; hit it: hard left (headphones); another key:
+   centre. Save the kit, power-cycle: still left.
+12. Copy `coop_stats.txt` over SysEx: the `plugins` line gains `disabled`, `ui_toggles`, `ui_col2_sets`,
    `set_opens`, `set_saves`, `rnd`, `rnd_back`, `solo`, `markers`, `jumps`, `help_taps`, `mode_taps`, `mode_holds`,
-   `keeps`, `kept`, `sound_writes`, `bend`, `bend_knobs`, `bend_ramps`, `overwrites`, `saves`, `renames`.
-12. The font: the menu and the FX 2 page should read like the stock lists (op1emu draws them so; the device is the
+   `keeps`, `kept`, `sound_writes`, `bend`, `bend_knobs`, `bend_ramps`, `overwrites`, `saves`, `renames`, `drumpan`.
+13. The font: the menu and the FX 2 page should read like the stock lists (op1emu draws them so; the device is the
    proof), with no "te_new out of memory" on screen changes (each coop text object is built once).
 
 op1emu (2026-11-07, `tests/sim/det_ui_settings.txt`, `det_ui_fx2.txt`, `det_lander_combo.txt`, and for u3
@@ -1011,7 +1015,9 @@ the sound key through the clock UPDATEs that same row (one row, the turned knob 
 trace markers 1-7 complete); an earlier cut hung the guest in the stock's db exec because a LIKE pattern's `%` goes
 through its printf (now GLOB); `det_ui_rename.txt`: after a stock save the browser opens on the snapshot preset, the orange push starts naming, two
 characters deleted, 'a' typed and kept, orange push saves: the row reads `20640101_00a` (`renames 1`); an earlier cut
-refused factory presets as designed; the keep hook runs on
+refused factory presets as designed; u6 (`det_ui_drumpan.txt`, spread 0): a key hit at centre measures L 75 / R 75,
+after green 50 detents down on the drum's shifted T2 it measures L 85 / R 63 (63 is the floor: hard left), another
+key L 90 / R 90; the kit's row carries `pan[7] = -50`; the keep hook runs on
 every sound load (`keeps` 209 at boot) and after the bend edit the slot's row in op1.db carries
 `"coop":{"bend":-8,"bend_t":40,"pan":[...]}`;
 chords sound after the menu closes (peaks ~2,600 RMS). With the image at spread 50 the menu shows 50, green ten

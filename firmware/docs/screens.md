@@ -188,3 +188,13 @@ geometry):
   0x01A17560) starts naming on the encoders; orange push saves: `UPDATE synth_user SET patch = replace(patch,
   '"name" : "old"', '"name" : "new"')` for the row, then the preset array is reloaded (0x01A0567C) and the list
   refilled (0x01A02790). Sampler presets are refused (their .raw is named after them). Synth only in u5.
+
+## u6: drum per-voice pan (2026-11-07) [I until the device]
+
+`core/sdram/coop_drumpan.cc`: on the drum's T2 page with Shift held, green pans the last played key ([0xFF801044],
+0..23) between L50 and R50, kept in the kit's "coop" member (`pan[24]`, coop_sound.cc; the kit is marked dirty
+through the stock's dyna_env setter 0x01A0005C). A readout "pan <key> <l12>" is drawn in green. When a drum voice
+starts, the stereo stage (stereo_bus.cc) takes that key's pan instead of a random spread draw: spread stays the
+synth's. The owner chose the T2 page because the stock takes all four shifted encoders on the drum's T1 page
+(reverse, start fine, end fine, volume); shifted blue on T2 is the dynamic envelope's fifth word, green / white /
+orange write nothing there.

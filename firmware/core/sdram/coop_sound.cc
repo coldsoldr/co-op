@@ -34,6 +34,8 @@
 #define JV_DTOR     ((void (*)(void *, int))0x019BDD18u)
 #define SET_ADSR    ((void (*)(void *, const int16_t *))0x01A00C98u)           /* Patch::SetAdsr: marks the patch dirty */
 #define ADSR(i)     ((volatile int16_t *)(0x01B60EF0u + (uint32_t)(i) * 16))
+#define SET_DYNA    ((void (*)(void *, const int16_t *))0x01A0005Cu)           /* the drum's dyna_env setter: marks the kit dirty */
+#define DYNA(i)     ((volatile int16_t *)(0xFF801544u + (uint32_t)(i) * 16))
 #define PATCH_S     0x01DDD7E8u                                                /* the Patch objects: JSON Value at +4 */
 #define PATCH_D     0x01DDD9A8u
 #define PATCH_SZ    0x38u
@@ -113,7 +115,9 @@ static void write_out(int kind, int slot)                                      /
     void *a = JV_KEY(o, "pan");
     for (int i = 0; i < PAN_N; i++) { uint32_t tmp[4]; JV_FROM_INT(tmp, c->pan[i]); JV_ASSIGN(JV_IDX(a, (unsigned)i), tmp); JV_DTOR(tmp, 2); }
     c->has = 1;
-    if (kind == 0) { int16_t v[8]; for (int k = 0; k < 8; k++) v[k] = ADSR(slot)[k]; SET_ADSR((void *)(uintptr_t)pobj, v); }   /* dirty, nothing changed */
+    int16_t v[8];
+    if (kind == 0) { for (int k = 0; k < 8; k++) v[k] = ADSR(slot)[k]; SET_ADSR((void *)(uintptr_t)pobj, v); }   /* dirty, nothing changed */
+    else { for (int k = 0; k < 8; k++) v[k] = DYNA(slot)[k]; SET_DYNA((void *)(uintptr_t)pobj, v); }
     g_sound_writes++;
 }
 extern "C" void coop_sound_set_bend(int slot, int bend, int bend_t)

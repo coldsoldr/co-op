@@ -78,6 +78,8 @@ extern "C" int coop_bend_key(int code, int pressed);                   /* coop_b
 extern "C" int coop_bend_knob(int knob, int steps);
 extern "C" void coop_bend_draw(void *r);
 extern "C" void coop_save_draw(void *r);                               /* coop_save.cc (u5) */
+extern "C" int coop_drumpan_knob(int knob, int steps);                 /* coop_drumpan.cc (u6) */
+extern "C" void coop_drumpan_draw(void *r);
 extern "C" int coop_rename_key(int code, int pressed);                 /* coop_rename.cc (u5) */
 extern "C" int coop_rename_knob(int knob, int steps);
 extern "C" int coop_rename_active(void);
@@ -266,6 +268,7 @@ extern "C" void coop_ui_knob(int knob, int16_t *delta)
     if (!steps) steps = *delta > 0 ? 1 : (*delta < 0 ? -1 : 0);
     if (coop_settings_is_open()) { coop_settings_knob(knob, steps); return; }
     if (coop_bend_knob(knob, steps)) return;                           /* shifted white / orange on T2 */
+    if (coop_drumpan_knob(knob, steps)) return;                        /* shifted green on the drum's T2 */
     if (coop_rename_knob(knob, steps)) return;                         /* naming: every turn */
     {
         int bk = br_sync();
@@ -349,6 +352,7 @@ extern "C" void coop_ui_frame(void *table)
     if (coop_settings_is_open()) { void *rs = op1_raster(); if (rs) coop_settings_draw(rs); return; }
     if (CUR_MODE == 2 && CUR_SCREEN == TAPE_SCREEN) { void *rt = op1_raster(); if (rt) coop_tape_draw(rt); return; }
     if (CUR_MODE == 0 && CUR_SCREEN == SCREEN_PLAYMODE) { void *rp = op1_raster(); if (rp) coop_bend_draw(rp); return; }
+    if (CUR_MODE == 1) { void *rd = op1_raster(); if (rd) coop_drumpan_draw(rd); }   /* the pan readout on the drum's shifted T2 */
     if (CUR_SCREEN == SCREEN_BROWSER && LIST_PTR == 0x01DDD688u) { void *rn = op1_raster(); if (rn) coop_rename_draw(rn); return; }
     {
         int bk = br_sync();

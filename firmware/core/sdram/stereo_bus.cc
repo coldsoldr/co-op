@@ -137,6 +137,7 @@ extern "C" void coop_tape_clamp_track(void);           /* tape_stereo.cc: a save
 extern "C" void coop_eng_block_end(void);          /* coop_stats.cc: the previous block's per-engine render sums */
 extern "C" void coop_runner_block(void);           /* coop_runner.cc (p5b): this block's scripted keys and turns */
 extern "C" void coop_bend_block(void);             /* coop_bend.cc (u5) */
+extern "C" int16_t coop_drumpan_q15(void);         /* coop_drumpan.cc (u6): the last played key's pan */
 extern "C" void coop_stereo_block_start(void)
 {
     coop_eng_block_end();
@@ -322,7 +323,7 @@ static void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)
     if (is_drum) g_dbg_drum_hooks++; else g_dbg_synth_hooks++;
     g_rendered_cur |= bit;
     if (is_drum && !(g_rendered_prev & bit)) {   /* a drum voice starting: its note-on, as far as we can see */
-        coop_spread_note_on(pans, voice);
+        if (voice >= 0 && voice < COOP_MAX_VOICES) pans->pan[voice] = coop_drumpan_q15();   /* u6: the key's own pan; spread is the synth's */
         coop_lfo2_trigger_drum(voice);
     }
     coop_pan_delta d = coop_pan_deltas_tab(pans->pan[voice], g_sin);
