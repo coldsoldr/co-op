@@ -1083,3 +1083,29 @@ measurements decide where that refetch happens, in one package, no audio change:
 p0 counts ~1 per 8 bytes of code executed in every pass, stalled or not. So p0 in p6a-p6f was an instruction-fetch
 count and the "code-bound" conclusion is withdrawn (`docs/fx-data-placement-plan.md` §5). p6g probes both PFCTL
 layouts at boot and keeps the one that counts stall cycles; the tables are measured again on it.
+
+## p6h: the event sweep on the device (2026-11-08) [C device]
+
+Every code event 0x80..0x8F on counter 0 and every data event 0x90..0x9F on counter 1, as cycles ("s") and as
+occurrences ("o"), each against a known workload: the 4 KB NOP function cold (after 24 KB of other code) and warm;
+an 8 KB array read cold (after a 32 KB walk) and warm. The owner's `coop_stats (19).txt`:
+
+| written as | cold / warm | what it is |
+|---|---|---|
+| counter 0 `0x83 s` | 26,359 / 21 | **code fetch stall cycles** (the cold pass is ~25 k of stall) |
+| counter 0 `0x81 o` (and `s`) | 133 / 4 | **instruction-cache line fills** (128 lines) |
+| counter 0 `0x82 s` / `o` | 519 / 521 | 64-bit fetches delivered: what p6a..p6g mistook for stalls |
+| counter 0 `0x80` | 0 / 0 | nothing on this workload (DMA stalls) |
+| counter 1 `0x99 s` | 52,571 / 0 | **data stalls sent to the processor**: the whole cold-pass wait, ~205 cycles a line |
+| counter 1 `0x98 s` | 57,077 / 1,227 | data stalls (p6b's column: valid, slightly wider) |
+| counter 1 `0x96 s` | 35,949 / 0 | a partial data stall kind |
+| counter 1 `0x95 s` | 18,925 / 2,154 | data memory fill buffer stalls |
+| counter 1 `0x9A o` | 256 / 1 | **data-cache line fills** (256 lines) |
+| counter 1 `0x9F o` | 256 / 0 | low-priority fills |
+
+Counter 0's field repeats every four events (0x84 = 0x80 and so on): under kennel's bit positions only the low two
+bits of the written code select, and the numbering is not Linux's table; counter 1 follows that table. Kennel's
+positions are the right ones for PFCEN (Linux's put counter 0 in user mode only, which counts nothing in the audio
+interrupt and at boot). **p6i** programs mode 0 as 0x83 s / 0x99 s (code fetch stall cycles / data stall cycles),
+mode 1 as 0x81 o / 0x9A o (line fills, both caches); the sweep stays in the image behind `g_coop_pf_sweep`. The
+p6b data column stands; the code column is measured for the first time on p6i.

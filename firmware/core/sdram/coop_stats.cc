@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p6h"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p6i"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -193,17 +193,21 @@ extern "C" void coop_gap_block(void)
     g_gap_blocks++;
 }
 
-/* p6a: the Blackfin performance monitor (coop_cost.h; the layout and the events are kennel's kn_diag.c, device-proven:
- * PFCTL 0xFFE08000 = PFPWR | PFCEN0 = 3 << 3 | PFMON0 << 5 | PFCEN1 = 3 << 14 | PFMON1 << 16 | PFCNT0 << 24 |
- * PFCNT1 << 25). Every event is EITHER a stall event (PFCNTx must be 0: the counter adds the cycles it is active)
- * OR an occurrence event (PFCNTx must be 1): Linux arch/blackfin/kernel/perf_event.c's table, "'o' is PFCNTx=1 and
- * 's' is PFCNTx=0"; a mismatched pair reads garbage (p6a's p1: 0x9A counted as cycles). Modes (g_coop_pf_mode, a
- * --set-word), p0 / p1: 0 "code fill stalls" 0x82 s / "data stalls" 0x98 s; 1 "code memory fetches stalled due to
- * DMA" 0x80 o / "data cache fills (bank a)" 0x9A o; 2 "processor to memory stalls" 0x90 s / "data memory stalls not
- * hidden by 0x90" 0x91 s; 3 "code TAG stalls" 0x81 s / "data collision stalls" 0x97 s; 4 "data store buffer full"
- * 0x92 s / "data memory write buffer full" 0x93 s; 0xFF = off. (p6a's mode 0 was 0x82 s / 0x9A as s: p0 valid, p1 not.)
- * Programmed once at boot on the main thread (coop_plugins_boot); the counters run free, every cost site takes
- * deltas. op1emu does not model the unit: g_coop_pf_live stays 0 there if the write does not stick. */
+/* p6a..p6i: the Blackfin performance monitor (coop_cost.h). PFCTL 0xFFE08000 = PFPWR | PFCEN0 = 3 << 3 | PFMON0 << 5 |
+ * PFCEN1 = 3 << 14 | PFMON1 << 16 | PFCNT0 << 24 | PFCNT1 << 25 (kennel's kn_diag.c positions; Linux bfin_pfmon.h's,
+ * one bit lower for counter 0, count nothing on this unit: p6g). THE EVENTS ARE THE SWEEP'S, NOT A TABLE'S: p6h ran
+ * every code event 0x80..0x8F on counter 0 and every data event 0x90..0x9F on counter 1, as cycles and as
+ * occurrences, against known cold / warm workloads on the device (docs/performance.md "p6h"). Counter 0 (written
+ * through PFMON0 << 5 as below; only its low two bits select, the pattern repeats every four): 0x83 as cycles =
+ * code fetch STALL cycles (26,359 on a 128-line cold pass, 21 warm); 0x81 as occurrences = instruction-cache line
+ * fills (133 / 4); 0x82 = 64-bit fetches delivered (~520 either way: what p6a..p6g mistook for stalls). Counter 1
+ * follows Linux's numbering: 0x99 "data stalls sent to processor" as cycles = the whole cold-pass wait (52,571 on
+ * 256 lines, 0 warm); 0x98 "data stalls" near it (57,077 / 1,227: p6b's column, valid); 0x9A as occurrences = data
+ * cache fills (256 / 1); 0x95 / 0x96 partial stall kinds. Modes (g_coop_pf_mode, a --set-word), p0 / p1:
+ * 0 = code fetch stall cycles (0x83 s) / data stall cycles (0x99 s); 1 = I-cache line fills (0x81 o) / D-cache
+ * fills (0x9A o); 2 = 0x83 s / 0x98 s; 3 = 0x83 s / 0x96 s; 4 = 0x83 s / 0x95 s; 0xFF = off. Programmed once at
+ * boot on the main thread (coop_plugins_boot); the counters run free, every cost site takes deltas. op1emu does not
+ * model the unit: g_coop_pf_live stays 0 there if the write does not stick. */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_pf_mode = 0; }
 /* p6g: the PFCTL bit layout. kennel's (0): PFCEN0 at 3, PFMON0 at 5, PFCEN1 at 14. Linux bfin_pfmon.h's (1): PFCEN0
  * at 2, PFMON0 at 4, PFCEN1 at 13 (PFMON1 at 16 and PFCNT0 / 1 at 24 / 25 in both). The p6f probe on the device
@@ -222,7 +226,7 @@ static uint32_t pf_word(int layout, uint32_t ev0, uint32_t cnt0, uint32_t ev1, u
 }
 static void pf_program(int layout)
 {
-    static const uint8_t ev[5][2] = { { 0x82, 0x98 }, { 0x80, 0x9A }, { 0x90, 0x91 }, { 0x81, 0x97 }, { 0x92, 0x93 } };
+    static const uint8_t ev[5][2] = { { 0x83, 0x99 }, { 0x81, 0x9A }, { 0x83, 0x98 }, { 0x83, 0x96 }, { 0x83, 0x95 } };   /* p6i: the sweep's events */
     static const uint8_t cnt[5][2] = { { 0, 0 }, { 1, 1 }, { 0, 0 }, { 0, 0 }, { 0, 0 } };
     uint32_t m = g_coop_pf_mode;
     if (m > 4) { PFCTL = 0; g_coop_pf_live = 0; return; }
@@ -291,9 +295,10 @@ static uint32_t g_sweep[2][16][2][2];                            /* [side][event
 static volatile uint32_t g_probe_data[2048] __attribute__((aligned(32)));   /* 8 KB: 256 data lines */
 static volatile uint32_t g_evict_data[8192] __attribute__((aligned(32)));   /* 32 KB: walks the 16 KB data cache out */
 static uint32_t data_walk(volatile uint32_t *a, uint32_t n) { uint32_t s = 0; for (uint32_t i = 0; i < n; i += 8) s += a[i]; return s; }
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_pf_sweep = 0; }   /* p6i: the sweep only on request (--set-word): ~40 ms of boot */
 extern "C" void coop_pf_sweep(void)
 {
-    if (!g_coop_pf_live) return;
+    if (!g_coop_pf_live || !g_coop_pf_sweep) return;
     uint32_t m = g_coop_pf_mode;
     if (m > 4) return;
     for (int ev = 0; ev < 16; ev++)

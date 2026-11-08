@@ -1440,3 +1440,21 @@ lines are what I read: the stall event is the one with ~25 k cold / ~0 warm on t
 one with ~128 cold / ~0 warm; the data side the same against ~256 lines.
 
 Result: (pending)
+
+**Result (p6h, 2026-11-08)**: the sweep (table in docs/performance.md "p6h"): counter 0 written 0x83 as cycles =
+code fetch stall cycles (26,359 cold / 21 warm), 0x81 as occurrences = I-cache fills (133 / 4), 0x82 = fetches
+delivered (the p6a..p6g column); counter 1 0x99 as cycles = data stalls sent to the processor (52,571 / 0), 0x9A as
+occurrences = D-cache fills (256 / 1), 0x98 = p6b's data column (57,077 / 1,227, valid). Pass: the events are known.
+
+## Performance 6i (p6i): the first true code-stall table — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_p6i_pf.op1` (sha256 `7a163b4556aa4bc8e26213e4cca92ced90bba6291eb3332464fc0b30d3c5916e`), copy in Downloads. `--tape-stereo --set-word
+  g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `p6i`.
+  p6h with the sweep's events live: mode 0 p0 = code fetch stall cycles (0x83 s), p1 = data stalls sent to the
+  processor (0x99 s); the sweep off unless `g_coop_pf_sweep=1`. No audio change.
+
+**What to do**: the p5a script, the two downloads. Check first: the `icache_l0` line should now read p1 ~26 k, p2
+~20, p3 ~26 k (the probe proving the live event). Then the effect and voice tables are read for the first time
+with a code column that means what it says.
+
+Result: (pending)
