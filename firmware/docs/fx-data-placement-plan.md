@@ -224,3 +224,55 @@ the device figure under the same script, judged by the device figure only.
   counts none, and prints both (`icache_l0` / `icache_l1`, `pf_layout` on the cost line). Every table is then
   measured again on p6g. Lesson for the record: a counter's reading is not a measurement until a known workload
   has confirmed what it counts.
+- 2026-11-08, **THE TABLE (p6i, the first with proven events; the owner's `p5a_20261108-2155_run.txt`)** [C device].
+  p0 = code fetch stall cycles (0x83 s), p1 = data stall cycles (0x99 s); the probe on the same boot read 25,867
+  cold / 0 warm, so the column means what it says. Per block, slot 1, the section where each ran longest:
+
+  | effect | cycles | code stall | data stall | stalled | compute |
+  |---|---|---|---|---|---|
+  | S3 stage | 11,500 | 4,300 | 760 | 44 % | 6,400 |
+  | delay | 22,918 | 6,829 | 4,527 | 50 % | 11,562 |
+  | grid | 28,190 | 7,723 | 7,699 | 55 % | 12,768 |
+  | punch | 70,576 | 8,474 | 5,261 | 19 % | 56,841 |
+  | phone | 29,993 | 8,237 | 5,778 | 47 % | 15,978 |
+  | spring | 42,061 | 15,469 | 12,270 | 66 % | 14,322 |
+  | nitro | 47,582 | 9,195 | 1,737 | 23 % | 36,650 |
+  | cwo | 62,528 | 22,495 | 8,396 | 49 % | 31,637 |
+  | slot 2, off | 1,234 | 1,158 | 110 | 100 % | 0 |
+  | master stand-in | 1,310 | 686 | 204 | 68 % | 420 |
+
+  Per voice render (dsynth6 section and the engine sections):
+
+  | engine | cycles / render | code stall, first voice of the block | code stall, the other voices | data stall |
+  |---|---|---|---|---|
+  | dsynth | 22,021 | 7,741 | 757 | 126-340 |
+  | voltage | 10,612 | 3,358 | 417 | 60-178 |
+  | phase | 7,451 | 1,730 | 2 | 1-91 |
+  | digital | 10,226 | 2,191 | 3 | ~0 |
+  | fm | 9,350 | 3,020 (one voice) | - | 35 |
+  | sampler | 9,830 | 2,169 | 0 | 918-946 |
+  | drwave | 15,619 | 4,894 | 1,957 | 2,100-2,300 |
+
+  **Reading.** (1) **The voices are compute-bound.** Of a DSynth render only 1-3 % waits for memory once the first
+  voice of the block has pulled the engine's code in (7.7 k once per block, then ~0.8 k per voice); six voices
+  are 132 k of which 11.5 k is code stall and 1 k data. The p6e scare (half of every render) was the fetch
+  counter. Memory levers do almost nothing for the engines; only rewrites do (p5a's kind). (2) **The effects
+  split in two.** punch (57 k of compute in 71 k) and nitro (37 k of 48 k) are compute-bound: their stall is
+  10-14 k, their work is the algorithm run twice (dual-mono). spring (66 % stalled), grid (55 %), delay (50 %),
+  cwo (49 %), phone (47 %) are memory-bound, and in each **code and data stalls are of the same order**: spring
+  15.5 k code + 12.3 k data, cwo 22.5 k + 8.4 k, grid 7.7 k + 7.7 k, delay 6.8 k + 4.5 k, phone 8.2 k + 5.8 k.
+  (3) **The code stall of a memory-bound effect is about its kernel's size**: at ~196 cycles a line, spring's
+  15.5 k is 79 lines = 2.5 KB (its kernel is 2.4 KB), cwo's 22.5 k is 115 lines = 3.7 KB (kernel 2.1 KB plus the
+  stock class code around it), delay 1.1 KB (kernel 0.8), grid 1.2 KB (kernel 1.0), phone 1.3 KB (kernel 1.1):
+  the kernel is refetched whole every block, evicted by the main loop in between. The same for the stage (4.3 k =
+  0.7 KB, every block) and the first voice (7.7 k = 1.2 KB of engine code). (4) Two things cost for nothing:
+  slot 2 off still costs 1.2 k a block, all of it fetching the code that finds it is off, and the transparent
+  master stand-in 1.3 k.
+
+  **What this says about the levers.** The kernel-only priority page (the p6c variant that was never tried: the
+  assembly kernels, the stage and the thunks, ~13 KB in all, 3-5 KB live per block, with LRUPRIORST pulses on
+  effect change) addresses exactly item (3): up to 4 k (stage) + 5-15 k per effect per block, 0.7-3 % of the
+  budget per active effect, bounded by a runtime switch; the p6c failure was 30 KB of C++ at 7.5 lines per cache
+  set, this is 110 lines per 128 sets. The data levers (prefetch, block passes) address the other half of the
+  same effects, 4-12 k each. Items (4) are free (skip the slot-2 and master calls when they have nothing to do:
+  ~2.5 k a block). The engines are out of this plan's scope: compute, not memory.

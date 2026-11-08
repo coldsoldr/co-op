@@ -1458,3 +1458,10 @@ occurrences = D-cache fills (256 / 1), 0x98 = p6b's data column (57,077 / 1,227,
 with a code column that means what it says.
 
 Result: (pending)
+
+**Result (p6i, 2026-11-08)**: `icache_l0 c1 26866 p1 25867 c2 2058 p2 0 c3 26236 p3 25237`: the live counter is the
+stall event. The table (docs/fx-data-placement-plan.md §5): voices compute-bound (dsynth 22 k per render, 7.7 k of
+code stall for the first voice of a block, ~0.8 k for the others); effects: punch / nitro compute-bound (stall 14 k
+of 71 k, 11 k of 48 k), spring / grid / delay / cwo / phone memory-bound (47-66 %, code and data stalls of the same
+order, the code stall about the kernel's size: refetched every block); the stage 4.3 k code stall a block; slot 2
+off 1.2 k a block of pure code stall. Pass: the counters measure.
