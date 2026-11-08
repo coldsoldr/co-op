@@ -1,7 +1,14 @@
 | phase | 28 B | adds to the level word `0x01DE4B8C` (the live engine's display) | nothing: harmless (F2c, `pha`) |
 | T1..T4 | the view (Shift + T2: the channel's patch for its coop voice, F2b) | | |# The tracker (t1): first pass, 2026-11-07
 
-**Status 2026-11-08:** t1 (the tracker, both orientations) → F1/F2 (coop voices from seven stock engine kinds
+**Parked 2026-11-08** (the owner: "remove the tracker entirely for now… it's got a lot of gaps"): the code is in
+`attic/tracker/` (sources, scenarios) and in the branch history up to `c2810de`; nothing of it is built or hooked.
+To bring it back: the four sources into core/sdram and the Makefile, the hooks in coop_ui.cc (key / knob / frame /
+service), stereo_bus.cc (block, the stage's extra voices), tape_io.cc (boot), coop_settings.cc (the UI row), the
+stats counters. The gaps that parked it: drums beside the synth, dna / drwave / pulse, per-engine cache cost on the
+device, the whole control scheme untested by the owner.
+
+**Status before parking:** t1 (the tracker, both orientations) → F1/F2 (coop voices from seven stock engine kinds
 beside the live family) → F2b (the channel patch) → t5 (render to tape). One package carries it all:
 `build/pkg/op1_246_coop_t7_tracker_engines.op1` (device tests "Tracker 1..7" in docs/device-tests.md, all pending
 the owner). Everything below marked **guess** waits for the owner's reaction.

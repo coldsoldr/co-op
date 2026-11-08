@@ -83,13 +83,8 @@ extern "C" void coop_rename_service(void);
 extern "C" int coop_drumpan_knob(int knob, int steps);                 /* coop_drumpan.cc */
 extern "C" void coop_drumpan_draw(void *r);
 extern "C" void coop_fx2_post_screen(int pos, int fx2);                /* coop_fx2view.cc */
-extern "C" int coop_tracker_on(void);                                  /* coop_tracker.cc / coop_tracker_ui.cc (t1) */
-extern "C" int coop_tracker_key(int code, int pressed);
-extern "C" int coop_tracker_knob(int knob, int steps);
-extern "C" void coop_tracker_draw(void *r);
-extern "C" void coop_tracker_service(void);
 
-extern "C" void coop_ui_service(void) { coop_settings_service(); coop_markers_service(); coop_rename_service(); coop_tracker_service(); }
+extern "C" void coop_ui_service(void) { coop_settings_service(); coop_markers_service(); coop_rename_service(); }
 
 #define KEY_T3     0x08
 #define KEY_T4     0x09
@@ -226,7 +221,6 @@ extern "C" int coop_ui_key(int code, int pressed)
     if (coop_settings_is_open()) return coop_settings_key(code, pressed);
     if (coop_random_key(code, pressed)) return 1;                       /* synth / drum held + arrows: randomise / back */
     if (coop_fn_key(code, pressed)) return 1;                           /* Help: a tap on release, a hold is fn */
-    if (coop_tracker_key(code, pressed)) return 1;                      /* the tracker in place of the tape (t1) */
     if (coop_tape_key(code, pressed)) return 1;                         /* tape / mixer: solo, markers */
     if (coop_bend_key(code, pressed)) return 1;                         /* shift + arrows on the synth: the bend */
     if (coop_rename_key(code, pressed)) return 1;                       /* the preset browser: naming */
@@ -270,7 +264,6 @@ extern "C" void coop_ui_knob(int knob, int16_t *delta)
     int steps = *delta / DETENT;
     if (!steps) steps = *delta > 0 ? 1 : (*delta < 0 ? -1 : 0);
     if (coop_settings_is_open()) { coop_settings_knob(knob, steps); return; }
-    if (coop_tracker_knob(knob, steps)) return;                        /* the tracker's four encoders (t1) */
     if (coop_bend_knob(knob, steps)) return;                         /* shifted white / orange on the synth's T2 */
     if (coop_drumpan_knob(knob, steps)) return;                        /* shifted blue on the drum's T2 */
     if (coop_rename_knob(knob, steps)) return;                         /* naming: every turn */
@@ -384,7 +377,6 @@ extern "C" void coop_ui_frame(void *table)
     SCREENS_UPDATE(table);
     { void *rv = op1_raster(); if (rv) coop_save_draw(rv); }            /* "overwriting" over the save clock, any page */
     if (coop_settings_is_open()) { void *rs = op1_raster(); if (rs) coop_settings_draw(rs); return; }
-    if (CUR_MODE == 2 && coop_tracker_on()) { void *rk = op1_raster(); if (rk) coop_tracker_draw(rk); return; }   /* t1: the tape view is the tracker */
     if (CUR_MODE == 2 && CUR_SCREEN == TAPE_SCREEN) { void *rt = op1_raster(); if (rt) coop_tape_draw(rt); return; }
     if (CUR_MODE == 0 && CUR_SCREEN == SCREEN_PLAYMODE) { void *rp = op1_raster(); if (rp) coop_bend_draw(rp); return; }
     if (CUR_MODE == 1) { void *rd = op1_raster(); if (rd) coop_drumpan_draw(rd); }   /* the PAN page on the drum's shifted T2 */

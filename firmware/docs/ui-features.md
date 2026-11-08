@@ -95,7 +95,7 @@ Process rule (the owner): **mock up everything before building it.**
 - **`/port` skill** (`.claude/skills/port/SKILL.md`): ports a kennel or OPUS plugin into `plugins/<id>/`, runs the
   pack and the op1emu gate, and insists on the optimisation pass the stereo rule demands.
 
-## 12. The tracker — built in t1 (2026-11-07), device test pending
+## 12. The tracker — built t1..t7 (2026-11-07), parked 2026-11-08 (`attic/tracker/`, docs/tracker.md)
 The owner's brief is `docs/tracker-handover.md`; the first pass and its guesses are in `docs/tracker.md`. Tracker
 mode replaces the tape view (Shift + tape, or settings → UI → tape view); six mono channels on the stock voices,
 patterns + order list, effect words, overview / zoom / song / setup views, landscape and two portrait orientations.

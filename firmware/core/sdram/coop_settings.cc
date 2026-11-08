@@ -51,9 +51,7 @@ extern volatile uint32_t g_coop_spread;                                 /* stere
 
 static const char *const top_names[3] = { "voices", "ui", "plugins" };          /* lower case: the stock font */
 static const char *const voices_rows[4] = { "spread", "drum adsr", "master eq", "master comp" };
-static const char *const ui_rows[4] = { "tape view", "tape position", "date", "time" };
-extern "C" int coop_tracker_on(void);                                   /* coop_tracker.cc (t1): the tape view is the tracker */
-extern "C" void coop_tracker_set_on(int on);
+static const char *const ui_rows[3] = { "tape position", "date", "time" };
 
 volatile uint32_t g_set_opens, g_set_saves, g_set_loaded;              /* stats / tests */
 static volatile int s_open;
@@ -83,7 +81,7 @@ static int rows(void)
 {
     if (!s_level) return 3;
     if (s_cur[0] == 0) return 4;
-    if (s_cur[0] == 1) return 4;
+    if (s_cur[0] == 1) return 3;
     return coop_plugin_file_count();
 }
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -191,9 +189,6 @@ extern "C" int coop_settings_knob(int knob, int steps)
         s_pct = clampi(s_pct + steps, 0, 100);
         g_coop_spread = (uint32_t)(s_pct * 32767 / 100);
         s_dirty = 1;
-    } else if (knob == 1 && s_level == 1 && s_cur[0] == 1 && s_cur[1] == 0) {
-        int on = steps > 0;                                                 /* tape view: tape / tracker (t1) */
-        if (on != coop_tracker_on()) coop_tracker_set_on(on);
     }
     return 1;                                                         /* the other values have no alternative yet */
 }
@@ -265,8 +260,7 @@ extern "C" void coop_settings_draw(void *r)
             else val = "stock";
         } else if (s_cur[0] == 1) {
             name = ui_rows[i];
-            if (i == 0) val = coop_tracker_on() ? "tracker" : "tape";
-            else if (i == 1) val = "bottom"; else { val = "not yet"; vgrey = 1; }
+            if (i == 0) val = "bottom"; else { val = "not yet"; vgrey = 1; }
         } else {
             const char *f = coop_plugin_file_name(i);
             file_label(f ? f : "?", label); name = label;

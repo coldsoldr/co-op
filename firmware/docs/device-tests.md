@@ -1207,3 +1207,22 @@ voice objects (6 channels x 7 kinds) sit in the coop L1 pool. dna, drwave and pu
 `xv_max` with several kinds sounding together is the mixed-engine cache number.
 
 Result: (pending)
+
+## Tracker parked (2026-11-08)
+
+The owner parked the tracker before any of Tracker 1..7 ran on the device ("a lot of gaps we need to fill"). The
+t1..t7 packages are superseded; the code is in `attic/tracker/` and the branch history. The next package (u8) is
+u7 plus the overwrite / rename spelling fix, without the tracker.
+
+## UI 3 (u8): u7 plus the overwrite / rename fix, the tracker parked — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_u8_ui.op1` (sha256 `182785d5946dca3eb48dfbaeaef8d5e02e7310ed113ba964e9e6bb49e1f4d3f8`), copy in Downloads.
+  `--tape-stereo --set-word g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr`
+  differs. Build tag `u8`. The image is u7 with the overwrite / rename WHERE matching the three JSON spellings
+  (ca33b62) and nothing of the tracker. op1emu: settings, tape page, FX 2 scenarios no faults.
+
+**What to do**: the u7 list (that entry), and the overwrite again: edit a user preset, synth + S-key held, reload
+it. If the change still does not persist, the next hypothesis is the reload reading the preset file rather than
+the db row (the u7 entry).
+
+Result: (pending)
