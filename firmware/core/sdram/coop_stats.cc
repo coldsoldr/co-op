@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p6c"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p6d"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -44,7 +44,6 @@ extern volatile uint32_t g_l1_state, g_l1_used, g_l1_refused, g_l1_sine_copied;
 extern volatile uint32_t g_lander_swallowed;   /* lander_off.cc */
 extern "C" volatile uint32_t g_coop_fast_dsynth, g_coop_fast_stage, g_coop_fast_cwo, g_coop_fast_punch, g_coop_fast_phone,
     g_coop_fast_nitro, g_coop_fast_grid, g_coop_fast_spring, g_coop_fast_delay, g_coop_fast_voltage, g_coop_fast_phase;   /* stereo_bus.cc */
-extern "C" int coop_codeprio_state(void); extern volatile uint32_t g_codeprio_sets, g_codeprio_refused;   /* coop_codeprio.cc (p6c) */
 extern volatile uint32_t g_plugins_seen, g_plugins_loaded, g_plugins_failed, g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks, g_fx_stock_stereo_blocks, g_fx_stock_ctor, g_s2_blocks[2], g_s2_changes, g_tank_bound, g_tank_short, g_ui_opens, g_ui_applies, g_plugins_disabled, g_ui_toggles, g_set_opens, g_set_saves, g_ui_col2_sets, g_rnd_count, g_rnd_backs, g_rnd_refused, g_rnd_slot2, g_solo_sets, g_marker_sets, g_marker_jumps, g_fn_taps, g_mode_key_taps, g_mode_key_holds, g_sound_keeps, g_sound_kept, g_sound_writes, g_bend_presses, g_bend_knobs, g_bend_ramps, g_over_saves, g_over_armed, g_over_stock, g_rename_starts, g_rename_saves, g_rename_refused, g_drumpan_knobs, g_rename_pushes, g_fx2view_params, g_fx2view_disp, g_fx2view_pops, g_fx2view_empty, g_fx2view_size, g_fx2view_ids, g_fx2view_last_post, g_fx2view_cur, g_lfo2view_params, g_lfo2view_pops, g_fx2view_on, g_lfo2view_on, g_ui_knobs2;   /* plugin_host.cc, coop_ui.cc, coop_settings.cc */
 extern const char *volatile g_plugins_last_error;
 extern volatile uint32_t g_st0_builds, g_st0_dry_blocks;           /* plugin_host.cc: slot 1's twin built off the audio path */
@@ -344,7 +343,7 @@ static void write_file(void)
     kv("hook_max", g_stereo_hook_cycles_max); kv("stage_max", g_stereo_stage_cycles_max); kv("stage_calls", g_stereo_stage_calls); kv("lfo2_max", g_lfo2_cycles_max); kv("master_max", g_master_cycles);
     kv("fx_max", g_fx_cycles); kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
     put_cost_lines();
-    put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); kv("codeprio", (uint32_t)coop_codeprio_state()); kv("codeprio_sets", g_codeprio_sets); kv("codeprio_refused", g_codeprio_refused); put("\n");
+    put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
     put_switches();
     put_cplb();
     put("slow"); kv("count", g_slow_count); kv("threshold", g_coop_slow_th); kv("gap_prof", g_coop_gap_prof); kv("gap_full", g_gap_full); put("\n");

@@ -1351,3 +1351,21 @@ Result: (pending)
 delay 4,418 of 21,988, grid 7,353 of 29,168, punch 7,538 of 72,504, phone 7,728 of 31,270, spring 12,657 of 39,326,
 nitro 4,448 of 49,208, cwo 12,216 of 62,463, stage 1,204 of 11,374 (table in docs/fx-data-placement-plan.md §5).
 Together with p0 about half of every effect's block is memory stall. Pass (the counters do their job).
+
+**Result (p6c, the owner, 2026-11-08)**: "codeprio on completely breaks everything. the sound is all glitched the
+ui is super laggy. It's not even worth testing." Fail, as the documented risk, only total: 30 KB of hot text marked
+high fills every cache set with four protected lines over time, and the stock's own SDRAM code (the audio classes,
+the UI, the main loop) runs uncached. The split image itself (switch off) ran. Next: the protected set shrinks to
+the assembly kernels alone in a page of their own (p6d), with a periodic LRUPRIORST so old highs do not accumulate.
+
+## Performance 6d (p6d): p6c withdrawn, the lift crash fixed — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_p6d_pf.op1` (sha256 `538f638d27e198699a9f4cbf6d7b03a51f3cc190c79d3b10b6f73b9decf8b0ff`), copy in Downloads. `--tape-stereo --set-word
+  g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `p6d`.
+  = p6b (u10 + the corrected counters) exactly: one text in region A again, no "code prio" row. The p6c crash on
+  lift was the cold code at `0x02810000` sitting inside coop's own clipboard pool (region B, `tape_edit.cc`): the
+  first lift overwrote it (SEQSTAT 0x21 undefined instruction, RETX 0x0281xxxx). Nothing of p6c remains in the image.
+
+**What to do**: lift and drop on the tape (the crash is gone); otherwise everything as u10. No new measurement.
+
+Result: (pending)

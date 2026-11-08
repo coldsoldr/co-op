@@ -179,3 +179,9 @@ the device figure under the same script, judged by the device figure only.
   prefetch), delay (4.4 k: prefetch + the FIR table in L1), phone (7.7 k: its state is in the object; look at what it
   reads, possibly the stock's per-sample table). The stage's 3.4 k (30 %) says even the asm stage pays for its
   buffers and its code each block: it goes into the hot page too (it is in p6c's hot list).
+- 2026-11-08, **lever 6 withdrawn** (p6c failed on the device: glitched sound, laggy UI, the documented saturation
+  in full; and the cold code in region B collided with coop's own clipboard pool, `tape_edit.cc` COOP_POOL, which a
+  lift overwrote). p6d restores one text in region A. The kernel-only 1 MB-page variant is noted in
+  `docs/performance.md` "p6c" and parked. **Next: the data levers** in p1 order: spring (12.7 k: block passes +
+  prefetch), cwo (12.2 k: prefetch of its line), phone (7.7 k: find what it reads), punch (7.5 k: the dual-mono
+  copies and the object), grid (7.4 k: the mesh layout), delay (4.4 k: prefetch + FIR table in L1).

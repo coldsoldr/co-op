@@ -1038,3 +1038,15 @@ is the other half of the measurement. If the UI suffers, the hot list shrinks (t
 
 op1emu has no cache priority and no instruction cache: the gate (`det_ui_codeprio`) only shows the split image
 boots, the switch toggles (`codeprio_sets 2`) and the sound plays.
+
+**p6c on the device (2026-11-08): failed, withdrawn.** With the switch on "the sound is all glitched, the UI is super
+laggy": 30 KB of high-priority text fills every cache set with four protected lines over time, and the stock's own
+SDRAM code runs uncached. And the split itself broke the tape: coop's lift keeps the right channel of a clip in a
+region-B pool at `0x02800000` (`tape_edit.cc` COOP_POOL, 4 MB), so the cold code at `0x02810000` was overwritten by
+the first lift (SEQSTAT 0x21 undefined instruction, RETX in 0x0281xxxx). p6d reverts both: one text in region A,
+no switch; the switch's code is kept in `attic/codeprio/` with its scenario. **Region B is not free: it is coop's
+clipboard pool.** What remains possible for code residency, if ever: a 1 MB ICPLB page holding only the assembly
+kernels (13 KB in all, 3-5 KB executed per block), carved out of region A by replacing the stock table's 4 MB entry
+with 1 MB entries, LRUPRIO on that page only, and a LRUPRIORST pulse on every effect change so stale highs never
+accumulate. Expected gain is the kernel's own fill stalls (roughly half of p0 for cwo and spring, a fifth for punch),
+for a table edit in L1 data A and an unproven saturation margin. Parked; the data levers come first.
