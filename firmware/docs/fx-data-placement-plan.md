@@ -276,3 +276,7 @@ the device figure under the same script, judged by the device figure only.
   set, this is 110 lines per 128 sets. The data levers (prefetch, block passes) address the other half of the
   same effects, 4-12 k each. Items (4) are free (skip the slot-2 and master calls when they have nothing to do:
   ~2.5 k a block). The engines are out of this plan's scope: compute, not memory.
+- 2026-11-08, **closed for now** (the owner: option 3 only). p6j skips the idle slot-2 and master paths (~2.5 k a
+  block). Not done, priced above: the kernel-only priority page and the data levers; the engines are out of scope
+  (compute-bound). The counters stay in every image (mode 0: code fetch stall cycles / data stall cycles, proven
+  by the boot probe) for whoever picks this up.

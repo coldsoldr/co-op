@@ -791,7 +791,12 @@ struct slot2 { volatile int kind, id; volatile uint16_t knob[4]; volatile uint32
 static struct slot2 g_s2[2];
 
 /* u1: FX 2 off / on (the page's T key, coop_ui.cc); the effect stays chosen and constructed, it just does not run */
-extern "C" void coop_slot2_bypass(int pos, int off) { g_s2[pos & 1].off = off ? 1 : 0; }
+/* p6j: g_coop_s2_live[pos] = the audio thread has something to run in the slot (built, on). The mix entry and the
+ * master stand-in test this word and skip the slot's code entirely otherwise: an idle slot used to cost 1.2 k
+ * cycles a block, all of it fetching the code that found it idle (the p6i table). */
+volatile uint32_t g_coop_s2_live[2];
+static void s2_live_update(int pos) { struct slot2 *s = &g_s2[pos & 1]; g_coop_s2_live[pos & 1] = (s->kind_on && !s->off) ? 1u : 0u; }
+extern "C" void coop_slot2_bypass(int pos, int off) { g_s2[pos & 1].off = off ? 1 : 0; s2_live_update(pos); }
 extern "C" int coop_slot2_bypassed(int pos) { return g_s2[pos & 1].off; }
 
 /* u7: FX 2 on the stock effect page (coop_fx2view.cc): the stock type running at slot 2 (-1: none or a plugin), its
@@ -928,7 +933,8 @@ static void slot2_render(int pos, int16_t *l, int16_t *r)
     /* u8: the object is constructed by the main loop (slot2_build_service): a stock constructor in this interrupt
      * allocates (cwo) and deadlocks the heap (op1emu froze at the first drop with cwo in slot 2). Until the main
      * loop has built the posted change the slot does not run. */
-    if (req != s->built) return;
+    if (req != s->built && (s->kind != s->kind_on || s->id != s->id_on)) return;   /* p6j: a knob-only change runs on (the knobs
+                                                                             are read live); a type change waits for the build */
     s->took = req;
     g_s2_trace = 4; if (!s->kind_on || s->off) return;                   /* off: chosen and built, not run (u1) */
     int16_t p[8];
@@ -962,7 +968,7 @@ static void slot2_build_service(void)
         int kind = s->kind, id = s->id;
         if (kind == 1) { const int16_t *rg = RANGE_ROW(id); if (rg[1] <= rg[0]) continue; }   /* the row is not there yet: later */
         if (kind != s->kind_on || id != s->id_on) {
-            s->kind_on = 0;
+            s->kind_on = 0; s2_live_update(pos);
             __asm__ __volatile__("ssync;" ::: "memory");
             g_s2_trace = 0x20;
             for (int spin = 0; spin < 400000 && s->rendering; spin++) { }   /* a render in flight: let it finish */
@@ -973,7 +979,7 @@ static void slot2_build_service(void)
             g_s2_changes++;
         }
         __asm__ __volatile__("ssync;" ::: "memory");
-        s->built = req;
+        s->built = req; s2_live_update(pos);
         g_s2_trace = 0x24;
     }
 }
@@ -981,7 +987,7 @@ static void slot2_build_service(void)
 /* the instrument slot 2 on the carrier (mid in the stock bus buffer, side in coop's): from stereo_bus.cc's mix entry */
 extern "C" void coop_slot2_instr(int16_t *mid, int16_t *sl, int16_t *sr)
 {
-    if (!g_s2[0].kind_on && g_s2[0].req == g_s2[0].took) return;
+    if (!g_coop_s2_live[0]) return;                                      /* p6j: the mix entry already tests this word */
     static int16_t l[BLOCK], r[BLOCK];                                    /* off the interrupt stack (the mix context is deep) */
     for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16((int32_t)mid[i] + sl[i]); r[i] = coop_sat16((int32_t)mid[i] + sr[i]); }
     g_s2_trace = 1; coop_slot2_render(0, l, r); g_s2_trace = 9;

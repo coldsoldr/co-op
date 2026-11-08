@@ -1109,3 +1109,21 @@ positions are the right ones for PFCEN (Linux's put counter 0 in user mode only,
 interrupt and at boot). **p6i** programs mode 0 as 0x83 s / 0x99 s (code fetch stall cycles / data stall cycles),
 mode 1 as 0x81 o / 0x9A o (line fills, both caches); the sweep stays in the image behind `g_coop_pf_sweep`. The
 p6b data column stands; the code column is measured for the first time on p6i.
+
+## p6j: the idle paths cost nothing (2026-11-08) [I until the device]
+
+The p6i table priced two things that do no work: slot 2 switched off, 1,234 cycles a block (1,158 of them code
+fetch stall: the mix entry called into `coop_slot2_instr`, which called `coop_slot2_render`, which found the slot
+off), and the transparent master stand-in, 1,310 (686 code stall: called by the stock every block, it ran slot 2's
+render and the runner's click before testing its own flags). Now plugin_host.cc keeps `g_coop_s2_live[pos]` (built
+and on) up to date at every slot transition; the mix entry calls the instrument slot only when its word is set, and
+the master stand-in returns on its first line when the master slot is idle, the suite's flags are clear and no runner
+click is due. Expected: ~2.5 k cycles a block back (0.4 % of the budget) whenever the second slots are idle, which is
+the common case. Also from the same look: a knob-only change of slot 2 no longer passes the slot dry until the main
+loop re-publishes it (the render now waits only for a *type* change to be built), so turning an FX 2 encoder cannot
+drop the wet signal for a main-loop pass.
+
+This closes the data placement work for now (the owner, 2026-11-08: "let's do 3 now and leave it there"). What is
+left on the table, priced in `docs/fx-data-placement-plan.md` §5: the kernel-only priority page (4 k + 5-15 k per
+active effect, behind a switch, a CPLB table edit) and the data levers for spring, cwo, grid, delay and phone
+(4-12 k each). The engines are compute-bound: no memory lever applies to them.

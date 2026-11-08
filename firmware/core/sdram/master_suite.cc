@@ -75,8 +75,12 @@ static inline uint32_t coop_cycles(void)
 }
 
 #include "coop_cost.h"
+extern volatile uint32_t g_coop_s2_live[2];                        /* plugin_host.cc (p6j) */
+extern volatile uint32_t g_run_click;                               /* coop_runner.cc: a click is due */
 extern "C" uint32_t coop_master_apply(void)
 {
+    if (!g_coop_s2_live[1] && !(g_coop_master_flags & 3u) && !g_run_click) return STOCK_GETTER_RESULT;   /* p6j: nothing to do: the transparent
+                                                                             stand-in used to cost 1.3 k a block, mostly fetching its own code */
     coop_mark(0x50);
     if (!g_inited) {
         coop_master_init(&g_master);    /* transparent until params are set */

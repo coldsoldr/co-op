@@ -1465,3 +1465,18 @@ code stall for the first voice of a block, ~0.8 k for the others); effects: punc
 of 71 k, 11 k of 48 k), spring / grid / delay / cwo / phone memory-bound (47-66 %, code and data stalls of the same
 order, the code stall about the kernel's size: refetched every block); the stage 4.3 k code stall a block; slot 2
 off 1.2 k a block of pure code stall. Pass: the counters measure.
+
+## Performance 6j (p6j): the idle paths cost nothing — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_p6j_pf.op1` (sha256 `7eb58d9fe72e19a656e851a98e36ab626074d8fd6cf591878f812b7e05752331`), copy in Downloads. `--tape-stereo --set-word
+  g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `p6j`.
+  p6i plus: the mix entry skips the instrument slot 2 while it has nothing to run, the master stand-in returns at
+  once while the master slot is idle and the suite is off; a knob-only change of slot 2 no longer passes it dry for
+  a main-loop pass (docs/performance.md "p6j"). Audio: identical when the slots run; the dry gap on an FX 2 knob
+  turn gone.
+
+**What to do**: the p5a script, the two downloads: `s2_instr=` and `s2_master=` should be absent from the sections
+where slot 2 is idle (nothing counted) and `master=` gone or tiny; the per-block `cb_avg` of each section ~2.5 k
+below p6i's. Then play: FX 2 on and off, its encoders while it runs (no dropout), the master's FX 2, the tape.
+
+Result: (pending)

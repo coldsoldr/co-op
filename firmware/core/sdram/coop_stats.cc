@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p6i"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p6j"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
