@@ -8,6 +8,7 @@ else is the owner's word.
 Process rule (the owner): **mock up everything before building it.**
 
 ## 1. Settings menu — built in u1 (2026-11-07), device test pending
+- p6c (2026-11-08): VOICES gains a fifth row, **code prio** (stock / on, green turns it): the hot code page's I-cache priority (docs/performance.md "p6c"); never persisted, stock at every boot.
 - Open: hold synth + drum + tape + mixer. This replaces the lander game, which coop removed.
 - Navigate: blue turn moves between items; right arrow or a blue push enters a submenu; left arrow goes back one
   level. At the top level, left arrow or any mode key leaves. No hints on screen (the owner, after u5).

@@ -39,6 +39,8 @@ typedef struct { int32_t x, y; } op1_pt;                               /* Q10, 3
 extern "C" int coop_plugin_file_count(void);                            /* plugin_host.cc: the files the boot scan saw */
 extern "C" const char *coop_plugin_file_name(int i);
 extern volatile uint32_t g_coop_spread;                                 /* stereo_bus.cc, Q15, read every block */
+extern "C" int coop_codeprio_state(void);                               /* coop_codeprio.cc (p6c): 0 stock, 1 on, 2 refused */
+extern "C" void coop_codeprio_set(int on);
 
 #define SET_FILE   "/yaffs2/user/coop_settings.bin"
 #define DIS_MAX    16
@@ -50,7 +52,7 @@ extern volatile uint32_t g_coop_spread;                                 /* stere
 #define ROWS_SHOWN 7
 
 static const char *const top_names[3] = { "voices", "ui", "plugins" };          /* lower case: the stock font */
-static const char *const voices_rows[4] = { "spread", "drum adsr", "master eq", "master comp" };
+static const char *const voices_rows[5] = { "spread", "drum adsr", "master eq", "master comp", "code prio" };   /* p6c: code prio = the hot page LRUPRIO switch (coop_codeprio.cc) */
 static const char *const ui_rows[3] = { "tape position", "date", "time" };
 
 volatile uint32_t g_set_opens, g_set_saves, g_set_loaded;              /* stats / tests */
@@ -80,7 +82,7 @@ extern "C" int coop_plugin_disabled(const char *fname)
 static int rows(void)
 {
     if (!s_level) return 3;
-    if (s_cur[0] == 0) return 4;
+    if (s_cur[0] == 0) return 5;
     if (s_cur[0] == 1) return 3;
     return coop_plugin_file_count();
 }
@@ -189,6 +191,8 @@ extern "C" int coop_settings_knob(int knob, int steps)
         s_pct = clampi(s_pct + steps, 0, 100);
         g_coop_spread = (uint32_t)(s_pct * 32767 / 100);
         s_dirty = 1;
+    } else if (knob == 1 && s_level == 1 && s_cur[0] == 0 && s_cur[1] == 4) {
+        coop_codeprio_set(steps > 0);                                   /* p6c: green right = on, left = stock; never persisted */
     }
     return 1;                                                         /* the other values have no alternative yet */
 }
@@ -257,6 +261,7 @@ extern "C" void coop_settings_draw(void *r)
         else if (s_cur[0] == 0) {
             name = voices_rows[i];
             if (i == 0) { num3(label, s_pct); val = label; }
+            else if (i == 4) { int st = coop_codeprio_state(); val = st == 1 ? "on" : st == 2 ? "refused" : "stock"; vgrey = st == 2; }
             else val = "stock";
         } else if (s_cur[0] == 1) {
             name = ui_rows[i];

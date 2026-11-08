@@ -55,6 +55,11 @@ REGION_START = 0x02c00000
 # trampolines that l1_stereo_insert.py writes sit below it, at 0x01e00000..0x01e000ff.
 NEAR_START = 0x01e00400
 NEAR_END = 0x01e01000
+# p6c: coop's cold text (everything the main loop and the key thread run) lives in region B, its own stock ICPLB page,
+# so that only the hot page 0x02c00000 is marked LRUPRIO (core/sdram/coop_codeprio.cc, coop_cb.ld). 64 KB above the
+# region's start: the 187 KB stock array ends at 0x027ffb04 (docs/memory-map.md), an overrun there must not reach it.
+COLD_START = 0x02810000
+COLD_END = 0x02c00000
 REGION_END = 0x03000000
 HEADER_MAGIC = 0x5831504f  # "OP1X"
 DMA_CODE = 6               # as every other block in OP1_vdk.ldr
@@ -269,7 +274,7 @@ def inject(ldr_bytes, image_path, words=None, fill_pattern=None, strings=None, r
     header = None
     for vaddr, payload, memsz in segments:
         end = vaddr + memsz
-        near = NEAR_START <= vaddr and end <= NEAR_END
+        near = (NEAR_START <= vaddr and end <= NEAR_END) or (COLD_START <= vaddr and end <= COLD_END)
         if (vaddr < region_start or end > region_end) and not near:
             raise LdrError('segment {:#x}-{:#x} is outside {:#x}-{:#x}'.format(
                 vaddr, end, region_start, region_end))

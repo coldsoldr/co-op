@@ -1323,3 +1323,31 @@ randomise and the FX 2 / LFO 2 pages were exercised on the device; the owner's v
 table (delay / spring / grid / cwo are the ones to look at). Everything else as u10.
 
 Result: (pending)
+
+**Result for UI 4 (u9) / the FX 2 and LFO 2 pages (the owner, 2026-11-08, on u10)**: "FX2 and LFO 2 pages now are
+working perfectly". Pass. (The u10 randomise verdict and the overwrite question stay open.)
+
+## Performance 6c (p6c): code residency with a switch — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_p6c_codeprio.op1` (sha256 `6bdcd74b0a3fc87a98df2c67716b5ec55a5f4b40a5f422a7abe36d6f0e713d5f`), copy in Downloads. `--tape-stereo --set-word
+  g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `p6c`.
+  p6b plus lever 6 (docs/performance.md "p6c"): coop's text split, the per-block code alone in region A's page,
+  the rest in region B `0x02810000` (a first for coop: code outside region A); settings > voices > **code prio**
+  (green right = on, left = stock) marks the hot page LRUPRIO in the instruction cache. Off at every boot.
+
+**What to do** (the counters are in this image, p6b's pairing):
+1. Boot, play: everything as u10 (the cold code's new home must change nothing).
+2. The p5a script once with code prio **stock** (= the p6b table: p0 code stalls, p1 data stalls per effect).
+3. Settings (four mode keys) > right > blue four down to CODE PRIO > green right: "on" (if it reads "refused", the
+   CPLB table was not as expected: tell me, nothing was written). Left, left. Play, and watch the UI: tape page,
+   mixer, the effect pages, the browser: any new lag or stutter is the cost (sets full of priority lines).
+4. The p5a script again with it on; copy `coop_stats.txt`. Expected: p0 per effect well below step 2's; `fps` not
+   lower; `codeprio 1 codeprio_sets 1` on the `l1` line.
+5. Green left: "stock" again; a reboot also clears it.
+
+Result: (pending)
+
+**Result (p6b, 2026-11-08)**: `pf_live 1`, the p5a script complete; the data column is in (p1 = data stalls 0x98):
+delay 4,418 of 21,988, grid 7,353 of 29,168, punch 7,538 of 72,504, phone 7,728 of 31,270, spring 12,657 of 39,326,
+nitro 4,448 of 49,208, cwo 12,216 of 62,463, stage 1,204 of 11,374 (table in docs/fx-data-placement-plan.md §5).
+Together with p0 about half of every effect's block is memory stall. Pass (the counters do their job).

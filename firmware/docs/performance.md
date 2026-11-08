@@ -1008,3 +1008,33 @@ stalls are 20-42 % of every effect's block (punch 29.6 k of 70.5 k, nitro 17.4 k
 spring 10.3 k of 40 k, phone 8.6 k of 31 k, delay 7.3 k of 22 k, grid 6.9 k of 30 k, the stage 2.2 k of 11 k). The
 effects are code-bound on the device: lever 6 (code residency, LRUPRIO on a hot page) is next; the data column comes
 with p6b's rerun.
+
+## p6c: code residency, the switch (2026-11-08) [I until the device]
+
+Lever 6 of `docs/fx-data-placement-plan.md`, built as the owner asked: a runtime switch, so the difference shows on
+the device without reflashing. Two parts:
+
+1. **The text split** (`core/sdram/coop_cb.ld`, `tools/inject_app.py` COLD_*): the per-block code (every `.S` file
+   and the listed C++ functions: the callback, the S3 stage, the mix entry, the voice hooks, the effect renders,
+   slot 2, the master stand-in, the tape tap, LFO 2's process, the per-block stats) stays alone in region A's 4 MB
+   instruction CPLB page `0x02c00000` (`.text.hot`, 30 KB in all, of which one block executes a fraction: one effect
+   kernel of nine, one or two voice kernels). Everything the main loop and the key thread run (UI, settings, SysEx,
+   loaders, the stats writer, libgcc: 68 KB) is linked to region B `0x02810000`, a stock ICPLB page of its own,
+   nothing else there (`docs/memory-map.md`: the last stock array ends at `0x027ffb04`). Data stays in region A.
+2. **The switch** (`core/sdram/coop_codeprio.cc`, settings > voices > "code prio", green right = on, left = stock):
+   on sets `CPLB_LRUPRIO` (bit 8) on the hot page's entry in R246's instruction CPLB table (L1 data A `0xFF802CCC`)
+   and on the live ICPLB slot holding the page, with the stock CPLB manager's own write order (ENICPLB off, SSYNC,
+   the slot, ENICPLB on, SSYNC; interrupts masked; 8-byte aligned IMEM_CONTROL stores: kennel's `kn_diag.c`
+   KD_SW_IC, which ran on the unit). Off clears both and pulses IMEM_CONTROL LRUPRIORST so no cached high line
+   stays. Refused ("refused" in grey) unless the table entry and the slot hold exactly `0x00031005`. Off at every
+   boot, never persisted. Stats: the `l1` line's `codeprio` (0 stock, 1 on, 2 refused), `codeprio_sets`.
+
+**What it should do**: with the switch on, a high line is evicted only by another high line, so the hot page's lines
+survive the main loop's churn between blocks; the `cost` line's p0 (code fill stalls) per effect should fall from
+7-30 k toward the one effect kernel's first touch. **What it could cost**: a set whose four ways are all high caches
+no low line, so stock SDRAM code mapping to such sets (the UI, the mixer, the stock effect classes' own code) runs
+uncached there; the hot set is kept small for that reason, and the UI's feel (the fps figure) with the switch on
+is the other half of the measurement. If the UI suffers, the hot list shrinks (the kernels only).
+
+op1emu has no cache priority and no instruction cache: the gate (`det_ui_codeprio`) only shows the split image
+boots, the switch toggles (`codeprio_sets 2`) and the sound plays.

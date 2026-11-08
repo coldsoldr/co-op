@@ -154,3 +154,28 @@ the device figure under the same script, judged by the device figure only.
   stock's UI must stay smooth (the fps figure) — if sets saturate, shrink the hot set. A runtime switch (a
   settings row, the live ICPLB slot rewritten as kennel does it) would let the owner A/B it without reflashing;
   first version: build-time only, two packages.
+- 2026-11-08: **lever 6 built as a runtime switch** (p6c, `docs/performance.md` "p6c"): hot / cold text split
+  (hot 30 KB in region A's page, cold 68 KB in region B), settings > voices > "code prio" marks the hot page
+  LRUPRIO. Waiting for the device: the p0 column with the switch off and on, and the UI's feel.
+- 2026-11-08, **the second device table** (p6b: p0 = "code fill stalls" 0x82, p1 = "data stalls" 0x98, both cycles;
+  the owner's `p5a_20261108-1953_run.txt`, each effect in the section where it ran longest) [C device]:
+
+  | slot-1 effect | avg cycles / block | code stalls p0 | data stalls p1 | stalls in all | share of the block |
+  |---|---|---|---|---|---|
+  | S3 stage | 11,374 | 2,216 | 1,204 | 3,420 | 30 % |
+  | delay | 21,988 | 7,289 | 4,418 | 11,707 | 53 % |
+  | grid | 29,168 | 6,945 | 7,353 | 14,298 | 49 % |
+  | punch | 72,504 | 29,623 | 7,538 | 37,161 | 51 % |
+  | phone | 31,270 | 8,554 | 7,728 | 16,282 | 52 % |
+  | spring | 39,326 | 10,254 | 12,657 | 22,911 | 58 % |
+  | nitro | 49,208 | 17,416 | 4,448 | 21,864 | 44 % |
+  | cwo | 62,463 | 17,889 | 12,216 | 30,105 | 48 % |
+
+  (The two stall kinds may overlap in time, so "in all" is an upper bound of the stalled cycles; each column alone
+  is a lower bound of what removing that kind could save.) **Reading**: about half of every effect's block is the
+  core waiting for memory. Code first for punch, nitro, cwo and delay (lever 6); data at least as large as code for
+  spring, grid and phone, and substantial for cwo and delay, which is where levers 2-5 go once lever 6 is measured:
+  spring (12.7 k data: nine lines, block passes + prefetch), grid (7.4 k: the mesh layout), cwo (12.2 k: its line,
+  prefetch), delay (4.4 k: prefetch + the FIR table in L1), phone (7.7 k: its state is in the object; look at what it
+  reads, possibly the stock's per-sample table). The stage's 3.4 k (30 %) says even the asm stage pays for its
+  buffers and its code each block: it goes into the hot page too (it is in p6c's hot list).
