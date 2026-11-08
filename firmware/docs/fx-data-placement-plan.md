@@ -107,3 +107,9 @@ Yes, with the same tools, and two additions:
 
 Every kernel change keeps the p5a method: bit-exact against the stock loop in op1emu (lockstep), the WAV gates, then
 the device figure under the same script, judged by the device figure only.
+
+## 5. Status
+
+- 2026-11-08: lever 1 built (p6a, `docs/performance.md` "p6a"): the monitor is programmed at boot, every effect cost
+  entry carries the two counters' averages (`cost` line `name=avg/max/n/p0/p1`, `g_coop_pf_mode` selects the events).
+  Waiting for the device table. Nothing else started.

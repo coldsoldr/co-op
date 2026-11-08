@@ -967,3 +967,34 @@ effect's SDRAM buffers. p5f builds the twin on the main thread (sequence-numbere
 ready, no interrupt masking). Lesson for coop code: nothing that touches more than a few KB of SDRAM belongs in the
 audio interrupt, construction included; the emulator cannot show it (op1emu's worst block for the same change was
 169 k).
+
+## p6a: the performance monitor in the stats (2026-11-08) [I until the device]
+
+Lever 1 of `docs/fx-data-placement-plan.md`: before any kernel is moved, measure on the device whether each effect
+stalls on code or on data. The Blackfin performance monitor (PFCTL 0xFFE08000, PFCNTR0 / 1 at 0xFFE08100 / 04; the
+register layout and the event codes are kennel's `kn_diag.c`, which ran on the unit) is programmed once at boot on
+the main thread (`coop_pf_boot`, from `coop_plugins_boot`) and every cost site reads the two counters beside CYCLES
+(`coop_cost.h` `coop_pf_now` / `coop_cost_add_pf`: the S3 stage, slot 1's stock effect by type, a slot-1 plugin, both
+slot 2s, the master stand-in). The stats file's `cost` line becomes `name=avg/max/n/p0/p1` with the two counters'
+averages per call, after `cost avg/max/n/p0/p1 pf_mode M pf_live L`:
+
+| `g_coop_pf_mode` (a `--set-word`) | p0 | p1 |
+|---|---|---|
+| 0 (default) | code fills 0x82, **stall cycles** | data-cache fills of bank A 0x9A, **stall cycles** |
+| 1 | the same, occurrences (misses) | the same, occurrences |
+| 2 | processor-to-memory stalls 0x90, cycles | data stalls 0x98, cycles |
+| 3 | code fetches stalled by DMA 0x80, count | data collision stalls 0x97, cycles |
+| 4 | data store buffer full 0x92, cycles | data memory write buffer full 0x93, cycles |
+| 0xFF | off | off |
+
+Mode 0 answers the plan's first question directly: of an effect's `avg` cycles, `p0` waited for code and `p1` for
+data; the rest is compute. Mode 1 on a second run gives the miss counts (misses x ~100-190 cycles should land near
+mode 0's stall cycles; a large gap means the stalls overlap with work, or come from the write path: mode 4). The
+counters run free and count every mode (user and supervisor), so an interrupt inside a render is counted, as it is
+in CYCLES. op1emu has no monitor: `pf_live 0` there and the p0 / p1 fields stay absent; the device figures are the
+only ones that matter. The voice renders (`engines` line) are timed in the assembly thunks and do not read the
+counters yet.
+
+Package: `op1_246_coop_p6a_pf.op1` (u9 + the counters). The owner's run: the p5 script (`docs/test-runner.md`) once
+per effect type in slot 1 with mode 0, once with mode 1; the result table goes into the plan's section 1 and picks
+the next lever per effect.

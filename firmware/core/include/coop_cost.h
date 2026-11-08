@@ -5,7 +5,7 @@
 #define COOP_COST_H
 #include <stdint.h>
 
-struct coop_cost { uint64_t sum; uint32_t n, max; };
+struct coop_cost { uint64_t sum; uint32_t n, max; uint64_t p0, p1; };   /* p0 / p1: the performance counters' deltas summed (below) */
 
 #define COOP_COST_STAGE   0          /* S3 decimator + DC + mid / side (coop_instr_stage) */
 #define COOP_COST_S2I     1          /* instrument slot 2 */
@@ -29,6 +29,27 @@ static inline void coop_cost_add(int i, uint32_t dt)
     struct coop_cost *c = &g_coop_cost[i];
     c->sum += dt; c->n++;
     if (dt > c->max) c->max = dt;
+}
+
+/* The Blackfin performance monitor (p6a, docs/fx-data-placement-plan.md lever 1): PFCNTR0 / PFCNTR1 count the two
+ * events g_coop_pf_mode selects (coop_stats.cc coop_pf_boot; the layout and the event codes are kennel's kn_diag.c,
+ * device-proven): mode 0 (default) = code fills (0x82) and data-cache fills of bank A (0x9A) as STALL CYCLES, so an
+ * entry's p0 / p1 say how many of its cycles waited for code / data; mode 1 = the same events as occurrences (misses).
+ * Read beside CYCLES around each effect render; interrupts in between are counted, as they are in CYCLES. Nothing is
+ * read while the monitor is off (g_coop_pf_live 0: op1emu images, or a boot that did not program it). */
+#define COOP_PFCNTR0 (*(volatile uint32_t *)0xFFE08100u)
+#define COOP_PFCNTR1 (*(volatile uint32_t *)0xFFE08104u)
+extern volatile uint32_t g_coop_pf_live;
+static inline void coop_pf_now(uint32_t p[2])
+{
+    if (g_coop_pf_live) { p[0] = COOP_PFCNTR0; p[1] = COOP_PFCNTR1; } else { p[0] = 0; p[1] = 0; }
+}
+static inline void coop_cost_add_pf(int i, uint32_t dt, const uint32_t p0[2])
+{
+    struct coop_cost *c = &g_coop_cost[i];
+    c->sum += dt; c->n++;
+    if (dt > c->max) c->max = dt;
+    if (g_coop_pf_live) { uint32_t p[2]; coop_pf_now(p); c->p0 += p[0] - p0[0]; c->p1 += p[1] - p0[1]; }
 }
 
 /* The slow-block profiler (p5e): every coop hook inside the audio callback leaves (id, CYCLES); CoopAudioCb resets

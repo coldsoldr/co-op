@@ -263,6 +263,7 @@ static const char *load_one(const char *fname, uint8_t *stage)
 static void slot2_load(void);                                              /* S2, below */
 static void tanks_boot(void);                                              /* below */
 extern "C" void coop_settings_boot(void);                                  /* coop_settings.cc (u1): the settings file */
+extern "C" void coop_pf_boot(void);                                        /* coop_stats.cc (p6a): the performance monitor */
 extern "C" int coop_plugin_disabled(const char *fname);
 volatile uint32_t g_plugins_disabled;
 
@@ -275,6 +276,7 @@ extern "C" void coop_plugins_boot(void)
 {
     if (g_plugins_booted) return;
     g_plugins_booted = 1;
+    coop_pf_boot();                                                        /* p6a: the performance monitor (coop_stats.cc) */
     tanks_boot();                                                          /* the instrument spring's own tank */
     coop_settings_boot();                                                  /* spread and the disabled list, before the scan */
     list_dir();
@@ -717,7 +719,7 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
         int t = type_of_mono(self);
         if (t < 0 || g_st0_pub_seq != g_st0_req_seq || g_st[0].type != t) { g_st0_dry_blocks++; return; }   /* no twin yet
                                                                              (being built) or none (failed): dry */
-        uint32_t c0 = coop_cost_now();
+        uint32_t c0 = coop_cost_now(), pf0[2]; coop_pf_now(pf0);
         int16_t l[BLOCK], r[BLOCK];
         for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16((int32_t)buf[i] + dL[i]); r[i] = coop_sat16((int32_t)buf[i] + dR[i]); }
         st_render(0, l, r, params);
@@ -725,10 +727,10 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
             int16_t m = (int16_t)(((int32_t)l[i] + r[i]) >> 1);
             buf[i] = m; dL[i] = (int16_t)(l[i] - m); dR[i] = (int16_t)(r[i] - m);
         }
-        coop_cost_add(COOP_COST_ST1 + t, coop_cost_now() - c0);
+        coop_cost_add_pf(COOP_COST_ST1 + t, coop_cost_now() - c0, pf0);
         return;
     }
-    uint32_t c0 = coop_cost_now();
+    uint32_t c0 = coop_cost_now(), pf0[2]; coop_pf_now(pf0);
     const coop_fx_t *fx = g_plug[e].inst[pos];
     if (e != g_cur[pos]) { g_cur[pos] = e; if (fx->init(pos) != 0) { g_plug[e].fx = 0; return; } }
     int32_t L[BLOCK], R[BLOCK];
@@ -743,7 +745,7 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
         buf[i] = m;                                                       /* down the stock mono path */
         dL[i] = (int16_t)(l - m); dR[i] = (int16_t)(r - m);               /* the new side of this instrument */
     }
-    coop_cost_add(COOP_COST_PLUG, coop_cost_now() - c0);
+    coop_cost_add_pf(COOP_COST_PLUG, coop_cost_now() - c0, pf0);
     g_fx_plugin_blocks++;
 }
 
@@ -906,11 +908,11 @@ static int16_t knob_map(int lo, int hi, uint16_t k)
 static void slot2_render(int pos, int16_t *l, int16_t *r);
 extern "C" void coop_slot2_render(int pos, int16_t *l, int16_t *r)
 {
-    uint32_t c0 = coop_cost_now();
+    uint32_t c0 = coop_cost_now(), pf0[2]; coop_pf_now(pf0);
     coop_mark_at(0x48 + 2 * (pos & 1), c0);
     slot2_render(pos, l, r);
     coop_mark(0x49 + 2 * (pos & 1));
-    if (g_s2[pos & 1].kind_on) coop_cost_add(pos ? COOP_COST_S2M : COOP_COST_S2I, coop_cost_now() - c0);
+    if (g_s2[pos & 1].kind_on) coop_cost_add_pf(pos ? COOP_COST_S2M : COOP_COST_S2I, coop_cost_now() - c0, pf0);
 }
 static void slot2_render(int pos, int16_t *l, int16_t *r)
 {

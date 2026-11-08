@@ -1266,3 +1266,20 @@ page: drop (LFO 2, LFO OFF shown), T4, encoders, Shift + T4, lift; a sound saved
 Then the overwrite question from the u8 entry.
 
 Result: (pending)
+
+## Performance 6a (p6a): the performance monitor in the stats — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_p6a_pf.op1` (sha256 `4ccff2c98454bcf34d007bde2bb2009dc7d9dbfa9f718a04b3277fb3d8da259e`), copy in Downloads.
+  `--tape-stereo --set-word g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr`
+  differs. Build tag `p6a`. u9 plus lever 1 of docs/fx-data-placement-plan.md: the Blackfin performance monitor
+  programmed at boot (mode 0: code-fill and data-fill STALL CYCLES), read around every effect render; the stats
+  file's `cost` line gains `/p0/p1` per entry (docs/performance.md "p6a"). No audio change.
+
+**What to do**: the u9 UI list still applies (same image plus the counters). For the table: the p5 script
+(docs/test-runner.md) with each stock effect in slot 1 in turn (delay, grid, punch, phone, spring, filter, nitro,
+cwo), FX on, a held chord; then copy `coop_stats.txt` in disk mode. Expected per effect: `fx1_<type>=avg/max/n/p0/p1`
+with `pf_live 1`. If time allows, the same once more as a `g_coop_pf_mode=1` build (ask: it is one more package) for
+the miss counts. What decides the next lever: p1 (data stall cycles) near `avg` minus the op1emu figure says data,
+p0 large says code (lever 6 first).
+
+Result: (pending)

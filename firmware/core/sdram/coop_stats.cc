@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "u9"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p6a"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -173,12 +173,36 @@ extern "C" void coop_gap_block(void)
     g_gap_blocks++;
 }
 
+/* p6a: the Blackfin performance monitor (coop_cost.h; the layout and the events are kennel's kn_diag.c, device-proven:
+ * PFCTL 0xFFE08000 = PFPWR | PFCEN0 = 3 << 3 | PFMON0 << 5 | PFCEN1 = 3 << 14 | PFMON1 << 16 | PFCNT0 << 24 |
+ * PFCNT1 << 25; PFCNTx 0 counts the cycles the event is active, 1 its occurrences). Modes (g_coop_pf_mode, a
+ * --set-word): 0 code fills 0x82 / data fills 0x9A as stall cycles; 1 the same as occurrences; 2 "processor to memory
+ * stalls" 0x90 / "data stalls" 0x98 (cycles); 3 "code fetches stalled by DMA" 0x80 (count) / "data collision stalls"
+ * 0x97 (cycles); 4 "data store buffer full" 0x92 / "data memory write buffer full" 0x93 (cycles); 0xFF = off.
+ * Programmed once at boot on the main thread (coop_plugins_boot); the counters run free, every cost site takes
+ * deltas. op1emu does not model the unit: g_coop_pf_live stays 0 there if the write does not stick. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_pf_mode = 0; }
+volatile uint32_t g_coop_pf_live;
+#define PFCTL (*(volatile uint32_t *)0xFFE08000u)
+extern "C" void coop_pf_boot(void)
+{
+    static const uint8_t ev[5][2] = { { 0x82, 0x9A }, { 0x82, 0x9A }, { 0x90, 0x98 }, { 0x80, 0x97 }, { 0x92, 0x93 } };
+    static const uint8_t cnt[5][2] = { { 0, 0 }, { 1, 1 }, { 0, 0 }, { 1, 0 }, { 0, 0 } };
+    uint32_t m = g_coop_pf_mode;
+    if (m > 4) { g_coop_pf_live = 0; return; }
+    uint32_t v = 1u | 3u << 3 | (uint32_t)ev[m][0] << 5 | 3u << 14 | (uint32_t)ev[m][1] << 16 | (uint32_t)cnt[m][0] << 24 | (uint32_t)cnt[m][1] << 25;
+    PFCTL = v;
+    __asm__ __volatile__("ssync;" ::: "memory");
+    g_coop_pf_live = (PFCTL & 1u) ? 1 : 0;                      /* the write stuck: a real monitor (op1emu reads back 0) */
+}
+
 static const struct coop_cost *g_cost_src = g_coop_cost;          /* the live table, or a run section's copy */
-static void put_cost(const char *name, int i)               /* name avg max n: cycles per call */
+static void put_cost(const char *name, int i)               /* name avg/max/n[/p0/p1]: cycles per call, the counters' averages */
 {
     const struct coop_cost *c = &g_cost_src[i];
     if (!c->n) return;
     put(" "); put(name); putn((uint32_t)(c->sum / c->n)); put("/"); putn(c->max); put("/"); putn(c->n);
+    if (c->p0 || c->p1) { put("/"); putn((uint32_t)(c->p0 / c->n)); put("/"); putn((uint32_t)(c->p1 / c->n)); }
 }
 
 /* The stock engines' render functions (synth: vtable + 0x14, read from the constructors in the stock disassembly,
@@ -204,7 +228,7 @@ static const char *eng_name(uint32_t fn)
 
 static void put_cost_lines(void)                             /* the "cost" and "engines" lines from g_cost_src */
 {
-    put("cost avg/max/n");                                   /* per call; slot 1's stock effect by type (stereo class) */
+    put("cost avg/max/n/p0/p1"); put(" pf_mode "); putn(g_coop_pf_mode); put(" pf_live "); putn(g_coop_pf_live);   /* per call; slot 1's stock effect by type (stereo class); p0 / p1 the monitor's averages (coop_pf_boot) */
     put_cost("stage=", COOP_COST_STAGE); put_cost("s2_instr=", COOP_COST_S2I); put_cost("s2_master=", COOP_COST_S2M);
     put_cost("master=", COOP_COST_MASTER); put_cost("fx1_plugin=", COOP_COST_PLUG);
     static const char *const st_names[8] = { "fx1_delay=", "fx1_grid=", "fx1_punch=", "fx1_phone=", "fx1_spring=", "fx1_filter=", "fx1_nitro=", "fx1_cwo=" };

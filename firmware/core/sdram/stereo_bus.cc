@@ -390,7 +390,7 @@ extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_sta
 
 extern "C" void coop_instr_stage(void)
 {
-    uint32_t t0 = coop_cycles();
+    uint32_t t0 = coop_cycles(), pf0[2]; coop_pf_now(pf0);
     coop_mark_at(0x30, t0);
     if (!g_inited) stereo_init();
     g_stereo_stage_calls++;
@@ -415,7 +415,7 @@ extern "C" void coop_instr_stage(void)
         g_stereo_side_blocks++;
         uint32_t dta = coop_cycles() - t0;
         if (dta > g_stereo_stage_cycles_max) g_stereo_stage_cycles_max = dta;
-        coop_cost_add(COOP_COST_STAGE, dta);
+        coop_cost_add_pf(COOP_COST_STAGE, dta, pf0);
         return;
     }
     uint32_t rw = dbg ? s_dbg_ramp : *HB_RAMP_W;
@@ -443,7 +443,7 @@ extern "C" void coop_instr_stage(void)
     g_stereo_side_blocks++;
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_stereo_stage_cycles_max) g_stereo_stage_cycles_max = dt;
-    coop_cost_add(COOP_COST_STAGE, dt);
+    coop_cost_add_pf(COOP_COST_STAGE, dt, pf0);
 }
 
 /* S3: the drum path's bus stage. In drum mode the stock runs 0x01a66922 (state, bus, params) on the summed 128-sample

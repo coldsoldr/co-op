@@ -90,7 +90,7 @@ static void release_all(void)
 
 static void zero_costs(void)
 {
-    for (int i = 0; i < COOP_COST_N; i++) { g_coop_cost[i].sum = 0; g_coop_cost[i].n = 0; g_coop_cost[i].max = 0; }
+    for (int i = 0; i < COOP_COST_N; i++) { g_coop_cost[i].sum = 0; g_coop_cost[i].n = 0; g_coop_cost[i].max = 0; g_coop_cost[i].p0 = 0; g_coop_cost[i].p1 = 0; }
     g_sec_blocks = 0; g_sec_cb_max = 0; g_sec_cb_sum = 0;
     for (int i = 0; i < COOP_GAP_N; i++) { g_gap[i].key = 0; g_gap[i].n = 0; g_gap[i].max = 0; g_gap[i].sum = 0; }
     g_gap_blocks = 0;
