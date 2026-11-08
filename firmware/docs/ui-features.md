@@ -57,15 +57,19 @@ Process rule (the owner): **mock up everything before building it.**
   can't be renamed.
 
 ## 7. Two effect slots — built: lift / drop / T3 (u1), the green column on the list (u3, 2026-11-07); device test pending
+- u9 (2026-11-08, the owner's u7 notes, op1emu-verified): no "none" on the FX 2 lists; an empty slot 2 takes FX 1's type and knobs, switched off, on the first drop; T3 switches FX 2, **Shift + T3 opens the stock list** (blue FX 1, green FX 2); the stock page's big "FX OFF" is the focused slot's own state (the on-flag getters the overlay predicate calls are wrapped); the dials follow FX 2's encoders (the vector is filled in range units as the stock does: docs/screens.md "u8").
 - Shift + T3 on synth, drum or master opens the FX list with **two columns**: blue column = FX 1 (as stock), green
-  column = FX 2. The green column defaults to **none**, so an untouched sound stays stock.
+  column = FX 2. An untouched sound has no FX 2 (slot 2 empty, nothing runs), so it stays stock; the first drop
+  fills slot 2 with FX 1's type, switched off.
 - On the effect screen, **lift** focuses FX 1 and **drop** focuses FX 2. The focused slot's page is shown; T3 shows
   the slot last touched. The choice persists with the sound. FX 2 must look exactly like the stock effect page of its
   type (no coop page, no corner marks: the owner, after u5).
-- The stock `FX OFF` becomes `FX1 OFF` / `FX2 OFF`.
+- The stock `FX OFF` overlay shows the focused slot's state (u9): FX 2's while FX 2 is in focus, FX 1's after lift.
+  (The earlier idea of `FX1 OFF` / `FX2 OFF` labels is dropped: the page stays exactly stock.)
 - This replaces the P3a Shift + Help page (`docs/screens.md`).
 
 ## 8. Two LFO slots — the green column on the list built in u3 (2026-11-07); one LFO 2 for both instruments until P3b
+- u8 / u9 (2026-11-08): **the LFO 2 page is the stock LFO page** (drop / lift on the LFO page, T4 off / on, the four encoders as the stock's, Shift + T4 the list; the stock's "LFO OFF" overlay shows LFO 2's state in focus, as the FX page does); **LFO 2 is per sound** ("lfo2" in the sound JSON; the synth voices follow the synth slot's sound, the drum voices the kit's). The green column and the page edit the sound shown.
 - Shift + T4: blue column = LFO 1, green column = LFO 2; lift / drop focus them on the LFO screen, as for effects.
   Same destinations, additive (`docs/lfo2.md`).
 

@@ -46,7 +46,8 @@
 #define KEY         "coop"
 #define PAN_N       24
 
-struct coop_sound { int16_t bend, bend_t; int8_t pan[PAN_N]; uint8_t has; };
+/* u8: LFO 2 per sound: "lfo2": { "t": 0 tremolo / 1 value / 2 random / 7 none, "on": 0 / 1, "p": [8 ints] } */
+struct coop_sound { int16_t bend, bend_t; int8_t pan[PAN_N]; uint8_t has; int8_t lfo2_type; uint8_t lfo2_on; int16_t lfo2_p[8]; };
 static struct coop_sound s_cache[2][8];                                        /* [kind][slot]: 0 synth, 1 drum */
 volatile uint32_t g_sound_keeps, g_sound_kept, g_sound_writes;                 /* stats / tests */
 
@@ -54,7 +55,11 @@ static uint8_t jv_type(const void *v) { return ((const uint8_t *)v)[8]; }
 static int jv_int(const void *v, int dflt) { uint8_t t = jv_type(v); return t == JV_INT || t == JV_UINT ? JV_ASINT(v) : dflt; }
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-static void defaults(struct coop_sound *c) { c->bend = 12; c->bend_t = 0; for (int i = 0; i < PAN_N; i++) c->pan[i] = 0; c->has = 0; }
+static void defaults(struct coop_sound *c)
+{
+    c->bend = 12; c->bend_t = 0; for (int i = 0; i < PAN_N; i++) c->pan[i] = 0; c->has = 0;
+    c->lfo2_type = 7; c->lfo2_on = 0; for (int k = 0; k < 8; k++) c->lfo2_p[k] = 0;
+}
 static int s_inited;
 static void init_all(void) { if (s_inited) return; for (int k = 0; k < 2; k++) for (int i = 0; i < 8; i++) defaults(&s_cache[k][i]); s_inited = 1; }
 static void read_into(struct coop_sound *c, const void *json)
@@ -67,6 +72,14 @@ static void read_into(struct coop_sound *c, const void *json)
     c->bend_t = (int16_t)clampi(jv_int(JV_GET(o, "bend_t"), 0), 0, 128);
     const void *a = JV_GET(o, "pan");
     if (jv_type(a) == JV_ARRAY) for (int i = 0; i < PAN_N; i++) c->pan[i] = (int8_t)clampi(jv_int(JV_GET_IDX(a, (unsigned)i), 0), -50, 50);
+    const void *l = JV_GET(o, "lfo2");
+    if (jv_type(l) == JV_OBJECT) {
+        int t = jv_int(JV_GET(l, "t"), 7);
+        c->lfo2_type = (int8_t)(t >= 0 && t <= 2 ? t : 7);
+        c->lfo2_on = (uint8_t)(jv_int(JV_GET(l, "on"), 0) ? 1 : 0);
+        const void *p = JV_GET(l, "p");
+        if (jv_type(p) == JV_ARRAY) for (int k = 0; k < 8; k++) c->lfo2_p[k] = (int16_t)clampi(jv_int(JV_GET_IDX(p, (unsigned)k), 0), -32768, 32767);
+    }
 }
 static int slot_of(const void *json, int *kind)                                /* the Value is the Patch object + 4 */
 {
@@ -114,6 +127,11 @@ static void write_out(int kind, int slot)                                      /
     put_int(o, "bend_t", c->bend_t);
     void *a = JV_KEY(o, "pan");
     for (int i = 0; i < PAN_N; i++) { uint32_t tmp[4]; JV_FROM_INT(tmp, c->pan[i]); JV_ASSIGN(JV_IDX(a, (unsigned)i), tmp); JV_DTOR(tmp, 2); }
+    void *l = JV_KEY(o, "lfo2");
+    put_int(l, "t", c->lfo2_type);
+    put_int(l, "on", c->lfo2_on);
+    void *p = JV_KEY(l, "p");
+    for (int k = 0; k < 8; k++) { uint32_t tmp[4]; JV_FROM_INT(tmp, c->lfo2_p[k]); JV_ASSIGN(JV_IDX(p, (unsigned)k), tmp); JV_DTOR(tmp, 2); }
     c->has = 1;
     int16_t v[8];
     if (kind == 0) { for (int k = 0; k < 8; k++) v[k] = ADSR(slot)[k]; SET_ADSR((void *)(uintptr_t)pobj, v); }   /* dirty, nothing changed */
@@ -132,4 +150,25 @@ extern "C" void coop_sound_set_pan(int kit, int voice, int pan)
     if (kit < 0 || kit > 7 || voice < 0 || voice >= PAN_N) return;
     s_cache[1][kit].pan[voice] = (int8_t)clampi(pan, -50, 50);
     write_out(1, kit);
+}
+/* u8: LFO 2 of a sound (kind 0 synth slot, 1 drum kit): type 0..2 / 7, on, the eight params (clamped by lfo2.cc) */
+extern "C" void coop_sound_set_lfo2(int kind, int slot, int type, int on, const int16_t *p)
+{
+    if (kind < 0 || kind > 1 || slot < 0 || slot > 7) return;
+    struct coop_sound *c = &s_cache[kind][slot];
+    c->lfo2_type = (int8_t)(type >= 0 && type <= 2 ? type : 7);
+    c->lfo2_on = (uint8_t)(on ? 1 : 0);
+    if (p) for (int k = 0; k < 8; k++) c->lfo2_p[k] = p[k];
+    write_out(kind, slot);
+}
+/* the audio side (lfo2.cc): the sound's LFO 2 as the current objects should run it; 0 = the sound carries none */
+extern "C" int coop_sound_lfo2(int kind, int slot, int *type, int *on, int16_t *p8)
+{
+    init_all();
+    if (kind < 0 || kind > 1 || slot < 0 || slot > 7) return 0;
+    const struct coop_sound *c = &s_cache[kind][slot];
+    if (!c->has || c->lfo2_type > 2) return 0;
+    *type = c->lfo2_type; *on = c->lfo2_on;
+    for (int k = 0; k < 8; k++) p8[k] = c->lfo2_p[k];
+    return 1;
 }

@@ -125,6 +125,13 @@ FXVIEW_PARAM_FN = 0x01a28da0                                     # read_fx_param
 FXVIEW_PARAM_SITES = [0x019427b8, 0x01984f60, 0x019a74d4, 0x019b05f8, 0x019e6a48, 0x019e832c, 0x01a1cfd2, 0x01a33fb2]
 FXVIEW_DISP_FN = 0x01a28b34                                      # the display-slot getter(pos, n, a): the animation
 FXVIEW_DISP_SITES = [0x019427c6, 0x01984f6c, 0x019a74e2, 0x019b0604, 0x019e6a56, 0x019e8338, 0x01a1cfde, 0x01a33d1c]
+LFOVIEW_PARAM_FN = 0x01a293bc                                    # read_lfo_param(slot, pos): the LFO screens' dials (u8)
+LFOVIEW_PARAM_SITES = [0x0193de2a, 0x01968c34, 0x01981eda, 0x019e4a18, 0x01a2d388, 0x01a30c3c, 0x01a48fe8]
+FXON_SITES = [(0x019aab40, 0x01967240), (0x019aab5a, 0x0196725c), (0x019aab76, 0x0196727c)]   # u8: the effect pages' "FX OFF"
+                                                                 # predicate 0x019AAAEE: CALL the on-flag getter of the position
+                                                                 # (master byte 0x1AAAC40; 0x1AAAC30 + kit; 0x1AAAC20 + slot) -> coop_fx_on_read
+LFOON_SITES = [(0x019c97da, 0x0196724c), (0x019c97f6, 0x0196726c)]   # u8: the LFO pages' "LFO OFF" predicate 0x019C9782
+                                                                 # (0x1AAAC38 + kit; 0x1AAAC28 + slot) -> coop_lfo_on_read
 SCREEN_POP_SITE = 0x01a3bb40                                     # screens_update: CALL the screen-event pop
 SCREEN_POP_FN = 0x019d7d70
 KEEP_SITE = 0x01a044a8                                            # parse_patch_json: CALL Value::operator=(patch, fresh) -> coop_keep (u5, kennel hook_dpkeep)
@@ -436,6 +443,14 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
         for site in FXVIEW_DISP_SITES:
             out.append((site, call24(site, FXVIEW_DISP_FN), call24(site, sdram_tramp_at + 272)))
         out.append((SCREEN_POP_SITE, call24(SCREEN_POP_SITE, SCREEN_POP_FN), call24(SCREEN_POP_SITE, sdram_tramp_at + 288)))
+    if thunks_global.get('lfoparam'):                          # u8: LFO 2 on the stock LFO page (coop_fx2view.cc)
+        for site in LFOVIEW_PARAM_SITES:
+            out.append((site, call24(site, LFOVIEW_PARAM_FN), call24(site, sdram_tramp_at + 304)))
+    if thunks_global.get('fxon'):                              # u8: the stock "FX OFF" / "LFO OFF" overlays follow FX 2 / LFO 2 in focus
+        for site, fn in FXON_SITES:
+            out.append((site, call24(site, fn), call24(site, sdram_tramp_at + 320)))
+        for site, fn in LFOON_SITES:
+            out.append((site, call24(site, fn), call24(site, sdram_tramp_at + 336)))
     if thunks_global.get('keyev'):                             # the Lander combo swallowed (the getter sites stay stock:
         out.append((KEYEV_SITE, call24(KEYEV_SITE, KEY_DISPATCH), call24(KEYEV_SITE, sdram_tramp_at + 112)))   # a stub screen hung the boot in op1emu)
     return out + list(TAPE_BYTE_PATCHES)
@@ -499,7 +514,8 @@ def thunk_addresses(elf):
         ui = {}
     if ui:                                             # u5: the sound JSON keep hook and the overwrite save; an ELF with the
         for key, name in (('keep', 'coop_keep'), ('stamp', 'coop_stamp'), ('insert_s', 'coop_insert_synth'), ('insert_d', 'coop_insert_drum'),
-                          ('fxparam', 'coop_fx_param_read'), ('fxdisp', 'coop_fx_disp_read'), ('pop', 'coop_screen_pop')):
+                          ('fxparam', 'coop_fx_param_read'), ('fxdisp', 'coop_fx_disp_read'), ('pop', 'coop_screen_pop'), ('lfoparam', 'coop_lfo_param_read'),
+                          ('fxon', 'coop_fx_on_read'), ('lfoon', 'coop_lfo_on_read')):
             try:                                       # UI hooks must have them (a missing one is a dropped symbol: Makefile --undefined)
                 ui[key] = symbol_address(syms, name)[0]
             except Exception:
@@ -657,6 +673,14 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
             if len(sdram_blob) != 256:
                 raise SystemExit('region-C trampolines: the FX 2 view needs +256 (have {})'.format(len(sdram_blob)))
             sdram_blob += build_jump_tramp(thunks['fxparam']) + build_jump_tramp(thunks['fxdisp']) + build_jump_tramp(thunks['pop'])   # +256, +272, +288
+        if thunks.get('lfoparam'):
+            if len(sdram_blob) != 304:
+                raise SystemExit('region-C trampolines: the LFO 2 view needs +304 (have {})'.format(len(sdram_blob)))
+            sdram_blob += build_jump_tramp(thunks['lfoparam'])                                                                # +304
+        if thunks.get('fxon'):
+            if len(sdram_blob) != 320:
+                raise SystemExit('region-C trampolines: the off overlays need +320 (have {})'.format(len(sdram_blob)))
+            sdram_blob += build_jump_tramp(thunks['fxon']) + build_jump_tramp(thunks['lfoon'])                               # +320, +336
     dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, sdram_blob))
     for name, a, b in tramps:
         lines.append('tramp_{} at {:#x} ({} B) -> {:#x}'.format(name, a, len(b), thunks[name]))

@@ -36,6 +36,11 @@
 #define CUR_SCREEN     (*(volatile int *)0x018B65C8u)                  /* the screen id shown (kennel CUR_SCREEN) */
 #define CUR_MODE       (*(volatile int *)0xFF907D58u)
 #define FX_POS         (*(volatile uint8_t *)0x01DF4E3Cu)               /* effect position: 0 synth, 1 drum, 3 master */
+#define SYNTH_INST     (*(volatile int *)0xFF8016D4u)
+#define DRUM_KIT       (*(volatile int *)0xFF8016D8u)
+#define FX_TYPE_S(i)   (*(volatile int *)(0xFF801734u + (uint32_t)(i) * 4))   /* FX 1's type per synth slot / drum kit / the master */
+#define FX_TYPE_D(i)   (*(volatile int *)(0xFF801754u + (uint32_t)(i) * 4))
+#define FX_TYPE_M      (*(volatile int *)0xFF801090u)
 #define SHIFT_HELD     (*(volatile uint8_t *)0x01DD7F78u)
 #define KNOB_TOUCHED(k) (*(volatile uint8_t *)(0x01DD7F74u + (k)))     /* the stock highlights that dial this frame */
 #define LIST_PTR       (*(volatile uint32_t *)0x01DE511Cu)             /* the browser's list object (stale after close) */
@@ -84,7 +89,21 @@ extern "C" int coop_drumpan_knob(int knob, int steps);                 /* coop_d
 extern "C" void coop_drumpan_draw(void *r);
 extern "C" void coop_fx2_post_screen(int pos, int fx2);                /* coop_fx2view.cc */
 
-extern "C" void coop_ui_service(void) { coop_settings_service(); coop_markers_service(); coop_rename_service(); }
+/* u8: a slot-2 set that may allocate (a new type: the twin object, a delay line, a tank) runs on the MAIN LOOP; the
+ * KeyHandler thread only posts the request (the u7 lesson again: heap work off the main loop hung op1emu at the
+ * first drop, and a yaffs write from the key thread crashed the device). Knob-only sets of the same type stay direct. */
+static volatile int s_set_req;                                         /* 1 = pending */
+static int s_set_pos, s_set_kind, s_set_id, s_set_off, s_set_focus, s_set_post_pos; static uint16_t s_set_k[4]; static int s_set_apply;
+static void slot2_request(int pos, int kind, int id, const uint16_t *k, int off, int focus, int post_pos, int apply)
+{
+    s_set_pos = pos; s_set_kind = kind; s_set_id = id; s_set_off = off; s_set_focus = focus; s_set_post_pos = post_pos; s_set_apply = apply;
+    for (int i = 0; i < 4; i++) s_set_k[i] = k[i];
+    __asm__ __volatile__("ssync;" ::: "memory");
+    s_set_req = 1;
+}
+static void slot2_service(void);                                       /* below (needs the slot state) */
+volatile uint32_t g_ui_service_calls;
+extern "C" void coop_ui_service(void) { g_ui_service_calls++; coop_settings_service(); coop_markers_service(); coop_rename_service(); slot2_service(); }
 
 #define KEY_T3     0x08
 #define KEY_T4     0x09
@@ -98,7 +117,7 @@ extern "C" void coop_ui_service(void) { coop_settings_service(); coop_markers_se
 
 static const char *const fx_names[FX_TYPES] = { "delay", "grid", "punch", "phone", "spring", "filter", "nitro", "cwo" };   /* lower case: the stock font */
 
-volatile uint32_t g_ui_frames, g_ui_opens, g_ui_applies, g_ui_toggles, g_ui_col2_sets;   /* stats / tests */
+volatile uint32_t g_ui_frames, g_ui_opens, g_ui_applies, g_ui_toggles, g_ui_col2_sets, g_ui_knobs2;   /* stats / tests */
 static volatile uint8_t s_focus2[2];                                   /* per position (0 instrument, 1 master): FX 2 in focus */
 static int s_pos;                                                      /* the position the focus state below was loaded for */
 static int s_loaded;                                                   /* s_kind / s_id / s_knob / s_pick hold slot s_pos */
@@ -113,20 +132,20 @@ static int pos_now(void) { return FX_POS == 3 ? 1 : 0; }
 static int toggle_key(void) { return KEY_T3; }                         /* the page's own key (mixer page 2 too): the stock on / off of FX 1 */
 extern "C" int coop_fx2_focused(int pos2) { return s_focus2[pos2 & 1]; }
 
-/* the effect list: 0 none, 1..8 the stock types, then the loaded plugins */
-static int list_len(void) { int n = 1 + FX_TYPES; for (int p = 1; p < PLUG_MAX; p++) if (coop_plugin_name(p)) n++; return n; }
+/* the effect list: the stock types 0..7, then the loaded plugins (u8: no "none"; FX 2 is off instead, T3) */
+static int list_len(void) { int n = FX_TYPES; for (int p = 1; p < PLUG_MAX; p++) if (coop_plugin_name(p)) n++; return n; }
 static void list_entry(int i, int *kind, int *id)
 {
-    if (i <= 0) { *kind = 0; *id = 0; return; }
-    if (i <= FX_TYPES) { *kind = 1; *id = i - 1; return; }
-    int k = FX_TYPES;
+    if (i < 0) i = 0;
+    if (i < FX_TYPES) { *kind = 1; *id = i; return; }
+    int k = FX_TYPES - 1;
     for (int p = 1; p < PLUG_MAX; p++) if (coop_plugin_name(p) && ++k == i) { *kind = 2; *id = p; return; }
-    *kind = 0; *id = 0;
+    *kind = 1; *id = 0;
 }
 static int list_index(int kind, int id)
 {
-    if (kind == 1) return 1 + id;
-    if (kind == 2) { int k = FX_TYPES; for (int p = 1; p < PLUG_MAX; p++) if (coop_plugin_name(p)) { k++; if (p == id) return k; } }
+    if (kind == 1) return id;
+    if (kind == 2) { int k = FX_TYPES - 1; for (int p = 1; p < PLUG_MAX; p++) if (coop_plugin_name(p)) { k++; if (p == id) return k; } }
     return 0;
 }
 static void load_slot(int pos)
@@ -144,6 +163,90 @@ static void focus_sync(void)                                           /* the po
     if (!s_loaded || pos != s_pos) load_slot(pos);
 }
 static int focused_here(void) { return on_fx_page() && s_focus2[pos_now()]; }
+
+/* ---- u8: LFO 2 on the stock LFO page (screens 24..30), as FX 2 on the effect page. The sound's LFO 2 (type, on,
+ * eight params) lives in its JSON (coop_sound.cc); drop focuses it, lift LFO 1, T4 switches it off / on, the four
+ * encoders edit its params as the stock's LFO page edits LFO 1's (ApplyRange: v += delta * scale >> 15, clamped to
+ * the type's range; k + 4 with Shift), Shift + T4 opens the stock list whose green column picks the type. ---- */
+extern "C" int coop_lfo2_kind_type(int *on);                           /* lfo2.cc */
+extern "C" void coop_lfo2_set_sound(int type, int on, const int16_t *p);
+extern "C" void coop_lfo2_mid_params(int type, int16_t *p);
+extern "C" const int16_t *coop_lfo2_ranges(int type);
+extern "C" int coop_sound_lfo2(int kind, int slot, int *type, int *on, int16_t *p8);
+extern "C" void coop_lfo2_post_screen(int pos, int lfo2);              /* coop_fx2view.cc */
+#define LFO_TYPE_S(i)  (*(volatile int *)(0xFF801384u + (uint32_t)(i) * 4))
+#define LFO_TYPE_D(i)  (*(volatile int *)(0xFF8013A4u + (uint32_t)(i) * 4))
+static volatile uint8_t s_lfo2_focus[2];                               /* per instrument: 0 synth, 1 drum */
+static int on_lfo_page(void) { int s = CUR_SCREEN; return s >= 24 && s <= 30 && (CUR_MODE == 0 || CUR_MODE == 1); }
+static int lfo_pos(void) { return CUR_MODE == 1 ? 1 : 0; }
+extern "C" int coop_lfo2_focused(int pos) { return s_lfo2_focus[pos & 1]; }
+static void lfo2_params(int16_t *p)                                    /* the shown sound's LFO 2 params (its type's middles when none) */
+{
+    int t, on;
+    int slot = (lfo_pos() ? DRUM_KIT : SYNTH_INST) & 7;
+    if (!coop_sound_lfo2(lfo_pos(), slot, &t, &on, p)) coop_lfo2_mid_params(0, p);
+}
+static void lfo2_default(void)                                         /* a sound without an LFO 2 takes LFO 1's type (one slot 2 can run), off */
+{
+    int t, on; int16_t p[8];
+    int slot = (lfo_pos() ? DRUM_KIT : SYNTH_INST) & 7;
+    if (coop_sound_lfo2(lfo_pos(), slot, &t, &on, p) && t >= 0 && t <= 2) return;
+    int t1 = lfo_pos() ? LFO_TYPE_D(slot) : LFO_TYPE_S(slot);
+    if (t1 < 0 || t1 > 2) t1 = 0;                                      /* element / midi / bend / crank cannot run on slot 2: tremolo */
+    coop_lfo2_mid_params(t1, p);
+    coop_lfo2_set_sound(t1, 0, p);
+}
+static void lfo2_knob(int k, int steps)                                /* k 0..7 (4..7 shifted) */
+{
+    int t, on; int16_t p[8];
+    int slot = (lfo_pos() ? DRUM_KIT : SYNTH_INST) & 7;
+    if (!coop_sound_lfo2(lfo_pos(), slot, &t, &on, p) || t < 0 || t > 2) return;
+    const int16_t *rg = coop_lfo2_ranges(t);
+    int lo = rg[k * 3], hi = rg[k * 3 + 1], scale = rg[k * 3 + 2];
+    if (hi <= lo || !scale) return;                                    /* the stock's "s0": the encoder changes nothing */
+    int32_t v = p[k] + ((int32_t)steps * DETENT * scale >> 15);
+    if (v < lo) v = lo; else if (v > hi) v = hi;
+    p[k] = (int16_t)v;
+    coop_lfo2_set_sound(t, on, p);
+    KNOB_TOUCHED(k & 3) = 1;
+}
+static void *r_or(void *r) { return r; }
+/* u8: an empty FX 2 takes FX 1's type, switched off (no "none" on the list): the first focus fills it */
+extern "C" void coop_slot2_bypass(int pos, int off);
+static void slot2_default(int pos)
+{
+    if (s_kind) return;
+    int fp = FX_POS, slot = fp == 1 ? DRUM_KIT : SYNTH_INST;
+    int type = fp == 3 ? FX_TYPE_M : (fp == 1 ? FX_TYPE_D(slot) : FX_TYPE_S(slot));
+    if (type < 0 || type > 7) type = 0;
+    const int16_t *k1 = (const int16_t *)(fp == 3 ? 0xFF8016C4u : ((fp == 1 ? 0xFF8015C4u : 0xFF801444u) + (uint32_t)(slot & 7) * 16));   /* FX 1's knob words (read_fx_param 0x01A28DA0: int16 in range units) */
+    const int16_t *rg = (const int16_t *)(0x01DE5C50u + (uint32_t)type * 0x30u);   /* the type's Ranges row: {min, max, default} x 8 */
+    uint16_t k[4];
+    for (int i = 0; i < 4; i++) {                                      /* range units -> q15 (the inverse of plugin_host.cc knob_map) */
+        int lo = rg[3 * i], hi = rg[3 * i + 1], v = k1[i];
+        if (hi < lo) { int s = lo; lo = hi; hi = s; }
+        int32_t q = hi > lo ? ((int32_t)(v - lo) * 32767) / (hi - lo) : 0;
+        k[i] = (uint16_t)(q < 0 ? 0 : (q > 32767 ? 32767 : q));
+    }
+    slot2_request(pos, 1, type, k, 1, 0, fp, 0);                        /* the main loop sets it (it allocates), off */
+}
+extern volatile uint32_t g_s2_trace;                                   /* plugin_host.cc: debug progress marker */
+static void slot2_service(void)                                        /* main loop: the pending set, then the page */
+{
+    if (!s_set_req) return;
+    s_set_req = 0;
+    g_s2_trace = 0x30;
+    if (!coop_slot2_set(s_set_pos, s_set_kind, s_set_id, s_set_k)) { g_s2_trace = 0x3f; return; }
+    g_s2_trace = 0x31;
+    if (s_set_off >= 0) coop_slot2_bypass(s_set_pos, s_set_off);
+    if (s_set_focus) s_focus2[s_set_pos] = s_set_kind ? 1 : 0;
+    s_loaded = 0;                                                      /* the key thread reloads the slot at its next look */
+    if (s_set_apply) g_ui_applies++;
+    coop_slot2_request_save();
+    g_s2_trace = 0x32;
+    if (s_set_post_pos >= 0) coop_fx2_post_screen(s_set_post_pos, 1);
+    g_s2_trace = 0x33;
+}
 static void save_if_dirty(void) { if (s_dirty) { coop_slot2_request_save(); s_dirty = 0; } }
 
 /* ---- the second column of the stock FX / LFO browser ---- */
@@ -153,7 +256,7 @@ static const int fx_list_type[7] = { 7, 0, 1, 6, 3, 2, 4 };          /* the stoc
 static const char *const lfo_col_names[4] = { "none", "tremolo", "value", "random" };
 static int s_br_seen;                                                  /* the browser kind the column was set up for */
 static int s_col2, s_col2_acc, s_col2_disp, s_col2_touched;
-static int col2_count(int bk) { return bk == 1 ? 8 + (list_len() - 1 - FX_TYPES) : 4; }
+static int col2_count(int bk) { return bk == 1 ? 7 + (list_len() - FX_TYPES) : 4; }
 static int browser_kind(void)                                          /* 0 none, 1 the FX list, 2 the LFO list */
 {
     if (CUR_SCREEN != SCREEN_BROWSER) return 0;
@@ -166,16 +269,16 @@ static int browser_pos(void)                                           /* slot 2
     if (o < 0x01000000u || o >= 0x02000000u) return FX_POS == 3 ? 1 : 0;
     return *(volatile int *)o == 3 ? 1 : 0;
 }
-static void col2_entry(int i, int *kind, int *id)                      /* the FX column: none, the seven, the plugins */
+static void col2_entry(int i, int *kind, int *id)                      /* the FX column: the seven (the stock list's order), the plugins */
 {
-    if (i <= 0) { *kind = 0; *id = 0; return; }
-    if (i <= 7) { *kind = 1; *id = fx_list_type[i - 1]; return; }
-    list_entry(i - 8 + 1 + FX_TYPES, kind, id);                        /* the plugin rows of list_entry */
+    if (i < 0) i = 0;
+    if (i < 7) { *kind = 1; *id = fx_list_type[i]; return; }
+    list_entry(i - 7 + FX_TYPES, kind, id);                            /* the plugin rows of list_entry */
 }
 static int col2_index(int kind, int id)
 {
-    if (kind == 1) { for (int i = 0; i < 7; i++) if (fx_list_type[i] == id) return 1 + i; return 0; }
-    if (kind == 2) { int k = list_index(kind, id); return k > FX_TYPES ? k - FX_TYPES + 7 : 0; }
+    if (kind == 1) { for (int i = 0; i < 7; i++) if (fx_list_type[i] == id) return i; return 0; }
+    if (kind == 2) { int k = list_index(kind, id); return k >= FX_TYPES ? k - FX_TYPES + 7 : 0; }
     return 0;
 }
 static void col2_name(int bk, int i, char *out)
@@ -203,11 +306,8 @@ static void col2_apply(int bk)                                         /* the pa
         coop_slot2_get(pos, b);
         for (int i = 0; i < 4; i++) k[i] = (uint16_t)(b[2 + 2 * i] | (b[3 + 2 * i] << 8));
         col2_entry(s_col2, &kind, &id);
-        if (coop_slot2_set(pos, kind, id, k)) {
-            s_focus2[pos] = kind ? 1 : 0;
-            s_loaded = 0;
-            coop_slot2_request_save(); g_ui_col2_sets++;
-        }
+        slot2_request(pos, kind, id, k, -1, 1, -1, 0);               /* the main loop sets it (it may allocate) and focuses FX 2 */
+        g_ui_col2_sets++;
     } else if (bk == 2) {
         coop_lfo2_set_type(s_col2 ? s_col2 - 1 : 7);
         coop_slot2_request_save(); g_ui_col2_sets++;
@@ -231,16 +331,29 @@ extern "C" int coop_ui_key(int code, int pressed)
         int bk = br_sync();                                            /* a browser is up: the page key applies column 2 */
         if (bk) { if ((bk == 1 && code == KEY_T3) || (bk == 2 && code == KEY_T4)) col2_apply(bk); return 0; }
     }
+    if (on_lfo_page() && (code == KEY_LIFT || code == KEY_DROP)) {     /* u8: lift: LFO 1 in focus; drop: LFO 2 (the shown sound's) */
+        int pos = lfo_pos();
+        if (code == KEY_DROP) { if (!s_lfo2_focus[pos]) { s_lfo2_focus[pos] = 1; lfo2_default(); g_ui_opens++; coop_lfo2_post_screen(pos, 1); } }
+        else if (s_lfo2_focus[pos]) { s_lfo2_focus[pos] = 0; coop_lfo2_post_screen(pos, 0); }
+        s_swallow |= bit;
+        return 1;
+    }
+    if (on_lfo_page() && s_lfo2_focus[lfo_pos()] && code == KEY_T4 && !SHIFT_HELD) {   /* T4: LFO 2 off / on (Shift + T4: the stock list) */
+        int on, t = coop_lfo2_kind_type(&on); int16_t p[8];
+        if (t >= 0 && t <= 2) { lfo2_params(p); coop_lfo2_set_sound(t, !on, p); g_ui_toggles++; }
+        s_swallow |= bit;
+        return 1;
+    }
     if (on_fx_page() && (code == KEY_LIFT || code == KEY_DROP)) {      /* lift: FX 1 in focus; drop: FX 2 */
         int pos = pos_now();
-        if (code == KEY_DROP) { if (!s_focus2[pos]) { s_focus2[pos] = 1; load_slot(pos); g_ui_opens++; coop_fx2_post_screen(FX_POS, 1); } }
+        if (code == KEY_DROP) { if (!s_focus2[pos]) { s_focus2[pos] = 1; load_slot(pos); slot2_default(pos); g_ui_opens++; coop_fx2_post_screen(FX_POS, 1); } }
         else if (s_focus2[pos]) { s_focus2[pos] = 0; save_if_dirty(); coop_fx2_post_screen(FX_POS, 0); }
         s_swallow |= bit;
         return 1;
     }
     if (!focused_here()) return 0;
     focus_sync();
-    if (code == toggle_key()) {                                        /* FX 2 off / on, as the stock key does for FX 1 */
+    if (code == toggle_key() && !SHIFT_HELD) {                         /* FX 2 off / on, as the stock key does for FX 1; Shift + T3 opens the stock list (both columns) */
         coop_slot2_bypass(s_pos, !coop_slot2_bypassed(s_pos));
         s_dirty = 1; g_ui_toggles++;
         s_swallow |= bit;
@@ -249,7 +362,9 @@ extern "C" int coop_ui_key(int code, int pressed)
     if (code == KEY_ENC0) {                                            /* blue push: apply the effect pointed at */
         int kind, id;
         list_entry(s_pick, &kind, &id);
-        if (coop_slot2_set(s_pos, kind, id, s_knob)) { s_kind = kind; s_id = id; s_dirty = 1; g_ui_applies++; coop_fx2_post_screen(FX_POS, 1); }
+        if (kind == s_kind && id == s_id) { s_swallow |= bit; return 1; }   /* the same effect: nothing to do */
+        slot2_request(s_pos, kind, id, s_knob, -1, 0, FX_POS, 1);    /* the main loop builds it, then shows its page */
+        s_kind = kind; s_id = id;
         s_swallow |= bit;
         return 1;
     }
@@ -284,6 +399,10 @@ extern "C" void coop_ui_knob(int knob, int16_t *delta)
             return;
         }
     }
+    if (on_lfo_page() && s_lfo2_focus[lfo_pos()]) {                    /* u8: the LFO page's encoders edit LFO 2 as the stock edits LFO 1 */
+        if (knob >= 0 && knob <= 3) lfo2_knob(knob + (SHIFT_HELD ? 4 : 0), steps);
+        return;
+    }
     if (!focused_here()) { KNOB_STEP(knob, delta); return; }
     focus_sync();
     if (knob == 0 && SHIFT_HELD) {                                     /* Shift + blue: the effect list */
@@ -296,7 +415,7 @@ extern "C" void coop_ui_knob(int knob, int16_t *delta)
     s_knob[knob] = (uint16_t)(v < 0 ? 0 : (v > 32767 ? 32767 : v));
     coop_slot2_set(s_pos, s_kind, s_id, s_knob);                       /* the same effect: the knobs only */
     KNOB_TOUCHED(knob) = 1;                                            /* the stock page highlights the dial */
-    s_dirty = 1;
+    s_dirty = 1; g_ui_knobs2++;
 }
 
 /* ---- drawing (Gfx thread) ---- */
@@ -385,13 +504,14 @@ extern "C" void coop_ui_frame(void *table)
         int bk = br_sync();
         if (bk) { void *rb = op1_raster(); if (rb) draw_col2(rb, bk); return; }
     }
+    if (on_lfo_page() && s_lfo2_focus[lfo_pos()]) return;              /* u8: the stock LFO page shows LFO 2 whole, its own "LFO OFF" included (coop_fx2view.cc) */
     if (!focused_here()) return;                                       /* FX 1 in focus: the stock page alone */
     focus_sync();
     void *r = op1_raster();
     if (!r) return;
     if (coop_slot2_req_type(s_pos) < 0) { draw_fx2_page(r); return; }   /* a plugin, or nothing: coop's page */
-    /* a stock type: the stock page shows slot 2 (coop_fx2view.cc); only the off state and a pending pick are added */
-    if (coop_slot2_bypassed(s_pos)) coop_text_draw(&s_tx[TX_OFF2], r, 262, 2, 12, c_text, "fx2 off", 0);
+    /* a stock type: the stock page shows slot 2 whole, dials, animation and its own "FX OFF" (coop_fx2view.cc); only a
+     * pending pick is added */
     int pk, pi;
     list_entry(s_pick, &pk, &pi);
     if (pk != s_kind || pi != s_id) {

@@ -1,0 +1,24 @@
+# FX 2 dials, same type as FX 1 (u8: an empty FX 2 takes FX 1's type, off). Synth; T3 (the FX page); T3 (FX 1 on);
+# drop (FX 2 = FX 1's type, off); T3 (FX 2 on); green 20 half-detents (FX 2's knob 2 up 10 %). The run ends in that
+# state; the screenshots come long after the last action: FX 2's page, its second dial 10 % above FX 1's
+# (det_ui_fx2lift is the same run plus lift: FX 1's own dials).
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+tap t3 200
+at 30500
+tap drop 200
+at 32000
+tap t3 200
+at 33500
+turn enc2 cw 20
+wait 170000
+screenshot /root/op1emu-work/fxs_a.ppm
+wait 2000
+screenshot /root/op1emu-work/fxs_a2.ppm
+wait 2000
+quit

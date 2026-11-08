@@ -1,0 +1,35 @@
+# FX 2 dials. Synth; T3 (the FX page; the pristine sound's FX 1 is OFF in op1emu); T3 again switches FX 1 ON (the
+# stock toggle); drop focuses FX 2 (none at first); Shift + blue one detent (none -> delay), blue push applies it:
+# the stock delay page shows FX 2; green 20 half-detents (knob 2 up 10 %), white 40 (knob 3 up 20 %): the dials
+# must follow FX 2 (fx2view_size 4, fx2view_empty 0); lift: FX 1's page with FX 1's own dials. Screenshots at the
+# end: A with FX 2 in focus, B after lift.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+tap t3 200
+at 30500
+tap drop 200
+at 31500
+press shift
+at 31700
+turn enc1 cw 2
+at 32200
+release shift
+at 33000
+tap enc1 200
+at 34500
+turn enc2 cw 20
+at 36000
+turn enc3 cw 40
+at 44500
+tap lift 200
+wait 40000
+screenshot /root/op1emu-work/fxd_a.ppm
+wait 3500
+screenshot /root/op1emu-work/fxd_b.ppm
+wait 4000
+quit

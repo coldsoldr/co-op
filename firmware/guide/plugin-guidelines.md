@@ -83,6 +83,9 @@ What the words mean:
   - Long lines and tanks go in the plugin's own `.bss`. The loader zeroes it, five times over.
   - Data the per-sample loop touches every block goes in L1, through the coop L1 lease ([proposed], kennel's
     `kn_l1.c` model). Say in the contract how much the plugin needs.
+  - The host's own effects follow `docs/fx-data-placement-plan.md`; a port does the same: prefetch its delay-line
+    streams a few lines ahead (`PREFETCH [P]`), process a delay line in block passes rather than per sample across
+    several lines, keep per-sample state in registers, keep the render inside the I-cache's reach. [proposed]
   - Each relocation costs the file's load size, so a 129 KiB plugin takes 645 KiB of heap 0. Keep `.bss` to what
     the sound needs. A plugin that doesn't fit fails to load with "plugin memory full".
 - Tempo: an effect that syncs reads the core's beat clock (an export, [proposed]: tempo, MIDI clock or tape speed),

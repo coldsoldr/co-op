@@ -3,6 +3,9 @@
 coop-fw must never compromise performance; the UI must always feel smooth (no-compromise item 8).
 This is a hard gate on every milestone, not an afterthought.
 
+Plan for the next performance round: `docs/fx-data-placement-plan.md` (2026-11-08: counters first, then prefetch,
+block passes, L1 for the small hot data, code residency, mid / side hosting).
+
 ## The budget
 
 - Audio period: **580,499 cycles/block** (64 samples at 44.1 kHz, 1.45 ms), measured (kennel `kn_shed.h`).

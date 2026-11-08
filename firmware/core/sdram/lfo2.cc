@@ -53,9 +53,17 @@ __attribute__((section(".data"))) volatile uint32_t g_coop_lfo2_active = 1;
 /* --- state --- */
 static uint32_t g_synth_obj[SYNTH_VOICES][OBJ_BYTES / 4];
 static uint32_t g_drum_obj[DRUM_VOICES][OBJ_BYTES / 4];
-static int16_t g_params[8];
-static uint32_t g_built_type = LFO_OFF;
-static uint32_t g_built_params_w[4];
+/* u8: LFO 2 per sound. Set 0 (the synth voices) follows the current synth slot's sound, set 1 (the drum voices) the
+ * current kit's (coop_sound.cc "lfo2"); a sound without one falls back to the global words (the image's set-word
+ * debug path and the old slot file). Each set keeps its own built type and parameters. */
+#define SYNTH_INST (*(volatile int *)0xFF8016D4u)
+#define DRUM_KIT   (*(volatile int *)0xFF8016D8u)
+#define CUR_MODE   (*(volatile int *)0xFF907D58u)
+extern "C" int coop_sound_lfo2(int kind, int slot, int *type, int *on, int16_t *p8);   /* coop_sound.cc */
+extern "C" void coop_sound_set_lfo2(int kind, int slot, int type, int on, const int16_t *p);
+static int16_t g_params[2][8];
+static uint32_t g_built_type[2] = { LFO_OFF, LFO_OFF };
+static int16_t g_built_p[2][8];
 volatile uint32_t g_lfo2_processes, g_lfo2_triggers, g_lfo2_cycles_max;
 
 static inline uint32_t coop_cycles(void)
@@ -96,37 +104,49 @@ static int build(uint32_t *o, uint32_t type, int is_drum)
     }
 }
 
-static void clamp_params(uint32_t type, const uint32_t w[4])
+static void clamp_params(int set, uint32_t type, const int16_t *p)
 {
     for (int k = 0; k < 8; k++) {
-        int32_t v = (int16_t)(w[k >> 1] >> ((k & 1) * 16));
+        int32_t v = p[k];
         int16_t lo = LFO_RANGES[(type * 8 + k) * 3], hi = LFO_RANGES[(type * 8 + k) * 3 + 1];
         if (lo < hi) {                           /* entry filled (the table is run-time initialised; zero = unknown) */
             if (v < lo) v = lo;
             if (v > hi) v = hi;
         }
-        g_params[k] = (int16_t)v;
+        g_params[set][k] = (int16_t)v;
     }
 }
 
-/* (Re)build the objects when the type or the parameters change. Returns 1 if slot 2 is live. */
-static int sync(void)
+/* the source for a set: the current sound's LFO 2, else the global words; type LFO_OFF = nothing to run */
+static uint32_t source(int set, int16_t *p)
 {
-    uint32_t type = g_coop_lfo2_type;
-    if (type == LFO_OFF || !g_coop_lfo2_active) return 0;
+    int type, on;
+    int slot = (set ? DRUM_KIT : SYNTH_INST) & 7;
+    if (coop_sound_lfo2(set, slot, &type, &on, p)) return on ? (uint32_t)type : LFO_OFF;
+    if (g_coop_lfo2_type == LFO_OFF || !g_coop_lfo2_active) return LFO_OFF;
     uint32_t w[4];
     read_param_words(w);
-    int changed = type != g_built_type;
-    for (int i = 0; i < 4; i++) if (w[i] != g_built_params_w[i]) changed = 1;
+    for (int k = 0; k < 8; k++) p[k] = (int16_t)(w[k >> 1] >> ((k & 1) * 16));
+    return g_coop_lfo2_type;
+}
+
+/* (Re)build a set's objects when its type or parameters change. Returns 1 if that set is live. */
+static int sync(int set)
+{
+    int16_t p[8];
+    uint32_t type = source(set, p);
+    if (type == LFO_OFF) { g_built_type[set] = LFO_OFF; return 0; }
+    int changed = type != g_built_type[set];
+    for (int k = 0; k < 8; k++) if (p[k] != g_built_p[set][k]) changed = 1;
     if (changed) {
-        if (type > LFO_RANDOM) { g_built_type = LFO_OFF; return 0; }   /* refused types */
-        for (int v = 0; v < SYNTH_VOICES; v++) build(g_synth_obj[v], type, 0);
-        for (int v = 0; v < DRUM_VOICES; v++) build(g_drum_obj[v], type, 1);
-        clamp_params(type, w);
-        g_built_type = type;
-        for (int i = 0; i < 4; i++) g_built_params_w[i] = w[i];
+        if (type > LFO_RANDOM) { g_built_type[set] = LFO_OFF; return 0; }   /* refused types */
+        if (set == 0) for (int v = 0; v < SYNTH_VOICES; v++) build(g_synth_obj[v], type, 0);
+        else for (int v = 0; v < DRUM_VOICES; v++) build(g_drum_obj[v], type, 1);
+        clamp_params(set, type, p);
+        g_built_type[set] = type;
+        for (int k = 0; k < 8; k++) g_built_p[set][k] = p[k];
     }
-    return g_built_type != LFO_OFF;
+    return g_built_type[set] != LFO_OFF;
 }
 
 static inline void *self_of(uint32_t *o)
@@ -136,70 +156,90 @@ static inline void *self_of(uint32_t *o)
     return (uint8_t *)o + off;
 }
 
-static void process(uint32_t *o, int stage)
+static void process(uint32_t *o, int stage, int set)
 {
     uint32_t t0 = coop_cycles();
     const uint32_t *vt = (const uint32_t *)(uintptr_t)o[0];
-    ((lfo_process_fn)(uintptr_t)vt[5])(self_of(o), g_params, stage);   /* vt + 0x14 */
+    ((lfo_process_fn)(uintptr_t)vt[5])(self_of(o), g_params[set], stage);   /* vt + 0x14 */
     g_lfo2_processes++;
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_lfo2_cycles_max) g_lfo2_cycles_max = dt;
 }
 
-static void trigger(uint32_t *o)
+static void trigger(uint32_t *o, int set)
 {
     const uint32_t *vt = (const uint32_t *)(uintptr_t)o[0];
-    ((lfo_trigger_fn)(uintptr_t)vt[7])(self_of(o), g_params);          /* vt + 0x1c */
+    ((lfo_trigger_fn)(uintptr_t)vt[7])(self_of(o), g_params[set]);          /* vt + 0x1c */
     g_lfo2_triggers++;
 }
 
 /* From coop_synth_render_thunk, before the stock render: stage 0 (engine knobs / pitch / volume). */
 extern "C" void coop_lfo2_pre_render_synth(uint32_t voice)
 {
-    if (voice >= SYNTH_VOICES || !sync()) return;
-    process(g_synth_obj[voice], 0);
+    if (voice >= SYNTH_VOICES || !sync(0)) return;
+    process(g_synth_obj[voice], 0, 0);
 }
 
 /* From coop_drum_render_thunk, before the stock render: stage 3 (drum engine). */
 extern "C" void coop_lfo2_pre_render_drum(uint32_t voice)
 {
-    if (voice >= DRUM_VOICES || !sync()) return;
-    process(g_drum_obj[voice], 3);
+    if (voice >= DRUM_VOICES || !sync(1)) return;
+    process(g_drum_obj[voice], 3, 1);
 }
 
 /* Note-on: from the Core::NoteOn hook (synth) and the drum first-render heuristic (stereo_bus.cc). */
 extern "C" void coop_lfo2_trigger_synth(uint32_t voice)
 {
-    if (voice >= SYNTH_VOICES || !sync()) return;
-    trigger(g_synth_obj[voice]);
+    if (voice >= SYNTH_VOICES || !sync(0)) return;
+    trigger(g_synth_obj[voice], 0);
 }
 
 extern "C" void coop_lfo2_trigger_drum(uint32_t voice)
 {
-    if (voice >= DRUM_VOICES || !sync()) return;
-    trigger(g_drum_obj[voice]);
+    if (voice >= DRUM_VOICES || !sync(1)) return;
+    trigger(g_drum_obj[voice], 1);
 }
 
 /* ---- u3: the LFO list's second column (coop_ui.cc) and the slot file (plugin_host.cc) ----
  * One LFO 2 for both instruments (the words are global; per sound is P3b). A type picked from the list gets its
  * parameters from the middle of the stock Ranges table (run-time filled: unknown entries give 0); sync() above rebuilds
  * the objects in the audio thread when the words change. */
-extern "C" int coop_lfo2_get_type(void) { return g_coop_lfo2_active ? (int)g_coop_lfo2_type : (int)LFO_OFF; }
-extern "C" void coop_lfo2_set_type(int type)                     /* 0 tremolo, 1 value, 2 random, 7 off */
+/* u8: the instrument shown (synth or drum mode) and its current sound: where the UI's LFO 2 lives */
+static int ui_kind(void) { return CUR_MODE == 1 ? 1 : 0; }
+static int ui_slot(void) { return (ui_kind() ? DRUM_KIT : SYNTH_INST) & 7; }
+extern "C" int coop_lfo2_get_type(void)                           /* the shown sound's LFO 2: 0..2, or 7 when off / none */
+{
+    int type, on; int16_t p[8];
+    if (coop_sound_lfo2(ui_kind(), ui_slot(), &type, &on, p)) return on ? type : (int)LFO_OFF;
+    return g_coop_lfo2_active ? (int)g_coop_lfo2_type : (int)LFO_OFF;
+}
+extern "C" int coop_lfo2_kind_type(int *on)                      /* the type the sound carries (off or on), 7 none */
+{
+    int type, o; int16_t p[8];
+    if (coop_sound_lfo2(ui_kind(), ui_slot(), &type, &o, p)) { *on = o; return type; }
+    *on = 0; return (int)LFO_OFF;
+}
+extern "C" void coop_lfo2_mid_params(int type, int16_t *p)        /* the middle of the type's ranges */
+{
+    for (int k = 0; k < 8; k++) {
+        int16_t lo = LFO_RANGES[(type * 8 + k) * 3], hi = LFO_RANGES[(type * 8 + k) * 3 + 1];
+        p[k] = (int16_t)(lo < hi ? (lo + hi) / 2 : 0);
+    }
+}
+extern "C" void coop_lfo2_set_type(int type)                     /* the list's column: 0 tremolo, 1 value, 2 random, 7 off: onto the shown sound */
 {
     if (type < 0 || (type > (int)LFO_RANDOM && type != (int)LFO_OFF)) return;
-    if (type != (int)LFO_OFF) {
-        uint32_t w[4] = { 0, 0, 0, 0 };
-        for (int k = 0; k < 8; k++) {
-            int16_t lo = LFO_RANGES[(type * 8 + k) * 3], hi = LFO_RANGES[(type * 8 + k) * 3 + 1];
-            int32_t v = lo < hi ? (lo + hi) / 2 : 0;
-            w[k >> 1] |= (uint32_t)(uint16_t)(int16_t)v << ((k & 1) * 16);
-        }
-        g_coop_lfo2_p01 = w[0]; g_coop_lfo2_p23 = w[1]; g_coop_lfo2_p45 = w[2]; g_coop_lfo2_p67 = w[3];
-    }
-    g_coop_lfo2_type = (uint32_t)type;
-    g_coop_lfo2_active = 1;
+    int cur, on; int16_t p[8];
+    int had = coop_sound_lfo2(ui_kind(), ui_slot(), &cur, &on, p);
+    if (type == (int)LFO_OFF) { if (had) coop_sound_set_lfo2(ui_kind(), ui_slot(), cur, 0, p); return; }
+    if (!had || cur != type) coop_lfo2_mid_params(type, p);
+    coop_sound_set_lfo2(ui_kind(), ui_slot(), type, 1, p);
 }
+extern "C" void coop_lfo2_set_sound(int type, int on, const int16_t *p)   /* the LFO 2 page (coop_ui.cc): the shown sound's words */
+{
+    coop_sound_set_lfo2(ui_kind(), ui_slot(), type, on, p);
+}
+extern "C" const int16_t *coop_lfo2_ranges(int type) { return (const int16_t *)(LFO_RANGES + type * 24); }   /* {min, max, scale} x 8 */
 extern "C" void coop_lfo2_words_get(uint8_t *out17)             /* type, then the four words little-endian */
 {
     out17[0] = (uint8_t)g_coop_lfo2_type;

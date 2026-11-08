@@ -262,3 +262,58 @@ orange write nothing there.
 - Keys: `coop_tracker_key` sits in `coop_ui_key` before the tape's handlers (solo, markers) and takes everything on
   the tape page but the mode keys, Shift, Help, metronome, mic and COM while the tracker is on; both edges of a taken
   press (s_swallow). Encoders: `coop_tracker_knob` right after the settings menu in `coop_ui_knob`.
+
+## u8: the FX 2 page made stock-like, LFO 2 on the stock LFO page, no "none" (2026-11-08) [I until the device]
+
+The owner's u7 device notes: the FX 2 page's dials did not follow the encoders (the sound did), the page showed FX 1's
+"FX OFF", Shift + T3 switched FX 2 instead of opening the list, and "none" should go (FX 2 takes FX 1's type, off).
+- **No "none"**: the FX 2 lists (Shift + blue on the page, the green column of the browser) hold the stock types and
+  the plugins only. An empty slot 2 takes FX 1's type and FX 1's knob words on the first drop, switched off; T3
+  switches it on.
+- **Shift + T3** passes to the stock: the browser opens with both columns (blue FX 1, green FX 2).
+- **"FX OFF"** [C in op1emu]: the stock's big overlay is drawn from an on-flag predicate the screen framework calls for
+  the shown page (FX 0x019AAAEE, LFO 0x019C9782; reached through pointers, no direct CALL). The predicate reads the
+  page's position word (FX 0x01DD7F7C: 0 synth, 1 drum, 2 master; LFO 0x01DD7F80) and CALLs the matching getter of
+  the stock on / off state block at 0x1AAAC00: FX master byte 0x1AAAC40 (0x01967240), 0x1AAAC30 + kit (0x0196725C),
+  0x1AAAC20 + slot (0x0196727C); LFO 0x1AAAC38 + kit (0x0196724C), 0x1AAAC28 + slot (0x0196726C); 0 = off (the T3 /
+  T4 toggles write the same bytes, 0x01978188 / 0x019781E0). Those five getter CALLs are retargeted at
+  coop_fx_on_read / coop_lfo_on_read (region-C trampolines +320 / +336), which answer slot 2's state in FX 2 / LFO 2
+  focus; coop's own "fx2 off" / "lfo2 off" texts on the stock pages are gone.
+  **Not** the dial vector: a first attempt returned an empty vector for "off" and froze op1emu whole, because every
+  effect screen's Update asserts the vector has at least four entries (cwo 0x019427DC, spring 0x01A33FCE: the L1
+  abort 0xFFA0A1E0 otherwise). The wrapper now never returns fewer than four (coop's own eight stand in when the
+  stock's is empty).
+- **The dials (the u7 "do not follow")**: read_fx_param's eight entries are not knob fractions. The stock reads eight
+  int16 words of the position (synth 0xFF801444 + 16 * slot, drum 0xFF8015C4 + 16 * kit, master 0xFF8016C4) **in
+  range units**, then (0x01A28E74) normalises each with the type's Ranges row 0x01DE5C50 + 48 * type ({min, max,
+  default} x 8): entry = (raw - min) / (max - min), entries with max == min left alone. u7 wrote q15 / 32767 into the
+  first four, which the pages took as raw values near min: every dial at 0 whatever the encoder did. The wrapper now
+  fills all eight as the stock does: raw 0..3 = slot 2's q15 knobs mapped to range units (plugin_host.cc knob_map),
+  raw 4..7 = the row's defaults (what the twin is given). The first drop's copy of FX 1's knobs converts the same way
+  in reverse (range units -> q15).
+- **LFO 2 on the LFO page** (the same shape as FX 2): the seven LFO screens read their eight dials through one
+  reader, read_lfo_param 0x01A293BC(slot, pos) -> a static vector of (v - min) / (max - min) with the type's Ranges
+  row; its seven CALLs (bend 0x0193DE2A, crank 0x01968C34, tremolo 0x01981EDA, midi 0x019E4A18, element 0x01A2D388,
+  random 0x01A30C3C, value 0x01A48FE8) are retargeted at coop_lfo_param_read (region-C trampoline +304), which
+  feeds the sound's LFO 2 parameters normalised with LFO 2's type ranges while it is in focus; the screen pop rewrites
+  ids 24..30 to 24 + LFO 2's type. Drop / lift focus, T4 off / on ("lfo2 off" top right), the four encoders apply the
+  stock's ApplyRange (v += delta * scale >> 15, clamped; k + 4 with Shift), Shift + T4 opens the stock list whose
+  green column sets the type.
+- **LFO 2 per sound**: the sound JSON's "coop" member gains "lfo2": { "t": 0 tremolo / 1 value / 2 random / 7 none,
+  "on", "p": [8] }; lfo2.cc's synth set follows the current synth slot's sound and the drum set the current kit's
+  (each set with its own built type and parameters); a sound without one falls back to the image's global words.
+  The list column and the page write the shown sound's member (Patch::SetAdsr / the dyna setter mark it dirty, as
+  the bend and pan do).
+- **No heap on the key thread** (found in op1emu, 2026-11-08): the first drop's default (FX 1's type into slot 2)
+  called coop_slot2_set on the KeyHandler thread, whose first set of a type allocates (the twin object, cwo / delay's
+  176 KB line, a tank); the key thread and the main loop both stopped (focus set, `ui_opens` never incremented, the
+  stats never rewritten). Every slot-2 set that may allocate now goes through `slot2_request()` and runs in
+  `coop_ui_service()` on the main loop, which then posts the page; knob-only sets of the same type stay direct.
+- **No heap in the audio interrupt either** (the actual freeze, found with the probe): slot 2's stock twin was
+  constructed by `slot2_render` in the audio thread when it took a posted change (`st_make(1 + pos, id)`); a cwo
+  twin's constructor allocates, and a MALLOC in the interrupt deadlocks the heap (op1emu froze at the first T3 that
+  switched a cwo slot 2 on; the dial run that "worked" had never switched FX 2 on). Slot 1's twin was moved off the
+  interrupt in p5f, slot 2's never was. Now `slot2_build_service()` (plugin_host.cc, main loop from
+  `coop_fx_service`) constructs the posted change: it clears `kind_on`, waits for a render in flight (`rendering`),
+  builds, publishes `built = req`; the audio thread runs the slot only while `req == built`, so a slot whose change is
+  pending passes dry for a few blocks.

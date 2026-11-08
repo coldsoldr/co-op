@@ -1220,9 +1220,49 @@ u7 plus the overwrite / rename spelling fix, without the tracker.
   `--tape-stereo --set-word g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr`
   differs. Build tag `u8`. The image is u7 with the overwrite / rename WHERE matching the three JSON spellings
   (ca33b62) and nothing of the tracker. op1emu: settings, tape page, FX 2 scenarios no faults.
+  **Superseded by u9 before any device run** (the FX 2 page fixes below; u8 still has u7's dials-at-zero bug).
 
 **What to do**: the u7 list (that entry), and the overwrite again: edit a user preset, synth + S-key held, reload
 it. If the change still does not persist, the next hypothesis is the reload reading the preset file rather than
 the db row (the u7 entry).
+
+Result: (pending)
+
+## UI 4 (u9): the FX 2 page stock-like, LFO 2 on the stock LFO page, no "none" — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_u9_ui.op1` (sha256 `9b865e299952a975108a109250ff6879a68554ff9711984e358e74cc61f04f42`), copy in Downloads.
+  `--tape-stereo --set-word g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr`
+  differs. Build tag `u9`. u8 (the owner's u7 notes applied) plus the fixes found in op1emu below.
+
+What changed (docs/screens.md "u8", docs/ui-features.md §7 / §8):
+- **No "none"**: the FX 2 lists hold the stock types and the plugins. The first drop on an empty slot 2 copies FX 1's
+  type and knobs, switched off; T3 switches FX 2 on / off; **Shift + T3 opens the stock list** (blue FX 1, green FX 2).
+- **The dials follow FX 2's encoders.** u7's bug: read_fx_param's entries are (raw - min) / (max - min) in the type's
+  range units, not knob fractions; u7 wrote q15 / 32767 and every dial sat at 0. The wrapper now fills all eight as
+  the stock does; the first drop converts FX 1's words the same way in reverse.
+- **The stock "FX OFF" / "LFO OFF" overlays show the focused slot's state** (the overlay predicates' on-flag getter
+  CALLs are retargeted, 0x019AAB40 / 5A / 76 and 0x019C97DA / F6). coop's small "fx2 off" / "lfo2 off" texts are gone.
+- **LFO 2 on the stock LFO page**: drop / lift focus, T4 off / on, the four encoders with the stock's ApplyRange,
+  Shift + T4 the list; LFO 2 is per sound ("lfo2" in the sound JSON's coop member).
+- **Two thread fixes**: slot-2 sets that allocate run on the main loop (slot2_request / coop_ui_service), and slot 2's
+  stock twin is constructed on the main loop (slot2_build_service) instead of in the audio interrupt.
+
+op1emu (one end state per scenario, screenshots long after the last action, no faults in any run):
+- `det_ui_fx2same`: FX 1 cwo on (delay 05, fdback 09); drop; T3; green +10 %: FX 2's page shows **DELAY 15, FDBACK
+  09** (the dial lit as touched); `det_ui_fx2lift` (the same plus lift): FX 1's page shows 05 / 09. `ui_knobs2 10`.
+- `det_ui_fx2off`: drop with FX 1 on: FX 2's page carries the stock **FX OFF** overlay, dials dimmed at FX 1's values;
+  `det_ui_fx2offlift`: lift: FX 1's page, no overlay; `det_ui_fx2on1off`: FX 1 off, FX 2 on: no overlay, dials lit.
+- `det_ui_lfo2` / `det_ui_lfo2lift`: LFO 2's page (tremolo, amount 04 after the turns) vs LFO 1's after lift (speed
+  6, amount 10); `lfo2view_on` counted; `det_ui_lfo2off`: drop on the LFO page: LFO 2's page (tremolo, middles) carries the stock **LFO OFF** overlay, dials dimmed.
+- Regressions `det_ui_fxlist_t3`, `det_ui_settings`, `det_ui_tape` unchanged.
+- The u8 image froze op1emu whole at the first drop with cwo in FX 1: coop returned an **empty** dial vector for
+  "off", and every effect page's Update asserts four entries (the L1 abort 0xFFA0A1E0). Found with
+  `tests/sim/watch_writes.sh` on a trace word (the per-PC table's last-time column shows which thread stopped first).
+
+**What to do**: the u7 list, then on a synth with an effect: T3 page, drop (FX 2 = FX 1's type, FX OFF shown),
+T3 (on), turn the four encoders (the dials follow, the sound changes), lift (FX 1's page, its own dials), Shift + T3
+(the list with both columns; the green column sets FX 2), the same on the drum and the master (mixer page 2); T4
+page: drop (LFO 2, LFO OFF shown), T4, encoders, Shift + T4, lift; a sound saved with an LFO 2 reloads with it.
+Then the overwrite question from the u8 entry.
 
 Result: (pending)

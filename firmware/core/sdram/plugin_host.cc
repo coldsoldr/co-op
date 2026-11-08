@@ -687,10 +687,12 @@ extern "C" void coop_fx_init_mono(void *self, int pos)
 extern "C" int coop_slot2_save(void);                                      /* below (S2) */
 extern volatile int g_s2_save_req;
 extern "C" void coop_ui_service(void);                                    /* coop_ui.cc (u7): the UI's pending file writes */
+static void slot2_build_service(void);                                    /* below: slot 2's object, built here (u8) */
 extern "C" void coop_fx_service(void)
 {
     coop_ui_service();
     if (g_s2_save_req) { g_s2_save_req = 0; coop_slot2_save(); }
+    slot2_build_service();
     uint32_t seq = g_st0_req_seq;
     if (seq == g_st0_pub_seq) return;
     int t = g_st0_req_type;                                               /* read after seq: a newer request only makes
@@ -778,7 +780,8 @@ extern "C" void coop_fx_render_st(void *self, int16_t *l, int16_t *r, const int1
 #define RANGE_ROW(t) ((const int16_t *)(0x01DE5C50u + (uint32_t)(t) * 0x30u))   /* knob i: min, max, default at 3i */
 #define Y_WRITE      ((int (*)(int, const void *, int))0x01A99F84u)
 #define S2_FILE      "/yaffs2/user/coop_slot2.bin"
-struct slot2 { volatile int kind, id; volatile uint16_t knob[4]; volatile uint32_t req; uint32_t took; int kind_on, id_on; volatile int off; };
+struct slot2 { volatile int kind, id; volatile uint16_t knob[4]; volatile uint32_t req; uint32_t took; volatile int kind_on; int id_on; volatile int off;
+               volatile uint32_t built; volatile int rendering; };     /* u8: built = the req the main loop has constructed; rendering = the audio thread is inside the render */
 static struct slot2 g_s2[2];
 
 /* u1: FX 2 off / on (the page's T key, coop_ui.cc); the effect stays chosen and constructed, it just does not run */
@@ -809,17 +812,22 @@ extern "C" int coop_slot2_set(int pos, int kind, int id, const uint16_t *knob)
     if (kind == 1) {                                                      /* the heap only from here (main thread): a
                                                                              MALLOC in the audio interrupt hung op1emu */
         struct st_inst *t = &g_st[1 + pos];
+        g_s2_trace = 0x10;
         if (!t->obj) t->obj = MALLOC(OBJ_BYTES);
+        g_s2_trace = 0x11;
         if ((id == 0 || id == 7) && !t->line) t->line = line_alloc();
-        if (!t->obj || ((id == 0 || id == 7) && !t->line)) return 0;
+        g_s2_trace = 0x12;
+        if (!t->obj || ((id == 0 || id == 7) && !t->line)) { g_s2_trace = 0x1f; return 0; }
         if (id == 4 && !g_tank_spring_own[1 + pos]) g_tank_spring_own[1 + pos] = tank_alloc(SPRING_TANK, 2);
         if (id == 1 && pos == 1 && !g_tank_grid_heap) g_tank_grid_heap = tank_alloc(GRID_TANK, 4);   /* the instrument's is a mono one */
+        g_s2_trace = 0x13;
     }
     struct slot2 *s = &g_s2[pos];
     for (int i = 0; i < 4; i++) s->knob[i] = knob[i] > 32767 ? 32767 : knob[i];
     s->kind = kind; s->id = kind ? id : 0;
     __asm__ __volatile__("ssync;" ::: "memory");
     s->req++;
+    g_s2_trace = 0x14;
     return 1;
 }
 
@@ -911,23 +919,14 @@ static void slot2_render(int pos, int16_t *l, int16_t *r)
     /* The stock fills the knob range table from the factory db during boot (~0.2 s after the audio starts). A stock
      * type must not run before its row is there: zero ranges give the delay a zero length, and its render's
      * wrap loop (subtract the length until below it) never ends (op1emu, 2026-11-03: the audio stopped at 2 s). */
-    if (s->kind == 1 && req != s->took) {
-        const int16_t *rg = RANGE_ROW(s->id);
-        if (rg[1] <= rg[0]) return;                                       /* not loaded yet: take the change later */
-    }
-    if (req != s->took) {
-        s->took = req;
-        int kind = s->kind, id = s->id;
-        if (kind != s->kind_on || id != s->id_on) {
-            s->kind_on = 0;
-            if (kind == 1) { g_s2_trace = 2; st_make(1 + pos, id); g_s2_trace = 3; if (g_st[1 + pos].type == id) s->kind_on = 1; }
-            else if (kind == 2 && fx_index(id)) { if (g_plug[id].inst[3 + pos]->init(3 + pos) == 0) s->kind_on = 2; }
-            s->id_on = id;
-            g_s2_changes++;
-        }
-    }
+    /* u8: the object is constructed by the main loop (slot2_build_service): a stock constructor in this interrupt
+     * allocates (cwo) and deadlocks the heap (op1emu froze at the first drop with cwo in slot 2). Until the main
+     * loop has built the posted change the slot does not run. */
+    if (req != s->built) return;
+    s->took = req;
     g_s2_trace = 4; if (!s->kind_on || s->off) return;                   /* off: chosen and built, not run (u1) */
     int16_t p[8];
+    s->rendering = 1;
     if (s->kind_on == 1) {
         const int16_t *rg = RANGE_ROW(s->id_on);
         for (int i = 0; i < 8; i++) p[i] = i < 4 ? knob_map(rg[3 * i], rg[3 * i + 1], s->knob[i]) : rg[3 * i + 2];
@@ -941,7 +940,36 @@ static void slot2_render(int pos, int16_t *l, int16_t *r)
         fx->render(3 + pos, L, R, p, BLOCK);
         for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16(L[i] >> 16); r[i] = coop_sat16(R[i] >> 16); }
     }
+    s->rendering = 0;
     g_s2_blocks[pos & 1]++; g_s2_trace = 7;
+}
+
+/* main loop (coop_fx_service, every pass): construct a posted slot-2 change. The audio thread stops running the slot
+ * as soon as the request differs from what was built (above); this waits for a render in flight to end (a block at
+ * most), rebuilds the object, then publishes it. The stock range table must have the type's row (boot). */
+static void slot2_build_service(void)
+{
+    for (int pos = 0; pos < 2; pos++) {
+        struct slot2 *s = &g_s2[pos];
+        uint32_t req = s->req;
+        if (req == s->built) continue;
+        int kind = s->kind, id = s->id;
+        if (kind == 1) { const int16_t *rg = RANGE_ROW(id); if (rg[1] <= rg[0]) continue; }   /* the row is not there yet: later */
+        if (kind != s->kind_on || id != s->id_on) {
+            s->kind_on = 0;
+            __asm__ __volatile__("ssync;" ::: "memory");
+            g_s2_trace = 0x20;
+            for (int spin = 0; spin < 400000 && s->rendering; spin++) { }   /* a render in flight: let it finish */
+            g_s2_trace = 0x21;
+            if (kind == 1) { g_s2_trace = 0x22; st_make(1 + pos, id); g_s2_trace = 0x23; if (g_st[1 + pos].type == id) s->kind_on = 1; }
+            else if (kind == 2 && fx_index(id)) { if (g_plug[id].inst[3 + pos]->init(3 + pos) == 0) s->kind_on = 2; }
+            s->id_on = id;
+            g_s2_changes++;
+        }
+        __asm__ __volatile__("ssync;" ::: "memory");
+        s->built = req;
+        g_s2_trace = 0x24;
+    }
 }
 
 /* the instrument slot 2 on the carrier (mid in the stock bus buffer, side in coop's): from stereo_bus.cc's mix entry */
