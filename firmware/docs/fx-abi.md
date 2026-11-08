@@ -45,7 +45,9 @@ When porting a kennel (.knl) or opus plugin to a coop FX, the port MUST satisfy:
    lines, filter history, envelopes) — never share one state across both channels, or the channels
    bleed and the image smears.
 3. **An effect that needs true stereo** (cross-feed, mid/side, stereo widen, ping-pong) MUST be ported
-   as a genuine stereo effect, NOT dual-mono wrapped. Flag it `COOP_FX_STEREO` so the core does not
+   as a genuine stereo effect, NOT dual-mono wrapped. (A `COOP_FX_STEREO` flag was planned here; as of p6k
+   the ABI v1 host accepts `flags == 0` only, and a native-stereo `.coop` is simply one whose render reads
+   both buffers: there is nothing to flag until the ABI v2 store exists.) Mark it in the manifest so the core does not
    duplicate it.
 4. **No mono collapse:** a port MUST NOT sum L+R to mono internally and re-spread, as that destroys
    upstream per-voice placement.

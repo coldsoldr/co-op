@@ -25,13 +25,24 @@ state files. Nothing on either side has been written against the other. Everythi
 that: section 1 is the firmware's contract as it is in code (not as the SDK comments say), section 2 is what co-op
 is, section 3 is the work in order, section 4 the acceptance list.
 
-Three firmware defects found in the survey that an integrator will hit first; they are listed in 3.1 as the first
-tasks:
-1. `HELLO` answers a stale build tag (`"p5g"` compiled into `coop_sysex.cc` while the image is `p6j`), so a host
-   cannot identify the build over USB. [C `core/sdram/coop_sysex.cc:41`]
-2. The settings menu stores disabled plugin file names in 15 characters, so a file such as `stereo_delay.coop`
-   (17) can never be disabled from the menu. [C `core/sdram/coop_settings.cc:44-45`, `:161`]
-3. The SDK header's description of a plugin's `params` (Q15 0..32767) is not what the host passes (section 1.5).
+Three firmware defects found in the survey that an integrator would have hit first, **fixed in p6k (2026-11-08)**:
+1. `HELLO` answered a stale build tag (`"p5g"` compiled into `coop_sysex.cc` while the image was `p6j`). Now the
+   tag comes from `core/include/coop_build.h`, the one define the stats file, the run file and HELLO share, and the
+   reply carries a capabilities byte (1.2).
+2. The settings menu stored disabled plugin file names in 15 characters, so a name such as `stereo_delay.coop`
+   could never be disabled. Now 40 (the loader's own limit), settings file version 2, version 1 still read.
+3. The SDK header described a plugin's `params` as Q15; it now describes what the host passes (1.6).
+
+Also in p6k, at the owner's word: the firmware's built-in stereo delay (milestone B's demo slap echo in the master
+suite, image flag bit 0, line at 0x02d00000) is gone. The master's second slot is the way to an effect there; the
+delay's DSP lives on only as the reference plugin `plugins/stereo_delay`.
+
+**The porting manifesto.** Plugins and their screens follow `guide/plugin-guidelines.md` (the porting guide: the
+stereo dual-mono wrap, the parameter table, the six-action encoder model, the cost budget, the gate) and the owner's
+screen manifesto "The stock look: art direction for OP-1 screens" (claude.ai artifact `WF7BsFuruMS2TXX5Ff1s5w`,
+summarised in the guide's section 5). co-op's plugin pages, its `contributing-plugins.md` and its catalogue
+validation should point porters at both, and the `.coop` catalogue entry should carry the guide's declared
+parameter table once ABI v2 exists (3.1.9).
 
 ## 1. The firmware's host contract (reference) [C unless marked]
 
@@ -58,7 +69,7 @@ tasks:
 
 | cmd | name | request payload | reply after the status byte |
 |---|---|---|---|
-| 0x21 | HELLO | none | `"coop"`, u16 LE protocol (1), the ASCII build tag (stale: see 3.1) |
+| 0x21 | HELLO | none | `"coop"`, u16 LE protocol (1), u8 capabilities (bit 0 file read, 1 file write, 2 SLOT2, 3 RUN; p6k), the ASCII build tag (p6k: the package tag) |
 | 0x20 | FILE_GET | u32 LE offset, path bytes (no NUL) | u32 LE total size, up to 64 bytes from the offset; status 3 cannot open, 7 io; offset at or past the end: status 0, no data. **Any path**, no whitelist |
 | 0x22 | PUT_BEGIN | path | creates or truncates the file; `mkdir /yaffs2/plugins` first; a new BEGIN closes a previous PUT |
 | 0x23 | PUT_DATA | u32 LE offset, data (host uses 64 bytes, 72 fit) | u32 LE next offset; a wrong offset is status 5 and the file stays open; a short write is 7 and closes it; no file open is 2 |

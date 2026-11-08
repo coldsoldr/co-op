@@ -24,10 +24,16 @@ typedef struct coop_fx_t {
     uint32_t magic;                                    /* COOP_FX_MAGIC */
     uint32_t api;                                      /* COOP_PLUGIN_API */
     uint32_t flags;                                    /* 0 (reserved) */
-    /* when a position (slot: 0 synth, 1 drum, 2 master) selects the plugin, from the audio thread, before its first
-     * render there; cheap (reset state, bind buffers); 0 = ready, else the plugin is dropped */
+    /* when a position selects the plugin, before its first render there; cheap (reset state, bind buffers); 0 =
+     * ready, else the plugin is dropped. Slots: 0 synth, 1 drum, 2 master (the stock positions: init runs on the
+     * audio thread), 3 the instrument's second slot, 4 the master's second slot (init runs on the main loop). */
     int (*init)(int slot);
-    /* the audio interrupt: l[n], r[n] in place; params[0..3] = the four knobs, Q15 0..32767 */
+    /* the audio interrupt: l[n], r[n] in place. params[0..3] are the four knobs IN THE FILTER TYPE'S RANGE UNITS,
+     * not Q15 (the host as of p6k): {64..14528}, {0..24576}, {0..22528}, {8192..32767}; at slots 0-2 the stock knob
+     * words clamped into those ranges, at slots 3-4 coop's Q15 knobs mapped into them (plugin_host.cc fx_sanitize /
+     * knob_map). params[4] = 0x5300 + the plugin's number, params[5..7] = 0. A plugin that wants 0..1 divides by
+     * the range itself; the ABI v2 parameter store (guide/plugin-guidelines.md section 3) will hand over declared
+     * ranges instead. */
     void (*render)(int slot, int32_t *l, int32_t *r, const int16_t *params, int n);
 } coop_fx_t;
 

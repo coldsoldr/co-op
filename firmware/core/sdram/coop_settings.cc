@@ -42,7 +42,8 @@ extern volatile uint32_t g_coop_spread;                                 /* stere
 
 #define SET_FILE   "/yaffs2/user/coop_settings.bin"
 #define DIS_MAX    16
-#define NAME_LEN   16
+#define NAME_LEN   40                                                   /* p6k: the loader's own limit; v1 files had 16 (a 17-character name could never be disabled) */
+#define NAME_LEN_V1 16
 #define KEY_LEFT   0x24
 #define KEY_RIGHT  0x25
 #define KEY_SHIFT  0x26
@@ -91,7 +92,7 @@ static int save_file(void)
 {
     uint8_t b[8 + DIS_MAX * NAME_LEN];                                  /* zeroed by hand: no libc, so no memset */
     for (uint32_t i = 0; i < sizeof b; i++) b[i] = 0;
-    b[0] = 'C'; b[1] = 'S'; b[2] = 'T'; b[3] = 1;
+    b[0] = 'C'; b[1] = 'S'; b[2] = 'T'; b[3] = 2;                     /* v2: 40-byte names (p6k) */
     b[4] = (uint8_t)s_pct;
     for (int i = 0; i < 4; i++) b[5 + i] = s_choice[i];                /* b[5..8]: the four choices; b[9] the count */
     int n = 9;
@@ -117,13 +118,14 @@ extern "C" void coop_settings_boot(void)
     if (fd < 0) return;
     int got = Y_READ(fd, b, (int)sizeof b);
     Y_CLOSE(fd);
-    if (got < 10 || b[0] != 'C' || b[1] != 'S' || b[2] != 'T' || b[3] != 1) return;
+    if (got < 10 || b[0] != 'C' || b[1] != 'S' || b[2] != 'T' || (b[3] != 1 && b[3] != 2)) return;
+    int nl = b[3] == 1 ? NAME_LEN_V1 : NAME_LEN;                         /* v1 files: 16-byte names (read once, saved back as v2) */
     s_pct = clampi(b[4], 0, 100);
     for (int i = 0; i < 4; i++) s_choice[i] = 0;                        /* no alternative exists yet: stock whatever was saved */
     int n = b[9], at = 10;
     s_ndis = 0;
-    for (int i = 0; i < n && i < DIS_MAX && at + NAME_LEN <= got; i++, at += NAME_LEN) {
-        scpy(s_dis[s_ndis], (const char *)b + at, NAME_LEN);
+    for (int i = 0; i < n && i < DIS_MAX && at + nl <= got; i++, at += nl) {
+        scpy(s_dis[s_ndis], (const char *)b + at, nl);
         if (s_dis[s_ndis][0]) s_ndis++;
     }
     g_coop_spread = (uint32_t)(s_pct * 32767 / 100);

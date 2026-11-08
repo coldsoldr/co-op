@@ -38,7 +38,9 @@
 #define QN        4
 #define CHUNK     64
 #define PROTOCOL  1
-#define BUILD_TAG "p5g"
+#include "coop_build.h"                                            /* p6k: the tag HELLO reports is the package tag */
+#define BUILD_TAG COOP_BUILD_TAG
+#define CAPS      0x0Fu                                              /* bit 0 file read, 1 file write, 2 SLOT2, 3 RUN (p6k; docs/sysex.md) */
 enum { CX_FILE_GET = 0x20, CX_HELLO = 0x21, CX_PUT_BEGIN = 0x22, CX_PUT_DATA = 0x23, CX_PUT_END = 0x24, CX_DELETE = 0x25,
        CX_SLOT2 = 0x26, CX_RUN = 0x27, CX_REPLY = 0x40, ST_OK = 0, ST_FORMAT = 1, ST_STATE = 2, ST_PATH = 3, ST_SIZE = 4, ST_OFFSET = 5, ST_CRC = 6, ST_IO = 7 };
 /* FILE_PUT (P1b): BEGIN path -> a file under /yaffs2/plugins or /yaffs2/user is created (truncated); DATA u32 offset +
@@ -179,6 +181,7 @@ static void handle(const uint8_t *m, int n)
         int o = 0;
         out[o++] = ST_OK; out[o++] = 'c'; out[o++] = 'o'; out[o++] = 'o'; out[o++] = 'p';
         out[o++] = PROTOCOL & 0xFF; out[o++] = PROTOCOL >> 8;
+        out[o++] = CAPS;                                           /* p6k: what this image answers, for a host to feature-detect */
         for (int i = 4; tag[i] && o < (int)sizeof out; i++) out[o++] = (uint8_t)tag[i];
         reply(cmd, seq, out, o);
         return;

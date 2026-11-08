@@ -17,7 +17,7 @@ transport to read any file off the device while it runs.
   USB-MIDI input stops on longer SysEx; co-op's sysex.js), the host keeps one message in flight.
 - Commands (replies are `cmd | 0x40` with the same seq; payload = status byte + data; status 0 ok, 1 format,
   3 path, 7 io):
-  - `0x21 HELLO`: reply `"coop"`, u16 protocol (1), the build tag text.
+  - `0x21 HELLO`: reply `"coop"`, u16 protocol (1), u8 capabilities (p6k: bit 0 file read, 1 file write, 2 SLOT2, 3 RUN), then the build tag text (p6k: the package tag from core/include/coop_build.h, the same the stats file prints).
   - `0x20 FILE_GET`: payload u32 offset (LE) + path bytes; reply status, u32 total size (LE), up to 64 bytes from
     the offset. The host walks the file in 64-byte steps (about 1.5 KB/s with one message in flight).
 - File writes (P1b): `0x22 PUT_BEGIN` path (under `/yaffs2/plugins/` or `/yaffs2/user/` only; the plugins directory is

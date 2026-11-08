@@ -1,8 +1,8 @@
 /*
  * coop-fw master bus suite — firmware payload (Phase 2, item 11).
  *
- * coop_master_apply() runs a coop FX slot (a stereo delay, core/include/coop_fx.h) then the host-tested
- * master suite (comp -> drive -> EQ, core/include/coop_master.h) on the mixed master bus
+ * coop_master_apply() runs the master's second effect slot (plugin_host.cc, S2), the test runner's click and,
+ * behind an image flag, the host-tested master suite (comp -> drive -> EQ, core/include/coop_master.h) on the mixed master bus
  * d34 (0xff800d34, L) / db4 (0xff800db4, R), 64 x int16, planar. We widen int16 -> Q31, process, and
  * narrow back with saturation.
  *
@@ -28,7 +28,6 @@
  */
 #include <stdint.h>
 #include "coop_master.h"
-#include "coop_fx.h"
 #include "coop_plugin_host.h"
 
 /* The mixed master bus d34/db4 (int16, 64 samples, planar): what the stock master FX render is handed
@@ -42,30 +41,17 @@
 extern "C" void coop_slot2_render(int pos, int16_t *l, int16_t *r);   /* plugin_host.cc, S2 */
 extern "C" void coop_runner_click(int16_t *l, int16_t *r);            /* coop_runner.cc, p5b */
 
-/* Milestone B, FX slot 2: a coop stereo feedback delay in series before the master suite. Its delay
- * line lives high in free SDRAM region A (0x02d00000), above our ~5 KB payload at the region base.
- * Region A is the region we have proven free by running our own code there under stock firmware;
- * region B (0x02800000) is the documented scratch but is unverified under stock, so the line stays in
- * A for now. FXB_LEN samples per channel (64 KiB each). Demo params: ~0.15 s slap echo. */
-#define FXB_LEN 16384
-#define FXB_L   ((int32_t *)0x02d00000u)
-#define FXB_R   ((int32_t *)0x02d10000u)
-#define FX_DELAY_SAMPLES 6615            /* 0.15 s at 44.1 kHz */
-#define FX_FB_Q31   858993459            /* 0.40 */
-#define FX_MIX_Q31  751619277            /* 0.35 */
-
-/* Image-time controls (inject_app --set-word): bit 0 = run the demo FX delay, bit 1 = run the master
- * suite. Default 0: the stage is a transparent pass-through, which the stereo-bus regression gate
- * (coop image == stock image, sample for sample) relies on. */
+/* Image-time control (inject_app --set-word): bit 1 = run the master suite. Default 0: the stage is a
+ * transparent pass-through, which the stereo-bus regression gate (coop image == stock image, sample for
+ * sample) relies on. Bit 0 used to run milestone B's built-in stereo delay (a demo slap echo with its line at
+ * 0x02d00000); the owner removed it in p6k (2026-11-08): the master's second slot is the way to an effect
+ * here, and the delay lives on as the reference plugin plugins/stereo_delay. */
 __attribute__((section(".data"))) volatile uint32_t g_coop_master_flags = 0;
 
 static coop_master g_master;
-static coop_delay g_fx;
 static int g_inited;
 volatile uint32_t g_master_blocks;      /* liveness counter (region-A .bss) */
 volatile uint32_t g_master_cycles;      /* peak per-block cost of the suite, for the perf gate */
-volatile uint32_t g_fx_blocks;          /* FX slot 2 liveness counter */
-volatile uint32_t g_fx_cycles;          /* peak per-block cost of the FX slot, for the perf gate */
 
 static inline uint32_t coop_cycles(void)
 {
@@ -79,13 +65,11 @@ extern volatile uint32_t g_coop_s2_live[2];                        /* plugin_hos
 extern volatile uint32_t g_run_click;                               /* coop_runner.cc: a click is due */
 extern "C" uint32_t coop_master_apply(void)
 {
-    if (!g_coop_s2_live[1] && !(g_coop_master_flags & 3u) && !g_run_click) return STOCK_GETTER_RESULT;   /* p6j: nothing to do: the transparent
+    if (!g_coop_s2_live[1] && !(g_coop_master_flags & 2u) && !g_run_click) return STOCK_GETTER_RESULT;   /* p6j: nothing to do: the transparent
                                                                              stand-in used to cost 1.3 k a block, mostly fetching its own code */
     coop_mark(0x50);
     if (!g_inited) {
         coop_master_init(&g_master);    /* transparent until params are set */
-        coop_delay_init(&g_fx, FXB_L, FXB_R, FXB_LEN);
-        coop_delay_set(&g_fx, FX_DELAY_SAMPLES, FX_FB_Q31, FX_MIX_Q31);
         g_inited = 1;
     }
     uint32_t m0 = coop_cycles(), pf0[2]; coop_pf_now(pf0);
@@ -93,16 +77,9 @@ extern "C" uint32_t coop_master_apply(void)
                                                                      effect (0xffa017e6), before the level stage */
     coop_runner_click((int16_t *)MBUS_L, (int16_t *)MBUS_R);      /* p5b: the test runner's alignment click, if due */
     uint32_t flags = g_coop_master_flags;
-    if (!(flags & 3u)) { coop_cost_add_pf(COOP_COST_MASTER, coop_cycles() - m0, pf0); return STOCK_GETTER_RESULT; }   /* transparent */
+    if (!(flags & 2u)) { coop_cost_add_pf(COOP_COST_MASTER, coop_cycles() - m0, pf0); return STOCK_GETTER_RESULT; }   /* transparent */
     int32_t L[BLOCK], R[BLOCK];
     for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)MBUS_L[i] << 16; R[i] = (int32_t)MBUS_R[i] << 16; }
-
-    /* FX slot 2 (coop stereo FX), in series before the master suite. Timed separately. */
-    uint32_t f0 = coop_cycles();
-    if (flags & 1u) coop_delay_process(&g_fx, L, R, BLOCK);
-    uint32_t fdt = coop_cycles() - f0;
-    if (fdt > g_fx_cycles) g_fx_cycles = fdt;
-    g_fx_blocks++;
 
     /* master suite: comp -> drive -> EQ */
     uint32_t t0 = coop_cycles();

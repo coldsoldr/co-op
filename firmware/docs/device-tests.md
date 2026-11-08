@@ -1480,3 +1480,19 @@ where slot 2 is idle (nothing counted) and `master=` gone or tiny; the per-block
 below p6i's. Then play: FX 2 on and off, its encoders while it runs (no dropout), the master's FX 2, the tape.
 
 Result: (pending)
+
+## Platform fixes (p6k): HELLO tag and caps, 40-character plugin names, the built-in delay removed — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_p6k_platform.op1` (sha256 `8f3c93f01e34ec753ad6352b21602ed709fc4807cf13e187e34dc17324ff7fc0`), copy in Downloads. `--tape-stereo --set-word
+  g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `p6k`.
+  p6j plus the three handover items (docs/handover-coop-platform.md §0): `HELLO` answers the package tag
+  (`core/include/coop_build.h`, shared with the stats and run files) and a capabilities byte; the settings menu
+  stores plugin file names up to 40 characters (settings file v2, v1 read); the SDK describes the real `params`.
+  And the firmware's built-in stereo delay (master suite flag bit 0) is removed. No audio change on any shipped
+  path (the delay was never on in a package).
+
+**What to do**: boot and play as u10. With the OP-1 plugged in normally, `tools/coop_sysex.html` > Hello should
+read `coop protocol 1 caps 0xf build p6k`. If a plugin file is present, settings > plugins: toggle a long-named one
+off, reboot, it is skipped (`plugins ... disabled 1` in the stats).
+
+Result: (pending)

@@ -151,3 +151,12 @@ slot 1, with the four knob words in the filter ranges and `params[4] = 0x5300 + 
 
 Every plugin follows `guide/plugin-guidelines.md` (the contract: controls, parameters, screens, stereo, porting) and `docs/plugin-performance.md` (the SDK guide: the block budget, the per-sample loop rules, how a
 plugin is measured with the stats file's cost line). A plugin over 60 k cycles a block is a bug to fix before release.
+
+## p6k (2026-11-08): the built-in stereo delay is gone
+
+Milestone B's demo slap echo in the master suite (`g_coop_master_flags` bit 0, the line at 0x02d00000) was removed
+at the owner's word; bit 1 (the master suite) remains. The P1 gate above ("bit-identity with the built-in delay")
+is history: `plugins/stereo_delay` is now the reference plugin on its own, gated by its op1emu WAV. The master's
+second slot (S2) is the way to an effect on the master bus. In the same package the SDK header describes the
+`params` the host really passes (range units, `sdk/coop_plugin.h`), and `HELLO` reports the package tag plus a
+capabilities byte (`docs/sysex.md`).

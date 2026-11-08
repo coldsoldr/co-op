@@ -21,7 +21,8 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p6j"                                           /* the package tag: proves which image wrote the file */
+#include "coop_build.h"
+#define STATS_BUILD   COOP_BUILD_TAG                                  /* the package tag (one place, p6k): proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -39,7 +40,7 @@ extern volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g
 extern volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g_tape_io_flush_cycles_win, g_tape_io_gap_cycles_win;
 extern volatile uint32_t g_tape_io_steps_win;
 extern volatile uint32_t g_edit_lifts, g_edit_drops, g_edit_erases, g_edit_errors, g_edit_mono_fallbacks;
-extern volatile uint32_t g_master_cycles, g_fx_cycles;
+extern volatile uint32_t g_master_cycles;
 extern volatile uint32_t g_l1_state, g_l1_used, g_l1_refused, g_l1_sine_copied;
 extern volatile uint32_t g_lander_swallowed;   /* lander_off.cc */
 extern "C" volatile uint32_t g_coop_fast_dsynth, g_coop_fast_stage, g_coop_fast_cwo, g_coop_fast_punch, g_coop_fast_phone,
@@ -463,7 +464,7 @@ static void write_file(void)
     put("cb"); kv("blocks", g_blocks); kv("max", g_max); kv("last", g_last); kv("cycles", now_cycles()); put("\n");
     put("stages"); kv("rec_max", g_tape_rec_cycles_max); kv("mix_max", g_stereo_mix_cycles_max);
     kv("hook_max", g_stereo_hook_cycles_max); kv("stage_max", g_stereo_stage_cycles_max); kv("stage_calls", g_stereo_stage_calls); kv("lfo2_max", g_lfo2_cycles_max); kv("master_max", g_master_cycles);
-    kv("fx_max", g_fx_cycles); kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
+    kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
     put_cost_lines();
     for (int l = 0; l < 2; l++) {                                /* p6f / p6g: the 4 KB probe under each PFCTL layout, three passes (cycles, p0) */
         put(l ? "icache_l1" : "icache_l0"); kv("c1", g_icp[l][0][0]); kv("p1", g_icp[l][0][1]); kv("c2", g_icp[l][1][0]); kv("p2", g_icp[l][1][1]); kv("c3", g_icp[l][2][0]); kv("p3", g_icp[l][2][1]); put("\n");

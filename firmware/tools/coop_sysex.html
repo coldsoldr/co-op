@@ -136,8 +136,8 @@ document.getElementById('hello').onclick = async () => {
   try {
     const r = await send(HELLO, []);
     if (r[0] !== 0) { setStatus('HELLO: ' + (STATUS[r[0]] || r[0])); return; }
-    const name = String.fromCharCode(...r.slice(1, 5)), proto = r[5] | (r[6] << 8), tag = String.fromCharCode(...r.slice(7));
-    setStatus('Device answers: ' + name + ' protocol ' + proto + ' build ' + tag);
+    const name = String.fromCharCode(...r.slice(1, 5)), proto = r[5] | (r[6] << 8), caps = r[7], tag = String.fromCharCode(...r.slice(8));   // p6k: a caps byte before the tag
+    setStatus('Device answers: ' + name + ' protocol ' + proto + ' caps 0x' + caps.toString(16) + ' build ' + tag);
   } catch (err) { setStatus('HELLO failed: ' + err.message + ' (is a coop image with the SysEx channel running?)'); }
 };
 
