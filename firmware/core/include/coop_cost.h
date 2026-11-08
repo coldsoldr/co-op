@@ -17,7 +17,9 @@ struct coop_cost { uint64_t sum; uint32_t n, max; uint64_t p0, p1; };   /* p0 / 
 #define COOP_COST_DRUM    14         /* the same for the drum voices */
 #define COOP_COST_ENG     15         /* + 0..COOP_ENG_N-1: one voice render, by render function (first seen first) */
 #define COOP_ENG_N        16
-#define COOP_COST_N       (COOP_COST_ENG + COOP_ENG_N)
+#define COOP_COST_VFIRST  (COOP_COST_ENG + COOP_ENG_N)       /* p6f: the first synth voice render of a block ... */
+#define COOP_COST_VREST   (COOP_COST_VFIRST + 1)             /* ... and the others (where the code refetch happens) */
+#define COOP_COST_N       (COOP_COST_VREST + 1)
 
 extern uint32_t g_coop_eng_fn[COOP_ENG_N];   /* the render function of each COOP_COST_ENG entry (0 = free) */
 

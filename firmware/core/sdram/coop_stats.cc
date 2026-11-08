@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p6e"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p6f"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -118,6 +118,7 @@ extern "C" void coop_eng_cost(uint32_t fn, uint32_t dt, int drum)
     if (g_coop_pf_live) { coop_pf_now(d); d[0] -= g_eng_pf0[0]; d[1] -= g_eng_pf0[1]; }
     coop_mark_at(0x10 + (drum & 1), now - dt);                     /* the render's start (the thunk read CYCLES there) */
     coop_mark_at(0x18 + (drum & 1), now);
+    if (!drum) cost_add_d(g_eng_blk[0] ? COOP_COST_VREST : COOP_COST_VFIRST, dt, d[0], d[1]);   /* p6f: first of the block vs the rest */
     g_eng_blk[drum & 1] += dt;
     g_eng_blk_pf[drum & 1][0] += d[0]; g_eng_blk_pf[drum & 1][1] += d[1];
     uint32_t i = g_eng_last;
@@ -218,6 +219,32 @@ extern "C" void coop_pf_boot(void)
     g_coop_pf_live = (PFCTL & 1u) ? 1 : 0;                      /* the write stuck: a real monitor (op1emu reads back 0) */
 }
 
+/* p6f: the instruction-cache probe (docs/fx-data-placement-plan.md §5, the voice table's open question): a 4 KB
+ * straight-line function (2048 NOPs: 128 cache lines, no loads, no branches) run three times from the main thread at
+ * boot, with CYCLES and the code-fill-stall counter around each pass. Pass 1 fills the lines from SDRAM: its p0 / 128
+ * is the fill stall per line on this unit. Pass 2 immediately after should hit (p0 near 0) if the cache keeps
+ * region-A code at all. Pass 3 comes after touching 24 KB of OTHER code (the cold UI functions, called with
+ * harmless arguments is not possible, so: a second 24 KB NOP function) and says whether 4 KB survives 24 KB of
+ * traffic in a 16 KB 4-way cache (it should: LRU keeps the most recent 16 KB, so no). The stats print the three
+ * (cycles, p0) pairs on the `icache` line; the voice question is answered by comparing pass 1's per-line cost with
+ * the 12 k per DSynth render. */
+__attribute__((noinline, aligned(32))) static void probe_4k(void)  { __asm__ __volatile__(".rept 2048\n nop;\n .endr" ::: "memory"); }
+__attribute__((noinline, aligned(32))) static void probe_24k(void) { __asm__ __volatile__(".rept 12288\n nop;\n .endr" ::: "memory"); }
+static uint32_t g_icp[3][2];                                     /* (cycles, p0) per pass */
+extern "C" void coop_icache_probe(void)                          /* main thread, boot, after coop_pf_boot */
+{
+    for (int pass = 0; pass < 3; pass++) {
+        if (pass == 2) probe_24k();
+        uint32_t p0[2], p1[2];
+        coop_pf_now(p0);
+        uint32_t c0 = coop_cost_now();
+        probe_4k();
+        uint32_t c1 = coop_cost_now();
+        coop_pf_now(p1);
+        g_icp[pass][0] = c1 - c0; g_icp[pass][1] = p1[0] - p0[0];
+    }
+}
+
 static const struct coop_cost *g_cost_src = g_coop_cost;          /* the live table, or a run section's copy */
 static void put_cost(const char *name, int i)               /* name avg/max/n[/p0/p1]: cycles per call, the counters' averages */
 {
@@ -258,6 +285,7 @@ static void put_cost_lines(void)                             /* the "cost" and "
     put("\n");
     put("engines avg/max/n");                                /* per voice render, by engine; synth= / drum= per block */
     put_cost("synth=", COOP_COST_SYNTH); put_cost("drum=", COOP_COST_DRUM);
+    put_cost("synth_first=", COOP_COST_VFIRST); put_cost("synth_rest=", COOP_COST_VREST);   /* p6f: per render, the block's first synth voice vs the others */
     for (int i = 0; i < COOP_ENG_N; i++) {
         if (!g_coop_eng_fn[i]) break;
         put_cost(eng_name(g_coop_eng_fn[i]), COOP_COST_ENG + i);
@@ -362,6 +390,7 @@ static void write_file(void)
     kv("hook_max", g_stereo_hook_cycles_max); kv("stage_max", g_stereo_stage_cycles_max); kv("stage_calls", g_stereo_stage_calls); kv("lfo2_max", g_lfo2_cycles_max); kv("master_max", g_master_cycles);
     kv("fx_max", g_fx_cycles); kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
     put_cost_lines();
+    put("icache"); kv("c1", g_icp[0][0]); kv("p1", g_icp[0][1]); kv("c2", g_icp[1][0]); kv("p2", g_icp[1][1]); kv("c3", g_icp[2][0]); kv("p3", g_icp[2][1]); put("\n");   /* p6f: the 4 KB probe, three passes (cycles, code fill stalls) */
     put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
     put_switches();
     put_cplb();

@@ -189,3 +189,26 @@ the device figure under the same script, judged by the device figure only.
   cannot be made right the fallback is **one effect slot instead of two**, not a narrower wet signal. Lever 7 is
   struck. Next: the voice renders get the counters (the engines are the largest cost per block, six DSynth voices
   134 k, and their code / data stall split is unknown); the data levers follow.
+- 2026-11-08, **the voice table** (p6e, the owner's `p5a_20261108-2100_run.txt`; per voice render, mode 0) [C device]:
+
+  | engine | cycles / render | code stalls | share | data stalls |
+  |---|---|---|---|---|
+  | dsynth | 22,949 | 12,047 | 52 % | 962 |
+  | voltage | 10,407 | 5,866 | 56 % | 1,251 |
+  | digital | 10,281 | 5,212 | 51 % | 3 |
+  | phase | 7,423 | 3,485 | 47 % | 641 |
+  | fm | 8,988 | 4,332 | 48 % | 40 |
+  | sampler | 9,804 | 3,753 | 38 % | 1,076 |
+  | drwave | 16,268 | 5,797 | 36 % | 2,519 |
+  | drum voice | 530-692 | 33-43 | 6 % | 0 |
+
+  Per block, six DSynth voices: 137,697 cycles, **72,283 of them code fill stalls** (5,775 data), i.e. an eighth of
+  the whole 580 k block waits for instruction fetches in the voices alone; with the effect and the stage the
+  dsynth6 + delay block (296 k average) has ~82 k of code stalls and ~12 k of data stalls. **The voices are
+  code-bound, more than the effects**, and the data side of the voices is small (drwave and voltage apart).
+  Open question before any lever: 12 k of stall per render is 80-120 line fills, 2.5-4 KB of code refetched for
+  EVERY voice, although six voices of the same engine run back to back in one block. Either the code is evicted
+  between consecutive renders (then something in the per-voice path touches more code than the cache holds, or
+  the lines alias), or the fill cost per line is far above the 100-190 cycles assumed. p6f measures both: the first
+  synth render of each block against the rest (`synth_first=` / `synth_rest=`), and an instruction-cache probe at
+  boot (a 4 KB straight-line function run twice: fills and cycles of the first pass against the second).

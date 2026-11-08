@@ -1381,3 +1381,20 @@ Result: (pending)
 engine sections (dsynth6, voltage6, phase6, digital, pulse, drwave, fm, sampler, drum) are the ones to read.
 
 Result: (pending)
+
+**Result (p6e, 2026-11-08)**: the engines line carries the counters; per voice render dsynth 22,949 cycles with 12,047
+code stalls, voltage 10,407 / 5,866, digital 10,281 / 5,212, phase 7,423 / 3,485, fm 8,988 / 4,332, sampler 9,804 /
+3,753, drwave 16,268 / 5,797 (data stalls 0-2.5 k); six DSynth voices lose 72 k of 138 k per block to code fills
+(docs/fx-data-placement-plan.md §5). Pass.
+
+## Performance 6f (p6f): first voice vs the rest, and the instruction-cache probe — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_p6f_pf.op1` (sha256 `ca40848a1cf53502f458abb7e1821528d1f3ecaa33e47575ad2fb9c6c19cdb70`), copy in Downloads. `--tape-stereo --set-word
+  g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `p6f`.
+  p6e plus `synth_first=` / `synth_rest=` on the engines line and the boot-time `icache` probe line
+  (docs/performance.md "p6f"). No audio change.
+
+**What to do**: the p5a script once more, `coop_stats.txt` copied (the `icache` line is in every stats file, the
+dsynth6 section is the one for first / rest).
+
+Result: (pending)

@@ -1062,3 +1062,18 @@ data stalls). What it decides: if the voices lose the same fifth to two fifths t
 is the one place a code-residency mechanism would be worth its risk (a kernel-only page, `docs/performance.md`
 "p6c"); if they are data-bound, the per-voice state and the wavetables are the levers; if neither, the engines are
 compute-bound and only the p5a-style rewrites help them.
+
+## p6f: where the voices refetch their code (2026-11-08) [I until the device]
+
+The p6e voice table (`docs/fx-data-placement-plan.md` §5) says half of every voice render is code fill stall: 12 k
+cycles per DSynth render, 80-120 line fills, although six renders of the same engine run back to back. Two
+measurements decide where that refetch happens, in one package, no audio change:
+- **`synth_first=` / `synth_rest=`** on the `engines` line: the first synth voice render of each block against the
+  others, per render with `/p0/p1`. If the rest stall as much as the first, the code is lost *between consecutive
+  renders* (the per-voice path touches more code than the cache holds, or the lines alias); if the first carries
+  most of it, the loss is *between blocks* (the main loop's churn), the same mechanism as the effects.
+- **The `icache` line**: a 4 KB straight-line function (2,048 NOPs, 128 lines) run at boot three times with CYCLES
+  and the code-fill-stall counter around each: `c1/p1` the cold pass (p1 / 128 = the fill stall per line on this
+  unit), `c2/p2` the immediate second pass (near 0 if the cache keeps region-A code at all), `c3/p3` after 24 KB of
+  other code (should miss again: LRU keeps the most recent 16 KB). The per-line cost scales the voice numbers into
+  kilobytes refetched; a non-zero `p2` would mean the cache is not retaining our code, a different problem entirely.
