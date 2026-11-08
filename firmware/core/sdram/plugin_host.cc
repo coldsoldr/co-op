@@ -265,6 +265,7 @@ static void tanks_boot(void);                                              /* be
 extern "C" void coop_settings_boot(void);                                  /* coop_settings.cc (u1): the settings file */
 extern "C" void coop_pf_boot(void);                                        /* coop_stats.cc (p6a): the performance monitor */
 extern "C" void coop_icache_probe(void);                                   /* coop_stats.cc (p6f) */
+extern "C" void coop_pf_sweep(void);                                       /* coop_stats.cc (p6h) */
 extern "C" int coop_plugin_disabled(const char *fname);
 volatile uint32_t g_plugins_disabled;
 
@@ -279,6 +280,7 @@ extern "C" void coop_plugins_boot(void)
     g_plugins_booted = 1;
     coop_pf_boot();                                                        /* p6a: the performance monitor (coop_stats.cc) */
     coop_icache_probe();                                                   /* p6f: the instruction-cache probe, right after the counters are on */
+    coop_pf_sweep();                                                       /* p6h: the event sweep, against the probes */
     tanks_boot();                                                          /* the instrument spring's own tank */
     coop_settings_boot();                                                  /* spread and the disabled list, before the scan */
     list_dir();

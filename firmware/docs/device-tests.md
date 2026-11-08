@@ -1417,3 +1417,26 @@ The first / rest split is still informative on cycles: the first voice of a bloc
 layout shows p1 in the thousands and p2 near 0. Then the tables are read afresh on that layout.
 
 Result: (pending)
+
+**Result (p6g, 2026-11-08)**: `pf_layout 17` (neither proved). `icache_l0 c1 27576 p1 518 c2 2058 p2 530 c3 26546
+p3 518` (kennel's positions: counts fetches, not stalls, as p6f); `icache_l1 c1 2058 p1 0 c2 2057 p2 0 c3 27386 p3 0`
+(Linux's positions: nothing counted, not even through the 27 k-cycle cold pass; the data counter read 0 everywhere
+too). So kennel's field positions are the working ones and the event number is what is wrong: 0x82 counts
+instruction fetches on this core. The cycles columns of the run are valid and unchanged (dsynth 22.1 k per render,
+first 28.7 k / rest 20.8 k; the effects as p6b).
+
+## Performance 6h (p6h): the event sweep — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_p6h_pf.op1` (sha256 `e935d4b91f24699960aa80d85f12d2c5eb4ba239496a53ce763e8b92437ec703`), copy in Downloads. `--tape-stereo --set-word
+  g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `p6h`.
+  p6g plus, once at boot: every code event 0x80..0x8F on counter 0 and every data event 0x90..0x9F on counter 1,
+  each as cycles ("s") and as occurrences ("o"), against the cold / warm probes (code: the 4 KB NOP function after
+  24 KB of other code; data: an 8 KB array read after a 32 KB walk). Two stats lines, `pfsweep_code` and
+  `pfsweep_data`: `ev s cold/warm` and `ev o cold/warm` per event. ~40 ms of boot, no audio change; the live
+  counters stay on kennel's positions, mode 0.
+
+**What to do**: boot it and copy `coop_stats.txt` (no script needed; a p5a run does no harm). The two `pfsweep`
+lines are what I read: the stall event is the one with ~25 k cold / ~0 warm on the code side, the miss count the
+one with ~128 cold / ~0 warm; the data side the same against ~256 lines.
+
+Result: (pending)

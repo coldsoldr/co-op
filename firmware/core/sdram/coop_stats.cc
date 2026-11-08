@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p6g"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p6h"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -269,13 +269,50 @@ extern "C" void coop_icache_probe(void)                          /* main thread,
     if (!g_coop_pf_live) { probe_passes(g_icp[0]); return; }    /* op1emu: the cycles alone */
     for (int l = 0; l < 2; l++) { pf_program(l); probe_passes(g_icp[l]); }
     uint32_t want = g_coop_pf_layout;
-    if (want > 1) {                                              /* auto: the layout the probe proves, else 1 flagged unproven */
-        if (layout_counts_stalls(g_icp[1])) want = 1;
-        else if (layout_counts_stalls(g_icp[0])) want = 0;
-        else want = 1 | 0x10;
+    if (want > 1) {                                              /* auto: the layout the probe proves, else 0 flagged unproven
+                                                                    (p6g on the device: layout 1 counts nothing at all) */
+        if (layout_counts_stalls(g_icp[0])) want = 0;
+        else if (layout_counts_stalls(g_icp[1])) want = 1;
+        else want = 0 | 0x10;
     }
     pf_program((int)(want & 1));
     g_coop_pf_layout_used = want;
+}
+
+/* p6h: the event sweep. p6g on the device: kennel's field positions are the working ones (Linux's count nothing),
+ * but event 0x82 counts instruction fetches (~1 per 8 bytes), not fill stalls. So, once at boot, every code event
+ * 0x80..0x8F goes on counter 0 and every data event 0x90..0x9F on counter 1, each as cycles (PFCNT 0, "s") and as
+ * occurrences (PFCNT 1, "o"), against known workloads: code = the 4 KB NOP function cold (after 24 KB of other
+ * code) and warm; data = an 8 KB array read cold (after a 32 KB walk of another array) and warm. The stats print
+ * cold/warm counts per event and mode (`pfsweep_code`, `pfsweep_data`); the event whose cold count is the pass's
+ * ~25 k stall cycles and whose warm count is ~0 is the stall event, the one with ~128 cold / 0 warm the miss count.
+ * ~40 ms of boot, main thread, before the live programming. */
+static uint32_t g_sweep[2][16][2][2];                            /* [side][event][cnt][cold, warm] */
+static volatile uint32_t g_probe_data[2048] __attribute__((aligned(32)));   /* 8 KB: 256 data lines */
+static volatile uint32_t g_evict_data[8192] __attribute__((aligned(32)));   /* 32 KB: walks the 16 KB data cache out */
+static uint32_t data_walk(volatile uint32_t *a, uint32_t n) { uint32_t s = 0; for (uint32_t i = 0; i < n; i += 8) s += a[i]; return s; }
+extern "C" void coop_pf_sweep(void)
+{
+    if (!g_coop_pf_live) return;
+    uint32_t m = g_coop_pf_mode;
+    if (m > 4) return;
+    for (int ev = 0; ev < 16; ev++)
+        for (int cnt = 0; cnt < 2; cnt++) {
+            /* code side: counter 0 = 0x80 + ev */
+            PFCTL = 0; __asm__ __volatile__("ssync;" ::: "memory");
+            PFCTL = pf_word(0, 0x80u + (uint32_t)ev, (uint32_t)cnt, 0x98u, 0); __asm__ __volatile__("ssync;" ::: "memory");
+            probe_24k();
+            uint32_t a[2], b[2];
+            coop_pf_now(a); probe_4k(); coop_pf_now(b); g_sweep[0][ev][cnt][0] = b[0] - a[0];
+            coop_pf_now(a); probe_4k(); coop_pf_now(b); g_sweep[0][ev][cnt][1] = b[0] - a[0];
+            /* data side: counter 1 = 0x90 + ev */
+            PFCTL = 0; __asm__ __volatile__("ssync;" ::: "memory");
+            PFCTL = pf_word(0, 0x82u, 0, 0x90u + (uint32_t)ev, (uint32_t)cnt); __asm__ __volatile__("ssync;" ::: "memory");
+            (void)data_walk(g_evict_data, 8192);
+            coop_pf_now(a); (void)data_walk(g_probe_data, 2048); coop_pf_now(b); g_sweep[1][ev][cnt][0] = b[1] - a[1];
+            coop_pf_now(a); (void)data_walk(g_probe_data, 2048); coop_pf_now(b); g_sweep[1][ev][cnt][1] = b[1] - a[1];
+        }
+    pf_program((int)(g_coop_pf_layout_used & 1));                /* back to the live programming */
 }
 
 static const struct coop_cost *g_cost_src = g_coop_cost;          /* the live table, or a run section's copy */
@@ -425,6 +462,15 @@ static void write_file(void)
     put_cost_lines();
     for (int l = 0; l < 2; l++) {                                /* p6f / p6g: the 4 KB probe under each PFCTL layout, three passes (cycles, p0) */
         put(l ? "icache_l1" : "icache_l0"); kv("c1", g_icp[l][0][0]); kv("p1", g_icp[l][0][1]); kv("c2", g_icp[l][1][0]); kv("p2", g_icp[l][1][1]); kv("c3", g_icp[l][2][0]); kv("p3", g_icp[l][2][1]); put("\n");
+    }
+    for (int side = 0; side < 2; side++) {                       /* p6h: the event sweep, "ev s cold/warm" (cycles) and "ev o cold/warm" (occurrences) */
+        put(side ? "pfsweep_data" : "pfsweep_code");
+        for (int ev = 0; ev < 16; ev++)
+            for (int cnt = 0; cnt < 2; cnt++) {
+                char k[8]; k[0] = ' '; k[1] = side ? '9' : '8'; k[2] = "0123456789abcdef"[ev]; k[3] = cnt ? 'o' : 's'; k[4] = 0;
+                put(k); putn(g_sweep[side][ev][cnt][0]); put("/"); putn(g_sweep[side][ev][cnt][1]);
+            }
+        put("\n");
     }
     put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
     put_switches();
