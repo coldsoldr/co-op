@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p6f"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p6g"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -205,19 +205,35 @@ extern "C" void coop_gap_block(void)
  * Programmed once at boot on the main thread (coop_plugins_boot); the counters run free, every cost site takes
  * deltas. op1emu does not model the unit: g_coop_pf_live stays 0 there if the write does not stick. */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_pf_mode = 0; }
-volatile uint32_t g_coop_pf_live;
+/* p6g: the PFCTL bit layout. kennel's (0): PFCEN0 at 3, PFMON0 at 5, PFCEN1 at 14. Linux bfin_pfmon.h's (1): PFCEN0
+ * at 2, PFMON0 at 4, PFCEN1 at 13 (PFMON1 at 16 and PFCNT0 / 1 at 24 / 25 in both). The p6f probe on the device
+ * (a 4 KB NOP function: cold pass 27,175 cycles, warm pass 2,058) read ~520 on p0 in BOTH passes under layout 0:
+ * one count per 8 bytes of code fetched, not a stall cycle, so layout 0 does not select the event it names. The
+ * probe now runs under both layouts and, in auto (2), keeps the one whose cold pass counts thousands and whose
+ * warm pass counts near nothing; `pf_layout` on the cost line says which (bit 4 set: neither qualified, layout 1
+ * kept unproven). A --set-word forces 0 or 1. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_pf_layout = 2; }
+volatile uint32_t g_coop_pf_live, g_coop_pf_layout_used;
 #define PFCTL (*(volatile uint32_t *)0xFFE08000u)
-extern "C" void coop_pf_boot(void)
+static uint32_t pf_word(int layout, uint32_t ev0, uint32_t cnt0, uint32_t ev1, uint32_t cnt1)
+{
+    if (layout == 1) return 1u | 3u << 2 | ev0 << 4 | 3u << 13 | ev1 << 16 | cnt0 << 24 | cnt1 << 25;
+    return 1u | 3u << 3 | ev0 << 5 | 3u << 14 | ev1 << 16 | cnt0 << 24 | cnt1 << 25;
+}
+static void pf_program(int layout)
 {
     static const uint8_t ev[5][2] = { { 0x82, 0x98 }, { 0x80, 0x9A }, { 0x90, 0x91 }, { 0x81, 0x97 }, { 0x92, 0x93 } };
     static const uint8_t cnt[5][2] = { { 0, 0 }, { 1, 1 }, { 0, 0 }, { 0, 0 }, { 0, 0 } };
     uint32_t m = g_coop_pf_mode;
-    if (m > 4) { g_coop_pf_live = 0; return; }
-    uint32_t v = 1u | 3u << 3 | (uint32_t)ev[m][0] << 5 | 3u << 14 | (uint32_t)ev[m][1] << 16 | (uint32_t)cnt[m][0] << 24 | (uint32_t)cnt[m][1] << 25;
-    PFCTL = v;
+    if (m > 4) { PFCTL = 0; g_coop_pf_live = 0; return; }
+    PFCTL = 0;                                                     /* off, then the new word: no field of the old one survives */
+    __asm__ __volatile__("ssync;" ::: "memory");
+    PFCTL = pf_word(layout, ev[m][0], cnt[m][0], ev[m][1], cnt[m][1]);
     __asm__ __volatile__("ssync;" ::: "memory");
     g_coop_pf_live = (PFCTL & 1u) ? 1 : 0;                      /* the write stuck: a real monitor (op1emu reads back 0) */
+    g_coop_pf_layout_used = (uint32_t)layout;
 }
+extern "C" void coop_pf_boot(void) { pf_program(g_coop_pf_layout == 1 ? 1 : 0); }   /* auto starts as 0; the probe decides */
 
 /* p6f: the instruction-cache probe (docs/fx-data-placement-plan.md §5, the voice table's open question): a 4 KB
  * straight-line function (2048 NOPs: 128 cache lines, no loads, no branches) run three times from the main thread at
@@ -230,8 +246,8 @@ extern "C" void coop_pf_boot(void)
  * the 12 k per DSynth render. */
 __attribute__((noinline, aligned(32))) static void probe_4k(void)  { __asm__ __volatile__(".rept 2048\n nop;\n .endr" ::: "memory"); }
 __attribute__((noinline, aligned(32))) static void probe_24k(void) { __asm__ __volatile__(".rept 12288\n nop;\n .endr" ::: "memory"); }
-static uint32_t g_icp[3][2];                                     /* (cycles, p0) per pass */
-extern "C" void coop_icache_probe(void)                          /* main thread, boot, after coop_pf_boot */
+static uint32_t g_icp[2][3][2];                                  /* per layout, per pass: (cycles, p0) */
+static void probe_passes(uint32_t out[3][2])
 {
     for (int pass = 0; pass < 3; pass++) {
         if (pass == 2) probe_24k();
@@ -241,8 +257,25 @@ extern "C" void coop_icache_probe(void)                          /* main thread,
         probe_4k();
         uint32_t c1 = coop_cost_now();
         coop_pf_now(p1);
-        g_icp[pass][0] = c1 - c0; g_icp[pass][1] = p1[0] - p0[0];
+        out[pass][0] = c1 - c0; out[pass][1] = p1[0] - p0[0];
     }
+}
+static int layout_counts_stalls(const uint32_t icp[3][2])         /* cold pass thousands of counts, warm pass near none */
+{
+    return icp[0][1] > 1000 && icp[0][1] > 4 * icp[1][1] + 100;
+}
+extern "C" void coop_icache_probe(void)                          /* main thread, boot, after coop_pf_boot (p6g: both layouts) */
+{
+    if (!g_coop_pf_live) { probe_passes(g_icp[0]); return; }    /* op1emu: the cycles alone */
+    for (int l = 0; l < 2; l++) { pf_program(l); probe_passes(g_icp[l]); }
+    uint32_t want = g_coop_pf_layout;
+    if (want > 1) {                                              /* auto: the layout the probe proves, else 1 flagged unproven */
+        if (layout_counts_stalls(g_icp[1])) want = 1;
+        else if (layout_counts_stalls(g_icp[0])) want = 0;
+        else want = 1 | 0x10;
+    }
+    pf_program((int)(want & 1));
+    g_coop_pf_layout_used = want;
 }
 
 static const struct coop_cost *g_cost_src = g_coop_cost;          /* the live table, or a run section's copy */
@@ -277,7 +310,7 @@ static const char *eng_name(uint32_t fn)
 
 static void put_cost_lines(void)                             /* the "cost" and "engines" lines from g_cost_src */
 {
-    put("cost avg/max/n/p0/p1"); put(" pf_mode "); putn(g_coop_pf_mode); put(" pf_live "); putn(g_coop_pf_live);   /* per call; slot 1's stock effect by type (stereo class); p0 / p1 the monitor's averages (coop_pf_boot) */
+    put("cost avg/max/n/p0/p1"); put(" pf_mode "); putn(g_coop_pf_mode); put(" pf_live "); putn(g_coop_pf_live); put(" pf_layout "); putn(g_coop_pf_layout_used);   /* per call; slot 1's stock effect by type (stereo class); p0 / p1 the monitor's averages (coop_pf_boot) */
     put_cost("stage=", COOP_COST_STAGE); put_cost("s2_instr=", COOP_COST_S2I); put_cost("s2_master=", COOP_COST_S2M);
     put_cost("master=", COOP_COST_MASTER); put_cost("fx1_plugin=", COOP_COST_PLUG);
     static const char *const st_names[8] = { "fx1_delay=", "fx1_grid=", "fx1_punch=", "fx1_phone=", "fx1_spring=", "fx1_filter=", "fx1_nitro=", "fx1_cwo=" };
@@ -390,7 +423,9 @@ static void write_file(void)
     kv("hook_max", g_stereo_hook_cycles_max); kv("stage_max", g_stereo_stage_cycles_max); kv("stage_calls", g_stereo_stage_calls); kv("lfo2_max", g_lfo2_cycles_max); kv("master_max", g_master_cycles);
     kv("fx_max", g_fx_cycles); kv("hooks", g_stereo_hooks); kv("side_blocks", g_stereo_side_blocks); put("\n");
     put_cost_lines();
-    put("icache"); kv("c1", g_icp[0][0]); kv("p1", g_icp[0][1]); kv("c2", g_icp[1][0]); kv("p2", g_icp[1][1]); kv("c3", g_icp[2][0]); kv("p3", g_icp[2][1]); put("\n");   /* p6f: the 4 KB probe, three passes (cycles, code fill stalls) */
+    for (int l = 0; l < 2; l++) {                                /* p6f / p6g: the 4 KB probe under each PFCTL layout, three passes (cycles, p0) */
+        put(l ? "icache_l1" : "icache_l0"); kv("c1", g_icp[l][0][0]); kv("p1", g_icp[l][0][1]); kv("c2", g_icp[l][1][0]); kv("p2", g_icp[l][1][1]); kv("c3", g_icp[l][2][0]); kv("p3", g_icp[l][2][1]); put("\n");
+    }
     put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); put("\n");
     put_switches();
     put_cplb();

@@ -212,3 +212,15 @@ the device figure under the same script, judged by the device figure only.
   the lines alias), or the fill cost per line is far above the 100-190 cycles assumed. p6f measures both: the first
   synth render of each block against the rest (`synth_first=` / `synth_rest=`), and an instruction-cache probe at
   boot (a 4 KB straight-line function run twice: fills and cycles of the first pass against the second).
+- 2026-11-08, **RETRACTION (p6f's probe)**: the `icache` line on the device read `c1 27175 p1 523 c2 2058 p2 530 c3
+  27594 p3 516`. The cycles say the cache works (cold pass 27 k, warm pass 2 k: ~196 cycles per line fill, 4 KB
+  survive nothing after 24 KB of other code) but the counter read ~520 whether the pass stalled 25 k cycles or
+  not: **one count per 8 bytes of code fetched, not a stall cycle.** The PFCTL layout coop (and kennel) used
+  selects a different event than the one named: p0 in every table above (p6a to p6f) is an instruction-fetch
+  count, not code fill stalls, which is also why it sat near half the cycles for every engine. **The "code-bound"
+  reading is withdrawn.** The p1 column (0x98, PFMON1 at bit 16 in both layouts) may be right; it is unproven too
+  until the probe says so. p6g runs the probe under both layouts (kennel's and Linux bfin_pfmon.h's, one bit
+  apart in the counter-0 fields) at boot, keeps the one whose cold pass counts thousands and whose warm pass
+  counts none, and prints both (`icache_l0` / `icache_l1`, `pf_layout` on the cost line). Every table is then
+  measured again on p6g. Lesson for the record: a counter's reading is not a measurement until a known workload
+  has confirmed what it counts.

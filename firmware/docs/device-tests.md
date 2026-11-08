@@ -1398,3 +1398,22 @@ code stalls, voltage 10,407 / 5,866, digital 10,281 / 5,212, phase 7,423 / 3,485
 dsynth6 section is the one for first / rest).
 
 Result: (pending)
+
+**Result (p6f, 2026-11-08)**: `icache c1 27175 p1 523 c2 2058 p2 530 c3 27594 p3 516`; `synth_first` 28,747 /
+`synth_rest` 20,789 cycles per DSynth render with the same p0 (~12 k) on both. The probe shows p0 is not a stall count
+(the same ~520 with and without 25 k cycles of fill stalls): the counter-0 event field is mis-placed in the PFCTL
+layout coop used. The p0 columns of p6a-p6f are instruction-fetch counts; the "code-bound" reading is withdrawn.
+The first / rest split is still informative on cycles: the first voice of a block costs 8 k more than the others
+(28.7 k vs 20.8 k), so about a third of a DSynth render's excess is paid once per block, the rest per voice.
+
+## Performance 6g (p6g): the counter layout proven by the probe — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_p6g_pf.op1` (sha256 `52af6e2181b4bee0b59e8eecfa2963baf50b03ce141240363b53964ac519cea3`), copy in Downloads. `--tape-stereo --set-word
+  g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `p6g`.
+  p6f plus: the boot probe runs under both PFCTL layouts (kennel's, Linux's) and keeps the one that counts stall
+  cycles (`pf_layout` on the cost line: 0 or 1; 0x11 = neither proved, Linux's kept). No audio change.
+
+**What to do**: the p5a script once more, the two downloads. First the `icache_l0` / `icache_l1` lines: the proven
+layout shows p1 in the thousands and p2 near 0. Then the tables are read afresh on that layout.
+
+Result: (pending)

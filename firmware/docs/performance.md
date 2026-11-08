@@ -1077,3 +1077,9 @@ measurements decide where that refetch happens, in one package, no audio change:
   unit), `c2/p2` the immediate second pass (near 0 if the cache keeps region-A code at all), `c3/p3` after 24 KB of
   other code (should miss again: LRU keeps the most recent 16 KB). The per-line cost scales the voice numbers into
   kilobytes refetched; a non-zero `p2` would mean the cache is not retaining our code, a different problem entirely.
+
+**p6f on the device (2026-11-08): the probe caught the counter.** `icache c1 27175 p1 523 c2 2058 p2 530 c3 27594 p3
+516`: the cache behaves (a line fill ~196 cycles, the warm pass stall-free, 4 KB evicted by 24 KB of other code), but
+p0 counts ~1 per 8 bytes of code executed in every pass, stalled or not. So p0 in p6a-p6f was an instruction-fetch
+count and the "code-bound" conclusion is withdrawn (`docs/fx-data-placement-plan.md` §5). p6g probes both PFCTL
+layouts at boot and keeps the one that counts stall cycles; the tables are measured again on it.
