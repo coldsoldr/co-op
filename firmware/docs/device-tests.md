@@ -1369,3 +1369,15 @@ the assembly kernels alone in a page of their own (p6d), with a periodic LRUPRIO
 **What to do**: lift and drop on the tape (the crash is gone); otherwise everything as u10. No new measurement.
 
 Result: (pending)
+
+## Performance 6e (p6e): the counters on the voice renders — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_p6e_pf.op1` (sha256 `07539fd5520deb046ec9523e949d5b3849fc7f0abf9791b265bb7aa099e82936`), copy in Downloads. `--tape-stereo --set-word
+  g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `p6e`.
+  p6d plus the two counter reads around every voice render (docs/performance.md "p6e"). No audio change.
+
+**What to do**: the p5a script once more, `coop_stats.txt` copied. Expected: every `engines` entry reads
+`name=avg/max/n/p0/p1` (per voice render) and `synth=` / `drum=` per block the same; the `cost` line as p6b. The
+engine sections (dsynth6, voltage6, phase6, digital, pulse, drwave, fm, sampler, drum) are the ones to read.
+
+Result: (pending)

@@ -185,3 +185,7 @@ the device figure under the same script, judged by the device figure only.
   `docs/performance.md` "p6c" and parked. **Next: the data levers** in p1 order: spring (12.7 k: block passes +
   prefetch), cwo (12.2 k: prefetch of its line), phone (7.7 k: find what it reads), punch (7.5 k: the dual-mono
   copies and the object), grid (7.4 k: the mesh layout), delay (4.4 k: prefetch + FIR table in L1).
+- 2026-11-08, **the owner on lever 7**: no mid / side hosting ("I don't like the mid side idea"); if the performance
+  cannot be made right the fallback is **one effect slot instead of two**, not a narrower wet signal. Lever 7 is
+  struck. Next: the voice renders get the counters (the engines are the largest cost per block, six DSynth voices
+  134 k, and their code / data stall split is unknown); the data levers follow.

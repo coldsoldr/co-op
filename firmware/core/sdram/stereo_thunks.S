@@ -26,6 +26,7 @@ _coop_synth_render_thunk:
     SP += -12;
     R0 = R7;
     CALL _coop_lfo2_pre_render_synth; /* second LFO slot, stage 0: knobs / pitch / volume before the render */
+    CALL _coop_eng_pf_start;         /* p6e: the performance counters at the render's start (coop_stats.cc) */
     SP += 12;
     R2 = [SP++];
     R1 = [SP++];
@@ -78,6 +79,7 @@ _coop_drum_render_thunk:
     R0 = 12;
     R0 = R0 - R7;                    /* voice = 12 - R7 */
     CALL _coop_lfo2_pre_render_drum; /* second LFO slot, stage 3, before the render */
+    CALL _coop_eng_pf_start;         /* p6e: the counters at the render's start */
     SP += 12;
     R2 = [SP++];
     R1 = [SP++];

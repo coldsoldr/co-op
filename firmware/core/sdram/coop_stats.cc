@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "p6d"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p6e"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -93,7 +93,20 @@ static void put_window(const char *tag, const struct window *w)
 struct coop_cost g_coop_cost[COOP_COST_N];
 uint32_t g_coop_eng_fn[COOP_ENG_N];
 static uint32_t g_eng_blk[2];                                     /* this block's synth / drum render cycles */
+static uint32_t g_eng_blk_pf[2][2];                               /* p6e: and the two counters' deltas, summed per block */
+static uint32_t g_eng_pf0[2];                                     /* the counters at the render's start (coop_eng_pf_start) */
 static uint32_t g_eng_last;                                       /* the entry the last render used */
+
+/* p6e: from the render thunks (stereo_thunks.S) just before the timed render: the counters' start values (the
+ * thunk reads CYCLES itself a few instructions later; renders never nest, so one pair of words is enough). */
+extern "C" void coop_eng_pf_start(void) { coop_pf_now(g_eng_pf0); }
+static void cost_add_d(int i, uint32_t dt, uint32_t d0, uint32_t d1)
+{
+    struct coop_cost *c = &g_coop_cost[i];
+    c->sum += dt; c->n++;
+    if (dt > c->max) c->max = dt;
+    c->p0 += d0; c->p1 += d1;
+}
 
 /* From the render thunks (stereo_thunks.S) after every voice render: the cycles of one render of the engine whose
  * render function is fn. The table fills in the order the engines are first heard; COOP_ENG_N covers every stock
@@ -101,9 +114,12 @@ static uint32_t g_eng_last;                                       /* the entry t
 extern "C" void coop_eng_cost(uint32_t fn, uint32_t dt, int drum)
 {
     uint32_t now = coop_cost_now();
+    uint32_t d[2] = { 0, 0 };
+    if (g_coop_pf_live) { coop_pf_now(d); d[0] -= g_eng_pf0[0]; d[1] -= g_eng_pf0[1]; }
     coop_mark_at(0x10 + (drum & 1), now - dt);                     /* the render's start (the thunk read CYCLES there) */
     coop_mark_at(0x18 + (drum & 1), now);
     g_eng_blk[drum & 1] += dt;
+    g_eng_blk_pf[drum & 1][0] += d[0]; g_eng_blk_pf[drum & 1][1] += d[1];
     uint32_t i = g_eng_last;
     if (g_coop_eng_fn[i] != fn) {
         for (i = 0; i < COOP_ENG_N; i++) {
@@ -113,14 +129,17 @@ extern "C" void coop_eng_cost(uint32_t fn, uint32_t dt, int drum)
         if (i == COOP_ENG_N) return;
         g_eng_last = i;
     }
-    coop_cost_add(COOP_COST_ENG + (int)i, dt);
+    cost_add_d(COOP_COST_ENG + (int)i, dt, d[0], d[1]);
 }
 
 /* From coop_stereo_block_start: the previous block's render sums. */
 extern "C" void coop_eng_block_end(void)
 {
-    if (g_eng_blk[0]) { coop_cost_add(COOP_COST_SYNTH, g_eng_blk[0]); g_eng_blk[0] = 0; }
-    if (g_eng_blk[1]) { coop_cost_add(COOP_COST_DRUM, g_eng_blk[1]); g_eng_blk[1] = 0; }
+    for (int k = 0; k < 2; k++) {
+        if (!g_eng_blk[k]) continue;
+        cost_add_d(k ? COOP_COST_DRUM : COOP_COST_SYNTH, g_eng_blk[k], g_eng_blk_pf[k][0], g_eng_blk_pf[k][1]);
+        g_eng_blk[k] = 0; g_eng_blk_pf[k][0] = 0; g_eng_blk_pf[k][1] = 0;
+    }
 }
 /* The slow-block profiler (coop_cost.h): the marks of the current block, and copies of the last SLOW_KEEP blocks
  * that ran over g_coop_slow_th cycles plus the worst one since boot. */

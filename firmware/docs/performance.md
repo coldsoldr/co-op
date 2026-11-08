@@ -1050,3 +1050,15 @@ kernels (13 KB in all, 3-5 KB executed per block), carved out of region A by rep
 with 1 MB entries, LRUPRIO on that page only, and a LRUPRIORST pulse on every effect change so stale highs never
 accumulate. Expected gain is the kernel's own fill stalls (roughly half of p0 for cwo and spring, a fifth for punch),
 for a table edit in L1 data A and an unproven saturation margin. Parked; the data levers come first.
+
+## p6e: the counters on the voice renders (2026-11-08) [I until the device]
+
+The engines are the largest cost per block (six DSynth voices 134 k in the p6b run) and their stall split was
+unknown: the voice renders are timed in the assembly thunks (`stereo_thunks.S`), which did not read the counters.
+Now each thunk calls `coop_eng_pf_start` (the two counters' start values, a few instructions before its own CYCLES
+read) and `coop_eng_cost` takes the deltas after the render, so the `engines` line carries `/p0/p1` per engine
+(per voice render) and `synth=` / `drum=` per block, the same events as the `cost` line (mode 0: code fill stalls,
+data stalls). What it decides: if the voices lose the same fifth to two fifths to code fills as the effects do, that
+is the one place a code-residency mechanism would be worth its risk (a kernel-only page, `docs/performance.md`
+"p6c"); if they are data-bound, the per-voice state and the wavetables are the levers; if neither, the engines are
+compute-bound and only the p5a-style rewrites help them.
