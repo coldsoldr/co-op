@@ -1283,3 +1283,24 @@ the miss counts. What decides the next lever: p1 (data stall cycles) near `avg` 
 p0 large says code (lever 6 first).
 
 Result: (pending)
+
+## UI 5 (u10): randomise acts on the focused slot — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_u10_ui.op1` (sha256 `6ee3e7f506ab6124e15fb0348023c63af255b81a79acbae7b6ed9e37528a91e2`), copy in Downloads.
+  `--tape-stereo --set-word g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr`
+  differs. Build tag `u10`. p6a (u9 + the performance counters) plus: hold synth / drum + right on the effect page
+  with **FX 2 in focus** randomises FX 2's four knobs (a plugin in FX 2 is refused); on the LFO page with **LFO 2 in
+  focus** the shown sound's LFO 2 parameters. Both refuse while the slot is off, as the stock page does. Left steps
+  back through the slot's values too (while the slot still holds that type). docs/ui-features.md §10.
+
+op1emu (no faults): `det_ui_rnd2` (FX 1 cwo 05 / 09 on; drop; T3; synth + right): FX 2's page shows freq moved,
+delay 17, fdback 35; `det_ui_rnd2lift` (+ lift): FX 1's page still 05 / 09. `det_ui_rnd2lfo` (T4, drop, T4, synth +
+right): LFO 2's page shows speed moved, amount -90. `rnd 1 rnd_slot2 1` in each; the u4 `det_ui_random` run unchanged
+(`rnd 3 rnd_back 1`).
+
+**What to do**: the u9 UI list on this image (it supersedes u9 and p6a), then: FX page, drop, T3 (FX 2 on), hold synth
++ right several times (FX 2's dials jump, the sound follows, FX 1 untouched after lift), hold synth + left (back);
+the same on the drum; LFO page, drop, T4, synth + right / left. The p6a counter table from this image is the same
+measurement (the counters are in it).
+
+Result: (pending)

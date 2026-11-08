@@ -86,6 +86,10 @@ Process rule (the owner): **mock up everything before building it.**
   Shift + synth is a stock combo and acts on the press (the owner, after u5).
 - Hold synth (or drum) + left: step back through the last five randomisations. The history records randomisations
   only, not manual edits.
+- u10 (2026-11-08, the owner: "randomise should affect the currently focused fx slot"): on the effect page with FX 2
+  in focus the draw goes to FX 2's four knobs (a plugin in FX 2 is refused: no range table); on the LFO page with
+  LFO 2 in focus to the shown sound's LFO 2 parameters. Both refuse while the slot is off, as the stock page does.
+  Back steps restore the slot's values while it still holds that type.
 
 ## 11. Tape markers — built in u4 (2026-11-07), device test pending
 - On the tape page, shift + encoder click places that colour's marker at the playhead; if the marker is already at

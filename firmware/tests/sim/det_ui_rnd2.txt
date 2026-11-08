@@ -1,0 +1,25 @@
+# u10: randomise acts on the focused FX slot. Synth; T3 (the FX page); T3 (FX 1 on: cwo delay 05 / fdback 09); drop
+# (FX 2 = FX 1's type, off); T3 (FX 2 on); hold synth + right (FX 2 randomised). End state: FX 2's page with dials
+# away from 05 / 09 (det_ui_rnd2lift adds lift: FX 1's page still 05 / 09, untouched).
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+tap t3 200
+at 30500
+tap drop 200
+at 32000
+tap t3 200
+at 34000
+press synth
+at 34400
+tap right 200
+at 35000
+release synth
+wait 150000
+screenshot /root/op1emu-work/rn2_a.ppm
+wait 2000
+quit

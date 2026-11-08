@@ -69,8 +69,24 @@
 extern "C" uint8_t coop_mode_keys_held(void);                                 /* lander_off.cc: bit 0 synth, 1 drum */
 extern "C" void coop_mode_key_used(void);                                     /* lander_off.cc: the held key was a modifier */
 
-volatile uint32_t g_rnd_count, g_rnd_backs, g_rnd_refused;                   /* stats / tests */
-struct hist { int mode, page, inst; int16_t v[8]; };
+volatile uint32_t g_rnd_count, g_rnd_backs, g_rnd_refused, g_rnd_slot2;      /* stats / tests; slot2: FX 2 / LFO 2 draws */
+/* u10: the focused slot. On the effect page with FX 2 in focus (coop_ui.cc) the draw goes to slot 2's knobs (q15,
+ * uniform over the type's turnable ranges, plugin_host.cc knob_map); on the LFO page with LFO 2 in focus to the
+ * shown sound's LFO 2 parameters (lfo2.cc ranges, the stock's "scale 0 = not turnable" rule). Both refuse while the
+ * slot is off, as the stock page does; a plugin in FX 2 is refused (no range table). The history keeps the slot. */
+extern "C" int coop_fx2_focused(int pos2);                                     /* coop_ui.cc: 0 instrument, 1 master */
+extern "C" int coop_lfo2_focused(int pos);                                     /* coop_ui.cc: 0 synth, 1 drum */
+extern "C" int coop_slot2_req_type(int pos2);                                  /* plugin_host.cc: -1 none / plugin */
+extern "C" int coop_slot2_bypassed(int pos2);
+extern "C" void coop_slot2_get(int pos2, uint8_t *out10);
+extern "C" int coop_slot2_set(int pos2, int kind, int id, const uint16_t *knob);
+extern "C" void coop_ui_slot2_touched(void);                                   /* coop_ui.cc: reload the page's copy, save */
+extern "C" int coop_lfo2_kind_type(int *on);                                   /* lfo2.cc: the shown sound's LFO 2 type, 7 none */
+extern "C" void coop_lfo2_page_params(int16_t *p8);                            /* coop_ui.cc: its parameters */
+extern "C" void coop_lfo2_set_sound(int type, int on, const int16_t *p);
+extern "C" const int16_t *coop_lfo2_ranges(int type);                          /* {min, max, scale} x 8 */
+enum { H_STOCK, H_FX2, H_LFO2 };
+struct hist { int kind, mode, page, inst; int t, on; int16_t v[8]; };        /* H_FX2: v[0..3] q15 knobs of type t; H_LFO2: the 8 params of type t */
 static struct hist s_hist[HIST];
 static int s_hist_n;
 static uint32_t s_seed;
@@ -100,12 +116,52 @@ static void commit(int mode, int page, int inst, const int16_t *v)
     if (mode == 0) { if (page == 0) SET_KNOBS(patch, v); else if (page == 1) SET_ADSR(patch, v); else if (page == 2) SET_FX(patch, v); else SET_LFO(patch, v); }
     else { if (page == 1) SET_DYNA(patch, v); else if (page == 2) SET_FX(patch, v); else if (page == 3) SET_LFO(patch, v); }
 }
-static void push_hist(int mode, int page, int inst, const volatile int16_t *v)
+static struct hist *push_hist(int kind, int mode, int page, int inst, const volatile int16_t *v)
 {
     if (s_hist_n == HIST) { for (int i = 1; i < HIST; i++) s_hist[i - 1] = s_hist[i]; s_hist_n--; }
     struct hist *h = &s_hist[s_hist_n++];
-    h->mode = mode; h->page = page; h->inst = inst;
+    h->kind = kind; h->mode = mode; h->page = page; h->inst = inst; h->t = 0; h->on = 0;
     for (int k = 0; k < 8; k++) h->v[k] = v[k];
+    return h;
+}
+static void commit_fx2(int t, const int16_t *q)                               /* slot 2's four knobs, q15 */
+{
+    uint16_t k[4];
+    for (int i = 0; i < 4; i++) k[i] = (uint16_t)q[i];
+    if (coop_slot2_set(0, 1, t, k)) coop_ui_slot2_touched();
+}
+static int randomise_fx2(int mode)                                            /* FX 2 of the instrument shown */
+{
+    int t = coop_slot2_req_type(0);
+    if (t < 0 || t > 7 || coop_slot2_bypassed(0)) return 0;                  /* a plugin, nothing, or off */
+    uint8_t b[10]; coop_slot2_get(0, b);
+    int16_t cur[8], v[8];
+    for (int i = 0; i < 8; i++) cur[i] = 0;
+    for (int i = 0; i < 4; i++) cur[i] = (int16_t)(b[2 + 2 * i] | (b[3 + 2 * i] << 8));
+    for (int i = 0; i < 8; i++) v[i] = cur[i];
+    int changed = 0;
+    for (int k = 0; k < 4; k++) { const volatile int16_t *rg = FX_RANGE(t, k); if (rg[2] == 0 || !filled(rg)) continue; v[k] = draw(0, 32767); changed = 1; }
+    if (!changed) return 0;
+    struct hist *h = push_hist(H_FX2, mode, 2, 0, cur); h->t = t;
+    commit_fx2(t, v);
+    g_rnd_count++; g_rnd_slot2++;
+    return 1;
+}
+static int randomise_lfo2(int mode)                                           /* LFO 2 of the sound shown */
+{
+    int on, t = coop_lfo2_kind_type(&on);
+    if (t < 0 || t > 2 || !on) return 0;                                      /* none, or off */
+    int16_t cur[8], v[8];
+    coop_lfo2_page_params(cur);
+    for (int i = 0; i < 8; i++) v[i] = cur[i];
+    const int16_t *rg = coop_lfo2_ranges(t);
+    int changed = 0;
+    for (int k = 0; k < 8; k++) { int lo = rg[3 * k], hi = rg[3 * k + 1]; if (rg[3 * k + 2] == 0 || hi <= lo) continue; v[k] = draw((int16_t)lo, (int16_t)hi); changed = 1; }
+    if (!changed) return 0;
+    struct hist *h = push_hist(H_LFO2, mode, 3, 0, cur); h->t = t; h->on = on;
+    coop_lfo2_set_sound(t, on, v);
+    g_rnd_count++; g_rnd_slot2++;
+    return 1;
 }
 
 static int randomise(void)
@@ -114,6 +170,8 @@ static int randomise(void)
     if (mode != 0 && mode != 1) return 0;
     int page = mode == 0 ? SYNTH_PAGE : DRUM_PAGE, inst = mode == 0 ? SYNTH_INST : DRUM_KIT;
     if (inst < 0 || inst > 7 || page < 0 || page > 3) return 0;
+    if (page == 2 && coop_fx2_focused(0)) return randomise_fx2(mode);        /* u10: the focused slot */
+    if (page == 3 && coop_lfo2_focused(mode)) return randomise_lfo2(mode);
     volatile int16_t *w = words(mode, page, inst);
     if (!w) return 0;                                                         /* drum T1 */
     int16_t v[8];
@@ -144,7 +202,7 @@ static int randomise(void)
         for (int k = 0; k < 8; k++) { const volatile int16_t *rg = LFO_RANGE(t, k); if (rg[2] == 0 || !filled(rg)) continue; v[k] = draw(rg[0], rg[1]); changed = 1; }
     }
     if (!changed) return 0;
-    push_hist(mode, page, inst, w);
+    push_hist(H_STOCK, mode, page, inst, w);
     commit(mode, page, inst, v);
     g_rnd_count++;
     return 1;
@@ -153,7 +211,9 @@ static int back(void)
 {
     if (!s_hist_n) return 0;
     struct hist *h = &s_hist[--s_hist_n];
-    commit(h->mode, h->page, h->inst, h->v);
+    if (h->kind == H_FX2) { if (coop_slot2_req_type(0) == h->t) commit_fx2(h->t, h->v); }   /* the slot still holds that type */
+    else if (h->kind == H_LFO2) { int on, t = coop_lfo2_kind_type(&on); if (t == h->t) coop_lfo2_set_sound(t, on, h->v); }
+    else commit(h->mode, h->page, h->inst, h->v);
     g_rnd_backs++;
     return 1;
 }

@@ -520,3 +520,7 @@ extern "C" void coop_ui_frame(void *table)
         coop_text_draw(&s_tx[TX_PICK2], r, 12, 16, 12, c_enc[0], "push blue", 0);
     }
 }
+
+/* u10: the randomiser (coop_random.cc, KeyHandler thread) wrote slot 2's knobs or the shown sound's LFO 2 */
+extern "C" void coop_ui_slot2_touched(void) { s_loaded = 0; s_dirty = 1; }   /* the page reloads its copy; the slot file follows */
+extern "C" void coop_lfo2_page_params(int16_t *p8) { lfo2_params(p8); }      /* the shown sound's LFO 2 parameters (middles when none) */
