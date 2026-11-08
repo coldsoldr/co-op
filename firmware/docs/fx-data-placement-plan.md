@@ -112,4 +112,45 @@ the device figure under the same script, judged by the device figure only.
 
 - 2026-11-08: lever 1 built (p6a, `docs/performance.md` "p6a"): the monitor is programmed at boot, every effect cost
   entry carries the two counters' averages (`cost` line `name=avg/max/n/p0/p1`, `g_coop_pf_mode` selects the events).
-  Waiting for the device table. Nothing else started.
+- 2026-11-08, **the first device table** (u10 image, the p5a script, `pf_mode 0`, `pf_live 1`; the owner's
+  `p5a_20261108-1910_stats.txt`). p0 = "code fill stalls" (event 0x82, cycles) [C device]. The p1 column of that run
+  is void: 0x9A is an occurrence event and was counted as cycles (p6b fixes the pairing: p1 = "data stalls" 0x98).
+
+  | slot-1 effect (stereo twin) | avg cycles / block | code-fill stall cycles | share | the rest (compute + data) |
+  |---|---|---|---|---|
+  | S3 stage | 11,227 | 2,236 | 20 % | 8,991 |
+  | delay | 22,124 | 7,293 | 33 % | 14,831 |
+  | grid | 29,575 | 6,946 | 23 % | 22,629 |
+  | punch | 70,509 | 29,625 | 42 % | 40,884 |
+  | phone | 30,810 | 8,557 | 28 % | 22,253 |
+  | spring | 40,115 | 10,258 | 26 % | 29,857 |
+  | nitro | 48,959 | 17,419 | 36 % | 31,540 |
+  | cwo | 59,161 | 17,260 | 29 % | 41,901 |
+
+  **Reading.** A fifth to two fifths of every effect's block is the core waiting for instruction fetches: the
+  per-block code is evicted from the 16 KB I-cache between blocks and refilled from SDRAM every 1.45 ms (7-30 k
+  cycles = 50-200 line fills = 1.6-6 KB of code per block, the size of a kernel plus its stock class code). This
+  is section 1's "code also misses" [I], now measured, and it is larger than any plausible data-side figure for the
+  small-state effects (punch, nitro, phone keep their state in the object; their stall is almost all code). So
+  **lever 6 (code residency) comes first, for every effect**, before prefetch or block passes; the data levers wait
+  for p6b's p1 column (delay / spring / grid / cwo are the candidates).
+- **Lever 6, the design** (not built): layout alone cannot keep code resident against the main loop's churn; the
+  Blackfin I-cache has the mechanism: `CPLB_LRUPRIO` on an instruction CPLB entry marks that page's lines
+  high-priority, and a low-priority line (the stock's SDRAM code) can never evict a high one (kennel's `kn_diag.h`
+  "KD_SW_IC" documents the replacement rules, the live-slot write sequence and the risk). The risk is the reason for
+  a split: if the whole 4 MB coop page (109 KB of text) were high, every coop line ever fetched would stay until
+  another coop line evicted it, sets would fill with four highs, and the stock's own SDRAM code (UI, main loop)
+  would run uncached there. So: (a) a hot / cold split of coop's text, the per-block code (`CoopAudioCb`, the
+  stages, `coop_mix_entry`, the kernels, `st_render` / `coop_fx_render_mono`, slot 2, the voice hooks, LFO 2's
+  process, the tape tap: ~12-14 KB by the ELF's symbol sizes, the ~12 KB rule again) in its own page, the rest
+  (UI, settings, SysEx, runner, loaders: ~95 KB) in another page; (b) `LRUPRIO` on the hot page's ICPLB table
+  entry (R246's table at 0xFF802CCC, 18 entries + end, loaded from the LDR's L1 data A block: a build-time patch,
+  `0x00031005 -> 0x00031105`), nothing on the cold page's; (c) the cold page is an existing table page so the 16
+  live ICPLB slots stay enough: region B `0x02800000` (documented free, in the table, nothing loaded there: the
+  content block ends at `0x027ffb03`); the hot code and all data stay in region A `0x02c00000`. Build: the
+  Makefile compiles to objects, the linker script puts the named hot files / sections at `0x02c00000` and the
+  rest at `0x02800000`; `inject_app.py` already carries several PT_LOADs. Gate: op1emu (no cache model: only a
+  correctness gate), then the device table again: the p0 column should fall toward zero for the effects, and the
+  stock's UI must stay smooth (the fps figure) — if sets saturate, shrink the hot set. A runtime switch (a
+  settings row, the live ICPLB slot rewritten as kennel does it) would let the owner A/B it without reflashing;
+  first version: build-time only, two packages.

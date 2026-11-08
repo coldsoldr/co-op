@@ -21,7 +21,7 @@
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
-#define STATS_BUILD   "u10"                                           /* the package tag: proves which image wrote the file */
+#define STATS_BUILD   "p6b"                                           /* the package tag: proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
 #define TOP           8
@@ -175,10 +175,13 @@ extern "C" void coop_gap_block(void)
 
 /* p6a: the Blackfin performance monitor (coop_cost.h; the layout and the events are kennel's kn_diag.c, device-proven:
  * PFCTL 0xFFE08000 = PFPWR | PFCEN0 = 3 << 3 | PFMON0 << 5 | PFCEN1 = 3 << 14 | PFMON1 << 16 | PFCNT0 << 24 |
- * PFCNT1 << 25; PFCNTx 0 counts the cycles the event is active, 1 its occurrences). Modes (g_coop_pf_mode, a
- * --set-word): 0 code fills 0x82 / data fills 0x9A as stall cycles; 1 the same as occurrences; 2 "processor to memory
- * stalls" 0x90 / "data stalls" 0x98 (cycles); 3 "code fetches stalled by DMA" 0x80 (count) / "data collision stalls"
- * 0x97 (cycles); 4 "data store buffer full" 0x92 / "data memory write buffer full" 0x93 (cycles); 0xFF = off.
+ * PFCNT1 << 25). Every event is EITHER a stall event (PFCNTx must be 0: the counter adds the cycles it is active)
+ * OR an occurrence event (PFCNTx must be 1): Linux arch/blackfin/kernel/perf_event.c's table, "'o' is PFCNTx=1 and
+ * 's' is PFCNTx=0"; a mismatched pair reads garbage (p6a's p1: 0x9A counted as cycles). Modes (g_coop_pf_mode, a
+ * --set-word), p0 / p1: 0 "code fill stalls" 0x82 s / "data stalls" 0x98 s; 1 "code memory fetches stalled due to
+ * DMA" 0x80 o / "data cache fills (bank a)" 0x9A o; 2 "processor to memory stalls" 0x90 s / "data memory stalls not
+ * hidden by 0x90" 0x91 s; 3 "code TAG stalls" 0x81 s / "data collision stalls" 0x97 s; 4 "data store buffer full"
+ * 0x92 s / "data memory write buffer full" 0x93 s; 0xFF = off. (p6a's mode 0 was 0x82 s / 0x9A as s: p0 valid, p1 not.)
  * Programmed once at boot on the main thread (coop_plugins_boot); the counters run free, every cost site takes
  * deltas. op1emu does not model the unit: g_coop_pf_live stays 0 there if the write does not stick. */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_pf_mode = 0; }
@@ -186,8 +189,8 @@ volatile uint32_t g_coop_pf_live;
 #define PFCTL (*(volatile uint32_t *)0xFFE08000u)
 extern "C" void coop_pf_boot(void)
 {
-    static const uint8_t ev[5][2] = { { 0x82, 0x9A }, { 0x82, 0x9A }, { 0x90, 0x98 }, { 0x80, 0x97 }, { 0x92, 0x93 } };
-    static const uint8_t cnt[5][2] = { { 0, 0 }, { 1, 1 }, { 0, 0 }, { 1, 0 }, { 0, 0 } };
+    static const uint8_t ev[5][2] = { { 0x82, 0x98 }, { 0x80, 0x9A }, { 0x90, 0x91 }, { 0x81, 0x97 }, { 0x92, 0x93 } };
+    static const uint8_t cnt[5][2] = { { 0, 0 }, { 1, 1 }, { 0, 0 }, { 0, 0 }, { 0, 0 } };
     uint32_t m = g_coop_pf_mode;
     if (m > 4) { g_coop_pf_live = 0; return; }
     uint32_t v = 1u | 3u << 3 | (uint32_t)ev[m][0] << 5 | 3u << 14 | (uint32_t)ev[m][1] << 16 | (uint32_t)cnt[m][0] << 24 | (uint32_t)cnt[m][1] << 25;

@@ -33,8 +33,9 @@ static inline void coop_cost_add(int i, uint32_t dt)
 
 /* The Blackfin performance monitor (p6a, docs/fx-data-placement-plan.md lever 1): PFCNTR0 / PFCNTR1 count the two
  * events g_coop_pf_mode selects (coop_stats.cc coop_pf_boot; the layout and the event codes are kennel's kn_diag.c,
- * device-proven): mode 0 (default) = code fills (0x82) and data-cache fills of bank A (0x9A) as STALL CYCLES, so an
- * entry's p0 / p1 say how many of its cycles waited for code / data; mode 1 = the same events as occurrences (misses).
+ * device-proven; the event kinds from Linux's perf_event.c): mode 0 (default) = "code fill stalls" (0x82) and "data
+ * stalls" (0x98), both STALL CYCLES, so an entry's p0 / p1 say how many of its cycles waited for code / data; mode 1 =
+ * the occurrence pair (code fetches stalled by DMA 0x80, data cache fills 0x9A).
  * Read beside CYCLES around each effect render; interrupts in between are counted, as they are in CYCLES. Nothing is
  * read while the monitor is off (g_coop_pf_live 0: op1emu images, or a boot that did not program it). */
 #define COOP_PFCNTR0 (*(volatile uint32_t *)0xFFE08100u)

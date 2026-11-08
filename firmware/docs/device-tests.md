@@ -1304,3 +1304,22 @@ the same on the drum; LFO page, drop, T4, synth + right / left. The p6a counter 
 measurement (the counters are in it).
 
 Result: (pending)
+
+**Result (p6a counters, run on the u10 image, 2026-11-08)**: `pf_live 1`, the p5a script complete (`run events 1554
+blocks 129130 state 3 lost_sections 0`), every section's `cost` line carries `/p0/p1`. p0 (code fill stalls, cycles):
+punch 29,625 of 70,509, nitro 17,419 of 48,959, cwo 17,260 of 59,161, spring 10,258 of 40,115, phone 8,557 of
+30,810, delay 7,293 of 22,124, grid 6,946 of 29,575, stage 2,236 of 11,227 (table and reading in
+docs/fx-data-placement-plan.md §5). p1 void on this run (0x9A is an occurrence event, counted as cycles): p6b.
+The stats also show `rnd 13 rnd_back 3 rnd_slot2 7`, `ui_toggles 6`, `fx2view_on 564`, `lfo2view_on 206`: the u10
+randomise and the FX 2 / LFO 2 pages were exercised on the device; the owner's verdict on them is pending.
+
+## Performance 6b (p6b): the data-stall column — device test (pending, 2026-11-08)
+
+- `build/pkg/op1_246_coop_p6b_pf.op1` (sha256 `69c6a3cf6a800f77f6fcee87f0e7bb99f33cc5ce71cf21eebc95fd6330a27de4`), copy in Downloads. `--tape-stereo --set-word
+  g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `p6b`.
+  u10 with the counter pairs corrected: p0 "code fill stalls" 0x82, p1 "data stalls" 0x98, both cycles. No other change.
+
+**What to do**: the p5a script once more, `coop_stats.txt` copied: the p1 column per effect is the data side of the
+table (delay / spring / grid / cwo are the ones to look at). Everything else as u10.
+
+Result: (pending)

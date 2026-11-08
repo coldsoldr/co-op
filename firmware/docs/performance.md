@@ -980,10 +980,10 @@ averages per call, after `cost avg/max/n/p0/p1 pf_mode M pf_live L`:
 
 | `g_coop_pf_mode` (a `--set-word`) | p0 | p1 |
 |---|---|---|
-| 0 (default) | code fills 0x82, **stall cycles** | data-cache fills of bank A 0x9A, **stall cycles** |
-| 1 | the same, occurrences (misses) | the same, occurrences |
-| 2 | processor-to-memory stalls 0x90, cycles | data stalls 0x98, cycles |
-| 3 | code fetches stalled by DMA 0x80, count | data collision stalls 0x97, cycles |
+| 0 (default) | "code fill stalls" 0x82, **stall cycles** | "data stalls" 0x98, **stall cycles** (p6a paired 0x9A here, an occurrence event: that column was void) |
+| 1 | code fetches stalled by DMA 0x80, count | data-cache fills of bank A 0x9A, count |
+| 2 | processor-to-memory stalls 0x90, cycles | data memory stalls not hidden by 0x90, 0x91, cycles |
+| 3 | code TAG stalls 0x81, cycles | data collision stalls 0x97, cycles |
 | 4 | data store buffer full 0x92, cycles | data memory write buffer full 0x93, cycles |
 | 0xFF | off | off |
 
@@ -998,3 +998,13 @@ counters yet.
 Package: `op1_246_coop_p6a_pf.op1` (u9 + the counters). The owner's run: the p5 script (`docs/test-runner.md`) once
 per effect type in slot 1 with mode 0, once with mode 1; the result table goes into the plan's section 1 and picks
 the next lever per effect.
+
+**Every event is one kind** (Linux arch/blackfin/kernel/perf_event.c: "'o' is PFCNTx=1 and 's' is PFCNTx=0"): a stall
+event counted as occurrences, or an occurrence event counted as cycles, reads garbage. p6a's default pair had 0x9A as
+cycles; p6b (2026-11-08) pairs 0x82 with 0x98 and the other modes as the table now reads.
+
+**The first device table (u10 / p6a counters, 2026-11-08)** is in `docs/fx-data-placement-plan.md` §5: code-fill
+stalls are 20-42 % of every effect's block (punch 29.6 k of 70.5 k, nitro 17.4 k of 49 k, cwo 17.3 k of 59 k,
+spring 10.3 k of 40 k, phone 8.6 k of 31 k, delay 7.3 k of 22 k, grid 6.9 k of 30 k, the stage 2.2 k of 11 k). The
+effects are code-bound on the device: lever 6 (code residency, LRUPRIO on a hot page) is next; the data column comes
+with p6b's rerun.
