@@ -17,7 +17,7 @@ transport to read any file off the device while it runs.
   USB-MIDI input stops on longer SysEx; co-op's sysex.js), the host keeps one message in flight.
 - Commands (replies are `cmd | 0x40` with the same seq; payload = status byte + data; status 0 ok, 1 format,
   3 path, 7 io):
-  - `0x21 HELLO`: reply `"coop"`, u16 protocol (1), u8 capabilities (p6k: bit 0 file read, 1 file write, 2 SLOT2, 3 RUN), then the build tag text (p6k: the package tag from core/include/coop_build.h, the same the stats file prints).
+  - `0x21 HELLO`: reply `"coop"`, u16 protocol (1), u8 capabilities (p6k: bit 0 file read, 1 file write, 2 SLOT2, 3 RUN; e3: 4 INVENTORY, 5 PLUGIN_SET), then the build tag text (p6k: the package tag from core/include/coop_build.h, the same the stats file prints).
   - `0x20 FILE_GET`: payload u32 offset (LE) + path bytes; reply status, u32 total size (LE), up to 64 bytes from
     the offset. The host walks the file in 64-byte steps (about 1.5 KB/s with one message in flight).
 - File writes (P1b): `0x22 PUT_BEGIN` path (under `/yaffs2/plugins/` or `/yaffs2/user/` only; the plugins directory is
@@ -56,3 +56,28 @@ host first writes with PUT), `2` abort. Every reply is the status byte (start: 0
 file) and 12 bytes: state (0 idle, 1 armed, 2 running, 3 done, 4 stopped, 5 error), u32 block, u16 event index,
 u16 events, sections closed, error (1 open, 2 format, 3 too many events, 4 bad event, 5 busy), the run file written.
 An image without the runner answers 1 (format). The host page's "Run a test" section drives it; docs/test-runner.md.
+
+## Plugin management: `0x28 INVENTORY`, `0x29 PLUGIN_SET` (e3, 2026-11-09)
+
+For the co-op platform's Plugins tab (install, remove, switch on and off from the browser). Both answer from the main
+loop like every command; capabilities bits 4 and 5 say they are there.
+
+- `0x28 INVENTORY`: payload u32 offset (LE). Reply: status, u32 total length (LE), up to 64 bytes of text from the
+  offset. Offset 0 takes a fresh snapshot (the directory as it is now, the boot scan's results, the settings file's
+  list); later offsets page through that snapshot. The text:
+  - line 1: `coop-inventory 1<TAB>build <tag><TAB>protocol 1`;
+  - then one line per `.coop` file in `/yaffs2/plugins`, tab-separated: file, kind (`fx`, `synth`, `?` for a file the
+    boot did not read), name (the type name the lists show), boot (`loaded`, `failed`, `disabled`: skipped by the
+    settings list, `new`: the file came after the boot), next (`on` or `off`: what the next boot does), version,
+    author, size in bytes, reason (the loader's text for a failed file, else empty).
+- `0x29 PLUGIN_SET`: payload enable byte (1 on, 0 off) + the file name (no directory). Puts the file on or off the
+  settings file's disabled list and writes `/yaffs2/user/coop_settings.bin` at once. Reply: status, the enable byte.
+  Status 2: the device's settings menu is open (its own edit wins: close it and retry); 3: a name with `/`; 4: the
+  list is full (16 files); 7: the write failed. Applied at the next boot, like the menu's toggle.
+- No restart command exists: after PUT, DELETE or PLUGIN_SET the host asks the user to power-cycle.
+- Proven in op1emu with the image-time self-test `--set-word g_coop_sysex_selftest=1`: once the plugins are loaded,
+  `coop_sysex_service` feeds `handle()` HELLO, a full INVENTORY, PLUGIN_SET off `saw.coop`, INVENTORY, PLUGIN_SET on,
+  a bad name, and writes every reply as a hex line to `/yaffs2/user/coop_sysex_test.txt` (op1emu has no USB-MIDI).
+  Result (2026-11-09, `saw.coop` and `stereo_delay.coop` on the NAND): HELLO `coop` protocol 1 caps `0x3f` build `e3`;
+  the inventory lists both files `loaded on` with kind, name, version, author and size; after PLUGIN_SET off the saw
+  row says `off`; on returns 0; `../x` returns 3. [C op1emu]

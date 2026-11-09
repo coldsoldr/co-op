@@ -87,11 +87,17 @@ static int rows(void)
 }
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-/* ---- the file (main thread: boot, and the service pass) ---- */
+/* ---- the file (main thread: boot, and the service pass) ----
+ * e3: the buffer is static. Since p6k (40-byte names) it is 650 bytes, and on the stack of the main-loop service pass
+ * it was the likeliest cause of the device crash leaving the menu after a plugin toggle (e2, two plugin files; not
+ * reproduced in op1emu). It also held 8 + names where the file has 10 + names (2 bytes short with 16 disabled). */
+#define FILE_MAX_BYTES (10 + DIS_MAX * NAME_LEN)
+static uint8_t s_filebuf[FILE_MAX_BYTES];                               /* save (main loop) and boot (main thread): never at once */
 static int save_file(void)
 {
-    uint8_t b[8 + DIS_MAX * NAME_LEN];                                  /* zeroed by hand: no libc, so no memset */
-    for (uint32_t i = 0; i < sizeof b; i++) b[i] = 0;
+    uint8_t *b = s_filebuf;                                             /* zeroed by hand: no libc, so no memset */
+    const uint32_t bsize = sizeof s_filebuf;
+    for (uint32_t i = 0; i < bsize; i++) b[i] = 0;
     b[0] = 'C'; b[1] = 'S'; b[2] = 'T'; b[3] = 2;                     /* v2: 40-byte names (p6k) */
     b[4] = (uint8_t)s_pct;
     for (int i = 0; i < 4; i++) b[5 + i] = s_choice[i];                /* b[5..8]: the four choices; b[9] the count */
@@ -113,10 +119,10 @@ extern "C" void coop_settings_service(void)                             /* main 
 }
 extern "C" void coop_settings_boot(void)
 {
-    uint8_t b[8 + DIS_MAX * NAME_LEN];
+    uint8_t *b = s_filebuf;
     int fd = Y_OPEN(SET_FILE, 0, 0);
     if (fd < 0) return;
-    int got = Y_READ(fd, b, (int)sizeof b);
+    int got = Y_READ(fd, b, (int)sizeof s_filebuf);
     Y_CLOSE(fd);
     if (got < 10 || b[0] != 'C' || b[1] != 'S' || b[2] != 'T' || (b[3] != 1 && b[3] != 2)) return;
     int nl = b[3] == 1 ? NAME_LEN_V1 : NAME_LEN;                         /* v1 files: 16-byte names (read once, saved back as v2) */
@@ -130,6 +136,24 @@ extern "C" void coop_settings_boot(void)
     }
     g_coop_spread = (uint32_t)(s_pct * 32767 / 100);
     g_set_loaded = 1;
+}
+
+/* e3, PLUGIN_SET over SysEx (coop_sysex.cc, main loop): put a plugin file on or off the disabled list and write the
+ * settings file now. Applied at the next boot, as the menu's toggle. 1 = saved, 0 = the write failed, -1 = refused
+ * (the menu is open on the device: its own edit wins), -2 = the list is full. */
+extern "C" int coop_settings_set_plugin(const char *fname, int enable)
+{
+    if (s_open) return -1;
+    int at = -1;
+    for (int k = 0; k < s_ndis; k++) if (seq(s_dis[k], fname)) at = k;
+    if (enable && at >= 0) {
+        for (int k = at; k + 1 < s_ndis; k++) scpy(s_dis[k], s_dis[k + 1], NAME_LEN);
+        s_ndis--;
+    } else if (!enable && at < 0) {
+        if (s_ndis >= DIS_MAX) return -2;
+        scpy(s_dis[s_ndis++], fname, NAME_LEN);
+    }
+    return save_file();
 }
 
 /* ---- open / close (KeyHandler thread) ---- */

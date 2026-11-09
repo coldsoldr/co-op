@@ -1516,3 +1516,17 @@ no crash. The stats file's `plugins` line: `engines 1`, `eng_*`, `scr_*`; the `e
 device cost a voice: op1emu says ~6.6 k cycles).
 
 Result: (pending)
+
+## Plugin management (e3): the settings crash, INVENTORY and PLUGIN_SET — device test (pending, 2026-11-09)
+
+- `build/pkg/op1_246_coop_e3_plugins.op1`, copy in Downloads. `--tape-stereo --set-word g_coop_spread=32767`;
+  `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `e3`. e2 plus: the settings file's
+  buffer is static (it was 650 bytes on the main loop's stack since p6k, and 2 bytes short with 16 names: the likeliest
+  cause of the e2 crash, "leaving the menu after turning a plugin off, saw + stereo_delay installed", which op1emu does
+  not reproduce); SysEx `0x28 INVENTORY` and `0x29 PLUGIN_SET` (docs/sysex.md), HELLO caps `0x3f`.
+
+**What to do**: settings > plugins: turn one off, leave the menu (mode key, and once with the left arrow): no crash;
+power-cycle: it is skipped. Then manage plugins from co-op's Plugins tab (dev site) once it speaks coop. If it still
+crashes, a photo of the crash screen (SEQSTAT, RETX) says where.
+
+Result: (pending)

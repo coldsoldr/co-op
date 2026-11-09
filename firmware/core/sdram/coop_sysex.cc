@@ -40,9 +40,10 @@
 #define PROTOCOL  1
 #include "coop_build.h"                                            /* p6k: the tag HELLO reports is the package tag */
 #define BUILD_TAG COOP_BUILD_TAG
-#define CAPS      0x0Fu                                              /* bit 0 file read, 1 file write, 2 SLOT2, 3 RUN (p6k; docs/sysex.md) */
+#define CAPS      0x3Fu                                              /* bit 0 file read, 1 file write, 2 SLOT2, 3 RUN (p6k), 4 INVENTORY,
+                                                                      5 PLUGIN_SET (e3; docs/sysex.md) */
 enum { CX_FILE_GET = 0x20, CX_HELLO = 0x21, CX_PUT_BEGIN = 0x22, CX_PUT_DATA = 0x23, CX_PUT_END = 0x24, CX_DELETE = 0x25,
-       CX_SLOT2 = 0x26, CX_RUN = 0x27, CX_REPLY = 0x40, ST_OK = 0, ST_FORMAT = 1, ST_STATE = 2, ST_PATH = 3, ST_SIZE = 4, ST_OFFSET = 5, ST_CRC = 6, ST_IO = 7 };
+       CX_SLOT2 = 0x26, CX_RUN = 0x27, CX_INVENTORY = 0x28, CX_PLUGIN_SET = 0x29, CX_REPLY = 0x40, ST_OK = 0, ST_FORMAT = 1, ST_STATE = 2, ST_PATH = 3, ST_SIZE = 4, ST_OFFSET = 5, ST_CRC = 6, ST_IO = 7 };
 /* FILE_PUT (P1b): BEGIN path -> a file under /yaffs2/plugins or /yaffs2/user is created (truncated); DATA u32 offset +
  * bytes, in order, each acknowledged with the next offset; END u32 total + u32 crc32 (zlib) closes it and checks both.
  * DELETE path. The loader reads /yaffs2/plugins at boot: a new plugin plays after a power cycle. */
@@ -50,6 +51,8 @@ extern "C" int coop_slot2_set(int pos, int kind, int id, const uint16_t *knob); 
 extern "C" void coop_slot2_get(int pos, uint8_t *out10);
 extern "C" int coop_slot2_save(void);
 extern "C" int coop_plugin_list(char *out, int cap);
+extern "C" int coop_inventory_text(char *out, int cap, const char *build);   /* plugin_host.cc (e3) */
+extern "C" int coop_settings_set_plugin(const char *fname, int enable);  /* coop_settings.cc (e3) */
 extern "C" int coop_runner_start(const char *path);                 /* coop_runner.cc, p5b */
 extern "C" void coop_runner_abort(void);
 extern "C" void coop_runner_status(uint8_t *out12);
@@ -143,8 +146,20 @@ static int pack7(const uint8_t *in, int n, uint8_t *out)
     return o;
 }
 
+/* e3 self-test (--set-word g_coop_sysex_selftest=1, test images only): the replies go to a text buffer as hex lines
+ * instead of USB, and coop_sysex_service feeds handle() a fixed request sequence once the plugins are loaded, then
+ * writes /yaffs2/user/coop_sysex_test.txt. op1emu has no USB-MIDI: this proves the commands on the code a host drives. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_sysex_selftest = 0; }
+static char *st_buf; static int st_len, st_cap;
+static void st_hex(const uint8_t *m, int n)
+{
+    static const char hx[] = "0123456789abcdef";
+    for (int i = 0; i < n && st_len + 3 < st_cap; i++) { st_buf[st_len++] = hx[m[i] >> 4]; st_buf[st_len++] = hx[m[i] & 15]; }
+    if (st_len < st_cap) st_buf[st_len++] = '\n';
+}
 static void send_sysex(const uint8_t *m, int n)
 {
+    if (st_buf) { st_hex(m, n); return; }
     static uint32_t pk[MAX_MSG / 3 + 2];
     int np = 0;
     for (int i = 0; i < n; i += 3) {
@@ -281,12 +296,82 @@ static void handle(const uint8_t *m, int n)
         reply(cmd, seq, out, 13);
         return;
     }
+    if (cmd == CX_INVENTORY) {
+        /* e3: u32 offset -> status, u32 total, up to 64 bytes of the inventory text (plugin_host.cc). Offset 0 takes
+         * a fresh snapshot; later offsets page through it, as FILE_GET pages a file. */
+        static char inv[2048];
+        static int inv_len;
+        if (pn < 4) { out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
+        uint32_t off = (uint32_t)in[0] | ((uint32_t)in[1] << 8) | ((uint32_t)in[2] << 16) | ((uint32_t)in[3] << 24);
+        if (off == 0) inv_len = coop_inventory_text(inv, (int)sizeof inv, BUILD_TAG);
+        int got = 0;
+        if (off < (uint32_t)inv_len) { got = inv_len - (int)off; if (got > CHUNK) got = CHUNK; for (int i = 0; i < got; i++) out[5 + i] = (uint8_t)inv[off + i]; }
+        out[0] = ST_OK;
+        out[1] = (uint8_t)inv_len; out[2] = (uint8_t)(inv_len >> 8); out[3] = 0; out[4] = 0;
+        reply(cmd, seq, out, 5 + got);
+        return;
+    }
+    if (cmd == CX_PLUGIN_SET) {
+        /* e3: enable byte (1 on, 0 off) + the plugin's file name (no directory) -> status (0 saved, 2 the device's
+         * settings menu is open, 4 the disabled list is full, 7 the write failed, 3 a bad name), the enable byte.
+         * Applied at the next boot: the host asks for a power cycle. */
+        static char name[48];
+        int nl = pn - 1;
+        if (pn < 2 || nl >= (int)sizeof name) { out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
+        for (int i = 0; i < nl; i++) { name[i] = (char)in[1 + i]; if (name[i] == '/' || !name[i]) { out[0] = ST_PATH; reply(cmd, seq, out, 1); return; } }
+        name[nl] = 0;
+        int r = coop_settings_set_plugin(name, in[0] != 0);
+        out[0] = r == 1 ? ST_OK : r == -1 ? ST_STATE : r == -2 ? ST_SIZE : ST_IO;
+        out[1] = in[0] != 0;
+        reply(cmd, seq, out, 2);
+        return;
+    }
     out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++;
+}
+
+extern volatile uint32_t g_plugins_booted;                         /* plugin_host.cc */
+static void selftest_ask(int cmd, const uint8_t *payload, int n)
+{
+    static uint8_t m[MAX_MSG];
+    static int seq;
+    int o = 0;
+    m[o++] = 0xF0; m[o++] = 0x00; m[o++] = 0x20; m[o++] = 0x76; m[o++] = 0x7D; m[o++] = (uint8_t)cmd;
+    m[o++] = (uint8_t)(seq & 0x7F); m[o++] = 0; seq++;
+    o += pack7(payload, n, m + o);
+    m[o++] = 0xF7;
+    handle(m, o);
+}
+static void selftest_inventory(void)
+{
+    for (uint32_t off = 0; off < 2048; off += CHUNK) {
+        uint8_t p[4] = { (uint8_t)off, (uint8_t)(off >> 8), 0, 0 };
+        int before = st_len;
+        selftest_ask(CX_INVENTORY, p, 4);
+        if (st_len - before < 2 * 16 + 1) break;                     /* a reply with no text (15 bytes, 30 hex): the end */
+    }
+}
+static void selftest_run(void)
+{
+    static char buf[16384];
+    st_buf = buf; st_cap = (int)sizeof buf; st_len = 0;
+    selftest_ask(CX_HELLO, 0, 0);
+    selftest_inventory();
+    static const char off_saw[] = "\0saw.coop";                       /* enable 0 + the name */
+    selftest_ask(CX_PLUGIN_SET, (const uint8_t *)off_saw, (int)sizeof off_saw - 1);
+    selftest_inventory();
+    static const char on_saw[] = "\1saw.coop";
+    selftest_ask(CX_PLUGIN_SET, (const uint8_t *)on_saw, (int)sizeof on_saw - 1);
+    static const char bad[] = "\1../x";
+    selftest_ask(CX_PLUGIN_SET, (const uint8_t *)bad, (int)sizeof bad - 1);
+    st_buf = 0;
+    int fd = Y_OPEN("/yaffs2/user/coop_sysex_test.txt", 0x242, 0x180);
+    if (fd >= 0) { Y_WRITE(fd, buf, st_len); Y_CLOSE(fd); }
 }
 
 /* From the main loop (coop_tape_io_step, mode 0) on every pass. */
 extern "C" void coop_sysex_service(void)
 {
+    if (g_coop_sysex_selftest == 1 && g_plugins_booted) { g_coop_sysex_selftest = 2; selftest_run(); }
     while (qr != qw) {
         handle(q[qr % QN], qlen[qr % QN]);
         qr++;

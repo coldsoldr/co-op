@@ -82,6 +82,10 @@ static struct mapent g_map[MAP_MAX];
 static int g_map_n, g_map_dirty;
 static char g_names[MAX_FILES][NAME_MAX];
 static int g_n_names;
+/* e3: what the boot scan made of each file, for the SysEx inventory (coop_inventory_text) */
+enum { FS_NONE, FS_LOADED, FS_FAILED, FS_DISABLED };
+struct fileinfo { uint8_t state, kind; char name[16]; char version[12]; char author[24]; uint32_t size; const char *reason; };
+static struct fileinfo g_finfo[MAX_FILES];
 static int g_cur[3] = { -1, -1, -1 };                                       /* the plugin each position initialised last */
 static void *g_self[2];                                                    /* the mono filter objects of positions 0 / 1 */
 static int16_t g_params_z[8];
@@ -92,6 +96,7 @@ static int slen(const char *s) { int n = 0; while (s[n]) n++; return n; }
 static int seq(const char *a, const char *b) { while (*a && *a == *b) { a++; b++; } return *a == *b; }
 static int ends_with(const char *s, const char *e) { int a = slen(s), b = slen(e); if (a <= b) return 0; for (int i = 0; i < b; i++) if (s[a - b + i] != e[i]) return 0; return 1; }
 static void scopy(char *d, const char *s, int cap) { int i = 0; for (; i < cap - 1 && s[i]; i++) d[i] = s[i]; d[i] = 0; }
+static void copy_ext(char *d, const char *s, int cap) { if (!s) { d[0] = 0; return; } scopy(d, s, cap); }
 static char *scat(char *d, const char *s) { while (*s) *d++ = *s++; *d = 0; return d; }
 static char *snum(char *d, int v)
 {
@@ -220,6 +225,7 @@ static void list_dir(void)
     Y_CLOSEDIR(d);
 }
 
+static struct fileinfo *g_cur_info;                                       /* e3: the file load_one is reading (boot) */
 static char g_eng_name[SLOTS][16];                                         /* E1: each engine's type name, by number */
 static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fname);   /* below */
 static const char *load_one(const char *fname, uint8_t *stage)
@@ -236,6 +242,11 @@ static const char *load_one(const char *fname, uint8_t *stage)
     kn_info in;
     const char *err = 0;
     if (kn_parse(stage, (uint32_t)got, COOP_PLUGIN_API, &in, &err)) return err;
+    if (g_cur_info) {                                                      /* e3: the inventory's columns */
+        g_cur_info->kind = in.kind; scopy(g_cur_info->name, in.type_name, 16);
+        copy_ext(g_cur_info->version, in.version, 12); copy_ext(g_cur_info->author, in.author, 24);
+        g_cur_info->size = (uint32_t)got;
+    }
     for (int k = 1; k < SLOTS; k++)
         if ((g_plug[k].fx && seq(g_plug[k].name, in.type_name)) || (coop_engine_at(k) && seq(g_eng_name[k], in.type_name)))
             return "another file has the same name";
@@ -352,10 +363,12 @@ extern "C" void coop_plugins_boot(void)
     if (!stage) { g_plugins_last_error = "no staging memory"; return; }
     for (int i = 0; i < g_n_names; i++) {
         g_plugins_seen++;
-        if (coop_plugin_disabled(g_names[i])) { g_plugins_disabled++; continue; }   /* off in the settings menu */
+        if (coop_plugin_disabled(g_names[i])) { g_plugins_disabled++; g_finfo[i].state = FS_DISABLED; continue; }   /* off in the settings menu */
+        g_cur_info = &g_finfo[i];
         const char *err = load_one(g_names[i], stage);
-        if (err) { g_plugins_failed++; g_plugins_last_error = err; scopy(g_plugins_last_name, g_names[i], NAME_MAX); }
-        else g_plugins_loaded++;
+        g_cur_info = 0;
+        if (err) { g_plugins_failed++; g_plugins_last_error = err; scopy(g_plugins_last_name, g_names[i], NAME_MAX); g_finfo[i].state = FS_FAILED; g_finfo[i].reason = err; }
+        else { g_plugins_loaded++; g_finfo[i].state = FS_LOADED; }
     }
     FREE(stage);
     for (int i = 0; i < g_map_n; i++)                                      /* files that went away keep their numbers, marked absent */
@@ -1060,3 +1073,49 @@ extern "C" void coop_slot2_instr(int16_t *mid, int16_t *sl, int16_t *sr)
 
 extern "C" int coop_fx_plugin_loaded(void) { return g_plugins_loaded != 0; }
 extern "C" int coop_fx_plugin_render(int32_t *l, int32_t *r, int n) { (void)l; (void)r; (void)n; return 0; }   /* P1's master-insert path: retired */
+
+/* ---- e3: the plugin inventory for the SysEx channel (INVENTORY 0x28, coop_sysex.cc; docs/sysex.md) ----
+ * Text, built on the main loop when a host asks for offset 0, paged from the snapshot after that:
+ *   coop-inventory 1<TAB>build <tag><TAB>protocol 1
+
+ *   then one row per .coop file in /yaffs2/plugins now: file, kind (fx | synth | ?), name, boot (loaded | failed |
+ *   disabled | new: the file came after the boot scan), next (on | off: what the next boot does, from the settings
+ *   file), version, author, size, reason (the loader's text for a failed file), tab-separated, 
+-terminated.
+ * A file gone since boot drops out; its number stays reserved in the map as always. */
+extern "C" int coop_plugin_disabled(const char *fname);
+static const char *kind_word(int k) { return k == KN_KIND_FX ? "fx" : k == KN_KIND_SYNTH ? "synth" : "?"; }
+extern "C" int coop_inventory_text(char *out, int cap, const char *build)
+{
+    char *o = out, *end = out + cap - 1;
+    #define PUT(str) do { const char *q_ = (str); while (*q_ && o < end) *o++ = *q_++; } while (0)
+    PUT("coop-inventory 1\tbuild "); PUT(build); PUT("\tprotocol 1\n");
+    void *d = Y_OPENDIR(DIR_PLUGINS);
+    if (d) {
+        static char now[16][NAME_MAX];
+        int n = 0;
+        const uint8_t *e;
+        while ((e = Y_READDIR(d)) && n < 16) {
+            const char *f = (const char *)e + 11;
+            if (f[0] == '.' || slen(f) >= NAME_MAX || !ends_with(f, ".coop")) continue;
+            scopy(now[n++], f, NAME_MAX);
+        }
+        Y_CLOSEDIR(d);
+        for (int i = 0; i < n; i++) {
+            const struct fileinfo *fi = 0;
+            for (int k = 0; k < g_n_names; k++) if (seq(g_names[k], now[i])) fi = &g_finfo[k];
+            char num[12];
+            PUT(now[i]); PUT("\t");
+            PUT(fi && fi->name[0] ? kind_word(fi->kind) : "?"); PUT("\t");
+            PUT(fi ? fi->name : ""); PUT("\t");
+            PUT(!fi ? "new" : fi->state == FS_LOADED ? "loaded" : fi->state == FS_FAILED ? "failed" : fi->state == FS_DISABLED ? "disabled" : "new");
+            PUT("\t"); PUT(coop_plugin_disabled(now[i]) ? "off" : "on"); PUT("\t");
+            PUT(fi ? fi->version : ""); PUT("\t"); PUT(fi ? fi->author : ""); PUT("\t");
+            snum(num, fi ? (int)fi->size : 0); PUT(num); PUT("\t");
+            PUT(fi && fi->reason ? fi->reason : ""); PUT("\n");
+        }
+    }
+    #undef PUT
+    *o = 0;
+    return (int)(o - out);
+}
