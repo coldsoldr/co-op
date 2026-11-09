@@ -46,10 +46,20 @@ int main() {
     CHECK(loud < ONE - (ONE / 8));                              // clearly compressed
 
     // ---- biquad ----
-    // bypass (b0=1, rest 0) passes through
+    // bypass (b0=1, rest 0) passes through. The products run on the fractional MAC and are rescaled
+    // by 31-COOP_EQ_FRAC bits (coop_eq_prod), so the low 3 bits of the sample are floored away.
+    // The bus feeding the suite is int16 widened by 16 bits (low 16 bits zero): there bypass is
+    // bit-exact.
     coop_biquad_state b; b.s1 = b.s2 = 0;
-    int32_t x = 123456789;
-    CHECK(coop_biquad_sample(&b, x, 1 << COOP_EQ_FRAC, 0, 0, 0, 0) == x);
+    const int32_t lsb_mask = (1 << (31 - COOP_EQ_FRAC)) - 1;
+    int32_t xs[] = { 123456789, -123456789, ONE, -ONE - 1, 7, -1 };
+    for (int32_t x : xs) {
+        CHECK(coop_biquad_sample(&b, x, 1 << COOP_EQ_FRAC, 0, 0, 0, 0) == (x & ~lsb_mask));  // floor
+    }
+    for (int32_t s = -32768; s <= 32767; s += 257) {                // the real bus: exact
+        int32_t x = (int32_t)((uint32_t)s << 16);
+        CHECK(coop_biquad_sample(&b, x, 1 << COOP_EQ_FRAC, 0, 0, 0, 0) == x);
+    }
     // a DC-blocking highpass (b0=1, b1=-1, a1=-0.99) drives a constant input toward 0 over time
     coop_biquad_state hp; hp.s1 = hp.s2 = 0;
     int32_t a1 = -(int32_t)(0.99 * (1 << COOP_EQ_FRAC));

@@ -15,7 +15,7 @@ documents. Read `docs/brick-safety.md` before producing anything that goes on th
 ## Where things are
 - Sibling research repo: `../../te-op1-cfw` (docs/, tools/, ports/ with the DSP cores and host tests).
 - The librarian is the repo root (`../web`, `../shared`: profiles, USB SysEx client, plugin schema). The repo is
-  public (co-op is MIT, this folder GPL-3.0-or-later): the hard rules below matter more, not less.
+  public (co-op is MIT, this folder GPL-3.0-or-later): the hard rules above matter more, not less.
 - hundekraft 3.1 source: `../../te-op1-cfw/incoming/hundekraft/3.1/` (gitignored); vendored subset in `third_party/kennel/`.
 - Toolchain: WSL, `~/op1-toolchain/bfin/bin` (bfin-elf GCC 14.2, binutils 2.43, gdb + simulator).
 - Build from Windows: `wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware && make <target>'`.
