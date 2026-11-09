@@ -1,6 +1,6 @@
 # coop-fw top-level Makefile.
 # Firmware and plugins build with the bfin-elf toolchain (WSL); host tests build natively.
-# From Windows:  wsl -e bash -lc 'cd /i/GitHub/coldsoldr/coop-fw && make core'
+# From Windows:  wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware && make core'
 # Stock firmware is never in the repo: point STOCK at your own unpacked op1_246 directory.
 
 BFIN_BIN  ?= $(HOME)/op1-toolchain/bfin/bin
@@ -14,7 +14,7 @@ PYTHON    ?= python3
 HOST_CXX  ?= g++
 HOST_CC   ?= gcc
 
-STOCK     ?= ../te-op1-cfw/op1\ firmware/op1_246
+STOCK     ?= ../../te-op1-cfw/op1\ firmware/op1_246
 BUILD     := build
 
 # Freestanding Blackfin flags (same as te-op1-cfw/tools/knl_pack.py and kennel's pack.py).

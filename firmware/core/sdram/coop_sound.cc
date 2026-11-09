@@ -9,7 +9,7 @@
  * (hundekraft 3.1.4 kn_drum.c), then reads the member into a per-slot cache. Saves serialise the whole Value, so
  * the member travels with slots, user presets, lift / drop; a sound without it (factory, old) gets the defaults.
  *
- * The jsoncpp-like Value (../te-op1-cfw/docs/screen-interface.md §5; kennel dp_fw.c): 16 bytes, payload at +0, type
+ * The jsoncpp-like Value (../../te-op1-cfw/docs/screen-interface.md §5; kennel dp_fw.c): 16 bytes, payload at +0, type
  * at +8 (0 null, 1 int, 2 uint, 3 real, 4 string, 5 bool, 6 array, 7 object). Writes go through operator[] (creates),
  * Value(int) into a temp, operator=, and the temp's destructor; then a stock setter call marks the patch dirty so the
  * stock's background writer saves it (Patch::SetAdsr with the live words: nothing else changes).

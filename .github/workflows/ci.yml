@@ -2,8 +2,10 @@ name: ci
 
 on:
   pull_request:
+    paths-ignore: ['firmware/**', '.github/workflows/firmware.yml']
   push:
     branches: [main, dev]
+    paths-ignore: ['firmware/**', '.github/workflows/firmware.yml']
 
 permissions:
   contents: read

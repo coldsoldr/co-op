@@ -10,7 +10,7 @@
  * the page to T1 when the key is pressed on its own mode, so a tap is sent to the stock on the release and a hold
  * sends nothing.
  *
- * Pages (research 2026-11-07, OP1_vdk.dis; ../te-op1-cfw/docs/screen-interface.md §4c, lfo-interface.md §7):
+ * Pages (research 2026-11-07, OP1_vdk.dis; ../../te-op1-cfw/docs/screen-interface.md §4c, lfo-interface.md §7):
  *   synth T1  knobs    0xFF8013C4 + inst*16   ranges 0x01DE5890 + type*64 + k*8 {min,max,scale,mode}   Patch::SetKnobs     0x01A00D14
  *   synth T2  adsr     0x01B60EF0 + inst*16   ranges 0x01DE5710 + k*6 {min,max,scale}, words 0..3 (A D S R) Patch::SetAdsr      0x01A00C98
  *   synth T3  fx       0xFF801444 + inst*16   ranges 0x01DE5C50 + fxtype*48 + k*6, words 0..3 only      Patch::SetFxParams  0x019FF664

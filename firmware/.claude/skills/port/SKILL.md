@@ -9,7 +9,7 @@ Argument: a plugin name or a source directory. Sources:
 - kennel: `incoming/hk/hundekraft-3.1.4-source/ext/kennel/synth_sdk/plugins/<name>/` (SDK header
   `synth_sdk/op1_plugin.h`, vendored in `third_party/kennel/`);
 - OPUS: `incoming/opus/plugin-kit/examples/opus.<name>/` (API in `plugin-kit/docs/api.md`, `rules.md`);
-- te-op1-cfw: `../te-op1-cfw/ports/<name>/` (its own `docs/<name>-port.md`).
+- te-op1-cfw: `../../te-op1-cfw/ports/<name>/` (its own `docs/<name>-port.md`).
 
 Read `guide/plugin-guidelines.md` (the rules) and `docs/plugin-performance.md` (the loop rules) first; cite the
 section when you apply a rule. Sections 7.1 and 7.2 of the guidelines are the translation tables; use them, don't
@@ -70,7 +70,7 @@ invent mappings.
    brief against the manifesto (`guide/plugin-guidelines.md` §5) in the README, or mock it in the playground
    (`tools/playground/coop-playground.html`) first.
 
-7. **Build and lint** (WSL): `wsl -e bash -lc 'cd /i/GitHub/coldsoldr/coop-fw && make -C plugins'` →
+7. **Build and lint** (WSL): `wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware && make -C plugins'` →
    `build/plugins/<id>.coop`; any `.S` goes through `tools/asm_lint.py`. Check the packed size and the load size x 5.
 
 8. **Host test where a C reference exists**: a `tests/sim` harness against the upstream DSP over random blocks

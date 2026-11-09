@@ -1,5 +1,5 @@
 # Build the L1 dumper ELF (Phase 1). Run under WSL:
-#   wsl -e bash -lc 'cd /i/GitHub/coldsoldr/coop-fw/tools/dump_l1 && make'
+#   wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware/tools/dump_l1 && make'
 BFIN_BIN ?= $(HOME)/op1-toolchain/bfin/bin
 BFIN_CXX := $(BFIN_BIN)/bfin-elf-g++
 BUILD    ?= build

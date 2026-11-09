@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Set up op1emu as coop-fw's test harness (see docs/emulator.md). Run this in WSL:
 #
-#   wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw && OTP_TXT=/path/to/otp.txt bash tools/setup_op1emu.sh'
+#   wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware && OTP_TXT=/path/to/otp.txt bash tools/setup_op1emu.sh'
 #
 # It builds third-party code (op1emu + GLFW via CMake FetchContent, and mkyaffs2 from yaffs2utils),
 # so Claude Code's auto mode will not run it unattended; run it yourself or grant the permission.
@@ -83,15 +83,15 @@ PY
 )"
 python3 "$REPO/tools/l1_decrypt.py" check-key "$REPO/third_party/kennel/synth_sdk/l1_patches.json" >/dev/null 2>&1 || true
 # the stock LDR for the check: extract it from the firmware package if present
-if [ -f "$REPO/../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr" ]; then
-  python3 "$REPO/tools/l1_decrypt.py" check-key "$REPO/../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr" \
+if [ -f "$REPO/../../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr" ]; then
+  python3 "$REPO/tools/l1_decrypt.py" check-key "$REPO/../../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr" \
     "$REPO/third_party/kennel/synth_sdk/l1_patches.json" "$KEYHEX" || echo "   (key check could not run; continuing)"
 fi
 
 echo "== plaintext LDR (op1emu's documented input is a decrypted LDR) =="
 # op1emu takes a decrypted OP1_vdk.ldr (op-decryptor2 style). Build one from the stock LDR with the
 # key in otp.bin (page 0xD0), using the arrangement l1_decrypt.py check-key confirmed.
-STOCK_LDR="$REPO/../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr"
+STOCK_LDR="$REPO/../../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr"
 if [ -f "$STOCK_LDR" ]; then
   python3 "$REPO/tools/l1_decrypt.py" decrypt-ldr "$STOCK_LDR" "$KEYHEX" "$WORK/plaintext.ldr" \
     --patches "$REPO/third_party/kennel/synth_sdk/l1_patches.json"

@@ -10,7 +10,7 @@
 #   --device OUT_enc.ldr     also re-encrypt the L1 for the device (l1_decrypt encrypt-ldr)
 #   --tape-stereo            also wire the stereo tape (T1, docs/tape-stereo.md): 8-lane cache, coop record tap
 #   ELF=path                 the payload (default build/core/coop_combined.elf)
-#   STOCK_LDR=path           the stock encrypted OP1_vdk.ldr (default ../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr)
+#   STOCK_LDR=path           the stock encrypted OP1_vdk.ldr (default ../../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr)
 #   OTP_BIN=path             the OTP image whose page 0xD0 holds the XTEA key (default ~/op1emu-work/otp.bin)
 #
 # Pipeline: inject_app (region A payload + callback imm seam) -> l1_decrypt decrypt-ldr (plaintext L1,
@@ -22,7 +22,7 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${1:?usage: build_image.sh OUT.ldr [--set-word NAME=VALUE ...] [--device OUT_enc.ldr]}
 shift
 ELF=${ELF:-$here/build/core/coop_combined.elf}
-STOCK_LDR=${STOCK_LDR:-$here/../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr}
+STOCK_LDR=${STOCK_LDR:-$here/../../te-op1-cfw/op1 firmware/op1_246/OP1_vdk.ldr}
 OTP_BIN=${OTP_BIN:-$HOME/op1emu-work/otp.bin}
 PATCHES=$here/third_party/kennel/synth_sdk/l1_patches.json
 setwords=()

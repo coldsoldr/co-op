@@ -100,6 +100,6 @@ interface as the default in Windows (Sound settings, Input) is a workaround. If 
 media devices at all, serve the page from localhost (a secure context) instead:
 
 ```
-wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw/tools && python3 -m http.server 8765'
+wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware/tools && python3 -m http.server 8765'
 ```
 then open `http://localhost:8765/coop_sysex.html` in Chrome or Edge.

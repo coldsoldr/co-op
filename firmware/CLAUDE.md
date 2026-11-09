@@ -13,11 +13,12 @@ documents. Read `docs/brick-safety.md` before producing anything that goes on th
 - Audio code: fixed point only, no float, no libc, no static constructors, hot loops small (12 KB fits the I-cache).
 
 ## Where things are
-- Sibling research repo: `../te-op1-cfw` (docs/, tools/, ports/ with the DSP cores and host tests).
-- Sibling librarian: `../co-op` (profiles, USB SysEx client, plugin schema).
-- hundekraft 3.1 source: `../te-op1-cfw/incoming/hundekraft/3.1/` (gitignored); vendored subset in `third_party/kennel/`.
+- Sibling research repo: `../../te-op1-cfw` (docs/, tools/, ports/ with the DSP cores and host tests).
+- The librarian is the repo root (`../web`, `../shared`: profiles, USB SysEx client, plugin schema). The repo is
+  public (co-op is MIT, this folder GPL-3.0-or-later): the hard rules below matter more, not less.
+- hundekraft 3.1 source: `../../te-op1-cfw/incoming/hundekraft/3.1/` (gitignored); vendored subset in `third_party/kennel/`.
 - Toolchain: WSL, `~/op1-toolchain/bfin/bin` (bfin-elf GCC 14.2, binutils 2.43, gdb + simulator).
-- Build from Windows: `wsl -e bash -lc 'cd /i/GitHub/coldsoldr/coop-fw && make <target>'`.
+- Build from Windows: `wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware && make <target>'`.
 
 ## Conventions
 - Firmware addresses come from `symbols/*.sym` through generated headers; cite the source doc or the L1 map next to

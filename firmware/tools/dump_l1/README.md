@@ -32,8 +32,8 @@ raw region bytes, in table order            (0xffa00000, 0xff800000, 0xff900000,
 ## Build
 
 ```sh
-wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw/tools/dump_l1 && make'      # minimal: key + L1
-wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw/tools/dump_l1 && make otp'  # also full OTP (for op1emu)
+wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware/tools/dump_l1 && make'      # minimal: key + L1
+wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware/tools/dump_l1 && make otp'  # also full OTP (for op1emu)
 # -> build/dump_l1.elf / build/dump_l1_otp.elf  (OP1X header, render=0, one CALL-retarget patch)
 ```
 

@@ -71,9 +71,9 @@ screenshot. Because it clones and builds external projects (op1emu, GLFW, yaffs2
 auto mode will not run it for you; run it yourself or grant the permission:
 
 ```sh
-wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw && bash tools/setup_op1emu.sh'
+wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware && bash tools/setup_op1emu.sh'
 # or point it at a local OTP dump instead of fetching the public one:
-wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw && OTP_TXT=/path/to/otp.txt bash tools/setup_op1emu.sh'
+wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware && OTP_TXT=/path/to/otp.txt bash tools/setup_op1emu.sh'
 ```
 
 Requirements it can't self-provide: CMake >= 3.20 (it installs via pip), a C++17 compiler, and passwordless

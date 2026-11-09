@@ -4,14 +4,14 @@
 # (tools/verify_bootloader.py, tools/pkg_check.py; CLAUDE.md hard rules). Runs in WSL.
 #
 #   tools/build_device_package.sh OUT.op1 [--set-word NAME=VALUE ...]
-#   STOCK_DIR=path   the unpacked stock firmware (default ../te-op1-cfw/op1 firmware/op1_246)
+#   STOCK_DIR=path   the unpacked stock firmware (default ../../te-op1-cfw/op1 firmware/op1_246)
 #
 # The owner flashes; record the result in docs/device-tests.md. Read docs/brick-safety.md first.
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${1:?usage: build_device_package.sh OUT.op1 [--set-word NAME=VALUE ...]}
 shift
-STOCK_DIR=${STOCK_DIR:-$here/../te-op1-cfw/op1 firmware/op1_246}
+STOCK_DIR=${STOCK_DIR:-$here/../../te-op1-cfw/op1 firmware/op1_246}
 [ -f "$STOCK_DIR/OP1_vdk.ldr" ] || { echo "stock firmware dir not found: $STOCK_DIR"; exit 1; }
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

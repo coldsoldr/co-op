@@ -1,5 +1,5 @@
 # coop plugins: every folder with a plugin.json packs to build/plugins/<id>.coop (tools/plugin/pack.py).
-#   wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/coop-fw && make -C plugins'
+#   wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware && make -C plugins'
 TOOLCHAIN ?= $(HOME)/op1-toolchain
 OUT := ../build/plugins
 IDS := $(patsubst %/plugin.json,%,$(wildcard */plugin.json))
