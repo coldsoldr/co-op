@@ -1603,3 +1603,44 @@ table.library tbody tr.live-row.on-op1 {
     justify-content: flex-start;
   }
 }
+
+/* Settings (firmware choice) and the coop plugin panel */
+.settings-firmware {
+  max-width: 760px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.settings-firmware legend {
+  padding: 0;
+  font-weight: 600;
+}
+.settings-choice {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 14px 0;
+  line-height: 1.45;
+}
+.settings-choice > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.settings-choice input {
+  flex: none;
+  margin-top: 2px;
+}
+button.link {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.coop-plugins td button {
+  margin: 2px 0;
+}

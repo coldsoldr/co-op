@@ -24,7 +24,7 @@ test('explains how to submit a plugin and copies the prompt', async ({ page, con
   expect(copied).not.toContain('````');
 
   await page.getByRole('button', { name: 'Back to plugins' }).click();
-  await expect(page.locator('#panel-plugins article')).toHaveCount(11);
+  await expect(page.locator('#panel-plugins article')).toHaveCount(12);
   await expect(page.getByRole('button', { name: 'Submit a plugin' })).toBeFocused();
 });
 
@@ -39,7 +39,7 @@ test('groups plugins by author, closed with several authors and open for a searc
   await page.getByRole('tab', { name: 'Plugins' }).click();
 
   const someone = page.getByRole('button', { name: /^someone else/ });
-  await expect(page.getByRole('button', { name: /^coldsoldr/ })).toContainText('10 plugins');
+  await expect(page.getByRole('button', { name: /^coldsoldr/ })).toContainText('11 plugins');
   await expect(someone).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('#panel-plugins article')).toHaveCount(0);
 
@@ -281,8 +281,8 @@ test('auditions a synth patch on the OP-1 and puts the sound back', async ({ pag
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '11 plugins' })).toBeVisible();
-  await expect(page.locator('#panel-plugins article')).toHaveCount(11);
+  await expect(page.getByRole('status').filter({ hasText: '12 plugins' })).toBeVisible();
+  await expect(page.locator('#panel-plugins article')).toHaveCount(12);
   for (const name of seedNames) await expect(page.getByRole('article', { name, exact: true })).toBeVisible();
 
   const rings = page.getByRole('article', { name: 'rings', exact: true });
@@ -300,9 +300,9 @@ test('lists the seed plugins and filters them', async ({ page }) => {
   await expect(rings.getByRole('button', { name: 'Download rings.knl' })).toHaveAccessibleDescription(/runs as firmware code/);
 
   await page.getByLabel('Kind').selectOption('synth');
-  await expect(page.locator('#panel-plugins article')).toHaveCount(1);
+  await expect(page.locator('#panel-plugins article')).toHaveCount(2);
   await expect(rings).toBeVisible();
-  await expect(page.getByRole('status').filter({ hasText: '1 of 11 plugins' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '2 of 12 plugins' })).toBeVisible();
   await page.getByLabel('Kind').selectOption('feature');
   await expect(page.locator('#panel-plugins article')).toHaveCount(3);
   await page.getByLabel('Kind').selectOption('fx');

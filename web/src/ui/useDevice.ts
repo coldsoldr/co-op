@@ -186,7 +186,9 @@ export async function detect(
 
 export function useDevice(): Device {
   const [source, setSourceState] = useState<DeviceSource | null>(null);
-  const [profile, setProfileState] = useState<DeviceProfile>(defaultProfile);
+  // The firmware chosen in Settings (or by hand in the Library) before any drive is open, so the Plugins tab and the
+  // Settings page show it from the first render.
+  const [profile, setProfileState] = useState<DeviceProfile>(() => getProfile(loadRememberedProfile() ?? '') ?? defaultProfile);
   const [detection, setDetection] = useState('');
   /** The active profile's folder-detection confidence; Infinity once a profile is chosen by hand. */
   const confidenceRef = useRef(0);

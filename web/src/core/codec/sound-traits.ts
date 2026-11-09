@@ -25,6 +25,8 @@ export interface SoundTraits {
   hasGin: boolean;
   /** True when the sound has an `opus` member (saved on opus firmware). */
   hasOpus: boolean;
+  /** True when the sound has a `coop` member (saved on coop firmware: bend, pan, LFO 2). */
+  hasCoop: boolean;
   /** The plugin the `opus` member names, when it can be found; null otherwise. */
   opusPlugin: string | null;
   /** Effect names in the `opus` member's `<prefix>_type` slots, empty slots left out. */
@@ -91,6 +93,7 @@ export function soundTraits(meta: Op1Meta | null): SoundTraits | null {
     fxSelector: isOp1rSelector(fx4) ? fx4 : null,
     hasGin: meta['type'] === 'gin' || meta['gin_state'] !== undefined,
     hasOpus: opus !== null,
+    hasCoop: isRecord(meta['coop']),
     opusPlugin: opus ? opusPluginOf(opus) : null,
     opusEffects: opus
       ? Object.entries(opus)

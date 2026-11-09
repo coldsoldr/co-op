@@ -38,8 +38,8 @@ describe('op1/opus identity and layout', () => {
     for (const name of ['bitcrush', 'chorus', 'plate', 'filter', 'opus.bitcrush']) expect(supports.fx).toContain(name);
   });
 
-  it('is registered last', () => {
-    expect(profiles.map((p) => p.id)).toEqual(['op1/stock', 'op1/hundekraft', 'op1/opus']);
+  it('is registered after hundekraft, before coop', () => {
+    expect(profiles.map((p) => p.id)).toEqual(['op1/stock', 'op1/hundekraft', 'op1/opus', 'op1/coop']);
   });
 });
 

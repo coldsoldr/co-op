@@ -30,14 +30,33 @@ interface PluginsProps {
    * for hundekraft and "Copy to mods/" for opus.
    */
   renderActions?: (plugin: PluginIndexEntry) => ReactNode;
+  /** The firmware chosen in Settings (a profile id): the list starts filtered to its plugins. */
+  firmwareId?: string;
+  /** Shown above the list: the plugins on the connected OP-1, for a firmware co-op manages them on (coop). */
+  deviceSection?: ReactNode;
+  /** Opens the Settings tab, from the note that says which firmware the list follows. */
+  onOpenSettings?: () => void;
 }
 
+const isPluginFirmware = (id: string | undefined): id is (typeof PLUGIN_FIRMWARE)[number] =>
+  id !== undefined && (PLUGIN_FIRMWARE as readonly string[]).includes(id);
+
 /** The plugin library published with the app: browse plugins, read their manuals and download them. */
-export function Plugins({ active, renderActions }: PluginsProps) {
+export function Plugins({ active, renderActions, firmwareId, deviceSection, onOpenSettings }: PluginsProps) {
   const [index, setIndex] = useState<PluginIndex | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const requested = useRef(false);
-  const [filter, setFilter] = useState<PluginFilter>({});
+  const [filter, setFilter] = useState<PluginFilter>(() => (isPluginFirmware(firmwareId) ? { firmware: firmwareId } : {}));
+  // A new choice in Settings filters the list to that firmware again; "any" stays available in the menu. Adjusted
+  // while rendering, when the prop changes (react.dev "Adjusting some state when a prop changes").
+  const [seenFirmware, setSeenFirmware] = useState(firmwareId);
+  if (seenFirmware !== firmwareId) {
+    setSeenFirmware(firmwareId);
+    const next = { ...filter };
+    if (isPluginFirmware(firmwareId)) next.firmware = firmwareId;
+    else delete next.firmware;
+    setFilter(next);
+  }
   const [openId, setOpenId] = useState<string | null>(null);
   /** The plugin whose manual button takes focus when returning to the list. */
   const [returnTo, setReturnTo] = useState<string | null>(null);
@@ -102,6 +121,19 @@ export function Plugins({ active, renderActions }: PluginsProps) {
           }}
         />
       )}
+      {!submitting && !open && firmwareId !== undefined && (
+        <p className="muted">
+          {isPluginFirmware(firmwareId)
+            ? `Showing plugins for ${firmwareLabel(firmwareId)}, the firmware chosen in Settings.`
+            : `${firmwareLabel(firmwareId)} runs no plugins. Choose your firmware in Settings, or pick one in the Firmware menu to browse.`}{' '}
+          {onOpenSettings && (
+            <button type="button" className="link" onClick={onOpenSettings}>
+              Settings
+            </button>
+          )}
+        </p>
+      )}
+      {!submitting && !open && deviceSection}
       {!submitting && index && !open && (
         <PluginList
           index={index}

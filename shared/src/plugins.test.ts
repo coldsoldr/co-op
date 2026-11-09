@@ -5,6 +5,7 @@ import {
   MAX_OPMOD_BYTES,
   MAX_SCREENSHOT_BYTES,
   PLUGIN_LICENSES,
+  checkCoop,
   checkKnl,
   checkManual,
   checkOp1p,
@@ -669,5 +670,32 @@ describe('pluginIndexEntry', () => {
     const { savedName: _drop, ...noSavedName } = manifest as PluginManifest;
     const without = pluginIndexEntry(noSavedName, { sizeBytes: 8, sha256: 'cd' }, {});
     expect(Object.keys(without)).not.toContain('savedName');
+  });
+});
+
+describe('coop plugins', () => {
+  /** A valid .coop: kennel's layout with the magic COOP (firmware/docs/plugins.md). */
+  const coop = (options: KnlOptions = {}): Uint8Array =>
+    knlWith((b, h) => b.set(ascii('COOP'), h), { kind: 1, name: 'saw', ...options });
+
+  it('reads a coop synth engine and a coop effect', () => {
+    expect(checkCoop(coop())).toEqual({ problems: [], info: { kind: 'synth', savedName: 'saw' } });
+    expect(checkCoop(coop({ kind: 2, name: 'stereo delay' })).info).toEqual({ kind: 'fx', savedName: 'stereo delay' });
+  });
+
+  it('refuses a kennel file, and a coop feature (coop has none)', () => {
+    expect(checkCoop(knl()).problems).toEqual(['no COOP header (not a coop plugin)']);
+    expect(checkCoop(coop({ kind: 3 })).problems).toEqual(['kind 3 is not 1 (synth) or 2 (fx)']);
+  });
+
+  it('accepts a coop manifest whose file is <id>.coop', () => {
+    const { issues } = parse({ firmware: 'op1/coop', id: 'saw', file: 'saw.coop', kind: 'synth', requires: 'coop e2' }, 'saw');
+    expect(issues).toEqual([]);
+  });
+
+  it('refuses a coop manifest with another file name or a feature kind', () => {
+    rejects({ firmware: 'op1/coop', id: 'saw', file: 'saw.knl', kind: 'synth' }, /file must be "saw.coop"/, 'saw');
+    rejects({ firmware: 'op1/coop', id: 'saw', file: 'saw.coop', kind: 'feature' }, /synth or an fx/, 'saw');
+    rejects({ firmware: 'op1/coop', id: 'my-saw', file: 'my-saw.coop', kind: 'synth' }, /lower-case letters, digits or _/, 'my-saw');
   });
 });

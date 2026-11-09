@@ -27,7 +27,7 @@ export const PLUGIN_LICENSES = [
 export type PluginLicense = (typeof PLUGIN_LICENSES)[number];
 
 /** The profile ids a plugin can be for. */
-export const PLUGIN_FIRMWARE = ['op1/hundekraft', 'op1/opus'] as const;
+export const PLUGIN_FIRMWARE = ['op1/hundekraft', 'op1/opus', 'op1/coop'] as const;
 export type PluginFirmware = (typeof PLUGIN_FIRMWARE)[number];
 
 export const PLUGIN_KINDS = ['synth', 'fx', 'feature'] as const;
@@ -45,6 +45,8 @@ export const MAX_TAGS = 8;
 
 /** The kennel loader's limit for a .knl file. */
 export const MAX_KNL_BYTES = 512 * 1024;
+/** The coop loader's staging block (firmware/core/sdram/plugin_host.cc FILE_MAX). */
+export const MAX_COOP_BYTES = 1024 * 1024;
 /** The op1r limit for the binary inside an .op1p. */
 export const MAX_OP1P_BINARY_BYTES = 512 * 1024;
 /** A whole .op1p (SVG, binary and trailer); our own limit, with room for the SVG. */
@@ -79,7 +81,7 @@ export interface PluginManifest {
   version: string;
   description: string;
   license: PluginLicense;
-  /** `<id>.knl` or `<id>.op1p` for hundekraft, `<name>.opmod` for opus. */
+  /** `<id>.knl` or `<id>.op1p` for hundekraft, `<name>.opmod` for opus, `<id>.coop` for coop. */
   file: string;
   /** A .png file name in the plugin folder. */
   screenshot: string;
@@ -183,6 +185,7 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
   } else {
     if (id.startsWith('.')) fail(`id "${id}" must not start with a dot`);
     else if (opus && !OPUS_ID.test(id)) fail(`id "${id}" must be 1 to 40 lower-case letters, digits, _, . or -`);
+    else if (firmware === 'op1/coop' && !/^[a-z0-9_]{1,15}$/.test(id)) fail(`id "${id}" must be 1 to 15 lower-case letters, digits or _`);
     else if (!opus && !HUNDEKRAFT_ID.test(id)) fail(`id "${id}" must be 1 to 15 lower-case letters, digits, _ or -`);
     if (isWindowsReservedName(id)) fail(`id "${id}" is reserved by Windows`);
     if (id !== folderName) fail(`id "${id}" must equal the folder name "${folderName}"`);
@@ -202,6 +205,9 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
   } else if (firmware === 'op1/hundekraft' && typeof id === 'string') {
     if (file !== `${id}.knl` && file !== `${id}.op1p`) fail(`file must be "${id}.knl" or "${id}.op1p"`);
     else if (file.endsWith('.op1p') && kind === 'feature') fail('an .op1p plugin is a synth or an fx, not a feature');
+  } else if (firmware === 'op1/coop' && typeof id === 'string') {
+    if (file !== `${id}.coop`) fail(`file must be "${id}.coop"`);
+    else if (kind === 'feature') fail('a coop plugin is a synth or an fx; coop has no feature plugins yet');
   } else if (opus && (!OPMOD_NAME.test(file) || isWindowsReservedName(file))) {
     fail('file must be a name ending in .opmod: letters, digits, _, . or -, at most 64 characters');
   }
@@ -243,7 +249,7 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
 
   const savedName = json.savedName;
   if (savedName !== undefined) {
-    if (!opus) fail('savedName is only for op1/opus plugins; hundekraft takes it from the plugin file');
+    if (!opus) fail('savedName is only for op1/opus plugins; hundekraft and coop take it from the plugin file');
     else if (typeof savedName !== 'string' || !OPUS_SAVED_NAME.test(savedName)) {
       fail(`savedName ${JSON.stringify(savedName)} must be opus.<id>: "opus." and 1 to 40 lower-case letters, digits, _, . or -`);
     }
@@ -338,6 +344,28 @@ const EXT_CLAIMS = 1;
  * are returned. Every offset read from the file is checked against its length first.
  */
 export function checkKnl(bytes: Uint8Array): PluginFileCheck {
+  return checkKennelFormat(bytes, KNL_FORMAT);
+}
+
+interface KennelFormat {
+  magic: string;
+  maxBytes: number;
+  kinds: Record<number, PluginKind>;
+  /** What the file is called in messages. */
+  what: string;
+}
+const KNL_FORMAT: KennelFormat = { magic: 'KNPL', maxBytes: MAX_KNL_BYTES, kinds: KNL_KINDS, what: 'a kennel plugin' };
+const COOP_FORMAT: KennelFormat = { magic: 'COOP', maxBytes: MAX_COOP_BYTES, kinds: { 1: 'synth', 2: 'fx' }, what: 'a coop plugin' };
+
+/**
+ * Checks a coop plugin (.coop): kennel's format with the magic COOP, at most 1 MiB, kind 1 (synth
+ * engine) or 2 (effect) (firmware/docs/plugins.md, firmware/core/sdram/plugin_load.cc).
+ */
+export function checkCoop(bytes: Uint8Array): PluginFileCheck {
+  return checkKennelFormat(bytes, COOP_FORMAT);
+}
+
+function checkKennelFormat(bytes: Uint8Array, format: KennelFormat): PluginFileCheck {
   const problems: string[] = [];
   const done = (info: PluginFileInfo | null = null): PluginFileCheck => ({ problems, info: problems.length > 0 ? null : info });
   const length = bytes.length;
@@ -356,19 +384,19 @@ export function checkKnl(bytes: Uint8Array): PluginFileCheck {
     const hazard = svgHazard(latin1(bytes.subarray(0, nul)));
     if (hazard) problems.push(hazard);
   }
-  if (length > MAX_KNL_BYTES) problems.push(`is ${overLimit(length, MAX_KNL_BYTES)}`);
+  if (length > format.maxBytes) problems.push(`is ${overLimit(length, format.maxBytes)}`);
   if (length % 4 !== 0) problems.push(`${length} bytes is not a multiple of 4`);
   if (length < h + KNL_HEADER) {
     problems.push(`${length} bytes is too short for the ${KNL_HEADER}-byte header`);
     return done();
   }
-  if (latin1(bytes.subarray(h, h + 4)) !== 'KNPL') {
-    problems.push('no KNPL header (not a kennel plugin)');
+  if (latin1(bytes.subarray(h, h + 4)) !== format.magic) {
+    problems.push(`no ${format.magic} header (not ${format.what})`);
     return done();
   }
 
-  const format = u16(bytes, h + 4);
-  if (format !== 1) problems.push(`format ${format} is not 1`);
+  const version = u16(bytes, h + 4);
+  if (version !== 1) problems.push(`format ${version} is not 1`);
   const headerSize = u16(bytes, h + 6);
   if (headerSize < KNL_HEADER) problems.push(`header size ${headerSize} is under ${KNL_HEADER} bytes`);
   else if (h + headerSize > length) problems.push(`header size ${headerSize} runs past the end of the file`);
@@ -384,8 +412,11 @@ export function checkKnl(bytes: Uint8Array): PluginFileCheck {
   const api = u16(bytes, h + 16);
   if (api !== 1) problems.push(`plugin API ${api} is not 1`);
   const kindByte = bytes[h + 18] as number;
-  const kind = KNL_KINDS[kindByte];
-  if (!kind) problems.push(`kind ${kindByte} is not 1 (synth), 2 (fx) or 3 (feature)`);
+  const kind = format.kinds[kindByte];
+  if (!kind) {
+    const allowed = Object.entries(format.kinds).map(([n, k]) => `${n} (${k})`);
+    problems.push(`kind ${kindByte} is not ${allowed.slice(0, -1).join(', ')} or ${allowed.at(-1)}`);
+  }
   const order = bytes[h + 19] as number;
   if (order > 31) problems.push(`legacy order ${order} is over 31`);
   const saved = savedNameAt(bytes, h + 20, /^[\x20-\x7e]+$/, 'printable ASCII');
@@ -579,11 +610,13 @@ export function idFromSavedName(savedName: string): string {
 function limitFor(manifest: PluginManifest, path: string): number {
   if (path !== manifest.file) return path === manifest.screenshot ? MAX_SCREENSHOT_BYTES : MAX_TEXT_BYTES;
   if (path.endsWith('.knl')) return MAX_KNL_BYTES;
+  if (path.endsWith('.coop')) return MAX_COOP_BYTES;
   return path.endsWith('.op1p') ? MAX_OP1P_BYTES : MAX_OPMOD_BYTES;
 }
 
 function checkPluginFile(file: string, bytes: Uint8Array): PluginFileCheck {
   if (file.endsWith('.knl')) return checkKnl(bytes);
+  if (file.endsWith('.coop')) return checkCoop(bytes);
   if (file.endsWith('.op1p')) return checkOp1p(bytes);
   const problems = checkOpmod(bytes);
   return { problems, info: problems.length > 0 ? null : {} };
@@ -641,7 +674,7 @@ export async function validatePluginFiles(
     for (const problem of check.problems) fail(problem, path);
     if (!check.info) continue;
     info = check.info;
-    if (manifest.firmware !== 'op1/hundekraft') continue;
+    if (manifest.firmware !== 'op1/hundekraft' && manifest.firmware !== 'op1/coop') continue;
     const savedName = check.info.savedName as string;
     const id = idFromSavedName(savedName);
     if (!HUNDEKRAFT_ID.test(id)) {
@@ -678,7 +711,7 @@ export function pluginIndexEntry(
   info: PluginFileInfo,
 ): PluginIndexEntry {
   const { format: _format, savedName: ownSavedName, ...fields } = manifest;
-  const savedName = manifest.firmware === 'op1/hundekraft' ? info.savedName : ownSavedName;
+  const savedName = manifest.firmware === 'op1/hundekraft' || manifest.firmware === 'op1/coop' ? info.savedName : ownSavedName;
   return {
     ...fields,
     screenshot: `${manifest.id}/${manifest.screenshot}`,

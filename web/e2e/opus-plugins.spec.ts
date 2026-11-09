@@ -73,8 +73,9 @@ test('copies an opus plugin into mods/ of a dropped drive, asking before replaci
   const installed = page.getByRole('region', { name: 'Installed opus plugins' });
   await expect(installed.locator('tbody tr')).toHaveCount(1);
 
+  // The opus drive chose the opus profile: the list is filtered to opus plugins, its groups open.
   await page.getByRole('tab', { name: 'Plugins' }).click();
-  await page.getByRole('button', { name: /^co-op/ }).click();
+  await expect(page.locator('#panel-plugins').getByLabel('Firmware')).toHaveValue('op1/opus');
   const card = page.getByRole('article', { name: 'Test Mod' });
   const copy = card.getByRole('button', { name: 'Copy testmod.opmod to mods/' });
   await expect(copy).toHaveAccessibleDescription('opus loads the plugins in mods/ in file-name order.');
