@@ -1,0 +1,69 @@
+# u1 / u7: FX 2 by drop / lift / T3. Phone at the synth position (as det_fx_stock_phone), back to the FX page (T3),
+# drop focuses instrument FX 2 (u7: with a stock type the STOCK page of that type shows, fed slot 2's knobs); green turns knob 2 up ten detents;
+# Shift + blue one detent picks the next effect (none -> delay), a blue push applies it; T3 switches FX 2 off,
+# T3 again on; lift focuses FX 1 (the page closes); T1 then T3: the page stays closed (FX 1 in focus); drop, T1,
+# T3: the page comes back (FX 2 was last touched); a chord with the page up. Screenshots wall-timed, at the end.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 32
+at 33000
+tap seq 200
+at 34000
+tap synth 200
+at 35000
+tap t3 200
+at 36500
+tap drop 200
+at 38000
+turn enc2 cw 20
+at 40000
+press shift
+at 40200
+turn enc1 cw 2
+at 41000
+release shift
+at 42000
+tap enc1 200
+at 43500
+tap t3 200
+at 45000
+tap t3 200
+at 46500
+tap lift 200
+at 47500
+tap t1 200
+at 48500
+tap t3 200
+at 49500
+tap drop 200
+at 50500
+tap t1 200
+at 51500
+tap t3 200
+at 53000
+press c4
+press e4
+press g4
+at 55000
+release c4
+release e4
+release g4
+wait 52000
+screenshot /root/op1emu-work/fx2_a.ppm
+wait 2000
+screenshot /root/op1emu-work/fx2_b.ppm
+wait 2000
+screenshot /root/op1emu-work/fx2_c.ppm
+wait 5000
+quit

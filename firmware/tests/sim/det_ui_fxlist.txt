@@ -1,0 +1,47 @@
+# u3: the FX list's green column. Synth, T3, shift + T3 opens the stock browser; blue four rows (cwo -> phone, the
+# stock column, loaded on the turn); green two rows (none -> cwo -> delay, coop's column); T3 closes the browser and
+# applies delay to instrument FX 2 (which is then the slot in focus: its page opens); a chord through phone + delay;
+# lift (FX 1 in focus, the stock phone page); shift + T3 again: the green column should start on delay; green one
+# row (grid); the browser is left open for the screenshot. Screenshots are wall-timed: at the end.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 32
+at 33000
+turn enc2 cw 16
+at 35000
+tap t3 200
+at 37000
+press c4
+press e4
+press g4
+at 39000
+release c4
+release e4
+release g4
+at 41000
+tap lift 200
+at 42500
+press shift
+at 42700
+tap t3 200
+at 43200
+release shift
+at 44500
+turn enc2 cw 8
+wait 44000
+screenshot /root/op1emu-work/fxl_a.ppm
+wait 2000
+screenshot /root/op1emu-work/fxl_b.ppm
+wait 5000
+quit

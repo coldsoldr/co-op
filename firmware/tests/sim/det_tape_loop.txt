@@ -1,0 +1,46 @@
+# Stereo tape loop: record a chord (tape 0.8-1.8 s), STOP x2 (rewind), tape page, loop in at 0 (sound key 1 =
+# key code 0x2d on the tape page, docs/tape-stereo.md section 11), PLAY 1.5 s, STOP, loop out there (sound key 2 =
+# 0x2e; the keys turn the loop on), STOP x2 (rewind), PLAY 8.5 s: the chord should repeat about every 1.5 s with
+# its stereo width and no click at the seam.
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap synth 300
+at 32000
+press rec
+at 32200
+tap play 300
+at 32600
+release rec
+at 33000
+press c4
+press e4
+press g4
+at 34000
+release c4
+release e4
+release g4
+at 36000
+tap stop 300
+at 37000
+tap stop 300
+at 38000
+tap tape 300
+at 39000
+tap s1 300
+at 39500
+tap play 300
+at 41000
+tap stop 300
+at 41500
+tap s2 300
+at 42000
+tap stop 300
+at 42500
+tap stop 300
+at 43500
+tap play 300
+at 52000
+tap stop 300
+wait 150000
+quit

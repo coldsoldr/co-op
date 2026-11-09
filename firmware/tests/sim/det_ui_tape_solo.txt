@@ -1,0 +1,52 @@
+# u4 isolation: tape, a chord (A, live synth on track 1); Shift + Help + T2 (solo 2: tracks 1, 3, 4 muted); the
+# chord (B: does the live synth still sound with its track muted?); Shift + Help + T2 again (solo off); the chord (C).
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tape 300
+at 28000
+press c4
+press e4
+press g4
+at 30000
+release c4
+release e4
+release g4
+at 32000
+press shift
+at 32200
+press help
+at 32500
+tap t2 200
+at 33000
+release help
+at 33200
+release shift
+at 34500
+press c4
+press e4
+press g4
+at 36500
+release c4
+release e4
+release g4
+at 38500
+press shift
+at 38700
+press help
+at 39000
+tap t2 200
+at 39500
+release help
+at 39700
+release shift
+at 41000
+press c4
+press e4
+press g4
+at 43000
+release c4
+release e4
+release g4
+wait 45000
+quit

@@ -1,0 +1,19 @@
+coop_stats 2 build t3g
+cb blocks 92424 max 461297 last 6795 cycles 4196562457
+stages rec_max 48259 mix_max 46389 hook_max 33710 lfo2_max 0 master_max 0 fx_max 0 hooks 47824 side_blocks 15417
+tape rec_calls 70031 rec_side_blocks 19119 mismatch 0 mismatch2 0 mismatch_word 0 seam_fills 0
+io loads 34 flushes 52 held 2057 errors 0 step_max 84590506 gap_max 417480939 load_max 16012909 flush_max 30085715
+edits lifts 0 drops 0 erases 0 errors 0 mono_fallbacks 0
+stats writes 22 errors 0 tail_writes 22 tail_errors 0 windows 26 ticks 13131
+win blocks 3449 cb_max 173794 cb_sum 299718730 cb_over 0 rec_max 17008 mix_max 6174 hooks 0 side 0 recs 3449 io_steps 590 io_step_max 1601720 io_gap_max 8857459 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win blocks 3450 cb_max 127377 cb_sum 252087916 cb_over 0 rec_max 23181 mix_max 14003 hooks 0 side 0 recs 3450 io_steps 607 io_step_max 1368201 io_gap_max 4834134 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win blocks 3447 cb_max 128446 cb_sum 249924911 cb_over 0 rec_max 15417 mix_max 10818 hooks 0 side 0 recs 3447 io_steps 625 io_step_max 1565740 io_gap_max 3297341 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win blocks 3449 cb_max 129137 cb_sum 252413197 cb_over 0 rec_max 18190 mix_max 10656 hooks 0 side 0 recs 3449 io_steps 621 io_step_max 1694841 io_gap_max 5993974 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win blocks 3450 cb_max 239732 cb_sum 98349122 cb_over 0 rec_max 31630 mix_max 46389 hooks 4855 side 4898 recs 5648 io_steps 371 io_step_max 1387691 io_gap_max 55248439 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win blocks 3446 cb_max 78155 cb_sum 61755783 cb_over 0 rec_max 0 mix_max 0 hooks 0 side 0 recs 0 io_steps 517 io_step_max 3319911 io_gap_max 8626494 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win blocks 3449 cb_max 92062 cb_sum 60889852 cb_over 0 rec_max 0 mix_max 0 hooks 0 side 0 recs 0 io_steps 527 io_step_max 3019731 io_gap_max 9385614 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win blocks 3445 cb_max 82798 cb_sum 60847382 cb_over 0 rec_max 0 mix_max 0 hooks 0 side 0 recs 0 io_steps 529 io_step_max 4314346 io_gap_max 8175649 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win blocks 3453 cb_max 81957 cb_sum 33572765 cb_over 0 rec_max 0 mix_max 0 hooks 0 side 0 recs 0 io_steps 533 io_step_max 2857576 io_gap_max 6077799 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win blocks 3446 cb_max 73887 cb_sum 21886823 cb_over 0 rec_max 0 mix_max 0 hooks 0 side 0 recs 0 io_steps 523 io_step_max 1468666 io_gap_max 6393734 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win blocks 3451 cb_max 67911 cb_sum 21592244 cb_over 0 rec_max 0 mix_max 0 hooks 0 side 0 recs 0 io_steps 528 io_step_max 1578846 io_gap_max 4801773 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win blocks 3901 cb_max 78555 cb_sum 38603710 cb_over 0 rec_max 0 mix_max 0 hooks 0 side 0 recs 0 io_steps 192 io_step_max 84590506 io_gap_max 417480939 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0

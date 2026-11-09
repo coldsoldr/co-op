@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>coop SysEx tool</title>
+<style>
+  :root { --bg: #fafafa; --fg: #1a1a1a; --mute: #666; --line: #ddd; --accent: #0a6; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #141414; --fg: #eee; --mute: #999; --line: #333; } }
+  body { margin: 0; padding: 16px; font: 15px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--fg); max-width: 900px; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { color: var(--mute); margin: 4px 0 12px; }
+  label { display: block; margin: 8px 0 4px; }
+  input, select, button { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  input[type=text] { width: 100%; box-sizing: border-box; }
+  button { cursor: pointer; margin-right: 8px; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  pre { white-space: pre-wrap; word-break: break-all; border: 1px solid var(--line); border-radius: 6px; padding: 10px; min-height: 120px; font-size: 13px; }
+  #status { margin: 10px 0; }
+</style>
+</head>
+<body>
+<h1>coop SysEx tool</h1>
+<p>Reads a file from the running OP-1 over USB-MIDI (coop-fw milestone U1, <code>core/sdram/coop_sysex.cc</code>).
+Chrome or Edge with Web MIDI; plug the OP-1 in, pick its MIDI port, say hello, then read.</p>
+<label for="port">MIDI port</label>
+<select id="port"></select>
+<label for="path">Path on the device</label>
+<input id="path" type="text" value="/yaffs2/user/coop_stats.txt">
+<div style="margin-top:10px">
+  <button id="hello">Hello</button>
+  <button id="read" class="primary">Read file</button>
+  <button id="save" disabled>Save as...</button>
+  <button id="del">Delete file</button>
+</div>
+<label for="plug">Install a plugin (a .coop file goes to /yaffs2/plugins; power-cycle the OP-1 afterwards)</label>
+<input id="plug" type="file" accept=".coop">
+<div style="margin-top:6px"><button id="install">Install plugin</button></div>
+<h2 style="font-size:16px;margin:18px 0 4px">Second effect slot (S2)</h2>
+<p>A second effect after the instrument effect and after the master effect. It runs whether or not the OP-1's own
+effect is on, and the OP-1 keeps the choice across power cycles. Read the slots first: that also lists the installed plugins.</p>
+<div id="slots"></div>
+<div style="margin-top:6px"><button id="s2read">Read slots</button></div>
+<h2 style="font-size:16px;margin:18px 0 4px">Run a test (p5b)</h2>
+<p>Plays a test script on the OP-1 (key presses and knob turns at exact times, <code>docs/test-runner.md</code>) while this
+page records the OP-1's audio from your interface; at the end it fetches the run results and the stats file. Pick a
+script from <code>tests/sim/</code> (for example <code>run_p5a.txt</code>). The test plays the sound slots and effects it
+names and leaves them as it set them, so save anything you care about first. Hands off the OP-1 while it runs; Stop
+releases every key it holds.</p>
+<label for="rscript">Test script (.txt from tests/sim, or a compiled .crun)</label>
+<input id="rscript" type="file" accept=".txt,.crun">
+<div id="rinfo" style="color:var(--mute);margin:4px 0"></div>
+<label for="rin">Record from (the interface input the OP-1's output goes into)</label>
+<select id="rin"><option value="">(press "List inputs")</option></select>
+<button id="rlist">List inputs</button>
+<label style="display:flex;gap:8px;align-items:center"><input id="rrec" type="checkbox" checked style="width:auto"> record audio</label>
+<div style="margin-top:6px"><button id="rrun" class="primary">Run test</button><button id="rstop" disabled>Stop</button></div>
+<div id="rprog" style="margin:6px 0"></div>
+<div id="rfiles"></div>
+<div id="status">Not connected.</div>
+<pre id="out"></pre>
+<script>
+const HDR = [0xF0, 0x00, 0x20, 0x76, 0x7D];
+const FILE_GET = 0x20, HELLO = 0x21, PUT_BEGIN = 0x22, PUT_DATA = 0x23, PUT_END = 0x24, DELETE = 0x25, REPLY = 0x40;
+const STATUS = ['ok', 'format', 'state', 'path', 'size', 'offset', 'crc', 'io'];
+let access = null, inPort = null, outPort = null, seq = 1, pending = null, fileBytes = null;
+
+function pack7(bytes) {
+  const out = [];
+  for (let i = 0; i < bytes.length; i += 7) {
+    const g = bytes.slice(i, i + 7);
+    let hi = 0;
+    g.forEach((b, k) => { hi |= ((b >> 7) & 1) << k; });
+    out.push(hi, ...g.map(b => b & 0x7F));
+  }
+  return out;
+}
+function unpack7(bytes) {
+  const out = [];
+  for (let i = 0; i < bytes.length;) {
+    const hi = bytes[i++];
+    for (let k = 0; k < 7 && i < bytes.length; k++, i++) out.push(bytes[i] | (((hi >> k) & 1) << 7));
+  }
+  return out;
+}
+function setStatus(s) { document.getElementById('status').textContent = s; }
+
+function send(cmd, payload) {
+  return new Promise((resolve, reject) => {
+    const s = seq++ & 0x3FFF;
+    const msg = [...HDR, cmd, s & 0x7F, (s >> 7) & 0x7F, ...pack7(payload), 0xF7];
+    if (msg.length > 96) { reject(new Error('message too long for the OP-1 (' + msg.length + ' > 96)')); return; }
+    const timer = setTimeout(() => { pending = null; reject(new Error('no reply in 2 s')); }, 2000);
+    pending = { seq: s, cmd, resolve: v => { clearTimeout(timer); resolve(v); } };
+    outPort.send(msg);
+  });
+}
+function onMidi(e) {
+  const d = e.data;
+  if (d.length < 9 || d[0] !== 0xF0 || d[1] !== 0 || d[2] !== 0x20 || d[3] !== 0x76 || d[4] !== 0x7D) return;
+  const cmd = d[5], s = d[6] | (d[7] << 7);
+  if (!pending || s !== pending.seq || cmd !== (pending.cmd | REPLY)) return;
+  const payload = unpack7(Array.from(d.slice(8, d.length - 1)));
+  const p = pending; pending = null;
+  p.resolve(payload);
+}
+
+async function connect() {
+  try {
+    access = await navigator.requestMIDIAccess({ sysex: true });
+  } catch (err) { setStatus('Web MIDI with SysEx refused: ' + err.message); return; }
+  const sel = document.getElementById('port');
+  sel.innerHTML = '';
+  for (const o of access.outputs.values()) {
+    const opt = document.createElement('option');
+    opt.value = o.id; opt.textContent = o.name;
+    if (/op-1/i.test(o.name)) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  pick();
+  sel.onchange = pick;
+  setStatus(sel.options.length ? 'Port list ready.' : 'No MIDI output found. Is the OP-1 plugged in and on?');
+}
+function pick() {
+  const id = document.getElementById('port').value;
+  outPort = access.outputs.get(id);
+  if (inPort) inPort.onmidimessage = null;
+  inPort = null;
+  for (const i of access.inputs.values()) if (outPort && i.name === outPort.name) inPort = i;
+  if (!inPort) for (const i of access.inputs.values()) if (/op-1/i.test(i.name)) inPort = i;
+  if (inPort) inPort.onmidimessage = onMidi;
+}
+
+document.getElementById('hello').onclick = async () => {
+  if (!outPort || !inPort) { setStatus('Pick a port first.'); return; }
+  try {
+    const r = await send(HELLO, []);
+    if (r[0] !== 0) { setStatus('HELLO: ' + (STATUS[r[0]] || r[0])); return; }
+    const name = String.fromCharCode(...r.slice(1, 5)), proto = r[5] | (r[6] << 8), caps = r[7], tag = String.fromCharCode(...r.slice(8));   // p6k: a caps byte before the tag
+    setStatus('Device answers: ' + name + ' protocol ' + proto + ' caps 0x' + caps.toString(16) + ' build ' + tag);
+  } catch (err) { setStatus('HELLO failed: ' + err.message + ' (is a coop image with the SysEx channel running?)'); }
+};
+
+// Reads a whole file; throws with a message on failure.
+async function readFile(path) {
+  const pathBytes = Array.from(new TextEncoder().encode(path));
+  const out = [];
+  let total = null, restarts = 0;
+  for (let off = 0; total === null || off < total;) {
+    const payload = [off & 0xFF, (off >> 8) & 0xFF, (off >> 16) & 0xFF, (off >>> 24) & 0xFF, ...pathBytes];
+    const r = await send(FILE_GET, payload);
+    if (r[0] !== 0) throw new Error('read ' + path + ' at offset ' + off + ': ' + (STATUS[r[0]] || r[0]));
+    const t = r[1] | (r[2] << 8) | (r[3] << 16) | (r[4] << 24);
+    if (total !== null && t !== total) {            // the device rewrote the file meanwhile (stats: every 5 s): start over
+      if (++restarts > 5) throw new Error('the file keeps changing while it is read; try again');
+      total = null; off = 0; out.length = 0; continue;
+    }
+    total = t;
+    const data = r.slice(5);
+    if (!data.length && off < total) throw new Error('empty reply at offset ' + off);
+    out.push(...data);
+    off += data.length;
+    setStatus('Reading ' + path + ': ' + off + ' / ' + total + ' bytes');
+    if (total === 0) break;
+  }
+  return new Uint8Array(out);
+}
+
+document.getElementById('read').onclick = async () => {
+  if (!outPort || !inPort) { setStatus('Pick a port first.'); return; }
+  const path = document.getElementById('path').value.trim();
+  try { fileBytes = await readFile(path); } catch (err) { setStatus('Read failed: ' + err.message); return; }
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(fileBytes);
+  const printable = /^[\x09\x0A\x0D\x20-\x7E]*$/.test(text);
+  document.getElementById('out').textContent = printable ? text : '(' + fileBytes.length + ' binary bytes; use Save as...)';
+  document.getElementById('save').disabled = false;
+  setStatus('Read ' + path + ': ' + fileBytes.length + ' bytes.');
+};
+
+document.getElementById('save').onclick = () => {
+  if (!fileBytes) return;
+  const path = document.getElementById('path').value.trim();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([fileBytes]));
+  a.download = path.split('/').pop() || 'file.bin';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(bytes) { let c = 0xFFFFFFFF; for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8); return (~c) >>> 0; }
+const u32 = v => [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF];
+
+// Writes a whole file (under /yaffs2/plugins or /yaffs2/user); throws with a message on failure.
+async function writeFile(path, bytes) {
+  let r = await send(PUT_BEGIN, Array.from(new TextEncoder().encode(path)));
+  if (r[0] !== 0) throw new Error('write ' + path + ' refused: ' + (STATUS[r[0]] || r[0]));
+  for (let off = 0; off < bytes.length; off += 64) {
+    const chunk = Array.from(bytes.slice(off, off + 64));
+    r = await send(PUT_DATA, [...u32(off), ...chunk]);
+    if (r[0] !== 0) throw new Error('write failed at ' + off + ': ' + (STATUS[r[0]] || r[0]));
+    setStatus('Writing ' + path + ': ' + Math.min(off + 64, bytes.length) + ' / ' + bytes.length + ' bytes');
+  }
+  r = await send(PUT_END, [...u32(bytes.length), ...u32(crc32(bytes))]);
+  if (r[0] !== 0) throw new Error('write end: ' + (STATUS[r[0]] || r[0]));
+}
+
+document.getElementById('install').onclick = async () => {
+  if (!outPort || !inPort) { setStatus('Pick a port first.'); return; }
+  const f = document.getElementById('plug').files[0];
+  if (!f) { setStatus('Choose a .coop file first.'); return; }
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  const path = '/yaffs2/plugins/' + f.name;
+  try {
+    await writeFile(path, bytes);
+    setStatus('Installed ' + path + ' (' + bytes.length + ' bytes). Power-cycle the OP-1 to load it.');
+  } catch (err) { setStatus('Install failed: ' + err.message); }
+};
+document.getElementById('del').onclick = async () => {
+  if (!outPort || !inPort) { setStatus('Pick a port first.'); return; }
+  const path = document.getElementById('path').value.trim();
+  if (!confirm('Delete ' + path + ' on the device?')) return;
+  try { const r = await send(DELETE, Array.from(new TextEncoder().encode(path))); setStatus(r[0] === 0 ? 'Deleted ' + path : 'Delete: ' + (STATUS[r[0]] || r[0])); }
+  catch (err) { setStatus('Delete failed: ' + err.message); }
+};
+
+// ---- S2: the second effect slot (command 0x26: op 0 get, 1 set, 2 plugin list) ----
+const SLOT2 = 0x26;
+const STOCK_FX = ['delay', 'grid', 'punch', 'phone', 'spring', 'filter', 'nitro', 'cwo'];   // the firmware's type numbers
+const SLOT_NAMES = ['Instrument (after the synth / drum effect)', 'Master (after the master effect)'];
+let plugins = [];
+function slotUi() {
+  const box = document.getElementById('slots');
+  box.innerHTML = '';
+  SLOT_NAMES.forEach((title, pos) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin:8px 0';
+    let opts = '<option value="0:0">none</option>' + STOCK_FX.map((n, i) => '<option value="1:' + i + '">' + n + ' (stock)</option>').join('') +
+      plugins.map(p => '<option value="2:' + p.n + '">' + p.name + ' (plugin)</option>').join('');
+    d.innerHTML = '<b>' + title + '</b><br><select id="s2fx' + pos + '">' + opts + '</select>' +
+      [0, 1, 2, 3].map(k => '<label style="display:flex;gap:8px;align-items:center;margin:4px 0">knob ' + (k + 1) +
+        ' <input type="range" min="0" max="100" value="50" id="s2k' + pos + k + '" style="flex:1"><span id="s2v' + pos + k + '">50</span></label>').join('') +
+      '<button id="s2set' + pos + '">Apply</button>';
+    box.appendChild(d);
+    [0, 1, 2, 3].forEach(k => { const r = document.getElementById('s2k' + pos + k); r.oninput = () => { document.getElementById('s2v' + pos + k).textContent = r.value; }; });
+    document.getElementById('s2set' + pos).onclick = () => slotSet(pos);
+  });
+}
+function slotShow(r) {          // r = [status, 10 bytes slot 0, 10 bytes slot 1]
+  for (let pos = 0; pos < 2; pos++) {
+    const e = r.slice(1 + 10 * pos, 11 + 10 * pos);
+    const sel = document.getElementById('s2fx' + pos);
+    sel.value = e[0] + ':' + (e[0] ? e[1] : 0);
+    for (let k = 0; k < 4; k++) {
+      const v = Math.round((e[2 + 2 * k] | (e[3 + 2 * k] << 8)) * 100 / 32767);
+      document.getElementById('s2k' + pos + k).value = v; document.getElementById('s2v' + pos + k).textContent = v;
+    }
+  }
+}
+document.getElementById('s2read').onclick = async () => {
+  if (!outPort || !inPort) { setStatus('Pick a port first.'); return; }
+  try {
+    let r = await send(SLOT2, [2]);
+    if (r[0] !== 0) { setStatus('Plugin list: ' + (STATUS[r[0]] || r[0]) + ' (is an S2 image running?)'); return; }
+    plugins = String.fromCharCode(...r.slice(1)).split(';').filter(Boolean).map(s => { const [n, name] = s.split('='); return { n: +n, name }; });
+    slotUi();
+    r = await send(SLOT2, [0]);
+    if (r[0] !== 0) { setStatus('Read slots: ' + (STATUS[r[0]] || r[0])); return; }
+    slotShow(r);
+    setStatus('Slots read; ' + plugins.length + ' plugin(s) installed.');
+  } catch (err) { setStatus('Read slots failed: ' + err.message + ' (an S2 image answers command 0x26)'); }
+};
+async function slotSet(pos) {
+  const [kind, id] = document.getElementById('s2fx' + pos).value.split(':').map(Number);
+  const knobs = [0, 1, 2, 3].map(k => Math.round(document.getElementById('s2k' + pos + k).value * 32767 / 100));
+  const payload = [1, pos, kind, id, ...knobs.flatMap(v => [v & 0xFF, v >> 8])];
+  try {
+    const r = await send(SLOT2, payload);
+    if (r[0] !== 0) { setStatus('Set slot: ' + (STATUS[r[0]] || r[0]) + (r[0] === 2 ? ' (unknown effect, or no memory for it)' : '')); return; }
+    slotShow(r);
+    setStatus(SLOT_NAMES[pos].split(' (')[0] + ' slot 2: ' + (kind === 0 ? 'none' : kind === 1 ? STOCK_FX[id] : (plugins.find(p => p.n === id) || {}).name) + ', saved on the device.');
+  } catch (err) { setStatus('Set slot failed: ' + err.message); }
+}
+slotUi();
+
+// ---- run_script compiler: keep in step with tools/run_script.py (tests/sim/run_script_check.mjs compares them) ----
+const RS_KEYS = {
+  help: 0x00, tempo: 0x01, synth: 0x02, drum: 0x03, tape: 0x04, mixer: 0x05,
+  t1: 0x06, t2: 0x07, t3: 0x08, t4: 0x09, lift: 0x0a, drop: 0x0b, split: 0x0c,
+  'f3#': 0x0d, 'g3#': 0x0e, 'a3#': 0x0f, s4: 0x10, s5: 0x11, s6: 0x12, s7: 0x13, s8: 0x14,
+  seq: 0x15, 'd4#': 0x16, 'f4#': 0x17, 'g4#': 0x18, 'a4#': 0x19, 'c5#': 0x1a, 'd5#': 0x1b,
+  c4: 0x1c, d4: 0x1d, e4: 0x1e, f4: 0x1f, 'c4#': 0x20, rec: 0x21, play: 0x22, stop: 0x23,
+  left: 0x24, right: 0x25, shift: 0x26, f3: 0x27, g3: 0x28, a3: 0x29, b3: 0x2a, mic: 0x2b,
+  s1: 0x2d, s2: 0x2e, s3: 0x2f, g4: 0x30, a4: 0x31, b4: 0x32, c5: 0x33, d5: 0x34, e5: 0x35,
+  enc1: 0x3b, enc2: 0x3c, enc3: 0x3d, enc4: 0x3e,
+};
+const RS_ENC = { enc1: 0, enc2: 1, enc3: 2, enc4: 3 };
+const EV_KEY = 1, EV_KNOB = 2, EV_CLICK = 3, EV_MARK = 4, EV_END = 5;
+const RS_SKIP = new Set(['accel', 'wait', 'wait-frames', 'screenshot', 'quit', 'volume']);
+const msToBlock = ms => Math.floor((ms * 44100 + 32000) / 64000);
+function compileScript(text, defaultName) {
+  let t = null, seq = 0, tail = 8000, lead = 1000, name = defaultName;
+  const raw = [], marks = [], enc = new TextEncoder();
+  const fail = (n, m) => { throw new Error('line ' + n + ': ' + m); };
+  const toInt = (s, n) => { if (!/^-?\d+$/.test(s)) fail(n, 'number expected: ' + s); return parseInt(s, 10); };
+  text.split(/\r?\n/).forEach((line, i) => {
+    const n = i + 1, s = line.trim();
+    if (!s) return;
+    if (s.startsWith('#@')) {
+      const m = s.slice(2).trim().match(/^(\S+)\s*(.*)$/);
+      if (!m) return;
+      const d = m[1], arg = m[2].trim();
+      if (d === 'mark') {
+        if (t === null) fail(n, '#@mark needs a preceding at');
+        if (!arg || enc.encode(arg).length > 16) fail(n, 'mark name of 1..16 bytes expected');
+        if (!marks.includes(arg)) marks.push(arg);
+        raw.push([t, seq++, EV_MARK, marks.indexOf(arg), 0]);
+      } else if (d === 'tail') tail = toInt(arg, n);
+      else if (d === 'lead') lead = toInt(arg, n);
+      else if (d === 'name') name = arg;
+      else fail(n, 'unknown directive #@' + d);
+      return;
+    }
+    if (s.startsWith('#')) return;
+    const a = s.split(/\s+/), cmd = a[0];
+    if (RS_SKIP.has(cmd)) return;
+    if (cmd === 'at') { if (a.length !== 2) fail(n, 'at MS expected'); t = toInt(a[1], n); return; }
+    if (t === null) fail(n, cmd + ' needs a preceding at (the runner is guest-timed only)');
+    if (cmd === 'press' || cmd === 'release' || cmd === 'tap') {
+      if (!(a.length === 2 || (cmd === 'tap' && a.length === 3))) fail(n, cmd + ' KEY expected');
+      if (!(a[1] in RS_KEYS)) fail(n, 'unknown key ' + a[1]);
+      const code = RS_KEYS[a[1]];
+      if (cmd === 'tap') {
+        const dur = a.length === 3 ? toInt(a[2], n) : 100;
+        raw.push([t, seq++, EV_KEY, code, 1]); raw.push([t + dur, seq++, EV_KEY, code, 0]);
+      } else raw.push([t, seq++, EV_KEY, code, cmd === 'press' ? 1 : 0]);
+    } else if (cmd === 'turn') {
+      if (!(a.length === 3 || a.length === 4) || !(a[1] in RS_ENC) || (a[2] !== 'cw' && a[2] !== 'ccw')) fail(n, 'turn ENC cw|ccw [STEPS] expected');
+      const steps = a.length === 4 ? toInt(a[3], n) : 4;
+      if (steps < 1 || steps > 4096) fail(n, 'steps 1..4096');
+      for (let k = 0; k < steps; k++) raw.push([t + 20 * k, seq++, EV_KNOB, RS_ENC[a[1]], a[2] === 'cw' ? 1 : -1]);
+    } else fail(n, 'the runner cannot play "' + cmd + '"');
+  });
+  if (!raw.length) throw new Error('no events');
+  if (marks.length > 32) throw new Error('more than 32 marks');
+  raw.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  const t0 = raw[0][0];
+  const events = [[0, EV_CLICK, 0, 0]];
+  for (const [ms, , ty, a, b] of raw) events.push([msToBlock(ms - t0 + lead), ty, a, b]);
+  const end = msToBlock(raw[raw.length - 1][0] - t0 + lead + tail);
+  events.push([end, EV_CLICK, 0, 0], [end, EV_END, 0, 0]);
+  if (events.length > 2048) throw new Error(events.length + ' events, the runner holds 2048');
+  const nb = enc.encode(name).slice(0, 32);
+  const out = new Uint8Array(44 + 16 * marks.length + 8 * events.length);
+  const dv = new DataView(out.buffer);
+  out.set([0x43, 0x52, 0x55, 0x4e]); dv.setUint16(4, 1, true); dv.setUint16(6, events.length, true); dv.setUint16(8, marks.length, true);
+  out.set(nb, 12);
+  marks.forEach((m, i) => out.set(enc.encode(m), 44 + 16 * i));
+  let p = 44 + 16 * marks.length;
+  for (const [blk, ty, a, b] of events) { dv.setUint32(p, blk, true); out[p + 4] = ty; out[p + 5] = a; dv.setInt8(p + 6, b); p += 8; }
+  return { name, marks, events, bytes: out };
+}
+// ---- end of the compiler ----
+
+// ---- the test run (command 0x27: op 0 status, 1 start + path, 2 abort) ----
+const RUN = 0x27, RUN_FILE = '/yaffs2/user/coop_test.crun';
+const RUN_STATES = ['idle', 'armed', 'running', 'done', 'aborted', 'error'];
+const RUN_ERRORS = ['', 'cannot open the file', 'bad file format', 'too many events', 'bad event', 'busy'];
+let runScript = null, rec = null, stopAsked = false;
+const $ = id => document.getElementById(id);
+function decodeCrun(bytes) {                                   // a .crun picked as it is: the counts for the progress bar
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length < 44 || String.fromCharCode(...bytes.slice(0, 4)) !== 'CRUN') throw new Error('not a CRUN file');
+  const nev = dv.getUint16(6, true), nm = dv.getUint16(8, true);
+  const name = new TextDecoder().decode(bytes.slice(12, 44)).replace(/\0.*$/, '');
+  const lastBlock = dv.getUint32(44 + 16 * nm + 8 * (nev - 1), true);
+  return { name, marks: new Array(nm), events: { length: nev, last: lastBlock }, bytes };
+}
+const endBlock = s => s.events.last !== undefined ? s.events.last : s.events[s.events.length - 1][0];
+$('rscript').onchange = async () => {
+  const f = $('rscript').files[0];
+  runScript = null; $('rinfo').textContent = '';
+  if (!f) return;
+  try {
+    const buf = new Uint8Array(await f.arrayBuffer());
+    runScript = /\.crun$/i.test(f.name) ? decodeCrun(buf) : compileScript(new TextDecoder().decode(buf), f.name.replace(/\.[^.]*$/, ''));
+    const blocks = endBlock(runScript);
+    $('rinfo').textContent = runScript.name + ': ' + runScript.events.length + ' events, ' + runScript.marks.length + ' sections, ' +
+      (blocks * 64 / 44100).toFixed(1) + ' s.';
+  } catch (err) { $('rinfo').textContent = 'Script error: ' + err.message; }
+};
+// The input list. Every step reports into the status line and the box below, so a missing interface can be told
+// apart from a refused permission or a browser without media devices.
+async function listInputs() {
+  const sel = $('rin');
+  sel.innerHTML = '<option value="">(the browser\'s default input)</option>';
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus('This browser gives the page no audio inputs (navigator.mediaDevices missing). Use Chrome or Edge; ' +
+      'if it is already Chrome, open the page from a local web server instead of the file (see docs/test-runner.md).');
+    return;
+  }
+  let note = '';
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });   // the device names need a permission first
+    note = 'permission granted, test stream from "' + (s.getAudioTracks()[0] || {}).label + '"';
+    s.getTracks().forEach(t => t.stop());
+  } catch (err) { note = 'microphone permission failed: ' + err.name + ' ' + err.message; }
+  let all = [];
+  try { all = await navigator.mediaDevices.enumerateDevices(); } catch (err) { note += '; enumerateDevices failed: ' + err.message; }
+  const ins = all.filter(d => d.kind === 'audioinput');
+  for (const d of ins) {
+    const o = document.createElement('option');
+    o.value = d.deviceId; o.textContent = d.label || ('input ' + d.deviceId.slice(0, 8) + ' (no name: permission missing)');
+    sel.appendChild(o);
+  }
+  if (ins.length) sel.selectedIndex = 1;
+  setStatus(ins.length + ' audio input(s) found; ' + note + '.');
+  $('out').textContent = 'Devices the browser reports (kind: label):\n' +
+    all.map(d => '  ' + d.kind + ': ' + (d.label || '(no label)') + (d.deviceId === 'default' ? '  [default]' : '')).join('\n');
+}
+$('rlist').onclick = listInputs;
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener)
+  navigator.mediaDevices.addEventListener('devicechange', () => { if ($('rin').options.length > 1) listInputs(); });
+
+// Recording: an AudioWorklet copies the input's samples; the WAV is 16-bit stereo at the context's rate.
+const REC_WORKLET = 'class R extends AudioWorkletProcessor { process(inp) { const c = inp[0]; if (c && c.length) ' +
+  'this.port.postMessage([c[0].slice(0), (c[1] || c[0]).slice(0)]); return true; } } registerProcessor("coop-rec", R);';
+async function recStart(deviceId) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: deviceId ? { exact: deviceId } : undefined,
+    channelCount: 2, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  const ctx = new AudioContext({ sampleRate: 44100 });
+  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([REC_WORKLET], { type: 'text/javascript' })));
+  const src = ctx.createMediaStreamSource(stream), node = new AudioWorkletNode(ctx, 'coop-rec');
+  const chunks = [];
+  node.port.onmessage = e => chunks.push(e.data);
+  src.connect(node);
+  return { stream, ctx, node, chunks };
+}
+function recStop(r) {
+  r.node.port.onmessage = null; r.stream.getTracks().forEach(t => t.stop()); r.ctx.close();
+  const n = r.chunks.reduce((s, c) => s + c[0].length, 0), rate = r.ctx.sampleRate;
+  const out = new DataView(new ArrayBuffer(44 + n * 4));
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) out.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); out.setUint32(4, 36 + n * 4, true); str(8, 'WAVEfmt '); out.setUint32(16, 16, true);
+  out.setUint16(20, 1, true); out.setUint16(22, 2, true); out.setUint32(24, rate, true); out.setUint32(28, rate * 4, true);
+  out.setUint16(32, 4, true); out.setUint16(34, 16, true); str(36, 'data'); out.setUint32(40, n * 4, true);
+  let p = 44;
+  const q = v => Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
+  for (const [l, rr] of r.chunks) for (let i = 0; i < l.length; i++) { out.setInt16(p, q(l[i]), true); out.setInt16(p + 2, q(rr[i]), true); p += 4; }
+  return { blob: new Blob([out.buffer], { type: 'audio/wav' }), seconds: n / rate, rate };
+}
+function addDownload(label, blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename; a.textContent = label + ' (' + filename + ')';
+  a.style.cssText = 'display:block;margin:2px 0';
+  $('rfiles').appendChild(a);
+}
+async function runStatus(op, extra) {
+  const r = await send(RUN, [op, ...(extra || [])]);
+  if (r.length < 13) throw new Error(r[0] === 1 ? 'this image has no test runner (flash p5b or later)' : 'RUN: ' + (STATUS[r[0]] || r[0]));
+  const dv = new DataView(new Uint8Array(r).buffer);
+  return { status: r[0], state: r[1], block: dv.getUint32(2, true), idx: dv.getUint16(6, true), nev: dv.getUint16(8, true),
+           sections: r[10], error: r[11], written: r[12] };
+}
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+$('rstop').onclick = async () => { stopAsked = true; try { await runStatus(2); } catch (err) { setStatus('Stop: ' + err.message); } };
+$('rrun').onclick = async () => {
+  if (!outPort || !inPort) { setStatus('Pick a port first.'); return; }
+  if (!runScript) { setStatus('Choose a test script first.'); return; }
+  $('rfiles').innerHTML = ''; $('rprog').textContent = ''; stopAsked = false;
+  const d = new Date(), p2 = v => String(v).padStart(2, '0');                // local time, as the owner reads the clock
+  const stamp = d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + '-' + p2(d.getHours()) + p2(d.getMinutes());
+  const base = runScript.name + '_' + stamp, blocks = endBlock(runScript);
+  $('rrun').disabled = true;
+  try {
+    const st0 = await runStatus(0);                        // also proves the image has a runner
+    if (st0.state === 1 || st0.state === 2) throw new Error('a test is already running on the OP-1');
+    await writeFile(RUN_FILE, runScript.bytes);
+    if ($('rrec').checked) { rec = await recStart($('rin').value); await sleep(500); }
+    const st = await runStatus(1, Array.from(new TextEncoder().encode(RUN_FILE)));
+    if (st.status !== 0) throw new Error('the OP-1 refused the script: ' + (RUN_ERRORS[st.error] || st.error));
+    $('rstop').disabled = false;
+    setStatus('Running ' + runScript.name + '. Hands off the OP-1.');
+    let s = st;
+    for (;;) {
+      await sleep(400);
+      s = await runStatus(0);
+      const pct = Math.min(100, Math.round(100 * s.block / Math.max(1, blocks)));
+      $('rprog').textContent = RUN_STATES[s.state] + ': ' + (s.block * 64 / 44100).toFixed(1) + ' / ' + (blocks * 64 / 44100).toFixed(1) +
+        ' s (' + pct + ' %), event ' + s.idx + ' / ' + s.nev + ', sections ' + s.sections;
+      if (s.state >= 3 && (s.written || s.state === 5)) break;
+    }
+    $('rstop').disabled = true;
+    await sleep(1500);                                     // the end click and a little after it
+    if (rec) {
+      const w = recStop(rec); rec = null;
+      addDownload('Recording, ' + w.seconds.toFixed(1) + ' s at ' + w.rate + ' Hz', w.blob, base + '.wav');
+    }
+    if (s.state === 5) throw new Error('runner error: ' + (RUN_ERRORS[s.error] || s.error));
+    const runText = await readFile('/yaffs2/user/coop_run.txt');
+    addDownload('Run results', new Blob([runText], { type: 'text/plain' }), base + '_run.txt');
+    const stats = await readFile('/yaffs2/user/coop_stats.txt');
+    addDownload('Stats file', new Blob([stats], { type: 'text/plain' }), base + '_stats.txt');
+    $('out').textContent = new TextDecoder().decode(runText);
+    setStatus((s.state === 3 ? 'Test finished. ' : 'Test stopped. ') + 'Save the files below and send them over.');
+  } catch (err) {
+    setStatus('Test run: ' + err.message);
+    if (rec) { const w = recStop(rec); rec = null; addDownload('Recording (incomplete)', w.blob, base + '.wav'); }
+  } finally { $('rrun').disabled = false; $('rstop').disabled = true; }
+};
+
+if (navigator.requestMIDIAccess) connect(); else setStatus('This browser has no Web MIDI. Use Chrome or Edge.');
+</script>
+</body>
+</html>

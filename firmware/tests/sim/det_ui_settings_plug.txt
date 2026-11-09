@@ -1,0 +1,53 @@
+# u7: the crash path of u5 (SEQSTAT 0x2a on the device): the settings menu, PLUGINS, a plugin toggled with a push,
+# then a mode key (the menu closes and the file is written: now by the main loop, not the KeyHandler thread). Needs
+# the plugin NAND (stereo_delay.coop in /yaffs2/plugins). Combo; blue two rows down (plugins); right; green push
+# (toggle); synth (close + save); a chord; the combo again, blue into plugins, right: the row reads "off".
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+press synth
+at 30200
+press drum
+at 30400
+press tape
+at 30600
+press mixer
+at 31600
+release mixer
+release tape
+release drum
+release synth
+at 32500
+turn enc1 cw 4
+at 33000
+tap right 200
+at 34000
+tap enc2 200
+at 35000
+tap synth 300
+at 36500
+press c4
+press e4
+press g4
+at 38500
+release c4
+release e4
+release g4
+at 40000
+press synth
+press drum
+press tape
+press mixer
+at 41000
+release synth
+release drum
+release tape
+release mixer
+at 41500
+turn enc1 cw 4
+at 42000
+tap enc1 200
+wait 50000
+screenshot /root/op1emu-work/sp_a.ppm
+wait 3000
+quit

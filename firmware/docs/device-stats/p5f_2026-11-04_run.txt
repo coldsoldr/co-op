@@ -1,0 +1,51 @@
+coop_run 1 build p5f script p5a
+run events 1554 blocks 129130 state 3 lost_sections 0
+switches dsynth 1 stage 1 cwo 1 punch 1 phone 1 nitro 1 grid 1 spring 1 delay 1 voltage 1 phase 1
+section lead-in blocks 1723 cb_avg 163604 cb_max 246115
+cost avg/max/n stage=11756/19832/1723 master=3254/6207/1723 fx1_cwo=58179/76356/1723
+engines avg/max/n
+section voltage6 blocks 8268 cb_avg 175078 cb_max 304178
+cost avg/max/n stage=10684/21497/8267 master=2607/8632/8268 fx1_cwo=58207/64218/9
+engines avg/max/n synth=62459/79052/6818 voltage=10409/22869/40908
+section phase6 blocks 7925 cb_avg 149978 cb_max 253830
+cost avg/max/n stage=11060/21662/7924 master=3124/8522/7925
+engines avg/max/n synth=43889/55139/4934 phase=7314/16767/29604
+section dsynth6 blocks 6546 cb_avg 238905 cb_max 327435
+cost avg/max/n stage=11174/18997/6545 master=3248/8082/6546
+engines avg/max/n synth=128123/137031/5507 dsynth=21353/34225/33042
+section punch blocks 11714 cb_avg 200683 cb_max 369947
+cost avg/max/n stage=11276/23144/11714 master=2733/14903/11714 fx1_delay=20127/28499/109 fx1_grid=25056/35463/105 fx1_punch=70650/89558/8139 fx1_phone=28121/38384/109 fx1_nitro=45053/55278/104 fx1_cwo=58975/81049/1046
+engines avg/max/n synth=68970/82760/5506 dsynth=22990/39310/16518
+section phone blocks 11714 cb_avg 185354 cb_max 307426
+cost avg/max/n stage=11148/23737/11714 master=2672/8812/11714 fx1_delay=20082/30572/216 fx1_grid=25478/40718/211 fx1_punch=69757/87323/2084 fx1_phone=29484/50983/8359 fx1_nitro=45381/57334/205 fx1_cwo=60309/78149/607
+engines avg/max/n synth=69017/82576/5506 dsynth=23005/41770/16518
+section nitro blocks 11714 cb_avg 190380 cb_max 341611
+cost avg/max/n stage=11108/22597/11714 master=2714/6707/11714 fx1_delay=20115/32124/218 fx1_grid=25705/40564/215 fx1_phone=27660/44573/2084 fx1_nitro=46898/63053/8458 fx1_cwo=59569/74283/715
+engines avg/max/n synth=69200/87770/5506 dsynth=23066/38175/16518
+section grid blocks 11714 cb_avg 179145 cb_max 304405
+cost avg/max/n stage=11105/21727/11714 master=2717/6417/11714 fx1_delay=19708/28193/217 fx1_grid=27128/47644/8572 fx1_nitro=45693/59804/2084 fx1_cwo=59217/92648/819
+engines avg/max/n synth=69001/87520/5506 dsynth=23000/46245/16518
+section spring blocks 13437 cb_avg 179096 cb_max 344158
+cost avg/max/n stage=11039/25317/13437 master=2799/7017/13437 fx1_delay=19835/36223/220 fx1_grid=25301/40973/2189 fx1_punch=70268/83874/111 fx1_phone=28540/43709/109 fx1_spring=38828/75119/9753 fx1_nitro=45309/62174/110 fx1_cwo=59444/88784/936
+engines avg/max/n synth=68840/80867/5506 dsynth=22946/40245/16518
+section delay blocks 13436 cb_avg 164223 cb_max 313405
+cost avg/max/n stage=11128/21417/13436 master=2583/7062/13436 fx1_delay=21295/48258/10410 fx1_grid=26029/39859/106 fx1_punch=70069/83668/110 fx1_phone=28517/40383/109 fx1_spring=35691/61772/2084 fx1_nitro=45309/56388/105 fx1_cwo=61440/91488/497
+engines avg/max/n synth=68751/80945/5506 dsynth=22917/40145/16518
+section digital blocks 4479 cb_avg 209713 cb_max 302694
+cost avg/max/n stage=11390/18007/4478 master=3139/18477/4479 fx1_delay=22618/28133/9 fx1_cwo=58815/80168/4465
+engines avg/max/n synth=30443/35519/3444 digital=10147/16408/10332
+section pulse blocks 4479 cb_avg 200215 cb_max 297551
+cost avg/max/n stage=10855/15220/4478 master=3133/6499/4479 fx1_spring=40089/74290/4465 fx1_cwo=54935/66198/9
+engines avg/max/n synth=29739/39018/3138 digital=10185/11478/24 sampler=9912/17644/9390
+section drwave blocks 4479 cb_avg 166352 cb_max 307932
+cost avg/max/n stage=11039/15796/4478 master=3236/8609/4479 fx1_spring=35276/37509/9
+engines avg/max/n synth=45381/96763/3378 drwave=15127/78170/10134
+section fm blocks 4479 cb_avg 158960 cb_max 260844
+cost avg/max/n stage=11132/22673/4478 master=2713/6928/4479 fx1_nitro=46557/58043/4464
+engines avg/max/n synth=8712/16077/2615 fm=8712/16077/2615
+section sampler blocks 4479 cb_avg 190820 cb_max 289135
+cost avg/max/n stage=11000/15670/4478 master=2957/5982/4479 fx1_nitro=47191/60364/4477
+engines avg/max/n synth=29470/38052/3444 sampler=9823/17109/10332
+section drum blocks 8544 cb_avg 132104 cb_max 247356
+cost avg/max/n stage=10868/22662/8544 master=2920/8057/8544 fx1_nitro=46473/62028/4266
+engines avg/max/n synth=30660/31143/4 drum=128/727/1212 sampler=10220/12611/12 drumsampler=111/727/1402

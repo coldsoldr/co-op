@@ -1,0 +1,38 @@
+# u7: the bend's pitch. Synth T2, Shift held: white 10 detents down (bend 12 -> 2 semitones), orange 100 detents up
+# (time 100: about 1 s); Shift released; T1. One note (c4) held; after 2 s Shift + right held 3 s (the pitch glides up
+# two semitones over ~1 s and stays), released (back over ~1 s); the note released. The WAV is pitch-tracked:
+# the ratio during the bend's plateau should be 2^(2/12) = 1.122 of the unbent pitch.
+accel 64 -64 512
+wait-frames 1 300000
+at 24000
+tap synth 300
+at 25000
+tap t2 200
+at 26000
+press shift
+at 27000
+turn enc3 ccw 20
+at 28500
+turn enc4 cw 200
+at 31000
+release shift
+at 32000
+tap t1 200
+at 34000
+press c4
+at 36000
+press shift
+at 36200
+press right
+at 39200
+release right
+at 39400
+release shift
+at 42000
+release c4
+at 46000
+press c4
+at 47000
+release c4
+wait 60000
+quit

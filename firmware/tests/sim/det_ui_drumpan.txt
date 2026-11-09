@@ -1,0 +1,42 @@
+# u6: drum per-voice pan. Drum mode; a key hit three times (A: the pan at centre: left = right); T2, Shift held:
+# the same key hit (the last played key), BLUE 50 detents anticlockwise (its pan to L50; u7: blue on coop's PAN page); Shift released; the key
+# hit three times (B: the left channel louder than the right); a different key hit three times (C: still centred).
+# The NAND is kept: the kit's slot row should carry "coop":{..."pan":[...-50...]}.
+accel 64 -64 512
+wait-frames 1 300000
+at 24000
+tap drum 300
+at 26000
+tap c4 150
+at 26600
+tap c4 150
+at 27200
+tap c4 150
+at 29000
+tap t2 200
+at 30000
+press shift
+at 30500
+tap c4 150
+at 31500
+turn enc1 ccw 100
+at 34000
+release shift
+at 36000
+tap c4 150
+at 36600
+tap c4 150
+at 37200
+tap c4 150
+at 39000
+tap e4 150
+at 39600
+tap e4 150
+at 40200
+tap e4 150
+at 42000
+press shift
+wait 50000
+screenshot /root/op1emu-work/dp_a.ppm
+wait 3000
+quit

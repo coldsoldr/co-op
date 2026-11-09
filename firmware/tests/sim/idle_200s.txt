@@ -1,0 +1,6 @@
+# The idle side of a runner scenario (tests/sim/run_emu.sh): no input from op1emu, the coop runner plays the scenario
+# (user/coop_autorun.crun, g_coop_run_autostart). 200 s of wall time (run_p5a.txt).
+accel 64 -64 512
+wait-frames 1 300000
+wait 200000
+quit

@@ -1,0 +1,36 @@
+# S1: the STOCK nitro effect (row 4 of the FX list) at the synth position, its blue and orange encoders turned:
+# the page must follow the knobs (the twin mirrors its state into the stock object). Guest-timed; screenshot at the end.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 24
+at 33000
+tap seq 200
+at 34000
+tap synth 200
+at 36000
+turn enc1 cw 40
+at 38000
+turn enc4 cw 40
+at 40000
+press c4
+press e4
+press g4
+at 42000
+release c4
+release e4
+release g4
+wait 39000
+screenshot /root/op1emu-work/sf1.ppm
+wait 8000
+quit

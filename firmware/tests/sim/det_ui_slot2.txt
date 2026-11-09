@@ -1,0 +1,58 @@
+# P3a: the slot 2 page. Phone at the synth position (as det_fx_stock_phone), back to the FX page (T3), Shift + Help
+# opens instrument FX 2; green turns knob 2 up ten detents; Shift + blue one detent picks the next effect (none ->
+# delay), a blue push applies it; a chord, the page still up for the screenshot. Guest-timed (screenshots wall-timed).
+# op1emu: two quarter-steps give the delta of one real detent (1024, kennel), so `turn ENC cw 2` is one detent here.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 32
+at 33000
+tap seq 200
+at 34000
+tap synth 200
+at 35000
+tap t3 200
+at 36500
+press shift
+at 36700
+tap help 200
+at 37200
+release shift
+at 38000
+turn enc2 cw 20
+at 40000
+press shift
+at 40200
+turn enc1 cw 2
+at 41000
+release shift
+at 42000
+tap enc1 200
+at 44000
+press c4
+press e4
+press g4
+at 46000
+release c4
+release e4
+release g4
+wait 45000
+screenshot /root/op1emu-work/ui_a.ppm
+wait 2000
+screenshot /root/op1emu-work/ui_b.ppm
+wait 2000
+screenshot /root/op1emu-work/ui_c.ppm
+wait 4000
+screenshot /root/op1emu-work/ui_d.ppm
+wait 6000
+quit

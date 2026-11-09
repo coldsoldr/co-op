@@ -1,0 +1,10 @@
+{
+  "name": "stereo_delay",
+  "kind": "fx",
+  "symbol": "FX_stereo_delay",
+  "sources": ["stereo_delay.cc"],
+  "defaults": [13230, 13107, 11468, 0],
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "The coop stereo feedback delay of core/include/coop_fx.h as a loadable plugin: the first coop plugin, bit-identical to the built-in master insert when the knobs stand at their defaults."
+}

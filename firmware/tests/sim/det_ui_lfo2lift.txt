@@ -1,0 +1,26 @@
+# As det_ui_lfo2, then lift at 35 s: LFO 1 in focus, its own dials (the comparison for lfo_a).
+# LFO 1's type if tremolo / value / random, else tremolo, off: "lfo2 off" top right, the dials LFO 2's middles);
+# T4: LFO 2 on; blue 20 half-detents (p0 up); green 10 (p1). The run ends in that state (LFO 2's page);
+# det_ui_lfo2lift adds lift: LFO 1's page with its own dials.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t4 200
+at 29000
+tap drop 200
+at 30500
+tap t4 200
+at 32000
+turn enc1 cw 20
+at 33500
+turn enc2 cw 10
+at 35000
+tap lift 200
+wait 72000
+screenshot /root/op1emu-work/lfo_b.ppm
+wait 2000
+screenshot /root/op1emu-work/lfo_b2.ppm
+wait 2000
+quit

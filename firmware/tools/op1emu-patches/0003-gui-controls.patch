@@ -1,0 +1,320 @@
+diff --git a/gui/glfw_display.cpp b/gui/glfw_display.cpp
+index c41a3a7..671859a 100644
+--- a/gui/glfw_display.cpp
++++ b/gui/glfw_display.cpp
+@@ -30,6 +30,8 @@ GLFWDisplay::GLFWDisplay() {
+     glfwSetWindowUserPointer(window_, this);
+     glfwSetMouseButtonCallback(window_, MouseButtonCallback);
+     glfwSetKeyCallback(window_, KeyCallback);
++    glfwSetCursorPosCallback(window_, CursorPosCallback);
++    glfwSetScrollCallback(window_, ScrollCallback);
+ 
+     backgroundTexture_ = LoadBackgroundTexture(uiConfig_.background, windowWidth_, windowHeight_);
+     windowWidth_ = static_cast<int>(windowWidth_ * uiConfig_.scale);
+@@ -114,6 +116,20 @@ void GLFWDisplay::LoadUIConfig(const std::string& path) {
+         }
+     }
+ 
++    // coop-fw: the computer-keyboard map, "keymap": { "z": "f3", "ctrl+1": "s1", ... } (OP-1 button names)
++    if (j.contains("keymap")) {
++        for (auto& [name, target] : j["keymap"].items()) {
++            KeyBinding b;
++            std::string key = name;
++            b.ctrl = key.rfind("ctrl+", 0) == 0;
++            if (b.ctrl) key = key.substr(5);
++            b.glfwKey = MapKeyNameToGLFW(key);
++            b.button = target.get<std::string>();
++            if (b.glfwKey != GLFW_KEY_UNKNOWN) keymap_.push_back(b);
++            else fprintf(stderr, "ui.json keymap: unknown computer key \"%s\"\n", name.c_str());
++        }
++    }
++
+     // Parse encoders
+     if (j.contains("encoders")) {
+         for (auto& [name, enc] : j["encoders"].items()) {
+@@ -266,9 +282,96 @@ void GLFWDisplay::RenderFramebuffer() {
+ 
+ void GLFWDisplay::PollEvents() {
+     glfwPollEvents();
++    StepEncoders();
+     RenderFramebuffer();
+ }
+ 
++// ---- coop-fw (patch 0003): encoders and the volume knob by drag and wheel; a click on an encoder is its push ----
++// A drag up or to the right turns clockwise: one Gray transition (one KeyHandler::AddKnob(+-1), half a detent) per
++// kPixelsPerStep of movement. The transitions go out a few per frame, kStepNs apart in guest time (the firmware reads
++// each edge in its GPIO interrupt; edges sent at once would be missed).
++static constexpr double kPixelsPerStep = 4.0;
++static constexpr int kStepsPerFrame = 4;
++static constexpr uint64_t kStepNs = 2000000;   // 2 ms
++
++int GLFWDisplay::EncoderAt(double x, double y) const {
++    for (size_t e = 0; e < uiConfig_.encoders.size() && e < 4; e++) {
++        const auto& cw = std::get<0>(uiConfig_.encoders[e]);
++        const auto& ccw = std::get<1>(uiConfig_.encoders[e]);
++        const int left = std::min(cw.left, ccw.left), right = std::max(cw.left + cw.width, ccw.left + ccw.width);
++        const int top = std::min(cw.top, ccw.top), bottom = std::max(cw.top + cw.height, ccw.top + ccw.height);
++        if (x >= left && x < right && y >= top && y < bottom) return int(e);
++    }
++    const auto& v = uiConfig_.volumeKnob;
++    const int vl = std::min(v.clockwiseLeft, v.counterClockwiseLeft);
++    const int vr = std::max(v.clockwiseLeft + v.clockwiseWidth, v.counterClockwiseLeft + v.counterClockwiseWidth);
++    const int vt = std::min(v.clockwiseTop, v.counterClockwiseTop);
++    const int vb = std::max(v.clockwiseTop + v.clockwiseHeight, v.counterClockwiseTop + v.counterClockwiseHeight);
++    if (x >= vl && x < vr && y >= vt && y < vb) return 4;
++    return -1;
++}
++
++const ButtonConfig* GLFWDisplay::ButtonNamed(const std::string& name) const {
++    for (const auto& b : uiConfig_.buttons) if (b.name == name) return &b;
++    return nullptr;
++}
++
++void GLFWDisplay::StepEncoders() {
++    constexpr int seq[] = {0, 2, 3, 1};
++    for (size_t e = 0; e < uiConfig_.encoders.size() && e < 4; e++) {
++        auto& [cw, ccw, index] = uiConfig_.encoders[e];
++        for (int k = 0; k < kStepsPerFrame && pendingSteps_[e]; k++) {
++            const int dir = pendingSteps_[e] > 0 ? 1 : -1;
++            pendingSteps_[e] -= dir;
++            index = uint8_t((index + (dir > 0 ? 1 : 3)) % 4);
++            const int value = seq[index];
++            OnKeyAt(cw.bank, cw.index, (value & 2) != 0, uint64_t(k) * kStepNs);
++            OnKeyAt(ccw.bank, ccw.index, (value & 1) != 0, uint64_t(k) * kStepNs);
++        }
++    }
++}
++
++void GLFWDisplay::CursorPosCallback(GLFWwindow* window, double x, double y) {
++    auto* display = static_cast<GLFWDisplay*>(glfwGetWindowUserPointer(window));
++    if (display) display->HandleCursor(x, y);
++}
++
++void GLFWDisplay::ScrollCallback(GLFWwindow* window, double dx, double dy) {
++    auto* display = static_cast<GLFWDisplay*>(glfwGetWindowUserPointer(window));
++    if (display) display->HandleScroll(dx, dy);
++}
++
++void GLFWDisplay::HandleCursor(double x, double y) {
++    if (drag_.which < 0) return;
++    const double d = (x - drag_.x) - (y - drag_.y);   // right or up: clockwise
++    drag_.x = x; drag_.y = y;
++    if (std::abs(x - drag_.x0) + std::abs(y - drag_.y0) > 3) drag_.moved = true;
++    if (drag_.which == 4) {                           // the volume knob: 0..255
++        int v = int(volumeValue_) + int(d);
++        volumeValue_ = uint8_t(v < 0 ? 0 : v > 255 ? 255 : v);
++        return;
++    }
++    drag_.acc += d;
++    while (drag_.acc >= kPixelsPerStep) { pendingSteps_[drag_.which]++; drag_.acc -= kPixelsPerStep; }
++    while (drag_.acc <= -kPixelsPerStep) { pendingSteps_[drag_.which]--; drag_.acc += kPixelsPerStep; }
++}
++
++void GLFWDisplay::HandleScroll(double dx, double dy) {
++    (void)dx;
++    double x, y;
++    glfwGetCursorPos(window_, &x, &y);
++    const int e = EncoderAt(x, y);
++    if (e < 0 || dy == 0) return;
++    const int notches = dy > 0 ? 1 : -1;              // one detent (two transitions) per wheel notch
++    if (e == 4) {
++        int v = int(volumeValue_) + 8 * notches;
++        volumeValue_ = uint8_t(v < 0 ? 0 : v > 255 ? 255 : v);
++    } else {
++        pendingSteps_[e] += 2 * notches;
++    }
++}
++
++
+ bool GLFWDisplay::ShouldClose() const {
+     return window_ && glfwWindowShouldClose(window_);
+ }
+@@ -295,6 +398,22 @@ void GLFWDisplay::MouseButtonCallback(GLFWwindow* window, int button, int action
+ 
+ void GLFWDisplay::HandleMouseButton(int button, int action, double x, double y) {
+     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
++    // coop-fw (patch 0003): the encoders and the volume knob are dragged; a click on an encoder is its push switch
++    if (action == GLFW_PRESS) {
++        const int e = EncoderAt(x, y);
++        if (e >= 0) { drag_ = Drag(); drag_.which = e; drag_.x0 = drag_.x = x; drag_.y0 = drag_.y = y; return; }
++    } else if (action == GLFW_RELEASE && drag_.which >= 0) {
++        const int e = drag_.which;
++        const bool moved = drag_.moved;
++        drag_.which = -1;
++        if (!moved && e < 4) {
++            if (const ButtonConfig* push = ButtonNamed("enc" + std::to_string(e + 1))) {
++                OnKeyPressed(push->bank, push->index);
++                OnKeyAt(push->bank, push->index, false, 100000000);   // released 100 ms later (guest time)
++            }
++        }
++        return;
++    }
+ 
+     // Only handle press events for volume knob
+     if (action == GLFW_PRESS) {
+@@ -381,12 +500,27 @@ void GLFWDisplay::KeyCallback(GLFWwindow* window, int key, int scancode, int act
+     if (action != GLFW_PRESS && action != GLFW_RELEASE) return;
+     auto* display = static_cast<GLFWDisplay*>(glfwGetWindowUserPointer(window));
+     if (display) {
+-        display->HandleKeyboard(key, action);
++        display->HandleKeyboard(key, action, mods);
+     }
+ }
+ 
+-void GLFWDisplay::HandleKeyboard(int key, int action) {
++void GLFWDisplay::HandleKeyboard(int key, int action, int mods) {
+     if (action != GLFW_PRESS && action != GLFW_RELEASE) return;
++    // coop-fw (patch 0003): the keymap; a release goes to whatever button the press pressed (modifiers may change)
++    if (action == GLFW_RELEASE) {
++        auto it = heldKeys_.find(key);
++        if (it != heldKeys_.end()) { OnKeyReleased(it->second->bank, it->second->index); heldKeys_.erase(it); return; }
++    } else {
++        const bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
++        for (const auto& b : keymap_) {
++            if (b.glfwKey != key || b.ctrl != ctrl) continue;
++            if (const ButtonConfig* btn = ButtonNamed(b.button)) {
++                OnKeyPressed(btn->bank, btn->index);
++                heldKeys_[key] = btn;
++                return;
++            }
++        }
++    }
+ 
+     // Check if key matches any keycap
+     for (const auto& keycap : uiConfig_.keycaps) {
+@@ -412,6 +546,25 @@ int GLFWDisplay::MapKeyNameToGLFW(const std::string& keyName) {
+     if (keyName == "escape" || keyName == "esc") return GLFW_KEY_ESCAPE;
+     if (keyName == "backspace") return GLFW_KEY_BACKSPACE;
+ 
++    // coop-fw (patch 0003): function keys, keypad, punctuation, navigation
++    if (keyName.size() >= 2 && keyName[0] == 'f' && keyName.find_first_not_of("0123456789", 1) == std::string::npos) {
++        const int n = std::stoi(keyName.substr(1));
++        if (n >= 1 && n <= 25) return GLFW_KEY_F1 + (n - 1);
++    }
++    if (keyName.size() == 3 && keyName.rfind("kp", 0) == 0 && keyName[2] >= '0' && keyName[2] <= '9')
++        return GLFW_KEY_KP_0 + (keyName[2] - '0');
++    static const std::map<std::string, int> named = {
++        {"comma", GLFW_KEY_COMMA}, {"period", GLFW_KEY_PERIOD}, {"slash", GLFW_KEY_SLASH},
++        {"semicolon", GLFW_KEY_SEMICOLON}, {"apostrophe", GLFW_KEY_APOSTROPHE}, {"minus", GLFW_KEY_MINUS},
++        {"equal", GLFW_KEY_EQUAL}, {"lbracket", GLFW_KEY_LEFT_BRACKET}, {"rbracket", GLFW_KEY_RIGHT_BRACKET},
++        {"backslash", GLFW_KEY_BACKSLASH}, {"grave", GLFW_KEY_GRAVE_ACCENT}, {"home", GLFW_KEY_HOME},
++        {"end", GLFW_KEY_END}, {"pageup", GLFW_KEY_PAGE_UP}, {"pagedown", GLFW_KEY_PAGE_DOWN},
++        {"insert", GLFW_KEY_INSERT}, {"delete", GLFW_KEY_DELETE}, {"rshift", GLFW_KEY_RIGHT_SHIFT},
++        {"kpenter", GLFW_KEY_KP_ENTER}, {"kpplus", GLFW_KEY_KP_ADD}, {"kpminus", GLFW_KEY_KP_SUBTRACT},
++    };
++    auto n = named.find(keyName);
++    if (n != named.end()) return n->second;
++
+     // Arrow keys
+     if (keyName == "up") return GLFW_KEY_UP;
+     if (keyName == "down") return GLFW_KEY_DOWN;
+diff --git a/gui/glfw_display.h b/gui/glfw_display.h
+index d3d5b08..31ecbfc 100644
+--- a/gui/glfw_display.h
++++ b/gui/glfw_display.h
+@@ -8,6 +8,7 @@
+ #include <cstdint>
+ #include <string>
+ #include <mutex>
++#include <map>
+ 
+ struct DisplayRect {
+     int left;
+@@ -77,8 +78,22 @@ private:
+     static void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+     static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+     void HandleMouseButton(int button, int action, double x, double y);
+-    void HandleKeyboard(int key, int action);
++    void HandleKeyboard(int key, int action, int mods = 0);
+     int MapKeyNameToGLFW(const std::string& keyName);
++    // coop-fw (patch 0003): drag / wheel on the encoders and the volume knob, the computer-keyboard map
++    static void CursorPosCallback(GLFWwindow* window, double x, double y);
++    static void ScrollCallback(GLFWwindow* window, double dx, double dy);
++    void HandleCursor(double x, double y);
++    void HandleScroll(double dx, double dy);
++    int EncoderAt(double x, double y) const;      // 0..3, 4 = the volume knob, -1 = none
++    void StepEncoders();                          // from PollEvents: the queued steps, a few per frame
++    const ButtonConfig* ButtonNamed(const std::string& name) const;
++    struct Drag { int which = -1; double x0 = 0, y0 = 0, x = 0, y = 0, acc = 0; bool moved = false; };
++    Drag drag_;
++    int pendingSteps_[4] = {0, 0, 0, 0};          // Gray transitions still to send per encoder (+ cw, - ccw)
++    struct KeyBinding { int glfwKey; bool ctrl; std::string button; };
++    std::vector<KeyBinding> keymap_;
++    std::map<int, const ButtonConfig*> heldKeys_; // computer key -> the OP-1 button it pressed (released alike)
+ 
+     GLFWwindow* window_ = nullptr;
+     GLuint texture_ = 0;
+diff --git a/gui/ui.json b/gui/ui.json
+index b9e5950..fbbc3ba 100644
+--- a/gui/ui.json
++++ b/gui/ui.json
+@@ -273,5 +273,69 @@
+     },
+     "keycaps": {
+         "shift": [5, 6]
++    },
++    "keymap": {
++        "z": "f3",
++        "x": "g3",
++        "c": "a3",
++        "v": "b3",
++        "b": "c4",
++        "n": "d4",
++        "m": "e4",
++        "s": "f3#",
++        "d": "g3#",
++        "f": "a3#",
++        "h": "c4#",
++        "j": "d4#",
++        "q": "f4",
++        "w": "g4",
++        "e": "a4",
++        "r": "b4",
++        "t": "c5",
++        "y": "d5",
++        "u": "e5",
++        "2": "f4#",
++        "3": "g4#",
++        "4": "a4#",
++        "6": "c5#",
++        "7": "d5#",
++        "f1": "synth",
++        "f2": "drum",
++        "f3": "tape",
++        "f4": "mixer",
++        "f5": "t1",
++        "f6": "t2",
++        "f7": "t3",
++        "f8": "t4",
++        "kp1": "s1",
++        "kp2": "s2",
++        "kp3": "s3",
++        "kp4": "s4",
++        "kp5": "s5",
++        "kp6": "s6",
++        "kp7": "s7",
++        "kp8": "s8",
++        "ctrl+1": "s1",
++        "ctrl+2": "s2",
++        "ctrl+3": "s3",
++        "ctrl+4": "s4",
++        "ctrl+5": "s5",
++        "ctrl+6": "s6",
++        "ctrl+7": "s7",
++        "ctrl+8": "s8",
++        "rshift": "shift",
++        "space": "play",
++        "enter": "rec",
++        "backspace": "stop",
++        "left": "left",
++        "right": "right",
++        "home": "lift",
++        "end": "drop",
++        "pagedown": "split",
++        "tab": "seq",
++        "f9": "mic",
++        "f10": "usb",
++        "f11": "tempo",
++        "f12": "help"
+     }
+ }

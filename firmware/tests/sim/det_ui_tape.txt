@@ -1,0 +1,63 @@
+# u4: tape solo and markers. Tape mode; right arrow three times (the playhead moves); Shift + blue push: the blue
+# marker here; right three more; Shift + green push: the green marker; blue push: the playhead jumps back to blue;
+# Shift + Help held, T2: solo track 2 ("solo 2" in the corner; the other three muted); Help tapped alone opens
+# help as stock; tape brings the page back; a chord (the synth plays through the tape mode). The last screen is
+# the tape page with both markers and "solo 2". Screenshots wall-timed: at the end.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tape 200
+at 27500
+tap right 200
+at 28000
+tap right 200
+at 28500
+tap right 200
+at 29500
+press shift
+at 29700
+tap enc1 200
+at 30200
+release shift
+at 31000
+tap right 200
+at 31500
+tap right 200
+at 32000
+tap right 200
+at 33000
+press shift
+at 33200
+tap enc2 200
+at 33700
+release shift
+at 34500
+tap enc1 200
+at 36000
+press shift
+at 36200
+press help
+at 36500
+tap t2 200
+at 37000
+release help
+at 37200
+release shift
+at 38500
+tap help 200
+at 40000
+tap tape 200
+at 41500
+press c4
+press e4
+press g4
+at 43500
+release c4
+release e4
+release g4
+wait 38000
+screenshot /root/op1emu-work/tp_a.ppm
+wait 2000
+screenshot /root/op1emu-work/tp_b.ppm
+wait 5000
+quit

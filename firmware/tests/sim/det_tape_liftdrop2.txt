@@ -1,0 +1,52 @@
+# Stereo lift and drop: record a chord (synth page, REC+PLAY, chord at tape 0.8-1.8 s), STOP x2 (start),
+# tape page, PLAY 1.3 s into the clip, STOP, LIFT (the clip under the head leaves the tape), PLAY 2 s on,
+# STOP, DROP (the clip lands at ~3.3 s), STOP x2, PLAY from the start: the chord must play once, later,
+# with its stereo width.
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap synth 300
+at 32000
+press rec
+at 32200
+tap play 300
+at 32600
+release rec
+at 33000
+press c4
+press e4
+press g4
+at 34000
+release c4
+release e4
+release g4
+at 36000
+tap stop 300
+at 37000
+tap stop 300
+at 38000
+tap tape 300
+at 39000
+tap play 300
+at 40300
+tap stop 300
+at 41000
+tap lift 300
+at 42000
+tap play 300
+at 44000
+tap stop 300
+at 45000
+press drop
+at 45800
+release drop
+at 46500
+tap stop 300
+at 47000
+tap stop 300
+at 48000
+tap play 300
+at 55000
+tap stop 300
+wait 70000
+quit

@@ -1,0 +1,15 @@
+# Deterministic tape playback from the start: tape screen, STOP twice (back to the start marker), play, stop.
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap tape 300
+at 30500
+tap stop 300
+at 31000
+tap stop 300
+at 32000
+tap play 300
+at 42000
+tap stop 300
+wait 50000
+quit

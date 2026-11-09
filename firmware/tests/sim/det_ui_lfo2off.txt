@@ -1,0 +1,15 @@
+# u9: the stock "LFO OFF" overlay follows LFO 2 (coop_lfo_on_read). Synth; T4 (the LFO page); drop: LFO 2 focuses
+# (the sound had none: LFO 1's type if tremolo / value / random, else tremolo; middles; OFF). End state: LFO 2's page
+# with the stock's LFO OFF overlay (det_ui_lfo2 is the same run plus T4 on and two encoder turns: no overlay).
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t4 200
+at 29000
+tap drop 200
+wait 100000
+screenshot /root/op1emu-work/lfo_c.ppm
+wait 2000
+quit

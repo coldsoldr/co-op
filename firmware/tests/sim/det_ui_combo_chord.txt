@@ -1,0 +1,73 @@
+# Why is a chord silent after the four-key combo + a synth tap? Three chords: 1 s after the tap (33.5), 5 s after
+# it (38), and after T1 is tapped as well (43). Then a second combo closed with the LEFT arrow instead, synth, chord
+# (50). Compare the four windows.
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+press synth
+at 30200
+press drum
+at 30400
+press tape
+at 30600
+press mixer
+at 31600
+release mixer
+release tape
+release drum
+release synth
+at 32500
+tap synth 300
+at 33500
+press c4
+press e4
+press g4
+at 34500
+release c4
+release e4
+release g4
+at 38000
+press c4
+press e4
+press g4
+at 39000
+release c4
+release e4
+release g4
+at 42000
+tap t1 200
+at 43000
+press c4
+press e4
+press g4
+at 44000
+release c4
+release e4
+release g4
+at 46000
+press synth
+at 46200
+press drum
+at 46400
+press tape
+at 46600
+press mixer
+at 47400
+release mixer
+release tape
+release drum
+release synth
+at 48000
+tap left 200
+at 48800
+tap synth 300
+at 50000
+press c4
+press e4
+press g4
+at 51000
+release c4
+release e4
+release g4
+wait 50000
+quit

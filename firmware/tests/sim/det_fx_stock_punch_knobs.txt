@@ -1,0 +1,51 @@
+# The STOCK punch effect (row 6 of the FX list: cwo delay grid nitro phone punch spring) at the synth position, its
+# knobs turned while a chord sounds. White (enc3) is W[params+4], the stage count N = W >> 10 (default 0x4E20, N 19;
+# the knob's range 0x600..0x6200 is N 1..24): swept to the bottom (N 1, no inner loop), to the top (N 24, no tail
+# copy) and back while the other three move. Guest-timed.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 40
+at 33000
+tap seq 200
+at 34000
+tap synth 200
+at 36000
+press c4
+press e4
+press g4
+at 37000
+turn enc3 ccw 120
+at 39000
+turn enc1 cw 24
+at 40000
+turn enc3 cw 200
+at 42000
+turn enc2 cw 24
+at 43000
+turn enc4 cw 24
+at 44000
+turn enc3 ccw 40
+at 45000
+turn enc1 ccw 40
+turn enc2 ccw 40
+at 46000
+turn enc4 ccw 40
+at 47000
+release c4
+release e4
+release g4
+wait 39000
+screenshot /root/op1emu-work/sf_punch_knobs.ppm
+wait 8000
+quit

@@ -1,0 +1,43 @@
+# Closing the engine list: encoder pushes 2-4, help, seq, mic, com; screenshot after each; chord at the end
+accel 64 -64 512
+wait-frames 1 300000
+wait 26000
+tap synth 200
+wait 1500
+press shift
+wait 300
+tap t1 200
+wait 300
+release shift
+wait 1500
+screenshot /root/op1emu-work/q0.ppm
+tap enc2 200
+wait 1500
+screenshot /root/op1emu-work/q1.ppm
+tap enc3 200
+wait 1500
+screenshot /root/op1emu-work/q2.ppm
+tap enc4 200
+wait 1500
+screenshot /root/op1emu-work/q3.ppm
+tap help 200
+wait 1500
+screenshot /root/op1emu-work/q4.ppm
+tap seq 200
+wait 1500
+screenshot /root/op1emu-work/q5.ppm
+tap mic 200
+wait 1500
+screenshot /root/op1emu-work/q6.ppm
+tap synth 200
+wait 1500
+screenshot /root/op1emu-work/q7.ppm
+press c4
+press e4
+press g4
+wait 2000
+release c4
+release e4
+release g4
+wait 1500
+quit

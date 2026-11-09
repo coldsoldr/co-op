@@ -1,0 +1,32 @@
+# S1: a STOCK effect (delay, the second row of the FX list) at the synth position; with the stereo bus v2 its echoes
+# must follow the per-voice placement. Guest-timed, as det_fx_select.txt.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 8
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36500
+press c4
+press e4
+press g4
+at 38500
+release c4
+release e4
+release g4
+wait 33500
+screenshot /root/op1emu-work/sd1.ppm
+wait 10500
+quit

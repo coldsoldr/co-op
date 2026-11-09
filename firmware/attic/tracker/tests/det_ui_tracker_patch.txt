@@ -1,0 +1,60 @@
+# F2b: the channel patch. Tape, Shift + tape; Shift + right (channel 2); green three detents (str); Shift + T2:
+# the patch view (four bars at 50, pan c); blue ten detents down (knob 1 -> 40), white ten up (knob 3 -> 60),
+# Shift + blue five detents (pan r05); T1; g4 at row 0 (the string, with the patch); stop; play ~5 s; Shift + T2
+# for the last screenshot (the patch view with the changed bars). Screenshots: at the end.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tape 200
+at 27500
+press shift
+at 27700
+tap tape 200
+at 28200
+release shift
+at 29000
+press shift
+at 29200
+tap right 120
+at 29500
+release shift
+at 30000
+turn enc2 cw 6
+at 30800
+press shift
+at 31000
+tap t2 150
+at 31300
+release shift
+at 32000
+turn enc1 ccw 20
+at 33000
+turn enc3 cw 20
+at 34000
+press shift
+at 34200
+turn enc1 cw 10
+at 34800
+release shift
+at 35500
+tap t1 150
+at 36200
+tap g4 150
+at 36800
+tap stop 150
+at 37500
+tap play 150
+at 38500
+press shift
+at 38700
+tap t2 150
+at 39000
+release shift
+at 47500
+tap stop 150
+wait 42000
+screenshot /root/op1emu-work/trkq_a.ppm
+wait 3000
+screenshot /root/op1emu-work/trkq_b.ppm
+wait 4000
+quit
