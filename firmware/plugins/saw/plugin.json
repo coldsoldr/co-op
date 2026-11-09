@@ -2,9 +2,21 @@
   "name": "saw",
   "kind": "synth",
   "symbol": "ENGINE_saw",
-  "sources": ["saw.cc"],
-  "defaults": [20000, 8000, 6000, 4000],
+  "sources": [
+    "saw.cc",
+    "saw_screen.cc"
+  ],
+  "defaults": [
+    20000,
+    8000,
+    6000,
+    4000
+  ],
   "author": "coldsoldr",
   "version": "0.1",
-  "description": "The reference coop synth engine (docs/engines.md, E1): two detuned saws, a sub square and a low-pass. Blue brightness, green detune, white sub, orange drift."
+  "description": "The reference coop synth engine (docs/engines.md, E1 / E2): two detuned saws, a sub square and a low-pass, with its own screen. Blue brightness, green detune, white sub, orange drift.",
+  "screen": {
+    "svg": "saw.svg",
+    "symbol": "SCREEN_saw"
+  }
 }

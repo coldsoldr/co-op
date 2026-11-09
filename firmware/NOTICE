@@ -20,7 +20,8 @@ NOT COVERED by this license
 THIRD-PARTY CODE (their notices are kept in their directories)
 - third_party/kennel: a subset of kennel, Hundekraft's custom firmware runtime for the OP-1, itself based
   on pcppcp's op1r-src. Copyright (C) 2026 Hundekraft, (C) 2026 pcppcp. GPL-3.0-or-later with the same
-  OP-1 firmware permission. Source: https://github.com/Hundekraft/op1-workshop (release 3.1).
+  OP-1 firmware permission. Source: https://github.com/Hundekraft/op1-workshop (release 3.1;
+  synth_sdk/harness/svg_check.py from release 3.1.4, used by tools/plugin/pack.py).
 - tools/ldr_dump.py, inject_app.py, patch_app.py, build_package.py, verify_bootloader.py, pkg_check.py:
   from coldsoldr/te-op1-cfw, same author.
 - Address tables derived from the opus plugin kit's op1fw.h (LizardMan, GPL-3.0) are credited where used.

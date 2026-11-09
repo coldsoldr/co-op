@@ -76,7 +76,7 @@ class PackError(Exception):
 
 def svg_turn_backs(svg):
     """synth_sdk/harness/svg_check.py's turn-back rule (one rule for the harness and the packer)"""
-    sys.path.insert(0, str(SDK / 'harness'))
+    sys.path.insert(0, str(KENNEL / 'third_party' / 'kennel' / 'synth_sdk' / 'harness'))   # coop-fw: the vendored copy
     try:
         import svg_check
     finally:

@@ -1496,3 +1496,23 @@ read `coop protocol 1 caps 0xf build p6k`. If a plugin file is present, settings
 off, reboot, it is skipped (`plugins ... disabled 1` in the stats).
 
 Result: (pending)
+
+## Engines (e2): plugin synth engines and their screens — device test (pending, 2026-11-09)
+
+- `build/pkg/op1_246_coop_e2_engines.op1` (sha256 `0dc8b7f0eb95f359babe889b2e318a169358740ed71af057d58d0f92925e904c`), copy
+  in Downloads with `saw.coop`. `--tape-stereo --set-word g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check`
+  = only `OP1_vdk.ldr` differs. Build tag `e2`. p6k plus E1 (synth engine plugins through the iter engine) and E2
+  (their screens), docs/engines.md. With no engine file the image plays as p6k (op1emu: identical, the Gfx path within
+  1 LSB, docs/engines.md).
+
+**What to do**: flash, boot, play as before (nothing should change). Then install `saw.coop` with
+`tools/coop_sysex.html` > Install (it goes to `/yaffs2/plugins`), power-cycle. On the synth page, shift + T1: "saw" is
+in the engine list between sampler and string; pick it. The page shows two saws (blue, green), a white square under
+them and an orange dot: turn each encoder and its own part should move (blue the saws' height, green the second saw
+sideways, white the square's height, orange the dot's wobble). Play: a bright detuned saw; every key in tune across the
+keyboard; six notes at once; bend and the LFO work as on any engine. Save the sound, power-cycle: it comes back as saw.
+Then remove the file (SysEx Delete, or the settings menu's plugin row off) and power-cycle: the sound loads as iter,
+no crash. The stats file's `plugins` line: `engines 1`, `eng_*`, `scr_*`; the `engines` line `plugin_engine=` (the
+device cost a voice: op1emu says ~6.6 k cycles).
+
+Result: (pending)

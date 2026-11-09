@@ -76,6 +76,7 @@ static void render(int voice, void *state, int16_t *out, const int32_t *pitch, c
     v->ph1 = ph1; v->ph2 = ph2; v->ph3 = ph3; v->lp = lp;
 }
 
+extern "C" const coop_screen_t SCREEN_saw;            /* saw_screen.cc */
 extern "C" const coop_engine_t ENGINE_saw = {
-    COOP_ENGINE_MAGIC, COOP_PLUGIN_API, 0, sizeof(struct voice), 0, note_on, render, note_off, 0,
+    COOP_ENGINE_MAGIC, COOP_PLUGIN_API, 0, sizeof(struct voice), 0, note_on, render, note_off, &SCREEN_saw,
 };

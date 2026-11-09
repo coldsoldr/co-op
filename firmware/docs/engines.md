@@ -74,9 +74,13 @@ The owner chose plugin screens in the first build. Kennel's model, ported:
   (`sdk/coop_exports.cc`), so a plugin never names a firmware address.
 - Kennel found that swapping documents into the screen table leaks their drawing caches (R246 resets only documents
   reachable from the table, `kn_screens.c`); coop takes its frame-snapshot fix with the screens.
-- [I] Order at boot: the stock builds and loads its screens before coop's plugin scan runs (the tape mount). coop
-  therefore builds an engine's screen object after the scan, from the main loop, and only swaps it in once its SVG is
-  loaded; until then the engine shows iter's screen. To be confirmed in op1emu.
+- Order at boot: the stock builds and loads its screens before coop's plugin scan runs (the tape mount). coop
+  therefore builds the engine screens on the Gfx thread (`coop_screens_frame`, from coop_ui_frame), on the first
+  frame after the scan once the stock iter screen has its document, and only swaps one in once its SVG is loaded;
+  until then the engine shows iter's screen. [C op1emu, E2 below]
+- The plugin draws through `sdk/coop_screen.h` (core exports, `sdk/coop_exports.cc`): find a node (in the screen's
+  document, no assert: `0x019EB8AC`, as te-op1-cfw's `fx_screen.h`), set its matrix, show / hide it, its line / fill
+  colour (0 for an id the SVG lacks: the stock getters assert), draw the SVG, a raster line, the shown slot's knobs.
 
 ## Milestones
 
@@ -106,6 +110,21 @@ The owner chose plugin screens in the first build. Kennel's model, ported:
     iter's dials, no assert.
 - **E2, screens.** `coop_screen_t`, `sdk/coop_screen.h`, the SVG-in-file path, the case-14 swap, the frame fix;
   `saw` gets a screen (four bars and a waveform drawn from the knobs). Gate: op1emu screenshots of the engine page.
+  **E2 built and gated in op1emu (2026-11-09)** [C op1emu]:
+  - `saw` with its screen (`plugins/saw/saw.svg`, `saw_screen.cc`), packed with the SVG in front: the stats say
+    `scr_built 1 scr_failed 0`; with saw selected the engine page is saw's drawing (`det_eng_select.txt`: the saws
+    scaled by brightness, the second saw offset by detune, the sub square, the drift dot), drawn by the plugin's
+    update (`scr_updates` counts its frames). `explore_eng_screens.txt`: saw, then string (string's stock page), then
+    saw again (saw's page, the dot moved on): the case-14 swap follows the engine.
+  - The order at boot [C op1emu]: the build runs on the first frame after the plugin scan with the stock iter screen
+    loaded, as planned; one swap of slot 0x14, one document reset by the frame fix (iter's, when saw's took its place).
+  - Regression: with no engine file the chord scenario matches p6k exactly up to 51.7 s and by at most 1 LSB after;
+    the E2 image is identical to itself run to run, and the same image with `--set-word g_coop_scr_stock=1` (the stock
+    frame path) is identical to p6k. That run reset no document (`scr_resets 0`): the only difference on that path is
+    the frame copy each Gfx frame. [I] The extra Gfx work moves when some non-audio thread updates a value the audio
+    reads (an LFO step, a smoothed knob), which lands 1 LSB apart; inaudible, and any change on the Gfx path would do
+    the same. Not traced further.
+  - Package `build/pkg/op1_246_coop_e2_engines.op1` (tag `e2`): E1 + E2; `saw.coop` separately.
 - **E3, rings.** Port `te-op1-cfw/ports/knl/rings` with its screen (`/port`). Gate: its op1emu WAV against the
   kennel build's.
 - Then on the device: one package for E1 + E2 + saw, the owner's verdict, then rings.

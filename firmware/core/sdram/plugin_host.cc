@@ -66,6 +66,7 @@ extern "C" const int coop_exports_count;
 extern "C" int coop_stereo_side_rw(int instr, int16_t **l, int16_t **r);   /* stereo_bus.cc: one instrument's side pair, live */
 extern "C" const coop_engine_t *coop_engine_at(int n);                    /* engine_host.cc (E1): the engine at number n */
 extern "C" const char *coop_engine_add(int n, const coop_engine_t *e);
+extern "C" void coop_engine_screen_file(int n, const char *file);         /* engine_screen.cc (E2) */
 
 volatile uint32_t g_plugins_seen, g_plugins_loaded, g_plugins_failed, g_plugins_booted, g_plugins_map_n;
 volatile uint32_t g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks;
@@ -220,7 +221,7 @@ static void list_dir(void)
 }
 
 static char g_eng_name[SLOTS][16];                                         /* E1: each engine's type name, by number */
-static const char *load_engine(const kn_info &in, uint8_t *stage);        /* below */
+static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fname);   /* below */
 static const char *load_one(const char *fname, uint8_t *stage)
 {
     char path[64];
@@ -238,7 +239,7 @@ static const char *load_one(const char *fname, uint8_t *stage)
     for (int k = 1; k < SLOTS; k++)
         if ((g_plug[k].fx && seq(g_plug[k].name, in.type_name)) || (coop_engine_at(k) && seq(g_eng_name[k], in.type_name)))
             return "another file has the same name";
-    if (in.kind == KN_KIND_SYNTH) return load_engine(in, stage);
+    if (in.kind == KN_KIND_SYNTH) return load_engine(in, stage, fname);
     if (in.kind != KN_KIND_FX) return "not an effect or a synth engine";
     if (in.flags) return "plugin flags not supported yet";
     int n = number_for(in.type_name);
@@ -278,7 +279,7 @@ static const char *load_one(const char *fname, uint8_t *stage)
 /* E1: a synth engine (kind 1). One relocation: the engine's code and .bss serve all six voices; the host keeps the
  * per-voice state (engine_host.cc). Names of engines and effects share the number map and must differ. */
 volatile uint32_t g_engines_loaded;
-static const char *load_engine(const kn_info &in, uint8_t *stage)
+static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fname)
 {
     if (in.flags) return "plugin flags not supported yet";
     int n = number_for(in.type_name);
@@ -309,6 +310,7 @@ static const char *load_engine(const kn_info &in, uint8_t *stage)
     if (!err) err = coop_engine_add(n, e);
     if (err) { FREE(raw); return err; }
     scopy(g_eng_name[n], in.type_name, 16);
+    if (e->screen && in.svg) coop_engine_screen_file(n, fname);           /* E2: built on the Gfx thread later */
     g_engines_loaded++;
     row_ensure(DB_FACTORY(), "synth_types", in.type_name, in.defaults, n);
     return 0;

@@ -491,9 +491,10 @@ static void draw_fx2_page(void *r)                                     /* coop's
     coop_text_draw(&s_tx[TX_HINT2], r, 12, 100, 12, c_grey, "shift blue  type", 0);
 }
 
+extern "C" void coop_screens_frame(void *table);                           /* engine_screen.cc (E2): the frame-stable table */
 extern "C" void coop_ui_frame(void *table)
 {
-    SCREENS_UPDATE(table);
+    coop_screens_frame(table);                                            /* the stock screens_update on a stable copy */
     { void *rv = op1_raster(); if (rv) coop_save_draw(rv); }            /* "overwriting" over the save clock, any page */
     if (coop_settings_is_open()) { void *rs = op1_raster(); if (rs) coop_settings_draw(rs); return; }
     if (CUR_MODE == 2 && CUR_SCREEN == TAPE_SCREEN) { void *rt = op1_raster(); if (rt) coop_tape_draw(rt); return; }

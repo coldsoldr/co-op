@@ -163,6 +163,9 @@ ITER_VTABLE_PATCHES = [(0x019103E0, 0x019B99D4, 'eng_render'), (0x019103E8, 0x01
                        (0x019103F8, 0x019B996C, 'eng_note_off')]
 INSTRNAME_SITE = 0x019b975c
 INSTRNAME_STOCK = bytes.fromhex('18300b32')
+# E2 (engine_screen.cc): ScreenId::for_synth's jump table, case 14 (iter) -> coop_synth_screen_case14 (kennel
+# make_firmware.py DATA_PATCHES).
+SYNTH_SCREEN_CASE14 = (0x018F8074, 0x01A3BFD0)
 SEAM_SITE = 0xffa0706e                                               # P2.L = 0xef7c; P2.H = 0x1b4 before the seam loop (hook B)
 SEAM_STOCK = bytes.fromhex("0ae17cef" "4ae1b401")
 SEAM_FILL_SITE = 0xffa073b8                                          # P1 = 0x01a54284 (the stock seam fill) -> coop_seam_fill
@@ -464,6 +467,9 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
         for addr, stock, name in ITER_VTABLE_PATCHES:
             out.append((addr, struct.pack('<I', stock), struct.pack('<I', thunks_global[name])))
         out.append((INSTRNAME_SITE, INSTRNAME_STOCK, jump_l(INSTRNAME_SITE, sdram_tramp_at + 352)))
+        if thunks_global.get('screen_case14'):
+            addr, stock = SYNTH_SCREEN_CASE14
+            out.append((addr, struct.pack('<I', stock), struct.pack('<I', thunks_global['screen_case14'])))
     if thunks_global.get('keyev'):                             # the Lander combo swallowed (the getter sites stay stock:
         out.append((KEYEV_SITE, call24(KEYEV_SITE, KEY_DISPATCH), call24(KEYEV_SITE, sdram_tramp_at + 112)))   # a stub screen hung the boot in op1emu)
     return out + list(TAPE_BYTE_PATCHES)
@@ -539,6 +545,11 @@ def thunk_addresses(elf):
             eng[name] = symbol_address(syms, 'coop_' + name)[0]
     except Exception:
         eng = {}
+    if eng:
+        try:                                           # E2: engine screens
+            eng['screen_case14'] = symbol_address(syms, 'coop_synth_screen_case14')[0]
+        except Exception:
+            pass
     tanks = {}
     try:                                               # clean-up after S2: own grid / spring tanks
         for name in ('tank_grid_render', 'tank_grid_init', 'tank_spring_render', 'tank_spring_init'):
