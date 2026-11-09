@@ -155,6 +155,14 @@ FX_VTABLE_PATCHES = [(vt + 0x14, render, 'fx_render_mono') for vt, render, init 
                     [(0x01910CC8, 0x019E7EE4, 'fx_render_st'), (0x01910CD0, 0x019E78D0, 'fx_init_st')]
 FXNAME_SITE = 0x019aad8e
 FXNAME_STOCK = bytes.fromhex('18300b32')
+# --- synth engine plugins (E1, docs/engines.md, core/sdram/engine_host.cc): kennel's iter-engine hijack ---
+# The hidden iter engine's voice vtable 0x019103CC: render +0x14, note on +0x1C, note off +0x2C (query +0x24 stays
+# stock) [C: OP1_vdk.dis]. The instr_types name compare at 0x019B975C (`R3 = R0; P1 = R3`) becomes a JUMP.L to a
+# region-C jump trampoline (+352) -> coop_instr_name_eq.
+ITER_VTABLE_PATCHES = [(0x019103E0, 0x019B99D4, 'eng_render'), (0x019103E8, 0x019B9B8A, 'eng_note_on'),
+                       (0x019103F8, 0x019B996C, 'eng_note_off')]
+INSTRNAME_SITE = 0x019b975c
+INSTRNAME_STOCK = bytes.fromhex('18300b32')
 SEAM_SITE = 0xffa0706e                                               # P2.L = 0xef7c; P2.H = 0x1b4 before the seam loop (hook B)
 SEAM_STOCK = bytes.fromhex("0ae17cef" "4ae1b401")
 SEAM_FILL_SITE = 0xffa073b8                                          # P1 = 0x01a54284 (the stock seam fill) -> coop_seam_fill
@@ -451,6 +459,11 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
             out.append((site, call24(site, fn), call24(site, sdram_tramp_at + 320)))
         for site, fn in LFOON_SITES:
             out.append((site, call24(site, fn), call24(site, sdram_tramp_at + 336)))
+    if thunks_global.get('instr_name_eq') and not os.environ.get('COOP_NO_ENGINE'):   # E1: synth engine plugins (engine_host.cc);
+        # COOP_NO_ENGINE (test switch, as COOP_NO_MIXA): the same image without the iter / name-compare patches
+        for addr, stock, name in ITER_VTABLE_PATCHES:
+            out.append((addr, struct.pack('<I', stock), struct.pack('<I', thunks_global[name])))
+        out.append((INSTRNAME_SITE, INSTRNAME_STOCK, jump_l(INSTRNAME_SITE, sdram_tramp_at + 352)))
     if thunks_global.get('keyev'):                             # the Lander combo swallowed (the getter sites stay stock:
         out.append((KEYEV_SITE, call24(KEYEV_SITE, KEY_DISPATCH), call24(KEYEV_SITE, sdram_tramp_at + 112)))   # a stub screen hung the boot in op1emu)
     return out + list(TAPE_BYTE_PATCHES)
@@ -520,6 +533,12 @@ def thunk_addresses(elf):
                 ui[key] = symbol_address(syms, name)[0]
             except Exception:
                 sys.stderr.write('warning: ' + name + ' not in the ELF: its hook is not patched' + chr(10))
+    eng = {}
+    try:                                               # E1: synth engine plugins
+        for name in ('instr_name_eq', 'eng_render', 'eng_note_on', 'eng_note_off'):
+            eng[name] = symbol_address(syms, 'coop_' + name)[0]
+    except Exception:
+        eng = {}
     tanks = {}
     try:                                               # clean-up after S2: own grid / spring tanks
         for name in ('tank_grid_render', 'tank_grid_init', 'tank_spring_render', 'tank_spring_init'):
@@ -580,7 +599,7 @@ def thunk_addresses(elf):
         sysex_rx = symbol_address(syms, 'coop_sysex_rx_poll')[0]
     except Exception:                                  # an ELF without the SysEx channel
         sysex_rx = None
-    return {'instr': instr, 'drumbus': drumbus, 'sysex_rx': sysex_rx, 'sine_copy': sine_copy, 'keyev': keyev, **fxh, **tanks, **ui, 'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
+    return {'instr': instr, 'drumbus': drumbus, 'sysex_rx': sysex_rx, 'sine_copy': sine_copy, 'keyev': keyev, **fxh, **eng, **tanks, **ui, 'synth': symbol_address(syms, 'coop_synth_render_thunk')[0],
             'drum': symbol_address(syms, 'coop_drum_render_thunk')[0],
             'mix': symbol_address(syms, 'coop_mix_thunk')[0],
             'noteon': symbol_address(syms, 'coop_synth_noteon_thunk')[0],
@@ -681,6 +700,10 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
             if len(sdram_blob) != 320:
                 raise SystemExit('region-C trampolines: the off overlays need +320 (have {})'.format(len(sdram_blob)))
             sdram_blob += build_jump_tramp(thunks['fxon']) + build_jump_tramp(thunks['lfoon'])                               # +320, +336
+        if thunks.get('instr_name_eq'):
+            if len(sdram_blob) != 352:
+                raise SystemExit('region-C trampolines: the engine name compare needs +352 (have {})'.format(len(sdram_blob)))
+            sdram_blob += build_jump_tramp(thunks['instr_name_eq'])                                                          # +352
     dxe.insert(final[0], plain_block(SDRAM_TRAMP_AT, sdram_blob))
     for name, a, b in tramps:
         lines.append('tramp_{} at {:#x} ({} B) -> {:#x}'.format(name, a, len(b), thunks[name]))
@@ -689,6 +712,9 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
     if tape and thunks.get('fx_name_eq'):
         lines.append('fx plugins: filter vtables -> {:#x}/{:#x} (mono), {:#x}/{:#x} (master); fx_types name compare {:#x} -> tramp {:#x} -> {:#x}'.format(
             thunks['fx_render_mono'], thunks['fx_init_mono'], thunks['fx_render_st'], thunks['fx_init_st'], FXNAME_SITE, SDRAM_TRAMP_AT + 128, thunks['fx_name_eq']))
+    if tape and thunks.get('instr_name_eq'):
+        lines.append('engine plugins: iter vtable -> {:#x}/{:#x}/{:#x} (render, note on, note off); instr_types name compare {:#x} -> tramp {:#x} -> {:#x}'.format(
+            thunks['eng_render'], thunks['eng_note_on'], thunks['eng_note_off'], INSTRNAME_SITE, SDRAM_TRAMP_AT + 352, thunks['instr_name_eq']))
     if tape and thunks.get('keyev'):
         lines.append('sdram tramp at {:#x} -> {:#x} (key dispatch caller {:#x}: the Lander combo swallowed)'.format(
             SDRAM_TRAMP_AT + 112, thunks['keyev'], KEYEV_SITE))

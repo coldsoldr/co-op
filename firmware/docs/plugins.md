@@ -124,8 +124,8 @@ slot 1, with the four knob words in the filter ranges and `params[4] = 0x5300 + 
 - S2: a second FX slot per instrument and on the master.
 - Then: the core-owned parameter store with coarse/fine, pages,
   the knob bindings; saved sounds with the `"coop"` JSON member.
-- P3: engines (`coop_engine_t`, 128 samples at 88.2 kHz, stereo or mono-with-flag), LFO and sequencer objects,
-  screens through the stock SVG renderer; the L1 and big-buffer leases (`kn_l1.c` model).
+- P3: engines: started 2026-11-09, `docs/engines.md` (E1 the host and the reference engine `saw`, E2 plugin screens,
+  E3 rings). Later: LFO and sequencer objects; the L1 and big-buffer leases (`kn_l1.c` model).
 - The porting guide (kennel 3.1 and opus to coop) and the first ports from `te-op1-cfw/ports`.
 - Updates without reflashing (the owner, 2026-11-04; planned after the P3 screens). Plugins already install over
   SysEx. The coop core itself is linked into the firmware image, so today every core change is a flash. Plan: a small

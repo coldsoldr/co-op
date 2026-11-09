@@ -25,7 +25,7 @@ What the words mean:
 | Kind | Status | Interface | Where it appears |
 |---|---|---|---|
 | Effect | [now] ABI v1 | `coop_fx_t`, `sdk/coop_plugin.h` | The FX list (shift + T3): blue column FX 1, green column FX 2 (`docs/ui-features.md` §7) |
-| Engine | [proposed] P3 | `coop_engine_t` | Stock engine list (shift + T1) |
+| Engine | [now] ABI v1 (E1, `docs/engines.md`) | `coop_engine_t`, `sdk/coop_plugin.h` | Stock engine list (shift + T1) |
 | LFO, sequencer, tool | [proposed] later | Not yet designed | Their stock lists |
 
 - A plugin is one `.coop` file in `/yaffs2/plugins`. It is packed from `plugins/<id>/plugin.json` by `plugins/Makefile`,

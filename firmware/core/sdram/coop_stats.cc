@@ -47,6 +47,9 @@ extern "C" volatile uint32_t g_coop_fast_dsynth, g_coop_fast_stage, g_coop_fast_
     g_coop_fast_nitro, g_coop_fast_grid, g_coop_fast_spring, g_coop_fast_delay, g_coop_fast_voltage, g_coop_fast_phase;   /* stereo_bus.cc */
 extern volatile uint32_t g_plugins_seen, g_plugins_loaded, g_plugins_failed, g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks, g_fx_stock_stereo_blocks, g_fx_stock_ctor, g_s2_blocks[2], g_s2_changes, g_tank_bound, g_tank_short, g_ui_opens, g_ui_applies, g_plugins_disabled, g_ui_toggles, g_set_opens, g_set_saves, g_ui_col2_sets, g_rnd_count, g_rnd_backs, g_rnd_refused, g_rnd_slot2, g_solo_sets, g_marker_sets, g_marker_jumps, g_fn_taps, g_mode_key_taps, g_mode_key_holds, g_sound_keeps, g_sound_kept, g_sound_writes, g_bend_presses, g_bend_knobs, g_bend_ramps, g_over_saves, g_over_armed, g_over_stock, g_rename_starts, g_rename_saves, g_rename_refused, g_drumpan_knobs, g_rename_pushes, g_fx2view_params, g_fx2view_disp, g_fx2view_pops, g_fx2view_empty, g_fx2view_size, g_fx2view_ids, g_fx2view_last_post, g_fx2view_cur, g_lfo2view_params, g_lfo2view_pops, g_fx2view_on, g_lfo2view_on, g_ui_knobs2;   /* plugin_host.cc, coop_ui.cc, coop_settings.cc */
 extern const char *volatile g_plugins_last_error;
+extern volatile uint32_t g_engines_loaded;                                 /* plugin_host.cc (E1) */
+extern volatile uint32_t g_eng_renders, g_eng_noteons, g_eng_iter_renders, g_eng_switches, g_eng_foreign, g_eng_cycles_max;   /* engine_host.cc */
+extern "C" void coop_eng_render(void *, int16_t *, const int16_t *);
 extern volatile uint32_t g_st0_builds, g_st0_dry_blocks;           /* plugin_host.cc: slot 1's twin built off the audio path */
 extern char g_plugins_last_name[];                                 /* l1_pool.cc */
 extern "C" int coop_tape_write_tail(const char *text, int len);   /* tape_io.cc: the last 8 KiB of track 4's audio */
@@ -341,6 +344,7 @@ static const char *eng_name(uint32_t fn)
         { 0x019788B0u, "drumsampler=" },                                /* DrumSampler.cpp, vtable 0x0190FAC4 + 0x24 (op1emu det_drum) */
     };
     for (unsigned i = 0; i < sizeof k / sizeof k[0]; i++) if (k[i].fn == fn) return k[i].name;
+    if (fn == (uint32_t)(uintptr_t)&coop_eng_render) return "plugin_engine=";   /* E1: every plugin engine (and iter) */
     static char hex[COOP_ENG_N][12];                              /* "r_" + 8 hex digits + "=", one per table entry */
     for (int i = 0; i < COOP_ENG_N; i++) {
         if (g_coop_eng_fn[i] != fn) continue;
@@ -487,6 +491,8 @@ static void write_file(void)
     for (uint32_t i = 0; i < SLOW_KEEP; i++) put_slow("slow_recent", &g_slow[(g_slow_next + i) % SLOW_KEEP]);
     put("plugins"); kv("seen", g_plugins_seen); kv("loaded", g_plugins_loaded); kv("failed", g_plugins_failed); kv("disabled", g_plugins_disabled);
     kv("mono_calls", g_fx_dispatch_mono); kv("st_calls", g_fx_dispatch_st); kv("plugin_blocks", g_fx_plugin_blocks); kv("stock_st_blocks", g_fx_stock_stereo_blocks); kv("stock_st_made", g_fx_stock_ctor); kv("s2_instr", g_s2_blocks[0]); kv("s2_master", g_s2_blocks[1]); kv("s2_changes", g_s2_changes); kv("tanks", g_tank_bound); kv("tank_short", g_tank_short); kv("ui_opens", g_ui_opens); kv("ui_applies", g_ui_applies); kv("ui_toggles", g_ui_toggles); kv("ui_knobs2", g_ui_knobs2); kv("ui_col2_sets", g_ui_col2_sets); kv("rnd", g_rnd_count); kv("rnd_back", g_rnd_backs); kv("rnd_refused", g_rnd_refused); kv("rnd_slot2", g_rnd_slot2); kv("solo", g_solo_sets); kv("markers", g_marker_sets); kv("jumps", g_marker_jumps); kv("help_taps", g_fn_taps); kv("mode_taps", g_mode_key_taps); kv("mode_holds", g_mode_key_holds); kv("keeps", g_sound_keeps); kv("kept", g_sound_kept); kv("sound_writes", g_sound_writes); kv("bend", g_bend_presses); kv("bend_knobs", g_bend_knobs); kv("bend_ramps", g_bend_ramps); kv("overwrites", g_over_saves); kv("over_armed", g_over_armed); kv("saves", g_over_stock); kv("renames", g_rename_saves); kv("rename_starts", g_rename_starts); kv("rename_refused", g_rename_refused); kv("drumpan", g_drumpan_knobs); kv("rename_pushes", g_rename_pushes); kv("fx2view", g_fx2view_params); kv("fx2view_disp", g_fx2view_disp); kv("fx2view_pops", g_fx2view_pops); kv("fx2view_empty", g_fx2view_empty); kv("fx2view_size", g_fx2view_size); kv("fx2view_ids", g_fx2view_ids); kv("lfo2view", g_lfo2view_params); kv("lfo2view_pops", g_lfo2view_pops); kv("fx2view_on", g_fx2view_on); kv("lfo2view_on", g_lfo2view_on); kv("fx2view_post", g_fx2view_last_post); kv("fx2view_cur", g_fx2view_cur); kv("set_opens", g_set_opens); kv("set_saves", g_set_saves); kv("st0_builds", g_st0_builds); kv("st0_dry", g_st0_dry_blocks);
+    kv("engines", g_engines_loaded); kv("eng_renders", g_eng_renders); kv("eng_noteons", g_eng_noteons); kv("eng_iter", g_eng_iter_renders);
+    kv("eng_switches", g_eng_switches); kv("eng_foreign", g_eng_foreign); kv("eng_max", g_eng_cycles_max);
     if (g_plugins_last_error) { put(" last "); put(g_plugins_last_name); put(": "); put(g_plugins_last_error); }
     put("\n");
     put("tape"); kv("rec_calls", g_tape_rec_calls); kv("rec_side_blocks", g_tape_rec_side_blocks);

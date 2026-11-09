@@ -1,0 +1,23 @@
+# E1: one note on saw (select it as det_eng_select.txt), c4 held 2 s, for the pitch and level.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+press shift
+at 27700
+tap t1 200
+at 28200
+release shift
+at 29500
+turn enc1 cw 64
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36500
+press c4
+at 38500
+release c4
+wait 44000
+quit

@@ -1,0 +1,49 @@
+# E1 diagnostic: the engine list over time (a screenshot every 2 s of wall time) and ways to close it.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+press shift
+at 27700
+tap t1 200
+at 28200
+release shift
+at 29500
+turn enc1 cw 120
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 37000
+tap t1 200
+at 39000
+press c4
+at 40500
+release c4
+wait 20000
+screenshot /root/op1emu-work/x01.ppm
+wait 2000
+screenshot /root/op1emu-work/x02.ppm
+wait 2000
+screenshot /root/op1emu-work/x03.ppm
+wait 2000
+screenshot /root/op1emu-work/x04.ppm
+wait 2000
+screenshot /root/op1emu-work/x05.ppm
+wait 2000
+screenshot /root/op1emu-work/x06.ppm
+wait 2000
+screenshot /root/op1emu-work/x07.ppm
+wait 2000
+screenshot /root/op1emu-work/x08.ppm
+wait 2000
+screenshot /root/op1emu-work/x09.ppm
+wait 2000
+screenshot /root/op1emu-work/x10.ppm
+wait 2000
+screenshot /root/op1emu-work/x11.ppm
+wait 2000
+screenshot /root/op1emu-work/x12.ppm
+wait 4000
+quit

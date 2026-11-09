@@ -1,0 +1,14 @@
+# E1 power cycle, run 2: boot the NAND a saw run left, synth page, c4 held 2 s. Saw again = the sound kept its engine
+# (stats: eng_renders > 0, eng_iter 0); the file gone = iter (eng_iter > 0), and no assert.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 30000
+press c4
+at 32000
+release c4
+wait 40000
+screenshot /root/op1emu-work/e1_reload.ppm
+wait 2000
+quit

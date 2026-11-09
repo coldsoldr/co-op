@@ -151,7 +151,7 @@ int kn_parse(const uint8_t *file, uint32_t size, uint16_t api_version, kn_info *
     if (in->entry_offset != KN_NONE && (in->entry_offset >= total || in->entry_offset % 4)) FAIL("entry outside the plugin");
     if (in->screen_offset != KN_NONE && (in->screen_offset >= total || in->screen_offset % 4)) FAIL("screen outside the plugin");
     if (in->entry_offset == KN_NONE) FAIL("no entry object");
-    uint32_t entry_size = in->kind == KN_KIND_FEATURE ? 84 : in->kind == KN_KIND_SYNTH ? 16 : 12;
+    uint32_t entry_size = in->kind == KN_KIND_FEATURE ? 84 : in->kind == KN_KIND_SYNTH ? 36 : 12;   /* coop: coop_engine_t (sdk/coop_plugin.h) */
     if ((uint64_t)in->entry_offset + entry_size > is) FAIL("entry object truncated");
     if (in->screen_offset != KN_NONE && (uint64_t)in->screen_offset + 8 > is) FAIL("screen object truncated");
     if ((in->flags & KN_FLAG_INPUT) && (uint64_t)in->entry_offset + 32 > is) FAIL("input entry object truncated");

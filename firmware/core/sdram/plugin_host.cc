@@ -64,6 +64,8 @@
 extern "C" const kn_export coop_exports[];                                /* sdk/coop_exports.cc */
 extern "C" const int coop_exports_count;
 extern "C" int coop_stereo_side_rw(int instr, int16_t **l, int16_t **r);   /* stereo_bus.cc: one instrument's side pair, live */
+extern "C" const coop_engine_t *coop_engine_at(int n);                    /* engine_host.cc (E1): the engine at number n */
+extern "C" const char *coop_engine_add(int n, const coop_engine_t *e);
 
 volatile uint32_t g_plugins_seen, g_plugins_loaded, g_plugins_failed, g_plugins_booted, g_plugins_map_n;
 volatile uint32_t g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks;
@@ -150,17 +152,18 @@ static void map_save(void *db)
     scat(o, "')");
     db_write(db, sql);
 }
+static int taken(int n) { return g_plug[n].fx != 0 || coop_engine_at(n) != 0; }   /* one number space for both kinds */
 static int number_for(const char *name)
 {
     int me = -1;
     for (int i = 0; i < g_map_n; i++) if (seq(g_map[i].name, name)) me = i;
     if (me >= 0) {
         if (!g_map[me].present) { g_map[me].present = 1; g_map_dirty = 1; }
-        return g_plug[g_map[me].n].fx ? 0 : g_map[me].n;
+        return taken(g_map[me].n) ? 0 : g_map[me].n;
     }
     if (g_map_n >= MAP_MAX) return 0;
     for (int n = FILE_FIRST; n < SLOTS; n++) {
-        int used = g_plug[n].fx != 0;
+        int used = taken(n);
         for (int i = 0; i < g_map_n; i++) if (g_map[i].n == n) used = 1;
         if (used) continue;
         g_map[g_map_n].present = 1; g_map[g_map_n].n = (uint8_t)n;
@@ -170,18 +173,22 @@ static int number_for(const char *name)
     return 0;
 }
 
-/* ---- the plugin's fx_types row (factory db): the stock FX list shows it, selecting it copies these defaults ---- */
+/* ---- the plugin's row in the factory db: fx_types for an effect (the stock FX list), synth_types for an engine (the
+ * engine list, E1); selecting it copies these defaults into the slot ---- */
 static const int16_t fx_rng[4][2] = { { 64, 14528 }, { 0, 24576 }, { 0, 22528 }, { 8192, 32767 } };
-static void row_ensure(void *db, const char *name, const int16_t *def, int n)
+static void row_ensure(void *db, const char *table, const char *name, const int16_t *def, int n)
 {
-    int v[8];
-    for (int i = 0; i < 4; i++) { int d = def[i] < 0 ? 0 : def[i]; v[i] = fx_rng[i][0] + d * (fx_rng[i][1] - fx_rng[i][0]) / 32767; }
+    int v[8], engine = table[0] == 's';
+    for (int i = 0; i < 4; i++) {
+        int d = def[i] < 0 ? 0 : def[i];
+        v[i] = engine ? d : fx_rng[i][0] + d * (fx_rng[i][1] - fx_rng[i][0]) / 32767;   /* engines: the raw word */
+    }
     v[4] = MAGIC + n; v[5] = v[6] = v[7] = 0;
     char want[96], sql[256], *o = want;
     *o++ = '[';
     for (int i = 0; i < 8; i++) { if (i) { *o++ = ','; *o++ = ' '; } o = snum(o, v[i]); }
     *o++ = ']'; *o = 0;
-    o = scat(scat(sql, "SELECT default_params FROM fx_types WHERE type='"), name); scat(o, "'");
+    o = scat(scat(scat(scat(sql, "SELECT default_params FROM "), table), " WHERE type='"), name); scat(o, "'");
     dstr s; dstr_init(&s);
     DB_GET(&s, db, sql);
     const char *have = dstr_p(&s);
@@ -189,8 +196,11 @@ static void row_ensure(void *db, const char *name, const int16_t *def, int n)
     for (uint32_t i = 0; same && i < s.size; i++) same = have[i] == want[i];
     dstr_free(&s);
     if (same) return;
-    if (exists) { o = scat(scat(sql, "UPDATE fx_types SET default_params='"), want); o = scat(scat(o, "' WHERE type='"), name); scat(o, "'"); }
-    else { o = scat(scat(sql, "INSERT INTO fx_types SELECT MAX(id)+1,'"), name); o = scat(scat(o, "','"), want); scat(o, "' FROM fx_types"); }
+    if (exists) { o = scat(scat(scat(scat(sql, "UPDATE "), table), " SET default_params='"), want); o = scat(scat(o, "' WHERE type='"), name); scat(o, "'"); }
+    else {
+        o = scat(scat(scat(scat(sql, "INSERT INTO "), table), " SELECT MAX(id)+1,'"), name);
+        o = scat(scat(o, "','"), want); scat(scat(o, "' FROM "), table);
+    }
     db_write(db, sql);
 }
 
@@ -209,6 +219,8 @@ static void list_dir(void)
     Y_CLOSEDIR(d);
 }
 
+static char g_eng_name[SLOTS][16];                                         /* E1: each engine's type name, by number */
+static const char *load_engine(const kn_info &in, uint8_t *stage);        /* below */
 static const char *load_one(const char *fname, uint8_t *stage)
 {
     char path[64];
@@ -223,9 +235,12 @@ static const char *load_one(const char *fname, uint8_t *stage)
     kn_info in;
     const char *err = 0;
     if (kn_parse(stage, (uint32_t)got, COOP_PLUGIN_API, &in, &err)) return err;
-    if (in.kind != KN_KIND_FX) return "not an FX plugin (effects only so far)";
+    for (int k = 1; k < SLOTS; k++)
+        if ((g_plug[k].fx && seq(g_plug[k].name, in.type_name)) || (coop_engine_at(k) && seq(g_eng_name[k], in.type_name)))
+            return "another file has the same name";
+    if (in.kind == KN_KIND_SYNTH) return load_engine(in, stage);
+    if (in.kind != KN_KIND_FX) return "not an effect or a synth engine";
     if (in.flags) return "plugin flags not supported yet";
-    for (int k = 1; k < SLOTS; k++) if (g_plug[k].fx && seq(g_plug[k].name, in.type_name)) return "another file has the same name";
     int n = number_for(in.type_name);
     if (!n) return "no free plugin number";
     /* one relocated instance per position (P2b): a plugin selected at two positions at once keeps two states */
@@ -256,7 +271,46 @@ static const char *load_one(const char *fname, uint8_t *stage)
     for (int k = 0; k < POSITIONS; k++) g_plug[n].inst[k] = inst[k];
     __asm__ __volatile__("ssync;" ::: "memory");
     g_plug[n].fx = inst[0];                                               /* selectable from here */
-    row_ensure(DB_FACTORY(), g_plug[n].name, g_plug[n].def, n);
+    row_ensure(DB_FACTORY(), "fx_types", g_plug[n].name, g_plug[n].def, n);
+    return 0;
+}
+
+/* E1: a synth engine (kind 1). One relocation: the engine's code and .bss serve all six voices; the host keeps the
+ * per-voice state (engine_host.cc). Names of engines and effects share the number map and must differ. */
+volatile uint32_t g_engines_loaded;
+static const char *load_engine(const kn_info &in, uint8_t *stage)
+{
+    if (in.flags) return "plugin flags not supported yet";
+    int n = number_for(in.type_name);
+    if (!n) return "no free plugin number";
+    uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN;
+    uint8_t *raw = (uint8_t *)MALLOC(cap);
+    if (!raw) return "plugin memory full";
+    uint32_t base = ((uint32_t)(uintptr_t)raw + ARENA_ALIGN - 1) & ~(ARENA_ALIGN - 1);
+    uint32_t room = cap - (base - (uint32_t)(uintptr_t)raw), used = 0;
+    const char *err = 0;
+    if (kn_relocate_far(stage, &in, (uint8_t *)(uintptr_t)base, base, room, coop_exports, coop_exports_count, &err, &used)) {
+        FREE(raw); return err ? err : "relocation failed";
+    }
+    const coop_engine_t *e = (const coop_engine_t *)(uintptr_t)(base + in.entry_offset);
+    uint32_t text_end = base + in.text_size, image_end = base + in.image_size;
+    uint32_t fn[4] = { (uint32_t)(uintptr_t)e->init, (uint32_t)(uintptr_t)e->note_on, (uint32_t)(uintptr_t)e->render,
+                       (uint32_t)(uintptr_t)e->note_off };
+    if (e->magic != COOP_ENGINE_MAGIC) err = "entry object is not a coop engine (magic)";
+    else if (e->api != COOP_PLUGIN_API) err = "entry object built for another API";
+    else if (e->flags) err = "engine flags not supported yet";
+    else if (!fn[1] || !fn[2]) err = "engine without note_on or render";
+    else {
+        for (int i = 0; i < 4 && !err; i++)
+            if (fn[i] && (fn[i] < base || fn[i] >= text_end || (fn[i] & 1))) err = "callbacks outside the plugin's code";
+        uint32_t sc = (uint32_t)(uintptr_t)e->screen;
+        if (!err && sc && (sc < base || sc + sizeof(coop_screen_t) > image_end || (sc & 3))) err = "screen object outside the plugin";
+    }
+    if (!err) err = coop_engine_add(n, e);
+    if (err) { FREE(raw); return err; }
+    scopy(g_eng_name[n], in.type_name, 16);
+    g_engines_loaded++;
+    row_ensure(DB_FACTORY(), "synth_types", in.type_name, in.defaults, n);
     return 0;
 }
 
@@ -273,6 +327,10 @@ volatile uint32_t g_plugins_disabled;
 extern "C" int coop_plugin_file_count(void) { return g_n_names; }
 extern "C" const char *coop_plugin_file_name(int i) { return i >= 0 && i < g_n_names ? g_names[i] : 0; }
 
+/* Image-time test switch (--set-word g_coop_no_plugins=1): boot as if every plugin file were gone, with the number map,
+ * the saved sounds and the factory rows left as they are (the E1 gate's "file removed" case). */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_no_plugins = 0; }
+
 /* From the tape mount hook (main thread, boot), once. */
 extern "C" void coop_plugins_boot(void)
 {
@@ -283,6 +341,7 @@ extern "C" void coop_plugins_boot(void)
     coop_pf_sweep();                                                       /* p6h: the event sweep, against the probes */
     tanks_boot();                                                          /* the instrument spring's own tank */
     coop_settings_boot();                                                  /* spread and the disabled list, before the scan */
+    if (g_coop_no_plugins) { slot2_load(); return; }                       /* test images: as if /yaffs2/plugins were empty */
     list_dir();
     if (!g_n_names) { slot2_load(); return; }
     void *udb = DB_HANDLE();
@@ -298,7 +357,7 @@ extern "C" void coop_plugins_boot(void)
     }
     FREE(stage);
     for (int i = 0; i < g_map_n; i++)                                      /* files that went away keep their numbers, marked absent */
-        if (g_map[i].present && !g_plug[g_map[i].n].fx) { g_map[i].present = 0; g_map_dirty = 1; }
+        if (g_map[i].present && !taken(g_map[i].n)) { g_map[i].present = 0; g_map_dirty = 1; }
     if (udb && g_map_dirty) map_save(udb);
     slot2_load();                                                          /* S2: after the plugins it may name */
 }
