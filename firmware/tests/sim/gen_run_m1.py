@@ -71,6 +71,15 @@ class S:
         self.do('turn enc1 %s %d' % ('cw' if steps > 0 else 'ccw', abs(steps)), dt=300)
         self.do('release help', dt=300 + 20 * abs(steps) + 200)
 
+    def variant(self, k, gray):                     # m1c: word 5 = step k from the bottom, absolutely
+        # m1c on the device lost a step (rings modal -> symp and probe_code 8 -> 12 KB each played the same as the
+        # section before; ctl_turns 21 of 22). Relative steps carried such a loss into every later section; now each
+        # section goes down to the bottom (the list clamps) and up k steps in whole detents (2 transitions each, so
+        # the stock's decoder and coop's remainder stay aligned): a lost transition costs that section only.
+        self.fn_blue(-(8 * gray + 8))
+        if k:
+            self.fn_blue(k * gray)
+
     def chord(self, name, knobs=False):
         self.do(*['press %s' % k for k in CHORD], dt=1000)
         self.at(800)                                  # the attack settles outside the section
@@ -94,18 +103,17 @@ def scenario(mode):
     s.mark('idle')
     s.at(HOLD)
     s.select('voltage'); s.chord('voltage')
-    s.select('rings'); s.fn_blue(-24); s.chord('rings_modal')
-    s.fn_blue(4); s.chord('rings_symp')
+    s.select('rings'); s.variant(0, 4); s.chord('rings_modal')      # rings' model: 2 detents a step, 4 transitions
+    s.variant(1, 4); s.chord('rings_symp')
     s.select('probe_alu'); s.chord('alu')
-    s.select('probe_code'); s.chord('code4k')
-    s.fn_blue(2); s.chord('code8k')
-    s.fn_blue(2); s.chord('code12k')
+    s.select('probe_code'); s.variant(0, 2); s.chord('code4k')     # the probes: 1 detent a step, 2 transitions
+    s.variant(1, 2); s.chord('code8k')
+    s.variant(2, 2); s.chord('code12k')
     s.select('probe_sdram')
     for i, name in enumerate(SDRAM):
-        if i:
-            s.fn_blue(2)
+        s.variant(i, 2)
         s.chord('sdram_' + name)
-    s.select('rings'); s.fn_blue(-24); s.chord('rings_knobs', knobs=True)
+    s.select('rings'); s.variant(0, 4); s.chord('rings_knobs', knobs=True)
     s.at(2000)
     s.lines += ['wait %d' % (s.t + 6000), 'quit']
     return '\n'.join(s.lines) + '\n'

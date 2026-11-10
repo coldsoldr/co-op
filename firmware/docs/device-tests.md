@@ -1807,5 +1807,9 @@ The levers from m1b (`docs/m1-results.md` "m1b"), merged (`fw-m1c`), in one imag
 the same sound slot with nitro in FX 1, `run_m1_mode0.txt` once, send the `_run.txt`. What should move against m1b:
 the 8-12 KB code probes (v2), both rings sections (all three), `thunk` and `hook` everywhere.
 
-Result: (pending)
+**Result (owner, 2026-11-10): partial, run again.** `m1_mode0_20261110-2110`, all 17 sections, no fault, rings 0.4
+loaded on the 44.1 kHz voice with its lease; but no nitro on FX 1 and two variant steps lost (`rings_symp` played
+modal, `code12k` played 8 KB; `docs/m1-results.md` "m1c"). Rings modal -28.5 k a block against m1b, probe_code 8 KB
+-8.8 k. The scenario now positions every variant absolutely (`run_m1_mode0.txt` regenerated, 5 min 4 s): run it again
+in the m1b slot with nitro on FX 1.
 
