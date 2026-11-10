@@ -70,6 +70,12 @@ What the words mean:
     instrument positions now hear them in stereo.
 - Never sum L and R to mono and spread the result again. That destroys the per-voice placement upstream.
 - An engine renders one voice: 128 samples at 88.2 kHz, the stock voice rate. [proposed]
+  - Or 64 at 44.1 kHz, opt-in (`COOP_ENGINE_F_44K` in the engine object and `"voice_rate": 44100` in plugin.json,
+    both or the packer refuses; `docs/engines.md` "The 44.1 kHz voice"). The core repeats each sample and the
+    stock decimator brings the voice back to 44.1 kHz: no image, no alias, a top-octave droop of cos(pi f / 88.2 k)
+    (-0.6 dB at 10 kHz, -2.4 dB at 20 kHz). SHOULD for an engine that computes at 44.1 kHz or below and upsamples
+    to 88.2 kHz only for the voice loop: drop that stage. An engine whose top octave matters, or that is already
+    native at 88.2 kHz, keeps the default. A core older than v1 refuses the file ("engine flags not supported yet").
   - The core places each voice in stereo (voice spread, `docs/stereo-bus.md`).
   - A stereo voice is opt-in, behind a flag.
 
