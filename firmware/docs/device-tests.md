@@ -1605,3 +1605,28 @@ with saw OFF, power-cycle: saw is gone from the engine list (a sound on it plays
 Help up: nothing opens. Help alone: help as before.
 
 Result: (pending)
+
+## Rings (E3): the first ported synth engine — device test (pending, 2026-11-10)
+
+- `build/plugins/rings.coop` (111,132 bytes, sha256 `5ca9fdadf4776a7faa0a86464f22d5b59fc9e29cd0df6987fa7f8170daf1849d`),
+  `plugins/rings`. Needs the e4c package (or later) on the OP-1: the controls, `coop_l1_lease` and `coop_l1_scratch`.
+  Install it from the co-op Settings tab (or `tools/coop_sysex.html`) and power-cycle.
+- Host: bit-identical to te-op1-cfw's engine (`make -C tests/host/rings`). op1emu: `docs/engines.md` E3
+  (`eng_rings_block` 85,742 avg / 153,017 max cycles a block in the emulator; the device runs 10-35 % higher).
+
+**What to do**:
+1. Shift + T1: "rings" is in the engine list (after pulse). Select it: rings' screen (the rings, MODEL MODAL, POLY ALL).
+2. Play six-note chords and runs in the modal model; turn all four encoders while notes ring. Listen for clicks,
+   crackle or dropouts, the worst case being six voices ringing with the encoders moving (kennel's Tests 12-14
+   crackled there before its coefficient budget).
+3. Hold Help and turn blue: two detents a step through MODAL, SYMP, STRING, FM, QUANT, VERB (the core's popup names
+   each; the screen brackets the row while Help is held). Play each. Then Help + green through ALL, 1, 2, 4: at 1, play
+   fast notes (one voice, steals with a short fade).
+4. Shift + turn: fine adjustment on all four.
+5. Save the sound, power-cycle: it comes back as rings with the same model and polyphony.
+6. Copy `/yaffs2/user/coop_stats.txt`, most of all the `engines` line (`eng_rings=` and `eng_rings_block=`) and the
+   `l1` line (`leased 1056`), from the busiest moment (VERB or FM, six voices, encoders turning).
+
+Compare with the kennel build on hundekraft, if you still have it: the same sound, by ear.
+
+Result: (pending)

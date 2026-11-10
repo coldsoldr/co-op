@@ -147,6 +147,19 @@ slot 1, with the four knob words in the filter ranges and `params[4] = 0x5300 + 
     timed, a measured budget per plugin, and a plugin over it switched off.
   - Neither has a stereo voice path or 32-bit working values; coop keeps those.
 
+## C++ ports and the packer (2026-11-10, the rings port)
+
+- `tools/plugin/pack.py` links with `ld -r --force-group-allocation`, as te-op1-cfw's `knl_pack.py` does: C++ inline
+  variables, out-of-line inline functions and template instances sit in COMDAT groups, which a relocatable link
+  otherwise keeps as sections of their own (`.text._ZN...`), and the packer refuses those. saw and stereo_delay pack
+  byte-identical with and without the flag.
+- Globals whose type has a constructor (kennel's `FFloat` members, any class with default member values) give the
+  plugin a `.ctors` section, which the packer refuses (no static constructors, guidelines §2.1): keep such objects
+  as raw `.bss` storage and set them up in `init`, as rings does for its voice states and reverb.
+- The packer runs the compiler quietly: compile a port's sources once by hand with the packer's flags to see its
+  warnings (`plugins/rings/README.md` lists the flags through `plugin.json`).
+- Port notes for rings: `plugins/rings/README.md`, `docs/engines.md` E3.
+
 ## Performance rules for plugins
 
 Every plugin follows `guide/plugin-guidelines.md` (the contract: controls, parameters, screens, stereo, porting) and `docs/plugin-performance.md` (the SDK guide: the block budget, the per-sample loop rules, how a

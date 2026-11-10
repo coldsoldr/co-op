@@ -127,6 +127,23 @@ The owner chose plugin screens in the first build. Kennel's model, ported:
   - Package `build/pkg/op1_246_coop_e2_engines.op1` (tag `e2`): E1 + E2; `saw.coop` separately.
 - **E3, rings.** Port `te-op1-cfw/ports/knl/rings` with its screen (`/port`). Gate: its op1emu WAV against the
   kennel build's.
+  **E3 built and gated (2026-11-10)** (`plugins/rings/README.md`; device test pending):
+  - The planned gate (a WAV against the kennel build's) became a stronger one: hundekraft does not run in op1emu, but
+    the kennel build compiled te-op1-cfw's own engine, so `tests/host/rings` builds that engine and the coop one on
+    the host from one seeded call sequence (4,367 notes, every model x polyphony pair, steals, bends, knob jumps,
+    idle gaps): bit-identical over 300,505 voice blocks; a 1-LSB change to a live constant is caught [C host].
+  - op1emu (`build/e4c.ldr`, its stats tag `e4b`; a NAND with only `rings.coop`; `tests/sim/det_eng_rings.txt`)
+    [C op1emu]: `plugins seen 1 loaded 1 failed 0`; rings selected from the engine list (7 rows below digital, 56
+    steps); a chord in each of the six models (fn + blue, 4 Gray steps = 2 detents a step), polyphony 1 with fast
+    notes, then 4: `eng_rings=15124/32128/118600`, `eng_rings_block=85742/153017/20920`, `eng_iter 0`, `ctl_turns 8`,
+    `l1 ... leased 1056 leases 1 lease_refused 0 free 4160`, `heap_largest 8388608`, `scr_built 1 scr_failed 0`; op1.db
+    slot 0 `[8192, 19660, 22937, 9830, 21280, 5, 3, 0]` (verb, polyphony 4); every model section sounds (RMS 445-685,
+    distinct zero-crossing rates), no fault. `det_eng_rings_fn.txt` on the NAND it leaves: the sound boots as rings,
+    and with Help held the screen brackets MODEL / POLY and dims the rings and rays.
+  - A Help hold that turns nothing still opens help on its release (`help_taps 1`): the core's tap rule, the same for
+    every engine.
+  - Needed from the plugin tools: `--force-group-allocation` on the packer's `ld -r` (C++ COMDAT groups, as
+    te-op1-cfw's `knl_pack.py`; saw and stereo_delay pack byte-identical with it, `docs/plugins.md`).
 - Then on the device: one package for E1 + E2 + saw, the owner's verdict, then rings.
 
 ## e4: controls, L1, memory, screen exports, cost (2026-11-10)

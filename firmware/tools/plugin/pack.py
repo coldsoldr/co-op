@@ -169,7 +169,11 @@ def libgcc(toolchain=None):
 def link_relocatable(objs, out, toolchain=None):
     """bfin-elf-ld -r: plugin objects + the libgcc members they need -> one object with four sections."""
     _, ld = find_toolchain(toolchain)
-    run([ld, '-r', '-T', str(MERGE_LD), *objs, libgcc(toolchain), '-o', str(out)])
+    # coop-fw (2026-11-10, the rings port): --force-group-allocation, as te-op1-cfw's knl_pack.py links. C++ inline
+    # variables, out-of-line inline functions and template instances sit in COMDAT groups, which a relocatable link
+    # otherwise keeps as their own sections (pack() refuses those); the flag places them as a final link would, so
+    # merge.ld's four sections are all there is. A plugin without COMDAT groups packs byte-identical with or without it.
+    run([ld, '-r', '--force-group-allocation', '-T', str(MERGE_LD), *objs, libgcc(toolchain), '-o', str(out)])
     return out
 
 
