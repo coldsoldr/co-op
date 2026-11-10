@@ -91,7 +91,7 @@ static inline int32_t velocity_q15(int v)                                 /* ken
     return vel * 32767 / 127;
 }
 
-static void voice_start(void *self, const int16_t *params, int v, int n)
+static __attribute__((noinline)) void voice_start(void *self, const int16_t *params, int v, int n)   /* cold: v1 keeps it out of the hot path */
 {
     if (g_voice_eng[v] != n) g_eng_switches++;
     g_voice_eng[v] = (uint8_t)n;
@@ -109,7 +109,7 @@ extern "C" void coop_eng_note_on(void *self, const int16_t *params)
 }
 
 /* iter vtable +0x14 (through coop_synth_render_thunk: the cost line names this function). */
-extern "C" void coop_eng_render(void *self, int16_t *out, const int16_t *params)
+extern "C" COOP_HOT_VOICE void coop_eng_render(void *self, int16_t *out, const int16_t *params)
 {
     int v = voice_of(self);
     if (v < 0) { g_eng_foreign++; ITER_RENDER(self, out, params); return; }

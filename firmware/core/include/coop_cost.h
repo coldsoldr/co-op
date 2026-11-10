@@ -5,6 +5,12 @@
 #define COOP_COST_H
 #include <stdint.h>
 
+/* v1 (the m1 result, plugins/rings/README.md): the code a synth voice runs between two renders (the render thunk,
+ * LFO 2's stage 0, the counters, the cost bookkeeping, the dispatcher, the voice hook) sits in one contiguous section,
+ * first in region A's text (coop_cb.ld), so its ~2.5 KB never collide with each other in the instruction cache and an
+ * engine's own code has to fill a whole set to evict a line of it. Cold branches stay out of it (noinline). */
+#define COOP_HOT_VOICE __attribute__((section(".text.coop_voice")))
+
 struct coop_cost { uint64_t sum; uint32_t n, max; uint64_t p0, p1; };   /* p0 / p1: the performance counters' deltas summed (below) */
 
 #define COOP_COST_STAGE   0          /* S3 decimator + DC + mid / side (coop_instr_stage) */

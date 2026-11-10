@@ -1758,3 +1758,26 @@ If the image crashes at boot (a photo), hold COM while switching on and flash e4
 (`sdram_ws128k`, `rings_knobs`) did not fit the run file's 64 KB (raised to 128 KB). The slot had nitro in FX 1.
 Tables in `docs/m1-results.md`, the reading in `plugins/rings/README.md` "m1: where the collateral goes": code
 (coop's per-voice code refetched after every render) is the larger part, stores the other.
+
+## m1b: the per-voice path in one place — device test (pending, 2026-11-10)
+
+The first core lever from m1 (`plugins/rings/README.md` "m1: where the collateral goes"): coop's own per-voice code,
+fetched again after every render once an engine's code is large.
+- `build/pkg/op1_246_coop_m1b_voicepath.op1` (sha256 `5bcaececd1f823ee4687042b3b05199c6af4fe3cd872ff0f786391bc3b8143f5`),
+  copy in Downloads. The m1 test image (`COOP_M1=1`, `g_coop_gap_prof=1`, the same thunks and scripts) plus:
+  - the code a synth voice runs between two renders (the render thunk, LFO 2's stage 0, the counters, the cost
+    bookkeeping, the dispatcher, the voice hook) in one section, `.text.coop_voice`, first in region A
+    (`0x02c00020..0x02c009f8`, 2,520 bytes: 79 cache lines, every one in its own set of the 4-way instruction
+    cache, so they cannot evict each other, and an engine's code has to fill a whole set to evict one);
+  - the cold branches out of it (the debug compare, the drum-only code of the shared hook, the engine switch).
+  `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `m1b`.
+- op1emu: `det_chord.txt` matches the previous image in each of op1emu's two run-to-run outcomes but for 31 samples
+  1 LSB apart in the first 0.23 s (boot timing; no audio code changed, only where it sits).
+  `run_m1_mode0.txt` with the five plugins: all 17 sections (the run file now holds 128 KB), no fault, every figure
+  within 0.2 % of m1's (op1emu has no cache, so the gain can only show on the device).
+
+**What to do**: as the m1 run, so the two compare: flash m1b, the same plugins, **the same sound slot with nitro in
+FX 1 as last time**, and `run_m1_mode0.txt` once (mode 0 is enough). Send the `_run.txt`. What should move: the
+`thunk` and `hook` columns and the collateral of `code4k` / `code12k` and both rings sections, against m1's.
+
+Result: (pending)

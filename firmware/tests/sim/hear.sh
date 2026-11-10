@@ -15,7 +15,8 @@ SCRIPT=${2:?usage: hear.sh LDR SCRIPT OUT.wav}
 OUT=${3:?usage: hear.sh LDR SCRIPT OUT.wav}
 EMU="$WORK/op1emu/build/op1emu"
 [ -x "$EMU" ] || { echo "op1emu not built: $EMU"; exit 1; }
-"$EMU" --help | grep -q -- --audio-dump || { echo "this op1emu lacks --audio-dump; apply tools/op1emu-patches and rebuild"; exit 1; }
+"$EMU" --help 2>&1 | grep -c -- --audio-dump >/dev/null ||   # grep -c reads it all: -q under pipefail could SIGPIPE op1emu (a false "lacks")
+  { echo "this op1emu lacks --audio-dump; apply tools/op1emu-patches and rebuild"; exit 1; }
 [ -f "$WORK/pristine.bin" ] || { echo "pristine NAND not found: $WORK/pristine.bin"; exit 1; }
 LDR=$(realpath "$LDR"); SCRIPT=$(realpath "$SCRIPT"); OUT=$(realpath -m "$OUT")
 LOG=${LOG:-${OUT%.wav}.log}

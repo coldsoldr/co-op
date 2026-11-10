@@ -110,8 +110,8 @@ static uint32_t g_eng_last;                                       /* the entry t
 
 /* p6e: from the render thunks (stereo_thunks.S) just before the timed render: the counters' start values (the
  * thunk reads CYCLES itself a few instructions later; renders never nest, so one pair of words is enough). */
-extern "C" void coop_eng_pf_start(void) { coop_pf_now(g_eng_pf0); }
-static void cost_add_d(int i, uint32_t dt, uint32_t d0, uint32_t d1)
+extern "C" COOP_HOT_VOICE void coop_eng_pf_start(void) { coop_pf_now(g_eng_pf0); }
+static inline __attribute__((always_inline)) void cost_add_d(int i, uint32_t dt, uint32_t d0, uint32_t d1)
 {
     struct coop_cost *c = &g_coop_cost[i];
     c->sum += dt; c->n++;
@@ -122,7 +122,7 @@ static void cost_add_d(int i, uint32_t dt, uint32_t d0, uint32_t d1)
 /* From the render thunks (stereo_thunks.S) after every voice render: the cycles of one render of the engine whose
  * render function is fn. The table fills in the order the engines are first heard; COOP_ENG_N covers every stock
  * synth and drum engine of a session. */
-extern "C" void coop_eng_cost(uint32_t fn, uint32_t dt, int drum)
+extern "C" COOP_HOT_VOICE void coop_eng_cost(uint32_t fn, uint32_t dt, int drum)
 {
     uint32_t now = coop_cost_now();
     uint32_t d[2] = { 0, 0 };

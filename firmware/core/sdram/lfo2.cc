@@ -174,7 +174,8 @@ static void trigger(uint32_t *o, int set)
 }
 
 /* From coop_synth_render_thunk, before the stock render: stage 0 (engine knobs / pitch / volume). */
-extern "C" void coop_lfo2_pre_render_synth(uint32_t voice)
+#include "coop_cost.h"
+extern "C" COOP_HOT_VOICE void coop_lfo2_pre_render_synth(uint32_t voice)
 {
     if (voice >= SYNTH_VOICES || !sync(0)) return;
     process(g_synth_obj[voice], 0, 0);

@@ -243,6 +243,12 @@ rings request's "the OP-1 runs without a data cache" (from `te-op1-cfw/ports/rin
 this: SDRAM is cached at least for these stores. L1 still matters for the same reason (an uncached SDRAM line costs a
 bus wait).
 
+**v1 (2026-11-10): the per-voice path in one section.** m1 showed an engine's code evicting coop's per-voice code
+(the render thunk, LFO 2's stage 0, the counters, the bookkeeping, the dispatcher, the voice hook), which runs after
+every render from SDRAM spread over 100 KB of region A. They now sit together in `.text.coop_voice` (`coop_cost.h`
+`COOP_HOT_VOICE`, `coop_cb.ld`), 2,520 bytes from `0x02c00020`; cold branches are `noinline` outside it. Device A/B
+against m1: `docs/device-tests.md` "m1b".
+
 ## Out of scope for now
 
 Engines on the drum side (the drum voices are not engine objects, `docs/tracker.md` "Drums beside the synth"),

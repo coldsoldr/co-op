@@ -15,6 +15,7 @@
 
 /* Entered by JUMP from the synth trampoline: RETS = 0xffa00d2a (the stock return), P2 = the stock
  * render (*(vtable+0x14)), R0/R1/R2 = render args, R7 = voice index. */
+    .section .text.coop_voice,"ax",@progbits   /* v1: the per-voice path, contiguous (coop_cost.h COOP_HOT_VOICE) */
     .global _coop_synth_render_thunk
     .type   _coop_synth_render_thunk, STT_FUNC
 _coop_synth_render_thunk:
@@ -64,6 +65,7 @@ _coop_synth_render_thunk:
     RETS = [SP++];
     RTS;
     .size _coop_synth_render_thunk, .-_coop_synth_render_thunk
+    .text
 
 /* Entered by JUMP from the drum trampoline: RETS = 0xffa00906, P0 = the stock render
  * (*(vtable+0x24)), R7 = 12 - voice. The stock caller tests the render's R0 (0xffa00906), so the

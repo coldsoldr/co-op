@@ -183,7 +183,7 @@ volatile uint32_t g_dbg_d_stock, g_dbg_d_v1, g_dbg_d_v2, g_dbg_d_n;
 static int16_t s_dbg_prev_bus[COOP_VBLK], s_dbg_prev_v1[COOP_VBLK];
 static int s_dbg_have;
 static uint32_t s_dbg_blk;
-static void dbg_drum_probe(int16_t gain)
+static __attribute__((noinline)) void dbg_drum_probe(int16_t gain)
 {
     const int16_t *bus = MONO_BUS64;
     if (s_dbg_have && s_dbg_blk == g_stereo_blocks) {
@@ -296,7 +296,7 @@ extern "C" void coop_phase_check(void *self, int16_t *out, const int16_t *params
     if (bad) { if (!g_phase_check_bad) g_phase_check_first = g_phase_check_calls; g_phase_check_bad++; }
 }
 #endif
-static void voice_sum_stock(int is_drum, int16_t gain)
+static __attribute__((noinline)) void voice_sum_stock(int is_drum, int16_t gain)
 {
     int16_t *bus = MONO_BUS64;
     if (is_drum) {                                                       /* the stock instructions themselves (0xffa0092e..
@@ -314,7 +314,7 @@ static void voice_sum_stock(int is_drum, int16_t gain)
         bus[i] = coop_fr16_add(bus[i], coop_fr16_mul(coop_fr16_mul(VOICE_OUT[i], VOICE_ENV[i]), gain));
 }
 
-static void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)
+static inline __attribute__((always_inline)) void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)   /* v1: inlined per kind, so the synth hook carries no drum code */
 {
     if (!g_coop_stereo_enable) { voice_sum_stock(is_drum, *VOICE_GAIN); return; }
     uint32_t t0 = coop_cycles();
@@ -340,7 +340,7 @@ static void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)
 }
 
 /* R7 at the synth render call = voice index 0..5 (0xffa009c2 zeroes it, 0xffa00da0 increments). */
-extern "C" void coop_synth_voice_hook(uint32_t r7)
+extern "C" COOP_HOT_VOICE void coop_synth_voice_hook(uint32_t r7)
 {
     coop_mark(0x21);
     if (r7 >= COOP_SYNTH_VOICES) return;
@@ -350,7 +350,7 @@ extern "C" void coop_synth_voice_hook(uint32_t r7)
 
 /* m1: from coop_synth_render_thunk's entry (stereo_thunks.S), before the second LFO's stage 0: so the gap from the
  * previous voice's 0x23 to this one is the stock's own per-voice work (LFO, envelope, gain, the loop). */
-extern "C" void coop_m1_thunk_in(void) { coop_mark_prof(0x12); }
+extern "C" COOP_HOT_VOICE void coop_m1_thunk_in(void) { coop_mark_prof(0x12); }
 
 /* R7 at the drum render call counts 12 down to 1 (0xffa0072a, 0xffa00946). The render's R0 (active) only sets the
  * voice's done flag (0xffa00906..0xffa0090c): the stock sums the voice either way, so the hook does too. */
