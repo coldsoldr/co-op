@@ -1604,6 +1604,8 @@ UI bugs found and fixed in e4c (below), and the rings port is cleared to resume.
 with saw OFF, power-cycle: saw is gone from the engine list (a sound on it plays iter). Then Shift down, Help down,
 Help up: nothing opens. Help alone: help as before.
 
+**Result (owner, 2026-11-10, on e4e): PASS for Shift + Help** ("shift+help is now fixed": no date and time screen).
+
 **Result (owner, 2026-11-10): FAIL for the plugin rows.** Settings > plugins: neither a green turn nor a push changes
 the saw row; co-op's Switch off says "the OP-1 refused switching saw.coop off: a size mismatch, or the list is full"
 (PLUGIN_SET status 4: the disabled list already held 16 names, none of them saw.coop). And co-op showed the build as
