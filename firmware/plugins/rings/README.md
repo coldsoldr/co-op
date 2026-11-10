@@ -236,6 +236,8 @@ decimator. `make -C tests/host/rings voice44` [C host]: over the 90 s scenario t
 build's even samples bit for bit (19,232,320 samples, 0 differ); the odd ones were the Lagrange stage's, so what the
 OP-1 hears differs by the two interpolators' responses above the decimator, about 0.2 dB at 10 kHz [I, derived]. A
 core older than the 44.1 kHz voice refuses this file ("engine flags not supported yet").
+Cost [C simulator, `make profile`, the shipped flags, 300,505 renders]: the upsampler 1,570 -> 1,056 cycles a render
+(-514; the README's earlier ~1.6 k estimate was high), less the core's repeat (~140 [I]): about -0.4 k a render.
 
 ## Building and checking
 
