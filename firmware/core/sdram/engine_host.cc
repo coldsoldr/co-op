@@ -33,7 +33,8 @@
 #define MAGIC         0x5300
 #define SLOTS         64
 
-struct eng { const coop_engine_t *e; uint8_t *state; uint32_t stride; };
+struct eng { const coop_engine_t *e; uint8_t *state; uint32_t stride; uint32_t f44k; };   /* v1: f44k, COOP_ENGINE_F_44K */
+extern "C" void coop_voice_44k_to_88k(int16_t *out);                       /* voice_rate.cc (v1) */
 static struct eng g_eng[SLOTS];
 static uint8_t g_voice_eng[COOP_VOICES];                                  /* the engine each voice started with (0 = iter) */
 volatile uint32_t g_eng_loaded, g_eng_renders, g_eng_noteons, g_eng_iter_renders, g_eng_switches, g_eng_foreign;
@@ -66,6 +67,7 @@ extern "C" const char *coop_engine_add(int n, const coop_engine_t *e)
     if (bad) { if (raw) FREE(raw); return "engine init failed"; }
     g_eng[n].state = state;
     g_eng[n].stride = stride;
+    g_eng[n].f44k = e->flags & COOP_ENGINE_F_44K;
     __asm__ __volatile__("ssync;" ::: "memory");
     g_eng[n].e = e;                                                       /* playable from here */
     g_eng_loaded++;
@@ -149,6 +151,7 @@ extern "C" COOP_HOT_VOICE void coop_eng_render(void *self, int16_t *out, const i
     uint32_t c0 = coop_cost_now();
     if (g_coop_gap_prof) coop_mark_hot(0x14, c0, a0, a1);                 /* m1: the plugin's own render starts */
     g_eng[n].e->render(v, state_of(n, v), out, PITCH_INC, params);
+    if (g_eng[n].f44k) coop_voice_44k_to_88k(out);                       /* v1: 64 at 44.1 kHz -> 128; in the engine's cost */
     uint32_t dt = coop_cost_now() - c0;
     if (g_coop_pf_live) { b0 = COOP_PFCNTR0; b1 = COOP_PFCNTR1; }
     if (g_coop_gap_prof) coop_mark_prof_cold(0x1C);                       /* m1: ... and ends */

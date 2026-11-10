@@ -283,6 +283,67 @@ thunk is 0.74 k and the dispatcher 0.2 k cheaper, the hook 0.1 k dearer (the mar
 free. On the device the folds run once a block from cold code; the per-voice path is what an engine's code evicts six
 times a block. The device run decides (`docs/device-tests.md`).
 
+## The 44.1 kHz voice (v1, 2026-11-10)
+
+From `docs/request-rings-collateral.md` "Also on the table" and the rings README's levers.
+
+**What happens today.** The stock voice loop wants each voice as 128 int16 samples at 88.2 kHz (`render`'s
+`out[128]`). It applies the envelope, gain and LFO at that rate; coop's voice hook adds the voice into the stereo pair
+at 88.2 kHz; then the half-band decimator (`coop_hb_decimate2`, the stock's taps: 32 on the even phase, one tap of
+0.5 on the odd) and the DC block bring each side to 44.1 kHz (`docs/stereo-bus-v2.md` S3). An engine that computes
+at 44.1 kHz or below must upsample to 88.2 kHz only for that decimator to undo it. Rings computes at 22.05 kHz: a
+24-tap half-band to 44.1 kHz, then a 4-point Lagrange 2x stage to 88.2 kHz (`plugins/rings/rings.cc` `Upsampler`);
+the README gives ~1.6 k a render for the 2x stage and the copies, and the fade and screen loops run on 128 samples.
+
+**The contract (additive, API 1).** An engine opts in with both:
+- `COOP_ENGINE_F_44K` in `coop_engine_t.flags` (`sdk/coop_plugin.h`): `render` fills `out[0..63]`
+  (`COOP_VOICE_BLOCK_44K`) at 44.1 kHz. `pitch[]` is unchanged, 128 words at 88.2 kHz, so output sample i's
+  increment at 44.1 kHz is `2 * pitch[2 * i]` (an engine that latches `pitch[0]`, as rings does, changes nothing).
+- `"voice_rate": 44100` in plugin.json (default 88200). `tools/plugin/pack.py` reads the engine object's flags word
+  and refuses a file where the two disagree, and refuses `voice_rate` on an effect.
+
+**What the core does.** `coop_eng_render` (`engine_host.cc`) calls `coop_voice_44k_to_88k` (`voice_rate.cc`, in the
+per-voice section) right after the render: every sample twice, in place, a hardware loop of `PACK` and one 32-bit
+store a sample (~140 cycles). It is counted in the engine's own cost (`eng_<id>`); the stats line's `eng_44k` counts
+the renders that went through it. Flags-0 engines take one more test of a word already in the cache line.
+The loader (`plugin_host.cc`) now refuses only unknown flags. **A core older than v1 refuses a `COOP_ENGINE_F_44K`
+file** ("engine flags not supported yet"): it does not load and play it wrong [C op1emu: the base image's stats say
+`plugins seen 2, failed 1`, only tone88 loaded].
+
+**Why repeating each sample is enough** [I, derived]. Repeat-by-two followed by the half-band decimator is linear and
+time-invariant at 44.1 kHz: the voice comes out with no image and no alias, only a response of about
+cos(pi f / 88,200) on top of the decimator's own: -0.14 dB at 5 kHz, -0.56 dB at 10 kHz, -2.4 dB at 20 kHz (the
+envelope, which moves slowly, aside). Rings' Lagrange stage in the same place gives about -0.36 dB at 10 kHz, so for
+rings (nothing above ~11 kHz: its half-band is -59 dB from 13 kHz) the difference is ~0.2 dB at the top of its band.
+An engine whose top octave matters, or one native at 88.2 kHz, keeps the default.
+
+**Gate (op1emu, `tests/sim/det_eng_tone44.txt`)** [C op1emu]: two test engines from one source
+(`tests/plugins/tone_common/tone.h`): `tone44` (the flag, 64 samples) and `tone88` (flags 0, 128 samples), the same
+parabolic sine from the stock pitch; c4 and c5 on each in the pristine slot (whose sound moves the pitch).
+- v1 image: both load (`engines 2`), `eng_44k 40654` = tone44's renders, no fault. Per 0.5 s chunk the two engines
+  give the same spectral peaks (the slot's pitch pattern: 116 / 132 / 64 Hz at c4, 276 / 392 / 524 Hz at c5) at the
+  same amplitudes within the slot's own movement, the same high-frequency weight within 1 dB (no image, no block-rate
+  artefact), and the same level: c4 RMS 108.3 / 108.1, c5 166.1 / 174.0 (-0.4 dB, the modulation's phase in the window).
+- Cost (op1emu, no cache): tone44 791 cycles a render including the 2x, tone88 1,083. The first build's C loop
+  cost ~320 more (a branch loop); the hardware loop gives the same output sample for sample.
+- The base image (HEAD, no v1) on the same NAND: `plugins seen 2`, `failed 1`, `engines 1`: tone44 refused, tone88 plays.
+- Flags-0 engines unchanged, base against v1 [C op1emu]: `det_chord.txt` identical over 2,356,174 frames to a base
+  run in the same outcome class (op1emu's two run-to-run classes differ by 1 LSB throughout: base against base showed
+  the same split), saw (`det_eng_select.txt`) identical, probe_alu identical. Rings 0.3 (`det_eng_rings.txt`, `eng_44k 0`) is
+  not repeatable in op1emu even on one image (base against base: differences from 13.5 s, max 4,363, the same RMS);
+  base against v1 the same picture.
+- The per-voice section grows by 116 bytes (`coop_voice_44k_to_88k`, `0x02c00a08..0x02c00a6c`).
+- Device: nothing to measure until an engine uses it (rings' adoption below); the 2x is 2 instructions a sample in L1, ~140 cycles a render [I].
+
+**How rings adopts it** (fork B's change, not made here): in `plugins/rings/rings.cc`, set `COOP_ENGINE_F_44K` in
+`ENGINE_rings` and `"voice_rate": 44100` in its plugin.json; `Upsampler::Process` keeps the half-band and writes
+`out[k] = Saturate16(mid[k + 1])` for k = 0..63 (the even outputs it computes today, the same 44.1 kHz samples with
+the same delay) instead of the 128-sample Lagrange loop; the fade (`AdvanceFade`, `fade_step`) and `ScreenRendered`
+run over 64 samples, so a fade that should last as long takes twice the step a sample
+(`voice_allocator.h` `kShortFadeSamples` 128 -> 64); `op1::kBlockSize` stays 128 where it means the stock block
+(the pitch words). The host test (`tests/host/rings`) compares the 44.1 kHz samples against the te-op1-cfw engine's
+even outputs, bit-identical by construction.
+
 ## Out of scope for now
 
 Engines on the drum side (the drum voices are not engine objects, `docs/tracker.md` "Drums beside the synth"),

@@ -54,10 +54,18 @@ typedef struct coop_screen_t {
 #define COOP_VOICE_BLOCK  128                          /* samples a render, at 88,200 Hz */
 #define COOP_VOICE_BYTES_MAX 8192u
 
+/* coop_engine_t.flags (v1, docs/engines.md "The 44.1 kHz voice"). A core that predates a flag refuses the file
+ * ("engine flags not supported yet") instead of playing it wrong. */
+#define COOP_ENGINE_F_44K   0x1u                       /* render fills out[0..63] at 44.1 kHz; the core makes the 128
+                                                        * the voice loop wants (each sample twice, after the render).
+                                                        * plugin.json "voice_rate": 44100 (pack.py checks the two agree) */
+#define COOP_ENGINE_FLAGS   COOP_ENGINE_F_44K          /* every flag this core knows */
+#define COOP_VOICE_BLOCK_44K 64                        /* samples a render with COOP_ENGINE_F_44K, at 44,100 Hz */
+
 typedef struct coop_engine_t {
     uint32_t magic;                                    /* COOP_ENGINE_MAGIC */
     uint32_t api;                                      /* COOP_PLUGIN_API */
-    uint32_t flags;                                    /* 0 (reserved) */
+    uint32_t flags;                                    /* COOP_ENGINE_F_*, 0 = the 88.2 kHz render */
     uint32_t voice_bytes;                              /* state the host keeps per voice (0..COOP_VOICE_BYTES_MAX),
                                                         * zeroed at load, 32-byte aligned; 0 = none */
     int (*init)(void);                                 /* main thread, once at load (tables); 0 = ready, else the
@@ -67,7 +75,9 @@ typedef struct coop_engine_t {
     /* one block of the voice into out[128]. pitch[128]: the per-sample phase increment the stock computed for this
      * voice (2^32 = one cycle a sample at 88.2 kHz; bend, LFO and glide included). params[0..3]: the slot's four
      * knob words (0..32767); params[4]: the core's selector (0x5300 + n), never written; params[5..7]: the free
-     * preset words. */
+     * preset words.
+     * With COOP_ENGINE_F_44K: out[0..63] at 44.1 kHz (leave out[64..127] alone: the core overwrites them); pitch[]
+     * is unchanged (128 words at 88.2 kHz), so output sample i's increment at 44.1 kHz is 2 * pitch[2 * i]. */
     void (*render)(int voice, void *state, int16_t *out, const int32_t *pitch, const int16_t *params);
     void (*note_off)(int voice, void *state);          /* may be 0: the stock envelope releases the voice */
     const coop_screen_t *screen;                       /* 0 = the stock iter screen (E2) */

@@ -363,7 +363,7 @@ static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fn
                        (uint32_t)(uintptr_t)e->note_off };
     if (e->magic != COOP_ENGINE_MAGIC) err = "entry object is not a coop engine (magic)";
     else if (e->api != COOP_PLUGIN_API) err = "entry object built for another API";
-    else if (e->flags) err = "engine flags not supported yet";
+    else if (e->flags & ~COOP_ENGINE_FLAGS) err = "engine flags not supported yet";   /* v1: COOP_ENGINE_F_44K */
     else if (!fn[1] || !fn[2]) err = "engine without note_on or render";
     else {
         for (int i = 0; i < 4 && !err; i++)

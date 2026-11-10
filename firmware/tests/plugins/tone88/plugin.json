@@ -1,0 +1,20 @@
+{
+  "name": "tone88",
+  "kind": "synth",
+  "symbol": "ENGINE_tone88",
+  "sources": [
+    "tone88.cc"
+  ],
+  "sdk_include_dirs": [
+    "plugins/tone_common"
+  ],
+  "defaults": [
+    16384,
+    16384,
+    16384,
+    16384
+  ],
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "v1 test engine (docs/engines.md \"The 44.1 kHz voice\"): the same parabolic sine as tone44, rendered at 88.2 kHz. Not a real plugin."
+}

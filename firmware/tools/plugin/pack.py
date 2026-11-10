@@ -434,6 +434,18 @@ def pack(meta, obj_bytes, svg_dir=None):
         raise PackError('stereo entry object truncated')
     if meta.get('input_engine') and (entry_symbol['size'] < 32 or entry + 32 > image_size):
         raise PackError('input entry object truncated')
+    voice_rate = meta.get('voice_rate', 88200)          # coop v1: the engine's render rate (docs/engines.md "The 44.1 kHz voice")
+    if 'voice_rate' in meta and kind != F.KIND_SYNTH:
+        raise PackError('voice_rate is for synth engines only')
+    if type(voice_rate) is not int or voice_rate not in (88200, 44100):
+        raise PackError('voice_rate must be 88200 (128 samples a render) or 44100 (64)')
+    if kind == F.KIND_SYNTH:                            # coop_engine_t.flags (sdk/coop_plugin.h COOP_ENGINE_F_44K) must agree
+        if entry_symbol['size'] < 12 or entry + 12 > image_size:
+            raise PackError('engine entry object truncated')
+        eflags = struct.unpack_from('<I', img, entry + 8)[0]
+        if bool(eflags & 1) != (voice_rate == 44100):
+            raise PackError(f'voice_rate {voice_rate} but the engine object\'s flags say '
+                            f'{"COOP_ENGINE_F_44K" if eflags & 1 else "0 (88.2 kHz)"}: set both')
     bigbuf = meta.get('bigbuf')                         # a declared pool buffer: OP1_BIGBUF(<symbol>, min, max) in .data
     bigbuf_off = None
     if bigbuf is not None:
