@@ -65,6 +65,13 @@ static int s_ndis;
 static int s_dirty;
 static volatile int s_save_pending;                                     /* the main loop writes the file */
 
+volatile uint32_t g_set_dropped, g_set_listed;                         /* e4d: names dropped from the list, names left */
+static int plausible(const char *s)                                     /* a .coop file name: printable, ends .coop */
+{
+    int n = 0;
+    for (; s[n]; n++) if (s[n] < 0x21 || s[n] > 0x7E || s[n] == '/') return 0;
+    return n > 5 && s[n - 5] == '.' && s[n - 4] == 'c' && s[n - 3] == 'o' && s[n - 2] == 'o' && s[n - 1] == 'p';
+}
 static int is_note(int c)                                               /* IsNoteKey 0x019C316C's 24 codes (screen-interface.md §7) */
 {
     return (c >= 0x0D && c <= 0x0F) || (c >= 0x16 && c <= 0x20) || (c >= 0x27 && c <= 0x2A) || (c >= 0x30 && c <= 0x35);
@@ -103,7 +110,7 @@ static int save_file(void)
     for (int i = 0; i < 4; i++) b[5 + i] = s_choice[i];                /* b[5..8]: the four choices; b[9] the count */
     int n = 9;
     b[n++] = (uint8_t)s_ndis;
-    for (int i = 0; i < s_ndis; i++) { for (int k = 0; k < NAME_LEN; k++) b[n + k] = (uint8_t)s_dis[i][k]; n += NAME_LEN; }
+    for (int i = 0; i < s_ndis; i++) { for (int k = 0; k < NAME_LEN && s_dis[i][k]; k++) b[n + k] = (uint8_t)s_dis[i][k]; n += NAME_LEN; }   /* up to the NUL: the rest stays zero */
     int fd = Y_OPEN(SET_FILE, 0x242, 0x180);
     if (fd < 0) return 0;
     int ok = Y_WRITE(fd, b, n) == n;
@@ -132,10 +139,30 @@ extern "C" void coop_settings_boot(void)
     s_ndis = 0;
     for (int i = 0; i < n && i < DIS_MAX && at + nl <= got; i++, at += nl) {
         scpy(s_dis[s_ndis], (const char *)b + at, nl);
-        if (s_dis[s_ndis][0]) s_ndis++;
+        if (plausible(s_dis[s_ndis])) s_ndis++;                         /* e4d: garbage is never a name */
+        else g_set_dropped++;
     }
     g_coop_spread = (uint32_t)(s_pct * 32767 / 100);
     g_set_loaded = 1;
+}
+
+/* e4d (the owner's device, 2026-11-10: "list full", saw could not be switched off): the boot scan's file names
+ * (plugin_host.cc, main thread, right after its directory listing). The list keeps only names of files that are there
+ * now, once each; anything else (a file deleted since, a duplicate, the bytes of a damaged file: the e2 crash happened
+ * while this file was being written) is dropped and the cleaned list is saved by the main loop. So the 16 places can
+ * only ever hold real files, and there are at most 8 of those. */
+extern "C" void coop_settings_prune(const char (*names)[40], int n_names)
+{
+    int k = 0;
+    for (int i = 0; i < s_ndis; i++) {
+        int present = 0, dup = 0;
+        for (int j = 0; j < n_names && !present; j++) if (seq(s_dis[i], names[j])) present = 1;
+        for (int j = 0; j < k && !dup; j++) if (seq(s_dis[i], s_dis[j])) dup = 1;
+        if (present && !dup) { if (k != i) scpy(s_dis[k], s_dis[i], NAME_LEN); k++; }
+        else g_set_dropped++;
+    }
+    if (k != s_ndis) { s_ndis = k; s_save_pending = 1; }
+    g_set_listed = (uint32_t)s_ndis;
 }
 
 /* e3, PLUGIN_SET over SysEx (coop_sysex.cc, main loop): put a plugin file on or off the disabled list and write the

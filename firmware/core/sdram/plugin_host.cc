@@ -355,6 +355,7 @@ extern "C" void coop_pf_boot(void);                                        /* co
 extern "C" void coop_icache_probe(void);                                   /* coop_stats.cc (p6f) */
 extern "C" void coop_pf_sweep(void);                                       /* coop_stats.cc (p6h) */
 extern "C" int coop_plugin_disabled(const char *fname);
+extern "C" void coop_settings_prune(const char (*names)[40], int n_names);   /* coop_settings.cc (e4d) */
 volatile uint32_t g_plugins_disabled;
 
 /* u1: the files the scan saw, for the settings menu's Plugins list (disabled ones included) */
@@ -392,6 +393,9 @@ extern "C" void coop_plugins_boot(void)
     if (g_coop_no_plugins) { slot2_load(); return; }                       /* test images: as if /yaffs2/plugins were empty */
     list_dir();
     if (!g_n_names) { slot2_load(); return; }
+    coop_settings_prune(g_names, g_n_names);                               /* e4d: the off list holds only files that are here
+                                                                             (with none, nothing loads: left for the next boot
+                                                                             that has files) */
     void *udb = DB_HANDLE();
     if (udb) map_load(udb);
     uint8_t *stage = (uint8_t *)MALLOC(FILE_MAX);

@@ -1604,7 +1604,11 @@ UI bugs found and fixed in e4c (below), and the rings port is cleared to resume.
 with saw OFF, power-cycle: saw is gone from the engine list (a sound on it plays iter). Then Shift down, Help down,
 Help up: nothing opens. Help alone: help as before.
 
-Result: (pending)
+**Result (owner, 2026-11-10): FAIL for the plugin rows.** Settings > plugins: neither a green turn nor a push changes
+the saw row; co-op's Switch off says "the OP-1 refused switching saw.coop off: a size mismatch, or the list is full"
+(PLUGIN_SET status 4: the disabled list already held 16 names, none of them saw.coop). And co-op showed the build as
+`e4b`: the package carried e4c's code with e4b's tag, because `core/sdram/Makefile` did not list the headers, so the
+rebuild after the tag fix in `coop_build.h` was skipped as up to date. Both fixed in e4d.
 
 ## Rings (E3): the first ported synth engine — device test (pending, 2026-11-10)
 
@@ -1628,5 +1632,29 @@ Result: (pending)
    `l1` line (`leased 1056`), from the busiest moment (VERB or FM, six voices, encoders turning).
 
 Compare with the kennel build on hundekraft, if you still have it: the same sound, by ear.
+
+Result: (pending)
+
+## e4d: the disabled list keeps only real files — device test (pending, 2026-11-10)
+
+- `build/pkg/op1_246_coop_e4d_settings_list.op1` (sha256 `41d83e7f2a14deb679d25d353d1c31c80795603b4e977389f97cd51481b03e02`),
+  copy in Downloads. `--tape-stereo --set-word g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only
+  `OP1_vdk.ldr` differs. Build tag `e4d` (checked in the ELF). e4c plus:
+  - at boot, after the directory listing, the disabled list keeps only names of `.coop` files that are there, once
+    each; garbage (a damaged file: the e2 crash happened while this file was being written), duplicates and files
+    gone since are dropped and the cleaned file is saved (`set_listed`, `set_dropped` in the stats `plugins` line);
+    names are written up to their NUL (the rest of the 40-byte slot zero);
+  - `core/sdram/Makefile` lists every header in `core/include`, `sdk` and the kennel screens as prerequisites, so a
+    changed tag or header always rebuilds the image.
+- op1emu: a NAND with saw.coop and a settings file whose list held 16 entries (8 names of files that don't exist, 8 of
+  random bytes): boot `set_dropped 16 set_listed 0`; `det_ui_e4c.txt` then turns saw OFF (`set_plugin_turns 2
+  set_plugin_pushes 1 set_plugin_bounces 1`), the file holds `saw.coop` and zeros, the next boot skips saw (`loaded 0
+  disabled 1`). With no plugin files the prune is not run (nothing loads; the next boot with files cleans the list).
+  `det_chord.txt` (no plugins): one e4d run identical to e4c (3,175,159 frames), another within 14 LSB of it; the same
+  image gives either outcome, as other scenarios do run to run, so not a change of e4d.
+
+**What to do**: flash e4d. co-op > Plugins > Read plugins: the pill says `coop e4d`. Then settings > plugins: green
+left on saw: OFF; leave the menu; power-cycle: saw is gone. co-op's Switch off / on works too. If you can, copy the
+stats `plugins` line: `set_dropped` says how many bad names the device's file held.
 
 Result: (pending)
