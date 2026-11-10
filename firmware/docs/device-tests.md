@@ -1780,4 +1780,7 @@ fetched again after every render once an engine's code is large.
 FX 1 as last time**, and `run_m1_mode0.txt` once (mode 0 is enough). Send the `_run.txt`. What should move: the
 `thunk` and `hook` columns and the collateral of `code4k` / `code12k` and both rings sections, against m1's.
 
-Result: (pending)
+**Result (owner, 2026-11-10): PASS, a gain for rings, a loss for 8-12 KB engines.** `m1_mode0_20261110-1828`,
+all 17 sections, nitro on FX 1. Against m1 (callback over idle): rings sympathetic -33 k a block, modal -2 k,
+probe_code 4 KB -44 k, probe_code 8 KB +12 k, 12 KB +24 k (set conflicts, `docs/m1-results.md` "m1b"). Rings' remaining
+excess is now mostly stores.

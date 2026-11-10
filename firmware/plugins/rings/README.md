@@ -227,3 +227,11 @@ Next levers, by size:
 - **Rings: less code per render** (the control code compact, the sympathetic path's footprint) and fewer SDRAM
   stores in the hot state (the L1 lease for the per-voice state that is written every block).
 - The 44.1 kHz voice interface (~5 % of rings' render) comes after both.
+
+### m1b on the device (2026-11-10)
+
+coop's per-voice path in one 2.5 KB section (`docs/m1-results.md` "m1b"): rings sympathetic's callback falls by 33 k a
+block (445 k -> 403 k with nitro on FX 1; thunk -12.5 k, hook -5.4 k, rings' own render -12.7 k), modal by 2 k.
+What is left over `probe_alu` is mostly stores (the stock DSP outside the voices +10-11 k, the block start +4-7 k),
+then coop's thunk +5-6 k: the next rings lever is the L1 lease for its per-voice state written every block.
+
