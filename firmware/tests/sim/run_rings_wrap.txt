@@ -1,0 +1,160 @@
+# rings wrap (coop e5): written by tests/sim/gen_run_wrap.py, do not edit.
+# docs/device-tests.md "e5" says what it shows.
+#@name rings_wrap
+#@tail 3000
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+#@pfmode 0
+at 27500
+tap synth 200
+#@mark -
+at 29000
+press shift
+at 29200
+tap t1 200
+at 29700
+release shift
+at 30900
+turn enc1 ccw 160
+at 34300
+turn enc1 cw 88
+at 37260
+tap seq 200
+at 38260
+tap synth 200
+at 39260
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 40060
+#@mark m_start
+at 45060
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 46260
+press help
+at 46560
+turn enc1 cw 4
+at 47140
+release help
+at 48140
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 48940
+#@mark m_plus1
+at 53940
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 55140
+press help
+at 55440
+turn enc1 cw 24
+at 56420
+release help
+at 57420
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 58220
+#@mark m_plus7
+at 63220
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 64420
+press help
+at 64720
+turn enc1 ccw 4
+at 65300
+release help
+at 66300
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 67100
+#@mark m_plus6
+at 72100
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 73300
+press help
+at 73600
+turn enc2 cw 2
+at 74140
+release help
+at 75140
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 75940
+#@mark p_plus1
+at 80940
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 82140
+press help
+at 82440
+turn enc2 cw 8
+at 83100
+release help
+at 84100
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 84900
+#@mark p_plus5
+at 89900
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 91900
+wait 97900
+quit

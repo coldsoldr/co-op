@@ -84,9 +84,15 @@ inline int32_t StepEngine(int32_t engine, int32_t direction) {
 inline int32_t StepSetting(int16_t k, int32_t count) { return k < 0 ? 0 : (k >= count ? count - 1 : k); }
 inline Engine EngineSetting(const int16_t*) { return ENGINE_RINGS; }
 inline int32_t ModelSetting(const int16_t* knobs) { return StepSetting(knobs[5], kNumModels); }
+#if OP1RINGS_COOP_POLY_ALL
+// rings 0.5 (plugin.json): the polyphony steps are 1, 2, 4, all (word 6 = 0..3), wrapping on the turn.
+const PolyState kCoopPolyOrder[kNumPolyStates] = { POLY_1, POLY_2, POLY_4, POLY_ALL };
+inline PolyState PolySetting(const int16_t* knobs) { return kCoopPolyOrder[StepSetting(knobs[6], kNumPolyStates)]; }
+#else
 inline PolyState PolySetting(const int16_t* knobs) {
   return static_cast<PolyState>(StepSetting(knobs[6], kNumPolyStates));
 }
+#endif
 #elif defined(OP1_KENNEL)
 // As a kennel plugin (ports/knl/cs_rings) Rings is its own engine, and the
 // model and polyphony are the page-2 words a knob press edits (op1_plugin.h:

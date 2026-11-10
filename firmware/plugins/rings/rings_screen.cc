@@ -209,7 +209,7 @@ void ScreenUpdate(void* scr, int dt) {
     // POLY row: a tick per voice the setting allows, bright green while that many voices sound, dim green at rest,
     // near black beyond the setting. While fn is held, the setting itself: the allowed ticks bright, the rest grey.
     const int32_t poly = op1::PolySetting(words);
-#if OP1RINGS_COOP_POLY4
+#if OP1RINGS_COOP_POLY4 && !OP1RINGS_COOP_POLY_ALL
     const int32_t voices = poly == op1::POLY_ALL ? 4 : op1::kPolyVoices[poly];   // setting 0 plays four (rings.cc)
 #else
     const int32_t voices = op1::kPolyVoices[poly];

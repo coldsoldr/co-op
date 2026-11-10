@@ -248,6 +248,8 @@ a second bank (chorus, plate, outatime, amp). coop settles it per encoder:
 - Continuous parameters default to 1 % of the range per detent on turn, and 1/16 of that on fine.
 - `steps` parameters move one step per detent.
   - A selector with many steps may declare `detents` per step (`plugin.json` "controls", e4; Nostromo used 2).
+  - A selector whose steps form a cycle (models, voice counts) may declare `"wrap": true` (e5): a turn past the last
+    step goes to the first. Leave it off where the ends mean something (a range, a level).
   - The 8-step kennel `coarse` knobs become `steps: 8`.
 - Every turn of every plugin goes through the core, so acceleration, MIDI and the LFO behave identically everywhere.
 

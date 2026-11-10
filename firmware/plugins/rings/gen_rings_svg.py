@@ -45,7 +45,7 @@ GLYPH_SCALE = 1.4            # the 5 x 7 cell drawn 7 x 9.8 (round 3: larger row
 ADVANCE = 10
 
 MODEL_LABELS = ['MODAL', 'SYMP', 'STRING', 'FM', 'QUANT', 'VERB']
-POLY_LABELS = ['4', '1', '2', '4']   # coop rings 0.3: setting 0 plays four voices (rings.cc OP1RINGS_COOP_POLY4); 3 is only reached by an old sound
+POLY_LABELS = ['ALL', '1', '2', '4']   # by op1::PolyState (rings 0.5: "all" plays six voices again, OP1RINGS_COOP_POLY_ALL)
 LABEL_X, MODEL_LABEL_Y, POLY_LABEL_Y = 224, 33, 80     # top of the cell
 DOT_Y, DOT_X0, DOT_DX, DOT_R = 54, 229, 14, 3.5
 TICK_Y0, TICK_Y1, TICK_X0, TICK_DX = 96, 108, 229, 10

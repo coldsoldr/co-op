@@ -239,6 +239,18 @@ core older than the 44.1 kHz voice refuses this file ("engine flags not supporte
 Cost [C simulator, `make profile`, the shipped flags, 300,505 renders]: the upsampler 1,570 -> 1,056 cycles a render
 (-514; the README's earlier ~1.6 k estimate was high), less the core's repeat (~140 [I]): about -0.4 k a render.
 
+## 0.5: polyphony "all" again, controls that wrap (2026-11-10)
+
+The owner's choice after the m1c run: rings is left at 0.4's performance, with:
+- **Polyphony 1, 2, 4, all** (fn + green, `OP1RINGS_COOP_POLY_ALL=1`, `op1/settings.h` `kCoopPolyOrder`): "all" is
+  te-op1-cfw's six voices of 14 modes again (0.3 had folded it into 4); 4 keeps 0.3's 10 modes. Default 4. The
+  word holds the step index, so a sound saved with 0.3 / 0.4 (0 = 4, 1 = 1, 2 = 2) now opens as 1, 2, 4.
+- **fn + blue and fn + green wrap** (`"wrap": true`, coop e5): modal ... verb, modal; 1, 2, 4, all, 1. An older coop
+  core loads 0.5 too, with turns that stop at the ends.
+- [C host] With the new order the settings play bit for bit what 0.4 played (models 0-2, 6,000 blocks each: new 1, 2,
+  4 against 0.4's 1, 2, 4, and new "all" against the build without the 4-voice cap); "all" differs from 4.
+- "all" costs the most: six voices of 14 modes, beside effects or tape recording expect crackles (0.2's device runs).
+
 ## Building and checking
 
 ```sh

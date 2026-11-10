@@ -160,9 +160,15 @@ op1rings::Scratch scratch_fallback;          // when the core lends less L1 scra
 // OP1RINGS_COOP_POLY4 (rings 0.3, the owner's choice after the 0.2 device run): the polyphony setting 0 ("all" in
 // te-op1-cfw: six voices of 14 modes, each its own resonator) plays as Rings' own polyphony 4 (four voices, the
 // oldest stolen and faded), with 10 modes a modal voice instead of Rings' 12. Polyphony 1 and 2 are Rings'.
+// OP1RINGS_COOP_POLY_ALL (rings 0.5, the owner's choice): "all" is back as its own setting, six voices of 14 modes
+// each (te-op1-cfw's); polyphony 4 keeps 0.3's 10 modes. The steps are 1, 2, 4, all (op1/settings.h kCoopPolyOrder).
 #if OP1RINGS_COOP_POLY4
 const int32_t kPoly4Modes = 10;
+#if OP1RINGS_COOP_POLY_ALL
+inline op1::PolyState PlayedPoly(op1::PolyState poly) { return poly; }
+#else
 inline op1::PolyState PlayedPoly(op1::PolyState poly) { return poly == op1::POLY_ALL ? op1::POLY_4 : poly; }
+#endif
 inline int32_t PolyModes(op1::PolyState poly) { return poly == op1::POLY_4 ? kPoly4Modes : op1::kPolyModes[poly]; }
 #else
 inline op1::PolyState PlayedPoly(op1::PolyState poly) { return poly; }

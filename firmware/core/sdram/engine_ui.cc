@@ -19,6 +19,8 @@
  * 2 shift + turn are the stock's: refused); encoder 0..3 blue green white orange; word 5..7; kind s (steps) or c
  * (continuous); count 2..16 (steps); default; random 0/1; detents a step on a turn (1..8); name and step names up to 8
  * characters, lower case (the stock glyphs). A malformed declaration refuses the file: the inventory says why.
+ * e5: a steps line may end in one more field, wrap 0/1 (plugin.json "wrap": true): a turn past the last step goes to
+ * the first and back. A core before e5 skips the rest of the line, so the same file clamps there.
  *
  * Rules (guidelines §4): a click acts on release, and only if shift and fn are as they were on the press, so a click
  * that becomes part of a combo never fires the plain one; an undeclared layer on this page does nothing and is
@@ -57,7 +59,7 @@ extern "C" void coop_fn_use(void);
 
 enum { A_TURN, A_CLICK, A_SHIFT_TURN, A_SHIFT_CLICK, A_FN_TURN, A_FN_CLICK, A_SHIFT_FN_TURN, A_SHIFT_FN_CLICK };
 struct ctl {
-    uint8_t action, enc, word, kind, count, random, detents, pad;
+    uint8_t action, enc, word, kind, count, random, detents, wrap;     /* e5: wrap (was pad) */
     int16_t def;
     char name[NAME_LEN];
     char steps[STEP_MAX][NAME_LEN];
@@ -122,6 +124,12 @@ extern "C" const char *coop_engine_set_controls(int n, const char *text)
                 if (i < cnt - 1) { if (*p != ',') return "controls: fewer step names than steps"; p++; }
             }
             if (d < 0 || d >= cnt) return "controls: default outside the steps";
+            if (*p == '\t') {                                              /* e5: the wrap field */
+                int wr;
+                p++;
+                if (!num(p, &wr) || wr < 0 || wr > 1) return "controls: wrap must be 0 or 1";
+                c->wrap = (uint8_t)wr;
+            }
         } else {
             cnt = 0;
             if (d < 0 || d > 32767) return "controls: default outside 0..32767";
@@ -206,7 +214,13 @@ extern "C" int coop_engine_ui_knob(int knob, int steps)
         while (s_acc[enc] >= c->detents) { s_acc[enc] -= c->detents; moved++; }
         while (s_acc[enc] <= -c->detents) { s_acc[enc] += c->detents; moved--; }
         if (!moved) return 1;
-        int v = clamp_step(c, clamp_step(c, cur) + moved);
+        int v;
+        if (c->wrap) {                                                     /* e5: past the last step to the first */
+            v = (clamp_step(c, cur) + moved) % c->count;
+            if (v < 0) v += c->count;
+        } else {
+            v = clamp_step(c, clamp_step(c, cur) + moved);
+        }
         set_word(inst, c->word, v);
     } else {
         int32_t v = cur + steps * 328;                                     /* 1 % a detent */

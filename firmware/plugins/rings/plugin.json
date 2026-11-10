@@ -31,6 +31,7 @@
     "-DOP1RINGS_CONTROL_HALVED=1",
     "-DOP1RINGS_CONTROL_BATCHED=1",
     "-DOP1RINGS_COOP_POLY4=1",
+    "-DOP1RINGS_COOP_POLY_ALL=1",
     "-DOP1RINGS_VOICE_44K=1",
     "-fno-tree-loop-distribute-patterns"
   ],
@@ -57,7 +58,8 @@
         "verb"
       ],
       "default": 0,
-      "detents": 2
+      "detents": 2,
+      "wrap": true
     },
     {
       "id": "poly",
@@ -67,11 +69,13 @@
       "word": 6,
       "kind": "steps",
       "steps": [
-        "4",
         "1",
-        "2"
+        "2",
+        "4",
+        "all"
       ],
-      "default": 0
+      "default": 2,
+      "wrap": true
     }
   ],
   "screen": {
@@ -79,6 +83,6 @@
     "symbol": "SCREEN_rings"
   },
   "author": "coldsoldr",
-  "version": "0.4",
-  "description": "Mutable Instruments Rings (Emilie Gillet, MIT) as a coop synth engine: te-op1-cfw's fixed-point port (the hundekraft kennel build, ports/knl/rings at 5aa314b), 22.05 kHz upsampled 2x to a 44.1 kHz voice. Blue structure, green brightness, white damping, orange position; fn + blue the model (modal, sympathetic strings, string, FM, quantized sympathetic strings, string and reverb), fn + green the polyphony (4, 1, 2)."
+  "version": "0.5",
+  "description": "Mutable Instruments Rings (Emilie Gillet, MIT) as a coop synth engine: te-op1-cfw's fixed-point port (the hundekraft kennel build, ports/knl/rings at 5aa314b), 22.05 kHz upsampled 2x to a 44.1 kHz voice. Blue structure, green brightness, white damping, orange position; fn + blue the model (modal, sympathetic strings, string, FM, quantized sympathetic strings, string and reverb), fn + green the polyphony (1, 2, 4, all); both wrap around."
 }

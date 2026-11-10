@@ -1818,3 +1818,24 @@ fault. Against m1b, each section over idle: rings modal -29.2 k, sympathetic -13
 8 KB -24.3 k, 12 KB -29.3 k, the rest -3 to -5 k; v2's once-a-block folds cost 5-6 k of that back (`cb_rest`). Rings'
 peaks still pass the budget with sympathetic (684 k) and the knobs turning (602 k). `docs/m1-results.md` "m1c, second run".
 
+## e5: release image, rings 0.5 — device test (pending, 2026-11-10)
+
+The owner left rings at 0.4's performance (m1c) and asked for polyphony "all" back and controls that wrap.
+- `build/pkg/op1_246_coop_e5.op1` (sha256 `89b4b2cfdb5ea186495045c1f8773367416e1c6f46252f7a79ef0f14223024c3`), copy in
+  Downloads. A **release** image: m1c's core (v2's per-voice path, the 44.1 kHz voice) without the m1 measuring (no
+  `COOP_M1`, no `g_coop_gap_prof`), `--tape-stereo --set-word g_coop_spread=32767`, plus `"wrap"` for steps controls
+  (`core/sdram/engine_ui.cc`; `docs/engines.md` "Controls"). `verify_bootloader.py` PASS, `pkg_check` = only
+  `OP1_vdk.ldr` differs. Build tag `e5`.
+- `build/plugins/rings.coop` **0.5** (sha256 `8fcd30d13575e1239c9920b200256f83aa0c5c6fe71fa0ba1cfd90c726fb477b`, 113,048
+  bytes): polyphony 1, 2, 4, all (default 4), fn + blue and fn + green wrap (`plugins/rings/README.md` "0.5").
+- [C host] the new order plays bit for bit what 0.4 played for 1, 2, 4, and "all" what the uncapped build plays.
+- [C op1emu] `tests/sim/run_rings_wrap.txt` (`gen_run_wrap.py`) on e5: one model step 144,174 a block, six more
+  144,181 (the same model: wrapped), one back 149,758 (the start's 149,593); polyphony one step to "all" 205,883, four
+  more 205,913 (wrapped). 7 sections, no fault.
+
+**What to do**: flash e5, install rings 0.5. fn + blue: past verb comes modal, and back; fn + green: 1, 2, 4, all, 1.
+Play "all" (six voices) and say how it sounds. A sound saved with rings 0.3 / 0.4 opens one polyphony step off (the
+word is the step index: 0 was 4, is now 1).
+
+Result: (pending)
+

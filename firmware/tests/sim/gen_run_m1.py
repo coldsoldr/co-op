@@ -72,6 +72,7 @@ class S:
         self.do('release help', dt=300 + 20 * abs(steps) + 200)
 
     def variant(self, k, gray):                     # m1c: word 5 = step k from the bottom, absolutely
+        # (Needs a control that clamps: rings 0.5 wraps its model and polyphony, so this lands anywhere for it.)
         # m1c on the device lost a step (rings modal -> symp and probe_code 8 -> 12 KB each played the same as the
         # section before; ctl_turns 21 of 22). Relative steps carried such a loss into every later section; now each
         # section goes down to the bottom (the list clamps) and up k steps in whole detents (2 transitions each, so

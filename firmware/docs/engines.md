@@ -179,6 +179,9 @@ From the rings port's request (`docs/request-engine-controls-l1.md`); everything
   `steps` (2..16 named steps, the step index in the word) or `continuous` (Q15, turns only, 1 % a detent); `default`;
   `random` (default true: randomise draws it); `detents` per step on a turn (1..8, default 1); `name` and step names up
   to 8 characters from the stock glyphs, lower case. The field names follow the v2 parameter table (guidelines §3.1).
+  e5: `wrap` (steps only, default false): a turn past the last step goes to the first, and back (rings 0.5's model and
+  polyphony). It packs as an 11th field (`... name steps 1`); a core before e5 skips the rest of the line, so the same
+  file loads there and its turns stop at the ends.
 - `tools/plugin/pack.py` checks the declaration and packs it as extension tag 6 (text, one line per control:
   `action encoder word kind count default random detents name steps`); the loader refuses a malformed one with a
   reason the inventory shows. The control defaults go into the engine list's row (words 5..7).

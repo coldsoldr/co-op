@@ -284,7 +284,7 @@ def control_lines(meta, kind):
     for c in controls:
         if not isinstance(c, dict):
             raise PackError('each control is an object')
-        unknown = set(c) - {'id', 'name', 'action', 'encoder', 'word', 'kind', 'steps', 'default', 'random', 'detents'}
+        unknown = set(c) - {'id', 'name', 'action', 'encoder', 'word', 'kind', 'steps', 'default', 'random', 'detents', 'wrap'}
         if unknown:
             raise PackError(f'control {c.get("id")!r}: unknown fields {sorted(unknown)}')
         cid = c.get('id')
@@ -332,8 +332,15 @@ def control_lines(meta, kind):
             count, tail = 0, ''
         else:
             raise PackError(f'control {cid}: kind must be "steps" or "continuous"')
+        wrap = c.get('wrap', False)                    # coop e5: a turn past the last step goes to the first (engine_ui.cc)
+        if not isinstance(wrap, bool):
+            raise PackError(f'control {cid}: wrap must be true or false')
+        if wrap and ckind != 'steps':
+            raise PackError(f'control {cid}: wrap is for a steps control')
         fields = [CONTROL_ACTIONS[c['action']], CONTROL_ENCODERS[c['encoder']], word, ckind[0], count, default,
                   int(random), detents, name, tail]
+        if wrap:
+            fields.append(1)                           # an 11th field: a core before e5 skips it and clamps
         lines.append('\t'.join(str(f) for f in fields))
     return ('\n'.join(lines) + '\n').encode('ascii') + b'\0'
 
