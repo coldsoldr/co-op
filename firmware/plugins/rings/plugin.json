@@ -16,7 +16,8 @@
     "src/mode_bank_bfin.S",
     "src/string_kernel_bfin.S",
     "src/limiter_bfin.S",
-    "src/reverb_bfin.S"
+    "src/reverb_bfin.S",
+    "src/halfband_bfin.S"
   ],
   "include_dirs": ["."],
   "cflags": [
@@ -24,6 +25,7 @@
     "-DOP1RINGS_SAMPLE_RATE=22050",
     "-DOP1RINGS_CONTROL_BLOCK_SIZE=32",
     "-DOP1RINGS_UPSAMPLE=4",
+    "-DOP1RINGS_CONTROL_HALVED=1",
     "-fno-tree-loop-distribute-patterns"
   ],
   "defaults": [8192, 19660, 22937, 9830],
@@ -55,6 +57,6 @@
     "symbol": "SCREEN_rings"
   },
   "author": "coldsoldr",
-  "version": "0.1",
+  "version": "0.2",
   "description": "Mutable Instruments Rings (Emilie Gillet, MIT) as a coop synth engine: te-op1-cfw's fixed-point port (the hundekraft kennel build, ports/knl/rings at 5aa314b), 22.05 kHz upsampled 4x. Blue structure, green brightness, white damping, orange position; fn + blue the model (modal, sympathetic strings, string, FM, quantized sympathetic strings, string and reverb), fn + green the polyphony (all, 1, 2, 4)."
 }

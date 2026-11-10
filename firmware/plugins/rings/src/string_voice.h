@@ -64,11 +64,16 @@ class StringVoice {
   // size: per 32 samples as given, squared per 64.
   void Process(int32_t f0, const VoicePatch& patch, int32_t* out, size_t size);
 
+  // OP1RINGS_CONTROL_HALVED (the coop build): a held block runs the strings with the parameters of the last
+  // unheld one (no tuning, no reconfiguration); the LFOs keep their pace, and a glide step covers both blocks.
+  void set_hold(bool hold) { hold_ = hold; }
+
   int32_t num_strings() const { return state_.num_strings; }
   // String k's frequency / f0 (for tests).
   FFloat ratio(int32_t k) const { return state_.ratios[k]; }
 
  private:
+  bool hold_ = false;
   void UpdateTuning(int32_t structure);
 
   // Everything but the delay lines, copied in one go by CopyFrom.

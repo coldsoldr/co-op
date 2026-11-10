@@ -144,6 +144,13 @@ The owner chose plugin screens in the first build. Kennel's model, ported:
     every engine.
   - Needed from the plugin tools: `--force-group-allocation` on the packer's `ld -r` (C++ COMDAT groups, as
     te-op1-cfw's `knl_pack.py`; saw and stereo_delay pack byte-identical with it, `docs/plugins.md`).
+  - **Device, rings 0.1 (owner, 2026-11-10)** [C device]: the controls work well; the sound crackles often and the UI
+    lags with one effect added. `eng_rings=32741/187416/760620`, `eng_rings_block=181951/415022/136868` (about twice
+    op1emu's figures: op1emu models no instruction cache or SDRAM), the callback ~490 k of 580 k in busy windows.
+  - **rings 0.2 (2026-11-10)**: the upsampler's half-band stage in assembly (bit-identical) and the control rate
+    halved (the owner's choice). op1emu: `eng_rings=13412/30417/118592`, `eng_rings_block=76056/143676/20914` (-11 %),
+    every model sounding at the 0.1 levels, `ctl_turns 8`, no fault. Profile, simulator figures and what is left:
+    `plugins/rings/README.md` "Optimisation". Device: pending.
 - Then on the device: one package for E1 + E2 + saw, the owner's verdict, then rings.
 
 ## e4: controls, L1, memory, screen exports, cost (2026-11-10)

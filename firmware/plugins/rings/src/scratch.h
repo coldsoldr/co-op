@@ -41,7 +41,8 @@ struct Scratch {
     } strings;
 #if OP1RINGS_UPSAMPLE == 4
     struct {                             // after the voice has rendered
-      int32_t x[kScratchHalfbandHistory + kScratchBlock];   // history + the block, 22.05 kHz
+      int16_t x[kScratchHalfbandHistory + kScratchBlock];   // history + the block, 22.05 kHz (16-bit: clamped)
+      int16_t xs[kScratchHalfbandHistory + kScratchBlock];  // x shifted by one sample, for the kernel's aligned reads
       int32_t mid[3 + 2 * kScratchBlock];                   // history + the block at 44.1 kHz
     } upsampler;
 #else

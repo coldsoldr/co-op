@@ -148,6 +148,10 @@ class RingsVoice {
   // parameters move (a strike always updates them); see
   // op1/coefficient_budget.h.
   void set_coefficient_hold(bool hold) { coefficient_hold_ = hold; }
+  // OP1RINGS_CONTROL_HALVED (the coop build): a held block reuses the last block's control work (the modal
+  // coefficients, the excitation cutoff, the strings' parameters). A strike never holds.
+  void set_control_hold(bool hold) { control_hold_ = hold; }
+  bool striking() const { return strum_; }
   // The modes whose coefficients the parameters asked to recompute since
   // the last call (updated or held): the resolution, or 0.
   int32_t TakeCoefficientDemand() {
@@ -194,6 +198,7 @@ class RingsVoice {
   int32_t polyphony_;
   bool strum_;
   bool coefficient_hold_;
+  bool control_hold_ = false;
   // The excitation filter's cutoff for the last pitch and brightness (it
   // costs FFloat work, a reciprocal included, and they rarely change).
   bool cutoff_valid_;

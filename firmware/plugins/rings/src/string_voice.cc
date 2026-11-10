@@ -273,6 +273,23 @@ void StringVoice::Process(int32_t f0, const VoicePatch& patch, int32_t* out, siz
   }
   for (size_t i = 0; i < size; ++i) mono[i] = 0;
 
+  if (hold_) {
+    // A held block: the strings keep their parameters; only the LFOs advance (their pace is per sample).
+    for (int32_t k = 0; k < n; ++k) state_.lfo_phase[k] += kLfoIncrements[k] * static_cast<uint32_t>(size);
+    for (int32_t k = 0; k < n; ++k) {
+      strings_[k].Process(k == 0 ? excitation : sympathetic, mono, size,
+                          state_.dispersion ? &stretch_ : nullptr, false);
+      if (k == 0 && n > 1) {
+        int32_t log2_n = 0;
+        while ((1 << log2_n) < n) ++log2_n;
+        const int32_t gain = 429496730 /* Q(0.2, 31) */ >> log2_n;   // 0.2 / n, as below
+        for (size_t i = 0; i < size; ++i) sympathetic[i] = MulQ31Fast(mono[i], gain);
+      }
+    }
+    for (size_t i = 0; i < size; ++i) out[i] = ShlSat(mono[i], 2);   // Q25 -> Q27
+    return;
+  }
+
   // Dispersion from structure, with a dead zone at 0.24-0.26.
   const int32_t structure = patch.structure;
   int32_t dispersion = 0;
@@ -303,6 +320,13 @@ void StringVoice::Process(int32_t f0, const VoicePatch& patch, int32_t* out, siz
         const int32_t rest = kOne - glide;
         glide = kOne - MulQ31(rest, rest);
       }
+#if OP1RINGS_CONTROL_HALVED
+      {
+        // A step every other block: the coefficient for two, 1 - (1 - g)^2, so a glide takes as long.
+        const int32_t rest = kOne - glide;
+        glide = kOne - MulQ31(rest, rest);
+      }
+#endif
       state_.glide = glide;
       state_.glide_brightness = sympathetic_brightness;
       state_.glide_size = static_cast<int32_t>(size);

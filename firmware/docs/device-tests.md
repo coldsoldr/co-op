@@ -1678,3 +1678,23 @@ engine list (Shift + T1). Switch it on again, power-cycle: it is back between sa
 
 **Result (owner, 2026-11-10): PASS.** "Yes it's working now": switched off, saw leaves the engine list; switched on, it
 is back with its screen.
+
+## Rings 0.2: the first optimisation — device test (pending, 2026-11-10)
+
+- `build/plugins/rings.coop` 0.2 (112,004 bytes, sha256 `55516391ad42477580177d5b8df83c0006a56e9cea968e7d091650b20008d45f`).
+  From the 0.1 device run (`coop_stats (21).txt`: rings 181,951 avg / 415,022 max cycles a block, crackles, the UI
+  lagging with one effect): the upsampler's half-band stage in assembly (bit-identical) and the control rate halved
+  (each voice's coefficients and string parameters every 2.9 ms instead of 1.45 ms; the owner's choice). Simulator
+  compute 11-18 % lower per render, op1emu -11 %; the device should gain more (half the renders skip the control
+  code, so fewer instruction-cache misses). `plugins/rings/README.md` "Optimisation".
+
+**What to do**: install over 0.1 (same id), power-cycle. Then the 0.1 session again, as close as you can: six-voice
+chords in each model with the encoders turning, the same effect(s) as before. Listen for:
+1. crackles: fewer? when do they still happen (model, polyphony, effect)?
+2. the UI with rings and one effect: still laggy?
+3. the sound: anything different from 0.1? (A knob turn now reaches the sound in 2.9 ms steps instead of 1.45; a
+   fast sweep of structure or position on a ringing note is where it could show.)
+Then send `coop_stats.txt`: the `engines` line (`eng_rings=`, `eng_rings_block=`, `synth_rest=` with its two stall
+columns) and the `win` lines of the busy part.
+
+Result: (pending)

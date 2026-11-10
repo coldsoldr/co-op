@@ -12,6 +12,7 @@
 #include "src/ffloat.h"
 #include "src/fixed.h"
 #include "src/fixed_tables.h"
+#include "src/profile.h"
 #include "src/string_kernel.h"
 
 #include "src/rate_config.h"
@@ -328,12 +329,14 @@ void StringFixed::ConfigureDispersion() {
 
 void StringFixed::Process(const int32_t* in, int32_t* out, size_t size, StretchLine* stretch,
                           bool update_tone) {
+  PROF_START(t_config);
   if (!tone_configured_ || (update_tone && needs_tone_update())) {
     ConfigureTone();
     Configure();
   } else if (!configured_ || frequency_ != configured_frequency_) {
     Configure();
   }
+  PROF_ADD(PROF_STRING_CONFIG, t_config);
   const int32_t n = static_cast<int32_t>(size);
   int32_t shift = 0;
   while ((1 << shift) < n) ++shift;

@@ -58,7 +58,7 @@ extern "C" void* coop_l1_scratch(uint32_t* bytes) {
 #endif
 
 #ifdef RINGS_PROFILE
-namespace op1rings { extern uint64_t g_profile[13]; }
+namespace op1rings { extern uint64_t g_profile[14]; }
 namespace prof {
 inline uint32_t Now() {
   uint32_t c;
@@ -170,6 +170,11 @@ int main(int argc, char** argv) {
   }
 #endif
   FILE* f = std::fopen(argv[1], "wb");
+  // OUT.raw.mix: the six voices summed per block (what is heard, before the envelope), int32, for spectral checks.
+  char mix_name[512];
+  std::snprintf(mix_name, sizeof(mix_name), "%s.mix", argv[1]);
+  FILE* mix = std::fopen(mix_name, "wb");
+  int32_t mixed[kBlock];
   if (!f) return 2;
 #ifndef RINGS_REF
   if (ENGINE_rings.init && ENGINE_rings.init() != 0) return 3;
@@ -197,7 +202,7 @@ int main(int argc, char** argv) {
       if (fixed_model >= 0) { model = fixed_model; poly = fixed_poly; }   // one model x polyphony throughout
     }
     // Knobs: now and then a jump, otherwise a slow walk on one of them.
-    if (Below(400) == 0) {
+    if (Below(400) == 0 && !std::getenv("RINGS_NO_JUMP")) {   // test switches: the same in both builds
       knobs[Below(4)] = static_cast<int16_t>(Below(32768));
     } else if (Below(8) == 0) {
       const int k = Below(4);
@@ -215,7 +220,8 @@ int main(int argc, char** argv) {
       ++notes;
     }
     if (bend_blocks > 0) --bend_blocks;
-    else if (Below(300) == 0) bend_blocks = 20 + Below(100);
+    else if (Below(300) == 0) bend_blocks = std::getenv("RINGS_NO_BEND") ? 0 : 20 + Below(100);
+    for (int i = 0; i < kBlock; ++i) mixed[i] = 0;
     for (int v = 0; v < kVoices; ++v) {
       if (left[v] <= 0) continue;
       --left[v];
@@ -225,11 +231,14 @@ int main(int argc, char** argv) {
       }
       Render(v, out, pitch, knobs, model, poly);
       std::fwrite(out, sizeof(out), 1, f);
+      for (int i = 0; i < kBlock; ++i) mixed[i] += out[i];
       ++sounding_blocks;
       for (int i = 0; i < kBlock; ++i) nonzero += out[i] != 0;
     }
+    if (mix) std::fwrite(mixed, sizeof(mixed), 1, mix);
   }
   std::fclose(f);
+  if (mix) std::fclose(mix);
   std::printf("%ld notes, %ld voice blocks rendered, %ld non-zero samples\n", notes, sounding_blocks, nonzero);
 #ifdef RINGS_PROFILE
   static const char* const kModel[6] = { "modal", "symp", "string", "fm", "quant", "verb" };
@@ -247,13 +256,14 @@ int main(int argc, char** argv) {
                   (unsigned long)(no.n ? no.total / no.n : 0), (unsigned long)no.max);
     }
   {
-    static const char* const kStage[13] = { "smoother", "reverb bus", "voice (all below)", "upsampler",
+    static const char* const kStage[14] = { "smoother", "reverb bus", "voice (all below)", "upsampler",
                                             "fade+screen", "  excitation", "  modal coeffs", "  weights+copy",
-                                            "  mode bank", "  strings", "  fm", "  limiter", "  peak" };
+                                            "  mode bank", "  strings", "  fm", "  limiter", "  peak",
+                                            "    string config" };
     uint64_t renders = 0;
     for (int m = 0; m < 6; ++m) for (int p = 0; p < 4; ++p) renders += prof::render[m][p].n;
     std::printf("stages, cycles per render (all models, %lu renders):\n", (unsigned long)renders);
-    for (int s = 0; s < 13; ++s)
+    for (int s = 0; s < 14; ++s)
       std::printf("  %-20s %8lu\n", kStage[s], (unsigned long)(op1rings::g_profile[s] / (renders ? renders : 1)));
   }
   std::printf("heaviest calls:\n");

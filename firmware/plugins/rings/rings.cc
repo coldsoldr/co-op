@@ -37,6 +37,10 @@
 
 static_assert(OP1RINGS_UPSAMPLE == 4 && OP1RINGS_SAMPLE_RATE == 22050, "the coop build is 22.05 kHz, upsampled 4x");
 
+// The upsampler's half-band stage in Blackfin assembly (src/halfband_bfin.S, from gen_halfband_asm.py): the C loop
+// below with every product on the MAC units, bit-identical (tests/host/rings/halfband_check.cc).
+extern "C" void HalfbandAsm(const int16_t* x, const int16_t* xs, int32_t* mid3);
+
 extern "C" const int32_t* kSoftLimitTable;           // src/op1_voice.cc: the limiter kernel's table
 
 namespace op1rings {
@@ -69,22 +73,34 @@ class Upsampler {
 
   // in: kRingsBlockSize Q27 samples; out: 4 * kRingsBlockSize samples.
   void Process(const int32_t* in, int16_t* out) {
-    using op1rings::kHalfbandTaps;
     const int32_t kHistory = op1rings::kScratchHalfbandHistory;   // 24 = 2 x 12 taps
-    int32_t* x = op1rings::scratch()->upsampler.x;                // the voice has rendered
+    // The 22.05 kHz samples are clamped to 16 bits, so they are kept as int16 and every product is a 16 x 16
+    // multiply (the MAC units') instead of a 32 x 32 one; c (x[-j] + x[1 + j]) is computed as c x[-j] + c x[1 + j],
+    // the same integer sum (no term or partial sum leaves 32 bits).
+    int16_t* x = op1rings::scratch()->upsampler.x;                // the voice has rendered
     int32_t* mid = op1rings::scratch()->upsampler.mid;
     for (int32_t i = 0; i < kHistory; ++i) x[i] = history_[i];
     for (int32_t i = 0; i < kRingsBlockSize; ++i) x[kHistory + i] = op1::Saturate16(in[i] >> 12);
     mid[0] = mid_history_[0];
     mid[1] = mid_history_[1];
     mid[2] = mid_history_[2];
+#if defined(__bfin__) && !defined(OP1RINGS_NO_ASM)
+    int16_t* xs = op1rings::scratch()->upsampler.xs;
+    for (int32_t i = 0; i + 1 < kHistory + kRingsBlockSize; ++i) xs[i] = x[i + 1];
+    HalfbandAsm(x, xs, mid + 3);
+#else
     for (int32_t m = 0; m < kRingsBlockSize; ++m) {
-      const int32_t* c = x + m + 12;
+      const int16_t* c = x + m + 12;
       int32_t acc = 1 << 13;
-      for (int32_t j = 0; j < 12; ++j) acc += kHalfbandTaps[j] * (c[-j] + c[1 + j]);
+      for (int32_t j = 0; j < 12; ++j) {
+        const int16_t tap = static_cast<int16_t>(op1rings::kHalfbandTaps[j]);
+        acc += static_cast<int32_t>(tap) * c[-j];
+        acc += static_cast<int32_t>(tap) * c[1 + j];
+      }
       mid[3 + 2 * m] = c[0];
       mid[3 + 2 * m + 1] = acc >> 14;
     }
+#endif
     for (int32_t k = 0; k < 2 * kRingsBlockSize; ++k) {
       out[2 * k] = op1::Saturate16(mid[k + 1]);
       out[2 * k + 1] = op1::Saturate16((9 * (mid[k + 1] + mid[k + 2]) - mid[k] - mid[k + 3]) >> 4);
@@ -96,7 +112,7 @@ class Upsampler {
   }
 
  private:
-  int32_t history_[op1rings::kScratchHalfbandHistory];   // last 24 inputs of the previous block
+  int16_t history_[op1rings::kScratchHalfbandHistory];   // last 24 inputs of the previous block (16-bit)
   int32_t mid_history_[3];                                // last three 44.1 kHz samples
 };
 
@@ -117,6 +133,25 @@ op1::VoiceAllocator allocator;
 op1::CoefficientBudget coefficient_budget;   // the modal model's updates per block
 static_assert(op1::ReverbBus::kBlock == kRingsBlockSize, "reverb bus: one block per call");
 op1rings::Scratch scratch_fallback;          // when the core lends less L1 scratch than a Scratch
+
+#if OP1RINGS_CONTROL_HALVED
+// The control rate halved (the owner's choice, 2026-11-10: the device ran out of cycles): each voice does its control
+// work (coefficients, cutoff, string parameters: src/op1_voice.h set_control_hold) every other OP-1 block, 2.9 ms
+// apart instead of 1.45 ms, the voices offset so half of them do it in any block, and a strike always does. A block
+// is told by the render order, as op1/coefficient_budget.h tells it: a voice rendered twice, or a lower index.
+uint32_t clock_rendered;
+int32_t clock_last;
+uint32_t clock_block;
+bool ControlBlock(int32_t v) {
+  if (((clock_rendered >> v) & 1) || v < clock_last) {
+    clock_rendered = 0;
+    ++clock_block;
+  }
+  clock_rendered |= 1u << v;
+  clock_last = v;
+  return ((clock_block + static_cast<uint32_t>(v)) & 1) == 0;
+}
+#endif
 
 // For the screen (rings_screen.cc): each voice's level (the block's peak, decaying) and its age in blocks since its
 // note on. Written by the audio thread, read by the GUI thread: 16-bit words, no tearing.
@@ -216,7 +251,14 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
   // The modal model recomputes its coefficients within a budget per block (op1/coefficient_budget.h); a voice fading
   // out after a steal keeps its own and asks for none.
   const bool fading = allocator.fading(v);
+#if OP1RINGS_CONTROL_HALVED
+  const bool control = ControlBlock(v) || voices[v]->striking();
+  // A held block asks the budget for nothing: its grant waits for the voice's next control block.
+  const bool allowed = control && coefficient_budget.Allow(v);
+  voices[v]->set_control_hold(!control);
+#else
   const bool allowed = coefficient_budget.Allow(v);
+#endif
   voices[v]->set_coefficient_hold(fading || !allowed);
   PROF_START(t_voice);
   voices[v]->RenderMono(&rings_inc, patch, out_buffer, kRingsBlockSize,

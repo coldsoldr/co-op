@@ -324,7 +324,7 @@ void RingsVoice::RenderSubblock(uint32_t phase_increment, const VoicePatch& patc
   PROF_START(t_exc);
   // Recomputed only when pitch or brightness changes (the same values give
   // the same coefficients: bit-identical).
-  if (!cutoff_valid_ || cutoff_f0_ != f0 || cutoff_brightness_ != patch.brightness) {
+  if (!cutoff_valid_ || ((cutoff_f0_ != f0 || cutoff_brightness_ != patch.brightness) && !control_hold_)) {
     cutoff_fc_ = ExcitationCutoff(f0, patch.brightness);
     excitation_filter_.SetCutoff(cutoff_fc_.ToQ31());
     cutoff_f0_ = f0;
@@ -334,7 +334,7 @@ void RingsVoice::RenderSubblock(uint32_t phase_increment, const VoicePatch& patc
   const FFloat fc = cutoff_fc_;
 
   // A strike always tunes the resonator to its note.
-  resonator_.set_hold(coefficient_hold_ && !strum_);
+  resonator_.set_hold((coefficient_hold_ || control_hold_) && !strum_);
   if (strum_) {
     // Upstream RenderModalVoice: impulse x0 = 0.25 * 2^(2 fc^2) / fc.
     FFloat fc2 = fc * fc;
@@ -411,6 +411,7 @@ void RingsVoice::RenderStringBlock(uint32_t phase_increment,
                                    const VoicePatch& patch, int32_t* out, int32_t* send) {
   const int32_t f0 = static_cast<int32_t>(phase_increment >> 1);   // Q31
   string_voice_.Configure(model_, polyphony_);
+  string_voice_.set_hold(control_hold_ && !strum_);
   if (strum_) {
     string_voice_.Strum(f0, ExcitationCutoff(f0, patch.brightness).ToQ31(), patch.position);
     strum_ = false;
