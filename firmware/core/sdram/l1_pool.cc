@@ -30,6 +30,7 @@
 volatile uint32_t g_l1_state, g_l1_used, g_l1_refused, g_l1_sine_copied;
 static uint32_t l1_dummy[8];                    /* what the Lander's table points at (size 0: never read) */
 static uint32_t l1_next;
+static uint32_t l1_top = L1_LIMIT;             /* e4: plugin leases come down from the top, coop's own blocks go up */
 
 static int l1_check_and_take(void)
 {
@@ -67,10 +68,53 @@ extern "C" void *coop_l1_alloc(uint32_t bytes)
 {
     if (coop_l1_state() != 1) { g_l1_refused++; return 0; }
     uint32_t n = (bytes + 31u) & ~31u;
-    if (l1_next + n > L1_LIMIT) { g_l1_refused++; return 0; }
+    if (l1_next + n > l1_top) { g_l1_refused++; return 0; }
     uint8_t *p = (uint8_t *)(uintptr_t)l1_next;
     for (uint32_t i = 0; i < n; i++) p[i] = 0;
     l1_next += n;
     g_l1_used = l1_next - L1_POOL;
     return p;
 }
+
+/* ---- e4: L1 for plugins (docs/engines.md "L1 for engines") ----
+ * The lease: a synth engine's init (main thread, at load) may take a zeroed, 32-byte aligned block of the pool that it
+ * keeps for the session. Leases come down from the top of the pool while coop's own blocks go up from the bottom
+ * (some are taken after the plugin scan: the e4 gate found 3,200 bytes of them then), and a lease never leaves coop
+ * less than COOP_L1_CORE_RESERVE bytes in all (coop used 3,200 with saw loaded [C op1emu e4]); engines may lease at
+ * most COOP_L1_ENGINE_MAX together; what is left after that is for later effect plugins. Refused (0) from anywhere but an engine's init, past a limit, or with
+ * no pool: the plugin keeps its SDRAM path.
+ *
+ * The scratch: while a plugin engine is the live engine the stock voice objects are iter's six (0xFFB00000 + 6 x 0x24
+ * = 0xD8 bytes) and the stock effect objects start at 0xFFB00600, so 0xFFB000E0..0xFFB005FF of the L1 scratchpad is
+ * unused [C op1emu e3, a saw note: no store to 0xFFB000D8..0xFFB005FF after the engine change; kennel rings used the
+ * same window]. A plugin may use it as per-call scratch inside its own note_on / render: nothing is kept between
+ * calls, the stock writes it when another engine is chosen. */
+#define COOP_L1_CORE_RESERVE 3584u
+#define COOP_L1_ENGINE_MAX   4096u
+#define SCRATCH_BASE         0xFFB000E0u
+#define SCRATCH_BYTES        0x520u
+volatile uint32_t g_l1_leased, g_l1_lease_refused, g_l1_leases;
+volatile int g_l1_lease_open;                   /* engine_host.cc sets it around an engine's init */
+
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_l1_no_lease = 0; }   /* test images: refuse every lease */
+extern "C" void *coop_l1_lease(uint32_t bytes)
+{
+    uint32_t n = (bytes + 31u) & ~31u;
+    if (g_coop_l1_no_lease || !g_l1_lease_open || !n || coop_l1_state() != 1 || g_l1_leased + n > COOP_L1_ENGINE_MAX) { g_l1_lease_refused++; return 0; }
+    uint32_t floor = l1_next > L1_POOL + COOP_L1_CORE_RESERVE ? l1_next : L1_POOL + COOP_L1_CORE_RESERVE;   /* coop's share */
+    if (l1_top < floor + n) { g_l1_lease_refused++; return 0; }
+    l1_top -= n;
+    uint8_t *p = (uint8_t *)(uintptr_t)l1_top;
+    for (uint32_t i = 0; i < n; i++) p[i] = 0;
+    g_l1_leased += n; g_l1_leases++;
+    return p;
+}
+
+extern "C" void *coop_l1_scratch(uint32_t *bytes)
+{
+    if (bytes) *bytes = SCRATCH_BYTES;
+    return (void *)(uintptr_t)SCRATCH_BASE;
+}
+
+/* the pool's free bytes, for the stats */
+extern "C" uint32_t coop_l1_free(void) { return coop_l1_state() == 1 ? l1_top - (l1_next < L1_POOL ? L1_POOL : l1_next) : 0; }

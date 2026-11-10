@@ -67,6 +67,8 @@ extern "C" int coop_stereo_side_rw(int instr, int16_t **l, int16_t **r);   /* st
 extern "C" const coop_engine_t *coop_engine_at(int n);                    /* engine_host.cc (E1): the engine at number n */
 extern "C" const char *coop_engine_add(int n, const coop_engine_t *e);
 extern "C" void coop_engine_screen_file(int n, const char *file);         /* engine_screen.cc (E2) */
+extern "C" const char *coop_engine_set_controls(int n, const char *text); /* engine_ui.cc (e4) */
+extern "C" int coop_engine_control_default(int n, int word);
 
 volatile uint32_t g_plugins_seen, g_plugins_loaded, g_plugins_failed, g_plugins_booted, g_plugins_map_n;
 volatile uint32_t g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks;
@@ -190,6 +192,7 @@ static void row_ensure(void *db, const char *table, const char *name, const int1
         v[i] = engine ? d : fx_rng[i][0] + d * (fx_rng[i][1] - fx_rng[i][0]) / 32767;   /* engines: the raw word */
     }
     v[4] = MAGIC + n; v[5] = v[6] = v[7] = 0;
+    if (engine) for (int w = 5; w < 8; w++) v[w] = coop_engine_control_default(n, w);   /* e4: declared controls */
     char want[96], sql[256], *o = want;
     *o++ = '[';
     for (int i = 0; i < 8; i++) { if (i) { *o++ = ','; *o++ = ' '; } o = snum(o, v[i]); }
@@ -290,6 +293,7 @@ static const char *load_one(const char *fname, uint8_t *stage)
 /* E1: a synth engine (kind 1). One relocation: the engine's code and .bss serve all six voices; the host keeps the
  * per-voice state (engine_host.cc). Names of engines and effects share the number map and must differ. */
 volatile uint32_t g_engines_loaded;
+extern "C" const char *coop_engine_name(int n) { return (n > 0 && n < SLOTS && coop_engine_at(n)) ? g_eng_name[n] : 0; }   /* e4: stats */
 static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fname)
 {
     if (in.flags) return "plugin flags not supported yet";
@@ -318,6 +322,7 @@ static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fn
         uint32_t sc = (uint32_t)(uintptr_t)e->screen;
         if (!err && sc && (sc < base || sc + sizeof(coop_screen_t) > image_end || (sc & 3))) err = "screen object outside the plugin";
     }
+    if (!err) err = coop_engine_set_controls(n, in.controls);           /* e4: before the engine plays */
     if (!err) err = coop_engine_add(n, e);
     if (err) { FREE(raw); return err; }
     scopy(g_eng_name[n], in.type_name, 16);
@@ -339,6 +344,20 @@ volatile uint32_t g_plugins_disabled;
 /* u1: the files the scan saw, for the settings menu's Plugins list (disabled ones included) */
 extern "C" int coop_plugin_file_count(void) { return g_n_names; }
 extern "C" const char *coop_plugin_file_name(int i) { return i >= 0 && i < g_n_names ? g_names[i] : 0; }
+
+/* e4: the largest block heap 0 can give after the plugins loaded (a binary search of MALLOC / FREE, main thread, boot),
+ * for the stats `plugins` line: whether a large engine (rings: ~620 KB) still fits beside the others. */
+volatile uint32_t g_heap_largest;
+static void heap_probe(void)
+{
+    uint32_t lo = 0, hi = 32u << 20;
+    while (hi - lo > 4096u) {
+        uint32_t mid = lo + (hi - lo) / 2;
+        void *p = MALLOC(mid);
+        if (p) { FREE(p); lo = mid; } else hi = mid;
+    }
+    g_heap_largest = lo;
+}
 
 /* Image-time test switch (--set-word g_coop_no_plugins=1): boot as if every plugin file were gone, with the number map,
  * the saved sounds and the factory rows left as they are (the E1 gate's "file removed" case). */
@@ -371,6 +390,7 @@ extern "C" void coop_plugins_boot(void)
         else { g_plugins_loaded++; g_finfo[i].state = FS_LOADED; }
     }
     FREE(stage);
+    heap_probe();                                                          /* e4: the largest block heap 0 still has */
     for (int i = 0; i < g_map_n; i++)                                      /* files that went away keep their numbers, marked absent */
         if (g_map[i].present && !taken(g_map[i].n)) { g_map[i].present = 0; g_map_dirty = 1; }
     if (udb && g_map_dirty) map_save(udb);

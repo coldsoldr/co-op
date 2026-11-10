@@ -83,6 +83,7 @@ int kn_parse(const uint8_t *file, uint32_t size, uint16_t api_version, kn_info *
     in->hdr_off = hoff;
     in->crc = H32(O_CRC);
     in->claims = in->author = in->version = 0;
+    in->controls = 0;
     in->bigbuf_offset = KN_NONE; in->bigbuf_min = in->bigbuf_max = 0; in->cost[0] = in->cost[1] = 0;
     int has_bigbuf = 0;                              /* extension 4 seen (its value may be any word) */
     hs += hoff;                                      /* blocks after the header start here */
@@ -174,6 +175,10 @@ int kn_parse(const uint8_t *file, uint32_t size, uint16_t api_version, kn_info *
                 for (uint32_t i = 0; i < n; i++) if (file[eo + 4 + i] & 0x80) FAIL("extension entry not NUL-terminated ASCII");
                 const char *v = (const char *)file + eo + 4;
                 if (tag == 1) in->claims = v; else if (tag == 2) in->author = v; else in->version = v;
+            } else if (tag == KN_EXT_CONTROLS) {                 /* coop e4 */
+                if (!n || file[eo + 4 + n - 1]) FAIL("controls entry not NUL-terminated");
+                for (uint32_t i = 0; i < n; i++) if (file[eo + 4 + i] & 0x80) FAIL("controls entry not ASCII");
+                in->controls = (const char *)file + eo + 4;
             } else if (tag == KN_EXT_COST) {
                 if (n == 8) { in->cost[0] = rd32(file + eo + 4); in->cost[1] = rd32(file + eo + 8); }
             } else if (tag == KN_EXT_BIGBUF) {

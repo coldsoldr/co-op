@@ -32,6 +32,11 @@ void *coop_scr_raster(void);                                     /* the frame's 
 void coop_scr_line(void *raster, const int32_t *p0, const int32_t *p1, int32_t width_q10, const uint8_t *rgba);
                                                                  /* p0, p1: {x, y} in Q10 */
 void coop_scr_knobs(int16_t *out4);                              /* the shown slot's four knob words (0..32767) */
+void coop_scr_words(int16_t *out8);                              /* e4: all eight words of the shown slot: 0..3 the
+                                                                    knobs, 4 the core's selector, 5..7 the declared
+                                                                    controls (step index or Q15) */
+int coop_scr_mods(void);                                         /* e4: the held modifiers, bit 0 shift, bit 1 fn: the
+                                                                    screen shows a layer while its modifier is down */
 
 #ifdef __cplusplus
 }

@@ -1,0 +1,10 @@
+{
+  "name": "bigbss",
+  "kind": "synth",
+  "symbol": "ENGINE_bigbss",
+  "sources": ["bigbss.cc"],
+  "defaults": [0, 0, 0, 0],
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "e4 memory gate: an engine with ~600 KB of .bss (not a real plugin)."
+}

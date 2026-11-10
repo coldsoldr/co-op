@@ -81,8 +81,14 @@ What the words mean:
 - Nothing in render allocates memory, touches a file, waits or calls a long helper. [now]
 - Memory sources:
   - Long lines and tanks go in the plugin's own `.bss`. The loader zeroes it, five times over.
-  - Data the per-sample loop touches every block goes in L1, through the coop L1 lease ([proposed], kennel's
-    `kn_l1.c` model). Say in the contract how much the plugin needs.
+  - Data the per-sample loop touches every block goes in L1 (the OP-1 has no data cache: every line touched in SDRAM
+    costs a bus wait, ~107 cycles measured by Opus). [now, e4, engines; `sdk/coop_plugin.h`, `docs/engines.md`]
+    - `coop_l1_lease(bytes)` from the engine's `init` only: a zeroed, 32-byte aligned block of L1 data bank B kept
+      for the session, up to 4 KB for all engines together; 0 when refused, so keep an SDRAM fallback. Say in the
+      contract how much the plugin takes.
+    - `coop_l1_scratch(&bytes)`: 1312 bytes of the L1 scratchpad, per call, inside the engine's own `note_on` and
+      `render` only (kennel rings' window). Nothing survives between calls.
+    - Effects: [proposed] (their init runs in the audio interrupt at the stock positions).
   - The host's own effects follow `docs/fx-data-placement-plan.md`; a port does the same: prefetch its delay-line
     streams a few lines ahead (`PREFETCH [P]`), process a delay line in block passes rather than per sample across
     several lines, keep per-sample state in registers, keep the render inside the I-cache's reach. [proposed]
@@ -140,7 +146,8 @@ Rules for the table:
 
 ### 3.2 The action table (README)
 
-Use the manifesto's format: rows are the six actions, columns are blue, green, white and orange. Empty cells are `—`.
+Use the manifesto's format: rows are the eight actions (section 4), columns are blue, green, white and orange. Empty
+cells are `—`.
 Below the table, give:
 - the upstream mapping it replaces (kennel push pages, Opus shift banks) and why anything moved;
 - the memory, L1 and measured cost figures (section 2.4).
@@ -155,10 +162,15 @@ Below the table, give:
 - The core formats the value from `format`, so every plugin's `MS` looks the same. A plugin with an unusual readout
   (outatime's year) declares `format: custom` and draws it itself.
 
-## 4. Controls: the six actions
+## 4. Controls: the eight actions
 
-Every encoder has six actions (the manifesto's model). **The colour follows the encoder through every layer**: blue is
-blue on all six.
+Every encoder has eight actions: the manifesto's six, plus fn + turn and fn + click (the owner, 2026-11-10, for the
+rings port: `docs/ui-features.md` §13). **The colour follows the encoder through every layer**: blue is blue on all
+eight.
+
+On a **synth engine's** page the core dispatches every layer but turn and shift + turn to the engine's declared
+controls (`plugin.json` "controls", `docs/engines.md` "Controls") [now, e4]. Effects get the same layers with the v2
+parameter store [proposed].
 
 | Action | What goes here | Rule |
 |---|---|---|
@@ -166,6 +178,8 @@ blue on all six.
 | **Click** | Steps and switches (type, model, on/off), or a latch (freeze, capture, hold) | One step per click, cycling. Acts on **release**, so shift and fn combos never fire it |
 | **Shift + turn** | Second row of continuous controls, or fine adjustment | See 4.1 |
 | **Shift + click** | Second-row steps and switches | As click |
+| **fn + turn** | A mode the sound is built on (model, polyphony, algorithm): steps or continuous | Changed between notes, not played; an engine latches it at note on |
+| **fn + click** | A switch of the same kind | As click |
 | **Shift + fn + turn** | The deep layer: trims, ranges, setup | Set once per sound, not played |
 | **Shift + fn + click** | Rare commands: init, reset, mode | Anything destructive asks first (section 5.4) |
 
@@ -184,11 +198,19 @@ The rules:
   FX 2 on the effect screen. Bypassed means no cost (section 2.4).
 - **The per-preset controls coop adds** (bend amount and rate) live on the shifted T2 screen, not on an engine's
   page, so an engine keeps all four shifted encoders on T1 (`docs/ui-features.md` §2).
-- **fn is the Help key.** Shift + Help + encoder is the deep layer; shift + Help + T1-T4 is solo on the tape.
+- **fn is the Help key.** A tap still opens help; held with another control it is fn (the core then sends no help).
+  Help + encoder is the fn layer, shift + Help + encoder the deep layer; shift + Help + T1-T4 is solo on the tape.
+  fn + an encoder had no meaning anywhere before e4 (checked: the bend and drum pan use shift, LFO 2 and FX 2 use lift
+  / drop and their page keys).
 - **Clicks on stock firmware:** stock ignores encoder clicks on every synth page, and never uses white and orange
   clicks at all [C, `te-op1-cfw/docs/screen-interface.md` §7].
-  - The core takes clicks (codes 0x3B-0x3E) on plugin pages only.
+  - The core takes clicks (codes 0x3B-0x3E) on plugin pages only. On an engine's page an undeclared layer does
+    nothing and is consumed.
   - A plugin never handles keys itself.
+- **The core shows what changed:** a declared control's name and value appear top left in its encoder's colour for
+  about a second (e4), for every engine, with or without a screen; a plugin screen may draw more.
+- **Randomise** (synth key + right arrow) draws a declared control within its steps, or 0..32767 when continuous,
+  unless the control says `"random": false` (e4).
 
 ### 4.1 Shift + turn: second row or fine
 
@@ -211,7 +233,7 @@ a second bank (chorus, plate, outatime, amp). coop settles it per encoder:
 - One detent is a core delta of 1024 [C on kennel hardware; coop P3a].
 - Continuous parameters default to 1 % of the range per detent on turn, and 1/16 of that on fine.
 - `steps` parameters move one step per detent.
-  - A selector with many steps may declare `detents_per_step` (Nostromo used 2).
+  - A selector with many steps may declare `detents` per step (`plugin.json` "controls", e4; Nostromo used 2).
   - The 8-step kennel `coarse` knobs become `steps: 8`.
 - Every turn of every plugin goes through the core, so acceleration, MIDI and the LFO behave identically everywhere.
 
@@ -318,13 +340,13 @@ The manifesto is the full guide, with numbers from R246's 61 stock screen files.
 | `params[0..3]` in the stock FX ranges, `op1_fx_param_q15` | Q15 of the declared range (section 3.1) |
 | `params[4]` selector `0x5300+n` | Owned by the core. Never read or written |
 | `params[5..7]` page-2 words (white and orange share word 7) | Declared `shift_turn` parameters, each with its own storage |
-| `press[]` `PAGE` / `PAGE_STEPS(n)` | `shift_turn` (continuous) or `click` / `shift_click` (`steps`) |
+| `press[]` `PAGE` / `PAGE_STEPS(n)` | a declared control: `fn_turn` (steps, e4), `click` / `shift_click` (steps), or `shift_turn` once v2 has it |
 | `press[]` `LATCH` (freeze, capture) | `latch` on a click, usually the orange click |
 | `PAGE_SEMI` (shift moves a cent) | Semitone turn, cents on shift + turn (section 4.1) |
 | `coarse` 8-step knobs | `steps: 8` |
 | Shift byte read from render (Steve's unison) | A declared `shift_click` switch |
-| `OP1_VOICE_VEL`, `OP1_PITCH_INC`, `op1_eng_page`, screen node addresses | Engine ABI arguments and SDK screen calls ([proposed] P3) |
-| `op1_l1_claim`, `op1_fx_big`, `OP1_BIGBUF` | coop L1 lease and `.bss` (section 2.3) |
+| `OP1_VOICE_VEL`, `OP1_PITCH_INC`, `op1_eng_page`, screen node addresses | Engine ABI arguments (`velocity`, `pitch[]`), `coop_scr_words` / `coop_scr_mods` and the SDK screen calls (e4) |
+| `op1_l1_claim`, `op1_fx_big`, `OP1_BIGBUF` | `coop_l1_lease` (persistent, from `init`), `coop_l1_scratch` (per call) and `.bss` (section 2.3) |
 | `cost` in `plugin.json` | Measured device figures in the contract (section 2.4) |
 
 ### 7.2 From Opus 2

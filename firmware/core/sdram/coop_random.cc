@@ -67,6 +67,7 @@
 #define HIST 5
 
 extern "C" uint8_t coop_mode_keys_held(void);                                 /* lander_off.cc: bit 0 synth, 1 drum */
+extern "C" int coop_engine_ui_randomise(int inst, int16_t *v, uint32_t (*rnd)(void));   /* engine_ui.cc (e4): declared controls */
 extern "C" void coop_mode_key_used(void);                                     /* lander_off.cc: the held key was a modifier */
 
 volatile uint32_t g_rnd_count, g_rnd_backs, g_rnd_refused, g_rnd_slot2;      /* stats / tests; slot2: FX 2 / LFO 2 draws */
@@ -186,6 +187,7 @@ static int randomise(void)
             if (k >= 4 && rg[3] != 3) continue;                               /* a shifted knob that is fine adjustment */
             v[k] = draw(rg[0], rg[1]); changed = 1;
         }
+        if (t == 14 && coop_engine_ui_randomise(inst, v, rnd)) changed = 1;   /* e4: a plugin engine's steps within their count */
     } else if (mode == 0 && page == 1) {
         for (int k = 0; k < 4; k++) { const volatile int16_t *rg = ADSR_RANGE(k); if (rg[2] == 0 || !filled(rg)) continue; v[k] = draw(rg[0], rg[1]); changed = 1; }
     } else if (mode == 1 && page == 1) {

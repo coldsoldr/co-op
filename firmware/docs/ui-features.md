@@ -108,3 +108,20 @@ Process rule (the owner): **mock up everything before building it.**
 The owner's brief is `docs/tracker-handover.md`; the first pass and its guesses are in `docs/tracker.md`. Tracker
 mode replaces the tape view (Shift + tape, or settings → UI → tape view); six mono channels on the stock voices,
 patterns + order list, effect words, overview / zoom / song / setup views, landscape and two portrait orientations.
+
+## 13. Engine controls beyond the four turns — built in e4 (2026-11-10), device test pending
+
+The owner's decisions (2026-11-10, from the rings port, `docs/request-engine-controls-l1.md`):
+- On a plugin engine's page (T1) every encoder has eight actions: turn and shift + turn stay the stock's (the four
+  knob words; shift is fine adjustment, iter's range table [C op1emu]), and **click, shift + click, fn + turn,
+  fn + click, shift + fn + turn, shift + fn + click** go to the engine's declared controls. fn is Help held (a tap still
+  opens help). fn + turn and fn + click are new layers beyond the manifesto's six (guidelines §4).
+- Clicks act on release and only when shift and fn are as they were on the press; an undeclared layer does nothing.
+- **The core shows the change**: the control's name and value top left, in the encoder's colour, for about a second,
+  for every engine (with or without its own screen).
+- **Randomise** draws a declared steps control within its steps (a continuous one over 0..32767), unless the plugin
+  marks it `"random": false`.
+- Storage: the slot's free knob words 5, 6, 7 (saved with the sound). Velocity and MIDI CCs for these layers: not yet
+  (they would need the v2 parameter store's CC map and a velocity source per control).
+- Collisions checked: fn + an encoder had no meaning before (bend and drum pan use shift on T2, LFO 2 and FX 2 use
+  lift / drop and their page keys, the settings menu takes its own keys while open).

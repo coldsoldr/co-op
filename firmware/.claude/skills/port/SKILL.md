@@ -12,7 +12,9 @@ Argument: a plugin name or a source directory. Sources:
 - te-op1-cfw: `../../te-op1-cfw/ports/<name>/` (its own `docs/<name>-port.md`).
 
 Read `guide/plugin-guidelines.md` (the rules) and `docs/plugin-performance.md` (the loop rules) first; cite the
-section when you apply a rule. Sections 7.1 and 7.2 of the guidelines are the translation tables; use them, don't
+section when you apply a rule. **A synth engine** (kennel `op1_engine_t`, kind synth) follows "Engines" below for
+steps 3-6 and 9, and reads `docs/engines.md` (E1, E2, e4) and `plugins/saw/` (the reference engine that uses every
+part of the engine ABI) first. Sections 7.1 and 7.2 of the guidelines are the translation tables; use them, don't
 invent mappings.
 
 ## Hard rules (from CLAUDE.md)
@@ -86,6 +88,37 @@ invent mappings.
 10. **Record**: add the pending device test to `docs/device-tests.md` (what to flash, what to listen for, the cost
     line to copy from `/yaffs2/user/coop_stats.txt`), and the port notes to `docs/plugins.md`. Commit as coldsoldr
     (see memory), no TE bytes, upstream licence named.
+
+## Engines (kennel synth engines, e4 onward)
+
+A port never changes the firmware. If the engine needs something the core doesn't give (an address it used, a control
+layer, memory), stop and write a request in `docs/request-<topic>.md` for the firmware work, as the rings port did
+(`docs/request-engine-controls-l1.md`, answered).
+
+- **3e. The ABI** (`sdk/coop_plugin.h`): export one `coop_engine_t` (`COOP_ENGINE_MAGIC`, `voice_bytes`, `init`,
+  `note_on(voice, state, velocity, params)`, `render(voice, state, out[128], pitch[128], params)`, `note_off`,
+  `screen`). Mono int16 at 88.2 kHz, 128 samples; the stock envelope, LFO and coop's stereo placement follow.
+  Kennel → coop: `op1_voice_index(self)` → `voice`; `OP1_PITCH_INC` → `pitch[]`; `OP1_VOICE_VEL` →
+  `velocity` (Q15) at note on; `op1_synth_knobs` → `params[0..7]`; kennel's own voice-object state → `voice_bytes`
+  host state or arrays in `.bss` indexed by voice (when voices hand state over on a steal, keep one `.bss` array).
+- **4e. Controls**: the four turns are `params[0..3]` (0..32767, the stock owns them, shift is fine). Kennel push pages
+  and page-2 words become declared controls in `plugin.json` "controls" (`docs/engines.md` "e4"): `click`,
+  `shift_click`, `fn_turn`, `fn_click`, `shift_fn_turn`, `shift_fn_click`, in words 5..7, `steps` (named, up to 16)
+  or `continuous`. The engine reads `params[5..7]`, clamps them and latches modes at note on. The core shows the name
+  and value; randomise draws them unless `"random": false`.
+- **5e. Memory and L1**: big state in `.bss` (relocated once for engines; ~600 KB loads, `heap_largest` in the stats
+  says what's left). Per-call scratch: `coop_l1_scratch(&bytes)` (1312 bytes, inside note_on / render only). Hot
+  per-voice data: `coop_l1_lease(bytes)` from `init` only (up to 4 KB for all engines), always with an SDRAM
+  fallback. The OP-1 has no data cache: what the per-sample loop touches belongs in L1.
+- **6e. Screen**: an SVG at the front of the file (`plugin.json` "screen": `svg`, `symbol`) and a `coop_screen_t`;
+  draw through `sdk/coop_screen.h` (`coop_scr_find`, `_transform`, `_visible`, `_line_rgba` / `_fill_rgba`, `_draw`,
+  `coop_scr_words` for all eight words, `coop_scr_mods` for the held layer). Kennel's `op1_find_node`,
+  `op1_eng_page`, `op1_synth_knobs` map to these. `tools/plugin/pack.py` checks the SVG against R246's parser.
+- **9e. op1emu gate**: a NAND with the `.coop` (`tools/make_nand.py`), `tests/sim/det_eng_select.txt` /
+  `det_eng_note.txt` (select it: alphabetical in the list, 8 encoder steps a row; adjust the turn), `det_eng_controls.txt`
+  for its declared controls, `det_eng_reload.txt` after a power cycle; the stats `engines` line
+  (`eng_<id>=` per voice render, `eng_<id>_block=` per block: the budget is 580,499 a block for everything), `l1`
+  (`leased`), `plugins` (`heap_largest`, `ctl_*`). Emulator figures; the device is 10-35 % higher.
 
 ## Report back
 The control table before and after, every forbidden construct found and how it was replaced, the stereo approach

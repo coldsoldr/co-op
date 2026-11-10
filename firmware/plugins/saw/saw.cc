@@ -1,11 +1,15 @@
 /*
- * saw: the reference synth engine (E1, docs/engines.md). Two saws a little apart, a square an octave down, a one-pole
- * low-pass; the smallest engine that uses every part of the engine ABI: the pitch words, velocity, the knobs, the
- * host's per-voice state and note off. Its job is the host's gate (pitch, six voices, select / save / reload), not
- * to be a great synth; the saws are naive (they alias at the top of the keyboard, the low-pass takes the edge off).
+ * saw: the reference synth engine (E1, docs/engines.md). Two oscillators a little apart, a square one or two octaves
+ * down, a one-pole low-pass; the smallest engine that uses every part of the engine ABI: the pitch words, velocity,
+ * the knobs, the declared controls (e4), the L1 lease (e4), note off. Its job is the host's gate, not to be a great
+ * synth; the waves are naive (they alias at the top of the keyboard, the low-pass takes the edge off).
  *
- * Knobs (0..32767): blue brightness (the low-pass), green detune (the second saw, up to ~25 cents), white sub (the
- * square's level), orange drift (a slow wobble of the detune, a different speed on each voice).
+ * Turns (0..32767): blue brightness (the low-pass), green detune (the second oscillator, up to ~27 cents), white sub
+ * (the square's level), orange drift (a slow wobble of the detune, a different speed on each voice).
+ * Declared controls (plugin.json "controls", e4): fn + blue turns the shape (word 5: saw, square, triangle);
+ * shift + fn + orange clicks the sub's octave (word 7: -1, -2).
+ *
+ * The six voice states live in L1 (coop_l1_lease in init), in .bss when the lease is refused.
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
@@ -13,21 +17,35 @@
 #include "coop_plugin.h"
 
 struct voice {
-    uint32_t ph1, ph2, ph3;                            /* the saws and the sub's phases */
+    uint32_t ph1, ph2, ph3;                            /* the two oscillators and the sub's phases */
     int32_t lp;                                        /* the low-pass state (Q8 sample) */
     uint32_t drift;                                    /* the drift LFO's phase */
     int32_t gain;                                      /* velocity, Q15 */
     int32_t released;                                  /* note off seen (the stock envelope does the release) */
 };
 
+static struct voice g_sdram[COOP_VOICES];              /* the fallback when there is no L1 */
+static struct voice *g_v = g_sdram;
+int saw_in_l1;                                         /* 1 when the states got the L1 lease (for tests) */
+
 static inline int16_t sat16(int32_t x) { return x > 32767 ? 32767 : (x < -32768 ? -32768 : (int16_t)x); }
+static inline int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+static int init(void)
+{
+#ifndef SAW_NO_L1                                      /* the e4 gate builds a copy without the lease (tests) */
+    struct voice *l1 = (struct voice *)coop_l1_lease(sizeof g_sdram);
+    if (l1) { g_v = l1; saw_in_l1 = 1; }
+#endif
+    return 0;
+}
 
 static void note_on(int voice, void *state, int32_t velocity, const int16_t *params)
 {
-    (void)params;
-    struct voice *v = (struct voice *)state;
+    (void)params; (void)state;
+    struct voice *v = &g_v[voice];
     v->ph1 = 0;
-    v->ph2 = 0x40000000u;                              /* a quarter cycle apart: the two saws don't cancel at the start */
+    v->ph2 = 0x40000000u;                              /* a quarter cycle apart: the two don't cancel at the start */
     v->ph3 = 0;
     v->lp = 0;
     v->drift = (uint32_t)voice * 0x2AAAAAAAu;          /* each voice wobbles from its own place */
@@ -37,17 +55,28 @@ static void note_on(int voice, void *state, int32_t velocity, const int16_t *par
 
 static void note_off(int voice, void *state)
 {
-    (void)voice;
-    ((struct voice *)state)->released = 1;
+    (void)state;
+    g_v[voice].released = 1;
+}
+
+/* one oscillator sample from a phase, +-16384: 0 saw, 1 square, 2 triangle */
+static inline int32_t wave(uint32_t ph, int shape)
+{
+    if (shape == 1) return ph & 0x80000000u ? -16384 : 16384;
+    if (shape == 2) { int32_t t = (int32_t)ph >> 15; return ((t < 0 ? -t : t) - 32768) >> 1; }
+    return (int32_t)ph >> 17;
 }
 
 static void render(int voice, void *state, int16_t *out, const int32_t *pitch, const int16_t *params)
 {
-    struct voice *v = (struct voice *)state;
+    (void)state;
+    struct voice *v = &g_v[voice];
     int32_t bright = params[0] < 0 ? 0 : params[0];
     int32_t detune = params[1] < 0 ? 0 : params[1];
     int32_t sub = params[2] < 0 ? 0 : params[2];
     int32_t drift = params[3] < 0 ? 0 : params[3];
+    int shape = clampi(params[5], 0, 2);              /* declared steps: clamp, a sound may hold anything */
+    int sub_shift = clampi(params[7], 0, 1) + 1;      /* -1 or -2 octaves */
 
     /* the low-pass coefficient: squared so the knob's low half is the dark half (Q12, 1/128 .. 1) */
     int32_t a = (((bright * bright) >> 15) + 256) >> 3;
@@ -59,7 +88,7 @@ static void render(int voice, void *state, int16_t *out, const int32_t *pitch, c
     int32_t det = detune + ((drift * tri) >> 16);      /* the drift moves the detune by up to half its range */
     if (det < 0) det = 0;
     if (det > 32767) det = 32767;
-    int32_t g = (v->gain * 3) >> 3;                    /* headroom: two saws and a square, about -6 dB at full velocity */
+    int32_t g = (v->gain * 3) >> 3;                    /* headroom: two oscillators and a square, about -6 dB */
     int32_t lp = v->lp;                                /* Q8 */
     uint32_t ph1 = v->ph1, ph2 = v->ph2, ph3 = v->ph3;
     /* 32-bit arithmetic only: a 64-bit multiply is a libgcc call per sample on the Blackfin */
@@ -67,8 +96,8 @@ static void render(int voice, void *state, int16_t *out, const int32_t *pitch, c
         uint32_t inc = (uint32_t)pitch[i];
         ph1 += inc;
         ph2 += inc + (((inc >> 16) * (uint32_t)det) >> 5);   /* up to inc / 64: about 27 cents */
-        ph3 += inc >> 1;
-        int32_t x = ((int32_t)ph1 >> 17) + ((int32_t)ph2 >> 17);                /* two saws, +-16384 each */
+        ph3 += inc >> sub_shift;
+        int32_t x = wave(ph1, shape) + wave(ph2, shape);                       /* +-16384 each: shape 0 is E1 saw exactly */
         x += ((int32_t)(ph3 & 0x80000000u ? -16384 : 16384) * sub) >> 15;      /* the sub square */
         lp += ((x - (lp >> 8)) * a) >> 4;                                       /* one pole, Q12 coefficient, Q8 state */
         out[i] = sat16((sat16(lp >> 8) * g) >> 15);
@@ -78,5 +107,5 @@ static void render(int voice, void *state, int16_t *out, const int32_t *pitch, c
 
 extern "C" const coop_screen_t SCREEN_saw;            /* saw_screen.cc */
 extern "C" const coop_engine_t ENGINE_saw = {
-    COOP_ENGINE_MAGIC, COOP_PLUGIN_API, 0, sizeof(struct voice), 0, note_on, render, note_off, &SCREEN_saw,
+    COOP_ENGINE_MAGIC, COOP_PLUGIN_API, 0, 0, init, note_on, render, note_off, &SCREEN_saw,
 };

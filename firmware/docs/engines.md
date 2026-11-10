@@ -129,6 +129,84 @@ The owner chose plugin screens in the first build. Kennel's model, ported:
   kennel build's.
 - Then on the device: one package for E1 + E2 + saw, the owner's verdict, then rings.
 
+## e4: controls, L1, memory, screen exports, cost (2026-11-10)
+
+From the rings port's request (`docs/request-engine-controls-l1.md`); everything below built and gated in op1emu, tag
+`e4`, the device test pending.
+
+**Controls** (`core/sdram/engine_ui.cc`, `docs/ui-features.md` §13, guidelines §4). An engine declares up to eight in
+`plugin.json`:
+
+```json
+"controls": [
+  {"id": "shape", "name": "shape", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "steps",
+   "steps": ["saw", "square", "triangle"], "default": 0, "detents": 2},
+  {"id": "sub_oct", "name": "sub", "action": "shift_fn_click", "encoder": "orange", "word": 7, "kind": "steps",
+   "steps": ["-1 oct", "-2 oct"], "random": false}
+]
+```
+
+- `action`: `click`, `shift_click`, `fn_turn`, `fn_click`, `shift_fn_turn`, `shift_fn_click` (turn and shift + turn
+  are the stock knobs 0..3); `encoder`: blue, green, white, orange; `word`: 5, 6 or 7, one control each; `kind`:
+  `steps` (2..16 named steps, the step index in the word) or `continuous` (Q15, turns only, 1 % a detent); `default`;
+  `random` (default true: randomise draws it); `detents` per step on a turn (1..8, default 1); `name` and step names up
+  to 8 characters from the stock glyphs, lower case. The field names follow the v2 parameter table (guidelines §3.1).
+- `tools/plugin/pack.py` checks the declaration and packs it as extension tag 6 (text, one line per control:
+  `action encoder word kind count default random detents name steps`); the loader refuses a malformed one with a
+  reason the inventory shows. The control defaults go into the engine list's row (words 5..7).
+- The engine reads `params[5..7]` (clamp: a sound may hold anything) and latches what it needs at note on.
+- Why words 5..7 are safe: iter's range table, read from a running image (`COOP_PROBE_ITER`), is `{0, 32767, 10485, 0}`
+  for words 0..3 and `{0, 32767, 0, 0}` for 4..7 [C op1emu]: the boot check accepts 0..32767 there (step indexes, Q15,
+  the selector 0x5300 + n), and scale 0 means shift + turn is fine adjustment of 0..3, never a write to word 4.
+- The word is written as randomise writes knobs (the live words, then `Patch::SetKnobs`), so it saves, reloads and
+  randomises like the others.
+
+**L1** (`core/sdram/l1_pool.cc`, `sdk/coop_plugin.h`):
+- `void *coop_l1_lease(uint32_t bytes)`: from an engine's `init` only; zeroed, 32-byte aligned, kept for the session;
+  up to 4096 bytes for all engines together; 0 when refused. Leases come down from the top of the L1 pool
+  (`0xFF900820..0xFF902900`, 8,416 bytes) while coop's own blocks go up from the bottom (3,200 bytes with saw loaded:
+  some are taken after the plugin scan), and a lease leaves coop at least 3,584 bytes. With saw (192 bytes leased) the
+  stats say `free 5024`: room for rings' 4 KB and ~900 bytes for later effect plugins.
+- `void *coop_l1_scratch(uint32_t *bytes)`: 1312 bytes of the L1 scratchpad at `0xFFB000E0`, per call, inside the
+  engine's own `note_on` / `render` only. While a plugin engine is the live engine the stock voice objects are iter's
+  six (`0xD8` bytes) and the effect objects start at `0xFFB00600`; the op1emu write tracer saw no store to
+  `0xFFB000D8..0xFFB005FF` once saw was the engine (the last ones were the stock building the previous engines' voices
+  while the list scrolled) [C op1emu]. Kennel rings used the same window for its ~0.75 KB per-call scratch.
+- Not taken: the 16 KiB L1 sine table serves the stock fm / voltage engines and 27 retargeted readers (giving it back
+  while a plugin engine plays would mean undoing those per engine change: not cheap); the 512 bytes at `0xFF907E00`
+  (T4 plan) stay a reserve.
+
+**Memory.** Heap 0's largest free block after the plugin scan is in the stats (`heap_largest`): 9,437,184 bytes with
+saw; 8,388,608 with saw, stereo_delay and a test engine of 614,404 bytes of `.bss` (`tests/plugins/bigbss`; rings'
+voice states and reverb are ~572 KB), which loaded and was zeroed at boot with no fault [C op1emu]. Rings fits with
+room to spare.
+
+**Screen exports** (`sdk/coop_screen.h`): `coop_scr_words(out8)` (all eight words of the shown slot) and
+`coop_scr_mods()` (bit 0 shift, bit 1 fn), so a screen shows the held layer. The core draws the control's name and
+value itself (above); a screen draws the state its own way.
+
+**Cost.** The stats `engines` line now has, per plugin engine, `eng_<id>=avg/max/n` per voice render and
+`eng_<id>_block=avg/max/n` for all its voices in one block (the budget is per block, 580,499 cycles). op1emu, saw,
+six voices in unison: 7,396 / 7,491 per voice, 37,015 / 44,790 per block.
+
+**Gates (op1emu, 2026-11-10)** [C op1emu]:
+- Regression: `det_chord.txt` with no engine file is sample-identical to e3 (3,425,581 frames; one earlier e4 run
+  landed a block late and its rerun matched). `det_eng_note.txt`: e3 with the old saw, e4 with the old saw and e4 with
+  the new saw (L1 states, controls declared, shape 0) are sample-identical (681,638 frames, aligned on the onset);
+  that scenario's first run of the day differs from its reruns, as the list scroll mixes wall and guest time.
+- Controls (`det_eng_controls.txt`): fn + blue moved the shape one step (`ctl_turns 1`), fn + green (undeclared) did
+  nothing (`ctl_ignored 1`), shift + fn + orange clicked the sub to -2 oct (`ctl_clicks 1`), a blue push with shift
+  pressed before its release was cancelled (`ctl_cancelled 1`), Help tapped alone opened help (`help_taps 1`); op1.db
+  slot 0 then holds `[20000, 8000, 6000, 4000, 21280, 1, 0, 1]`, and after a power cycle (`det_eng_reload.txt`) the
+  same words, saw playing as square, the screen showing it. The popup drew 72 frames for the two changes (once each;
+  an earlier build re-showed it every time CYCLES wrapped: fixed).
+- L1: saw leases 192 bytes (`leased 192 leases 1`, coop `used 3200`); the record scenario `det_tape_rec.txt` with the
+  lease and with every lease refused (`--set-word g_coop_l1_no_lease=1`, same NAND) is sample-identical (3,441,966
+  frames). That scenario has two outcomes run to run in op1emu (pairs of reruns of one image differ by a block), so it
+  was run several times and the identical classes compared.
+- Memory: above. Screen: the shape icons light the chosen shape and turn dim blue while fn is held (sampled pixel
+  `#31457b` while held, the dim grey after), the octave dots show -1 / -2.
+
 ## Out of scope for now
 
 Engines on the drum side (the drum voices are not engine objects, `docs/tracker.md` "Drums beside the synth"),

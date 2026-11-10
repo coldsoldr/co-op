@@ -18,6 +18,7 @@ HEADER_SIZE = 144
 HEADER = struct.Struct('<4sHHII HBB16sI 4h4h 22I')
 EXT_CLAIMS, EXT_AUTHOR, EXT_VERSION = 1, 2, 3          # extension table tags (docs/plugin-format.md)
 EXT_BIGBUF = 4                                         # u32 image offset of the op1_bigbuf_t (flag bit 4)
+EXT_CONTROLS = 6                                       # coop e4: the engine's control declaration (text, docs/engines.md)
 EXT_COST = 5                                           # u32 x 2: declared worst-block cost, bcore packets (information)
 BIGBUF = struct.Struct('<6I')                          # magic, version, min, max, ptr, size
 BIGBUF_MAGIC, BIGBUF_VERSION, BIGBUF_MAX = 0x42424E4B, 1, 0x80000   # BIGBUF_MAX = kn_mem.h KN_DECL_MAX

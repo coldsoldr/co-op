@@ -13,10 +13,41 @@
     4000
   ],
   "author": "coldsoldr",
-  "version": "0.1",
-  "description": "The reference coop synth engine (docs/engines.md, E1 / E2): two detuned saws, a sub square and a low-pass, with its own screen. Blue brightness, green detune, white sub, orange drift.",
+  "version": "0.2",
+  "description": "The reference coop synth engine (docs/engines.md): two detuned oscillators, a sub square and a low-pass, with its own screen. Blue brightness, green detune, white sub, orange drift; fn + blue the shape, shift + fn + orange the sub's octave.",
   "screen": {
     "svg": "saw.svg",
     "symbol": "SCREEN_saw"
-  }
+  },
+  "controls": [
+    {
+      "id": "shape",
+      "name": "shape",
+      "action": "fn_turn",
+      "encoder": "blue",
+      "word": 5,
+      "kind": "steps",
+      "steps": [
+        "saw",
+        "square",
+        "triangle"
+      ],
+      "default": 0,
+      "detents": 2
+    },
+    {
+      "id": "sub_oct",
+      "name": "sub",
+      "action": "shift_fn_click",
+      "encoder": "orange",
+      "word": 7,
+      "kind": "steps",
+      "steps": [
+        "-1 oct",
+        "-2 oct"
+      ],
+      "default": 0,
+      "random": false
+    }
+  ]
 }

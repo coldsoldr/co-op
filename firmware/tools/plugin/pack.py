@@ -254,6 +254,85 @@ def image_symbols(obj_bytes):
     return sorted(out)
 
 
+# coop e4: engine controls beyond the four turns (docs/engines.md "Controls", guide/plugin-guidelines.md §3.1, §4).
+CONTROL_ACTIONS = {'click': 1, 'shift_click': 3, 'fn_turn': 4, 'fn_click': 5, 'shift_fn_turn': 6, 'shift_fn_click': 7}
+CONTROL_ENCODERS = {'blue': 0, 'green': 1, 'white': 2, 'orange': 3}
+STOCK_GLYPHS = set('abcdefghijklmnopqrstuvwxyz0123456789!"#%*+,-./:;<=>?_ ')
+
+
+def control_lines(meta, kind):
+    """plugin.json "controls" -> the text of extension tag 6, one tab-separated line per control:
+    action encoder word kind count default random detents name step,step,... (core/sdram/engine_ui.cc)."""
+    controls = meta.get('controls')
+    if controls is None:
+        return b''
+    if kind != F.KIND_SYNTH:
+        raise PackError('controls are for synth engines only (effects: the v2 parameter store)')
+    if not isinstance(controls, list) or not 1 <= len(controls) <= 8:
+        raise PackError('controls must be a list of 1 to 8 controls')
+
+    def label(text, what):
+        if not isinstance(text, str) or not 1 <= len(text) <= 8 or set(text) - STOCK_GLYPHS or ',' in text:
+            raise PackError(f'{what} {text!r}: 1 to 8 characters, lower case, from the stock glyphs, no comma')
+        return text
+
+    lines, words, slots = [], set(), set()
+    for c in controls:
+        if not isinstance(c, dict):
+            raise PackError('each control is an object')
+        unknown = set(c) - {'id', 'name', 'action', 'encoder', 'word', 'kind', 'steps', 'default', 'random', 'detents'}
+        if unknown:
+            raise PackError(f'control {c.get("id")!r}: unknown fields {sorted(unknown)}')
+        cid = c.get('id')
+        if not isinstance(cid, str) or not cid or len(cid) > 15 or not all(ch.isdigit() or 'a' <= ch <= 'z' or ch == '_' for ch in cid):
+            raise PackError(f'control id {cid!r}: 1 to 15 of a-z, 0-9, _')
+        if c.get('action') not in CONTROL_ACTIONS:
+            raise PackError(f'control {cid}: action must be one of {sorted(CONTROL_ACTIONS)} (turn and shift_turn are the stock knobs 0..3)')
+        if c.get('encoder') not in CONTROL_ENCODERS:
+            raise PackError(f'control {cid}: encoder must be one of {sorted(CONTROL_ENCODERS)}')
+        word = c.get('word')
+        if word not in (5, 6, 7):
+            raise PackError(f'control {cid}: word must be 5, 6 or 7 (the free knob words; word 4 is the selector the core owns)')
+        if word in words:
+            raise PackError(f'control {cid}: word {word} is used twice')
+        words.add(word)
+        slot = (c['action'], c['encoder'])
+        if slot in slots:
+            raise PackError(f'control {cid}: {c["action"]} on {c["encoder"]} is declared twice')
+        slots.add(slot)
+        ckind = c.get('kind')
+        name = label(c.get('name', cid), f'control {cid}: name')
+        random = c.get('random', True)
+        detents = c.get('detents', 1)
+        if not isinstance(random, bool):
+            raise PackError(f'control {cid}: random must be true or false')
+        if type(detents) is not int or not 1 <= detents <= 8:
+            raise PackError(f'control {cid}: detents must be 1..8')
+        if ckind == 'steps':
+            steps = c.get('steps')
+            if not isinstance(steps, list) or not 2 <= len(steps) <= 16:
+                raise PackError(f'control {cid}: steps must list 2 to 16 step names')
+            names = [label(st, f'control {cid}: step') for st in steps]
+            default = c.get('default', 0)
+            if type(default) is not int or not 0 <= default < len(names):
+                raise PackError(f'control {cid}: default must be a step index 0..{len(names) - 1}')
+            count, tail = len(names), ','.join(names)
+        elif ckind == 'continuous':
+            if c['action'].endswith('click'):
+                raise PackError(f'control {cid}: a click needs a steps control')
+            if 'steps' in c:
+                raise PackError(f'control {cid}: steps only for kind "steps"')
+            default = c.get('default', 0)
+            if type(default) is not int or not 0 <= default <= 32767:
+                raise PackError(f'control {cid}: default must be 0..32767 (Q15)')
+            count, tail = 0, ''
+        else:
+            raise PackError(f'control {cid}: kind must be "steps" or "continuous"')
+        fields = [CONTROL_ACTIONS[c['action']], CONTROL_ENCODERS[c['encoder']], word, ckind[0], count, default,
+                  int(random), detents, name, tail]
+        lines.append('\t'.join(str(f) for f in fields))
+    return ('\n'.join(lines) + '\n').encode('ascii') + b'\0'
+
 def pack(meta, obj_bytes, svg_dir=None):
     """plugin.json dict + `ld -r` output -> (plugin file bytes, info dict for reports and tests)."""
     elf = Elf(obj_bytes)
@@ -411,6 +490,9 @@ def pack(meta, obj_bytes, svg_dir=None):
         ext += struct.pack('<HHI', F.EXT_BIGBUF, 4, bigbuf_off)
     if cost:
         ext += struct.pack('<HHII', F.EXT_COST, 8, cost.get(cost_keys[0], 0), cost.get(cost_keys[1], 0))
+    controls = control_lines(meta, kind)                 # coop e4
+    if controls:
+        ext += struct.pack('<HH', F.EXT_CONTROLS, len(controls)) + controls + bytes(-len(controls) % 4)
     ext_offset = place(ext + struct.pack('<HH', 0, 0)) if ext else 0
     header = F.HEADER.pack(
         F.MAGIC, F.FORMAT_VERSION, F.HEADER_SIZE, off, 0, api_version(), kind, order, name, flags,

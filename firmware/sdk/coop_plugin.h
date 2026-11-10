@@ -73,6 +73,28 @@ typedef struct coop_engine_t {
     const coop_screen_t *screen;                       /* 0 = the stock iter screen (E2) */
 } coop_engine_t;
 
+/* ---- e4: controls beyond the four turns (docs/engines.md "Controls", guide/plugin-guidelines.md §3, §4) ----
+ * An engine declares them in plugin.json "controls" (tools/plugin/pack.py packs them into the file); the core
+ * dispatches click, shift + click, fn + turn, fn + click, shift + fn + turn and shift + fn + click on the engine's page,
+ * stores the value in a free knob word 5, 6 or 7 (saved with the sound, passed as params[5..7]: the step index for a
+ * steps control, Q15 for a continuous one; clamp what you read, a sound may hold anything) and shows the name and value.
+ * The engine reads params[5..7]; nothing else to call.
+ *
+ * ---- e4: L1 for engines ----
+ * coop_l1_lease: from the engine's init only (main thread, at load): a zeroed, 32-byte aligned block in L1 data bank B,
+ * kept for the session; up to 4096 bytes for all engines together; 0 when refused (no pool, over the limit, called
+ * from anywhere else): keep an SDRAM fallback. The OP-1 has no data cache, so the per-sample hot data belongs here.
+ * coop_l1_scratch: per-call scratch in the L1 scratchpad (1312 bytes at 0xFFB000E0), valid only inside the engine's
+ * own note_on and render: nothing survives between calls. Both are core exports (sdk/coop_exports.cc). */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void *coop_l1_lease(uint32_t bytes);
+void *coop_l1_scratch(uint32_t *bytes);
+#ifdef __cplusplus
+}
+#endif
+
 #ifdef __cplusplus
 }
 #endif

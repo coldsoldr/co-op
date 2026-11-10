@@ -1530,3 +1530,30 @@ power-cycle: it is skipped. Then manage plugins from co-op's Plugins tab (dev si
 crashes, a photo of the crash screen (SEQSTAT, RETX) says where.
 
 Result: (pending)
+
+## Engine controls and L1 (e4): the rings port's core request — device test (pending, 2026-11-10)
+
+- `build/pkg/op1_246_coop_e4_engine_controls.op1` (sha256 `7294ceeda3ae55e985a9ee4a4cbc02fca70792c3b3473247c20728c2d7358a83`),
+  copy in Downloads with the new `saw.coop` (0.2: it needs e4, it imports the L1 lease and the new screen calls).
+  `--tape-stereo --set-word g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr`
+  differs. Build tag `e4`. e3 plus engine controls (fn layers, clicks), the L1 lease and scratch, the heap figure, the
+  screen exports, per-engine block cost (docs/engines.md "e4").
+
+**What to do**: flash; install the new `saw.coop` (co-op Plugins > On your OP-1 > Install a .coop file, or the SysEx
+page), power-cycle, pick saw (shift + T1). Then on saw's page:
+1. Hold Help and turn blue: the shape steps saw / square / triangle (two detents a step); "SHAPE SQUARE" shows top left
+   in blue for about a second; the oscillators on the screen change; while Help is held the other shape icons turn
+   dim blue. Play: square and triangle sound as they look.
+2. Hold shift and Help, click orange: the sub drops to -2 oct ("SUB -2 OCT" in orange; two dots bottom right). Again:
+   back to -1.
+3. Hold Help and turn green or white: nothing happens. Tap Help alone: help opens as before.
+4. Press blue, press shift, release blue: nothing happens (a combo, not a click).
+5. Shift + turn on any encoder: fine adjustment, as on a stock engine.
+6. Synth key + right arrow (randomise) a few times on saw's page: the shape changes with the knobs, the sub's octave
+   never (it is marked "random": false).
+7. Save, power-cycle: the shape and octave come back.
+8. Copy `coop_stats.txt` (co-op or the SysEx page): the `l1` line (`leased 192 leases 1 ... free`), the `plugins` line
+   (`heap_largest`, `ctl_*`), the `engines` line (`eng_saw=` per voice render, `eng_saw_block=` per block: the device
+   costs rings will be judged against).
+
+Result: (pending)

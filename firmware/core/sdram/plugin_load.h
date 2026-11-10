@@ -26,6 +26,7 @@ extern "C" {
 #define KN_FLAG_BIGBUF      0x10u        /* the file declares a pool buffer: extension KN_EXT_BIGBUF -> op1_bigbuf_t
                                             (op1_plugin.h). Cores before 2026-10-21 refuse the bit ("unknown flags") */
 #define KN_EXT_BIGBUF       4            /* extension tag: u32 image offset of the op1_bigbuf_t descriptor */
+#define KN_EXT_CONTROLS     6            /* coop e4: the engine's control declaration, NUL-terminated text (docs/engines.md) */
 #define KN_EXT_COST         5            /* extension tag: u32 x 2, the declared worst-block cost in bcore packets (synth:
                                             per voice, voice start; FX: per call, init). Information for tools only: the
                                             core does not act on it. Any other length is ignored, never refused */
@@ -55,6 +56,7 @@ typedef struct {
     uint32_t bigbuf_offset;          /* KN_FLAG_BIGBUF: image offset of the op1_bigbuf_t, else KN_NONE */
     uint32_t bigbuf_min, bigbuf_max; /* its declared sizes (bytes) */
     uint32_t cost[2];                /* KN_EXT_COST, {0, 0} if absent or malformed */
+    const char *controls;            /* KN_EXT_CONTROLS text, 0 if absent (coop e4) */
     uint32_t n_imports;              /* entries of the import table */
 } kn_info;
 

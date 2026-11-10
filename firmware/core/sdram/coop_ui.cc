@@ -33,6 +33,9 @@
 
 #define SCREENS_UPDATE ((void (*)(void *))0x01A3BB20u)                 /* stock screens_update(table), gfx thread */
 #define KNOB_STEP      ((void (*)(int, int16_t *))0x019B6C0Cu)          /* stock encoder step(knob, &delta) */
+extern "C" int coop_engine_ui_key(int code, int pressed);                 /* engine_ui.cc (e4) */
+extern "C" int coop_engine_ui_knob(int knob, int steps);
+extern "C" void coop_engine_ui_draw(void *r);
 #define CUR_SCREEN     (*(volatile int *)0x018B65C8u)                  /* the screen id shown (kennel CUR_SCREEN) */
 #define CUR_MODE       (*(volatile int *)0xFF907D58u)
 #define FX_POS         (*(volatile uint8_t *)0x01DF4E3Cu)               /* effect position: 0 synth, 1 drum, 3 master */
@@ -321,6 +324,7 @@ extern "C" int coop_ui_key(int code, int pressed)
     if (coop_settings_is_open()) return coop_settings_key(code, pressed);
     if (coop_random_key(code, pressed)) return 1;                       /* synth / drum held + arrows: randomise / back */
     if (coop_fn_key(code, pressed)) return 1;                           /* Help: a tap on release, a hold is fn */
+    if (coop_engine_ui_key(code, pressed)) return 1;                    /* e4: a plugin engine's declared clicks (engine_ui.cc) */
     if (coop_tape_key(code, pressed)) return 1;                         /* tape / mixer: solo, markers */
     if (coop_bend_key(code, pressed)) return 1;                         /* shift + arrows on the synth: the bend */
     if (coop_rename_key(code, pressed)) return 1;                       /* the preset browser: naming */
@@ -382,6 +386,7 @@ extern "C" void coop_ui_knob(int knob, int16_t *delta)
     if (coop_bend_knob(knob, steps)) return;                         /* shifted white / orange on the synth's T2 */
     if (coop_drumpan_knob(knob, steps)) return;                        /* shifted blue on the drum's T2 */
     if (coop_rename_knob(knob, steps)) return;                         /* naming: every turn */
+    if (coop_engine_ui_knob(knob, steps)) return;                      /* e4: fn + turn on a plugin engine's page */
     {
         int bk = br_sync();
         if (bk) {
@@ -496,6 +501,7 @@ extern "C" void coop_ui_frame(void *table)
 {
     coop_screens_frame(table);                                            /* the stock screens_update on a stable copy */
     { void *rv = op1_raster(); if (rv) coop_save_draw(rv); }            /* "overwriting" over the save clock, any page */
+    if (CUR_MODE == 0 && CUR_SCREEN == 0x14) { void *re = op1_raster(); if (re) coop_engine_ui_draw(re); }   /* e4: a declared control's name and value */
     if (coop_settings_is_open()) { void *rs = op1_raster(); if (rs) coop_settings_draw(rs); return; }
     if (CUR_MODE == 2 && CUR_SCREEN == TAPE_SCREEN) { void *rt = op1_raster(); if (rt) coop_tape_draw(rt); return; }
     if (CUR_MODE == 0 && CUR_SCREEN == SCREEN_PLAYMODE) { void *rp = op1_raster(); if (rp) coop_bend_draw(rp); return; }

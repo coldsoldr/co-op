@@ -64,6 +64,7 @@ static uint64_t s_swallow;
 
 /* ---- Help as fn ---- */
 extern "C" int coop_fn_held(void) { return s_fn_held; }
+extern "C" void coop_fn_use(void) { if (s_fn_held) s_fn_used = 1; }      /* e4: fn was a modifier for another control */
 extern "C" int coop_fn_key(int code, int pressed)                      /* 1 = consumed */
 {
     if (code != KEY_HELP) return 0;

@@ -38,6 +38,11 @@ static struct eng g_eng[SLOTS];
 static uint8_t g_voice_eng[COOP_VOICES];                                  /* the engine each voice started with (0 = iter) */
 volatile uint32_t g_eng_loaded, g_eng_renders, g_eng_noteons, g_eng_iter_renders, g_eng_switches, g_eng_foreign;
 volatile uint32_t g_eng_cycles_max;
+extern volatile int g_l1_lease_open;                                       /* l1_pool.cc (e4): coop_l1_lease only in init */
+
+/* e4: cost per engine, per voice render and per block (all its voices in one block), for the stats `engines` line */
+struct ecost { uint64_t sum, bsum; uint32_t n, max, bn, bmax, bacc; };
+static struct ecost g_ecost[SLOTS];
 
 extern "C" const coop_engine_t *coop_engine_at(int n) { return (n > 0 && n < SLOTS) ? g_eng[n].e : 0; }
 
@@ -54,7 +59,10 @@ extern "C" const char *coop_engine_add(int n, const coop_engine_t *e)
         state = (uint8_t *)(((uint32_t)(uintptr_t)raw + 31u) & ~31u);
         for (uint32_t i = 0; i < stride * COOP_VOICES; i += 4) *(volatile uint32_t *)(state + i) = 0;
     }
-    if (e->init && e->init() != 0) { if (raw) FREE(raw); return "engine init failed"; }
+    g_l1_lease_open = 1;
+    int bad = e->init && e->init() != 0;
+    g_l1_lease_open = 0;
+    if (bad) { if (raw) FREE(raw); return "engine init failed"; }
     g_eng[n].state = state;
     g_eng[n].stride = stride;
     __asm__ __volatile__("ssync;" ::: "memory");
@@ -112,6 +120,29 @@ extern "C" void coop_eng_render(void *self, int16_t *out, const int16_t *params)
     uint32_t dt = coop_cost_now() - c0;
     if (dt > g_eng_cycles_max) g_eng_cycles_max = dt;
     g_eng_renders++;
+    struct ecost *c = &g_ecost[n];
+    c->sum += dt; c->n++; if (dt > c->max) c->max = dt;
+    c->bacc += dt;
+}
+
+/* e4: the block's total per engine (coop_stats.cc coop_eng_block_end, after the voice loop) */
+extern "C" void coop_engine_block_end(void)
+{
+    for (int n = 1; n < SLOTS; n++) {
+        struct ecost *c = &g_ecost[n];
+        if (!c->bacc) continue;
+        c->bsum += c->bacc; c->bn++; if (c->bacc > c->bmax) c->bmax = c->bacc;
+        c->bacc = 0;
+    }
+}
+/* for the stats: 1 when engine n has rendered; avg / max / count per voice render and per block */
+extern "C" int coop_engine_cost(int n, uint32_t *out6)
+{
+    if (n <= 0 || n >= SLOTS || !g_ecost[n].n) return 0;
+    const struct ecost *c = &g_ecost[n];
+    out6[0] = (uint32_t)(c->sum / c->n); out6[1] = c->max; out6[2] = c->n;
+    out6[3] = c->bn ? (uint32_t)(c->bsum / c->bn) : 0; out6[4] = c->bmax; out6[5] = c->bn;
+    return 1;
 }
 
 /* iter vtable +0x2C. */
