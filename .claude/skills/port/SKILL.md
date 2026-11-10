@@ -5,6 +5,12 @@ description: Port a hundekraft (kennel .knl) or OPUS (.opmod) plugin into a coop
 
 # /port: bring a kennel or OPUS plugin to coop
 
+**Where you work:** the coop firmware is the `firmware/` folder of the co-op repository. Every path in this skill
+(`plugins/`, `docs/`, `guide/`, `tools/`, `tests/`, `sdk/`, `third_party/`, `incoming/`) is relative to `firmware/`;
+run commands from there (`cd firmware`), and read `firmware/CLAUDE.md` first. The rest of the repository is the co-op
+web app: a port doesn't touch it (publishing a finished plugin in its catalogue is a separate step, `plugins/<id>/`
+at the repository root, `docs/contributing-plugins.md`).
+
 Argument: a plugin name or a source directory. Sources:
 - kennel: `incoming/hk/hundekraft-3.1.4-source/ext/kennel/synth_sdk/plugins/<name>/` (SDK header
   `synth_sdk/op1_plugin.h`, vendored in `third_party/kennel/`);

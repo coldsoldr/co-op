@@ -101,7 +101,7 @@ Process rule (the owner): **mock up everything before building it.**
 - **Playground** (`tools/playground/coop-playground.html`): mock-ups of every plugin kind (synth, FX, drum,
   sequencer, utility) and every feature above, with the four encoders, shift, Help (fn), T-keys and the 320 x 160
   screen; it copies out the plugin's contract (parameter table + action table).
-- **`/port` skill** (`.claude/skills/port/SKILL.md`): ports a kennel or OPUS plugin into `plugins/<id>/`, runs the
+- **`/port` skill** (`.claude/skills/port/SKILL.md` at the repository root, so every agent in the repo has it): ports a kennel or OPUS plugin into `plugins/<id>/`, runs the
   pack and the op1emu gate, and insists on the optimisation pass the stereo rule demands.
 
 ## 12. The tracker — built t1..t7 (2026-11-07), parked 2026-11-08 (`attic/tracker/`, docs/tracker.md)
