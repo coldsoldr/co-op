@@ -138,9 +138,11 @@ extern "C" void coop_eng_block_end(void);          /* coop_stats.cc: the previou
 extern "C" void coop_runner_block(void);           /* coop_runner.cc (p5b): this block's scripted keys and turns */
 extern "C" void coop_bend_block(void);             /* coop_bend.cc (u5) */
 extern "C" int16_t coop_drumpan_q15(void);         /* coop_drumpan.cc (u6): the last played key's pan */
+extern "C" void coop_lfo2_block_start(void);       /* lfo2.cc (v2): sync once a block */
 extern "C" void coop_stereo_block_start(void)
 {
     coop_eng_block_end();
+    coop_lfo2_block_start();
     coop_runner_block();                               /* after the render sums close: a mark's section includes them */
     coop_bend_block();                                 /* u5: the bend ramp (coop_bend.cc) */
     coop_l1_sine_copy();                               /* before the stock callback's first block (T4c) */
@@ -342,15 +344,15 @@ static inline __attribute__((always_inline)) void voice_hook(coop_spread *pans, 
 /* R7 at the synth render call = voice index 0..5 (0xffa009c2 zeroes it, 0xffa00da0 increments). */
 extern "C" COOP_HOT_VOICE void coop_synth_voice_hook(uint32_t r7)
 {
-    coop_mark(0x21);
+    coop_mark_hot1(0x21);
     if (r7 >= COOP_SYNTH_VOICES) return;
     voice_hook(g_pan_synth, (int)r7, 1u << r7, 0);
-    coop_mark_prof(0x23);                                                 /* m1: the hook's end (the stock's per-voice work follows) */
+    coop_mark_prof_hot(0x23);                                                 /* m1: the hook's end (the stock's per-voice work follows) */
 }
 
 /* m1: from coop_synth_render_thunk's entry (stereo_thunks.S), before the second LFO's stage 0: so the gap from the
  * previous voice's 0x23 to this one is the stock's own per-voice work (LFO, envelope, gain, the loop). */
-extern "C" COOP_HOT_VOICE void coop_m1_thunk_in(void) { coop_mark_prof(0x12); }
+extern "C" void coop_m1_thunk_in(void) { coop_mark_prof(0x12); }        /* v2: cold; the thunk calls it only while the profile runs */
 
 /* R7 at the drum render call counts 12 down to 1 (0xffa0072a, 0xffa00946). The render's R0 (active) only sets the
  * voice's done flag (0xffa00906..0xffa0090c): the stock sums the voice either way, so the hook does too. */

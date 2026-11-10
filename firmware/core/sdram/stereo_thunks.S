@@ -25,7 +25,12 @@ _coop_synth_render_thunk:
     [--SP] = R1;
     [--SP] = R2;
     SP += -12;
-    CALL _coop_m1_thunk_in;          /* m1: the voice's entry mark, only while the gap profile runs (stereo_bus.cc) */
+    P1.L = _g_coop_gap_prof; P1.H = _g_coop_gap_prof;
+    R0 = [P1];
+    CC = R0 == 0;
+    IF CC JUMP .Lsyn_noprof;         /* v2: the call (cold code) only while the gap profile runs */
+    CALL _coop_m1_thunk_in;          /* m1: the voice's entry mark (stereo_bus.cc) */
+.Lsyn_noprof:
     R0 = R7;
     CALL _coop_lfo2_pre_render_synth; /* second LFO slot, stage 0: knobs / pitch / volume before the render */
     CALL _coop_eng_pf_start;         /* p6e: the performance counters at the render's start (coop_stats.cc) */

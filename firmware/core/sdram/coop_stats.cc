@@ -119,35 +119,74 @@ static inline __attribute__((always_inline)) void cost_add_d(int i, uint32_t dt,
     c->p0 += d0; c->p1 += d1;
 }
 
+/* v2 (the m1b result): the mark every coop per-voice edge leaves, one copy in the hot section (it was inlined at each
+ * edge). The marks only the gap profile needs go through coop_mark_prof_cold, outside it. */
+extern "C" COOP_HOT_VOICE __attribute__((noinline)) void coop_mark_hot(uint32_t id, uint32_t t, uint32_t p0, uint32_t p1)
+{
+    coop_mark_at_pf(id, t, p0, p1);
+}
+extern "C" __attribute__((noinline)) void coop_mark_prof_cold(uint32_t id) { coop_mark(id); }
+extern "C" COOP_HOT_VOICE __attribute__((noinline)) void coop_mark_hot1(uint32_t id)
+{
+    uint32_t t = coop_cost_now(), p0 = 0, p1 = 0;
+    if (g_coop_gap_prof && g_coop_pf_live) { p0 = COOP_PFCNTR0; p1 = COOP_PFCNTR1; }   /* = coop_mark(id) */
+    coop_mark_hot(id, t, p0, p1);
+}
+
+/* One render's bookkeeping, the cost table's work done once a block (v2): coop_eng_cost only records the render, and
+ * eng_fold enters the records in their order at the block's end (or when the list is full), exactly as the per-render
+ * code did. */
+struct vrec { uint32_t fn, dt, d0, d1; };                         /* fn | 1 for a drum render */
+#define VREC_N 24                                                 /* 6 synth + 12 drum renders a block, and margin */
+static struct vrec g_vrec[VREC_N];
+static uint32_t g_vrec_n;
+static __attribute__((noinline)) void eng_fold(void)
+{
+    uint32_t n = g_vrec_n;
+    for (uint32_t k = 0; k < n; k++) {
+        const struct vrec *r = &g_vrec[k];
+        uint32_t fn = r->fn & ~1u, dt = r->dt, d0 = r->d0, d1 = r->d1;
+        int drum = (int)(r->fn & 1);
+        if (!drum) cost_add_d(g_eng_blk[0] ? COOP_COST_VREST : COOP_COST_VFIRST, dt, d0, d1);   /* p6f: first of the block vs the rest */
+        g_eng_blk[drum] += dt;
+        g_eng_blk_pf[drum][0] += d0; g_eng_blk_pf[drum][1] += d1;
+        uint32_t i = g_eng_last;
+        if (g_coop_eng_fn[i] != fn) {
+            for (i = 0; i < COOP_ENG_N; i++) {
+                if (g_coop_eng_fn[i] == fn) break;
+                if (!g_coop_eng_fn[i]) { g_coop_eng_fn[i] = fn; break; }
+            }
+            if (i == COOP_ENG_N) continue;
+            g_eng_last = i;
+        }
+        cost_add_d(COOP_COST_ENG + (int)i, dt, d0, d1);
+    }
+    g_vrec_n = 0;
+}
+
 /* From the render thunks (stereo_thunks.S) after every voice render: the cycles of one render of the engine whose
  * render function is fn. The table fills in the order the engines are first heard; COOP_ENG_N covers every stock
  * synth and drum engine of a session. */
 extern "C" COOP_HOT_VOICE void coop_eng_cost(uint32_t fn, uint32_t dt, int drum)
 {
     uint32_t now = coop_cost_now();
-    uint32_t d[2] = { 0, 0 };
-    if (g_coop_pf_live) { coop_pf_now(d); d[0] -= g_eng_pf0[0]; d[1] -= g_eng_pf0[1]; }
-    coop_mark_at_pf(0x10 + (drum & 1), now - dt, g_eng_pf0[0], g_eng_pf0[1]);   /* the render's start (the thunk read CYCLES there) */
-    coop_mark_at_pf(0x18 + (drum & 1), now, d[0] + g_eng_pf0[0], d[1] + g_eng_pf0[1]);
-    if (!drum) cost_add_d(g_eng_blk[0] ? COOP_COST_VREST : COOP_COST_VFIRST, dt, d[0], d[1]);   /* p6f: first of the block vs the rest */
-    g_eng_blk[drum & 1] += dt;
-    g_eng_blk_pf[drum & 1][0] += d[0]; g_eng_blk_pf[drum & 1][1] += d[1];
-    uint32_t i = g_eng_last;
-    if (g_coop_eng_fn[i] != fn) {
-        for (i = 0; i < COOP_ENG_N; i++) {
-            if (g_coop_eng_fn[i] == fn) break;
-            if (!g_coop_eng_fn[i]) { g_coop_eng_fn[i] = fn; break; }
-        }
-        if (i == COOP_ENG_N) return;
-        g_eng_last = i;
-    }
-    cost_add_d(COOP_COST_ENG + (int)i, dt, d[0], d[1]);
+    uint32_t p0 = g_eng_pf0[0], p1 = g_eng_pf0[1], e0 = 0, e1 = 0;
+    if (g_coop_pf_live) { e0 = COOP_PFCNTR0; e1 = COOP_PFCNTR1; }
+    drum &= 1;
+    coop_mark_hot(0x10 + drum, now - dt, p0, p1);                  /* the render's start (the thunk read CYCLES there) */
+    coop_mark_hot(0x18 + drum, now, e0, e1);                       /* (p0 / p1 are 0 while the monitor is off: coop_pf_now) */
+    uint32_t n = g_vrec_n;
+    if (n == VREC_N) { eng_fold(); n = 0; }
+    struct vrec *r = &g_vrec[n];
+    r->fn = fn | (uint32_t)drum; r->dt = dt; r->d0 = e0 - p0; r->d1 = e1 - p1;
+    g_vrec_n = n + 1;
 }
 
 /* From coop_stereo_block_start: the previous block's render sums. */
 extern "C" void coop_engine_block_end(void);                              /* engine_host.cc (e4): per-engine block totals */
 extern "C" void coop_eng_block_end(void)
 {
+    eng_fold();
     coop_engine_block_end();
     for (int k = 0; k < 2; k++) {
         if (!g_eng_blk[k]) continue;

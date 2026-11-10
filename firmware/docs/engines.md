@@ -249,6 +249,38 @@ every render from SDRAM spread over 100 KB of region A. They now sit together in
 `COOP_HOT_VOICE`, `coop_cb.ld`), 2,520 bytes from `0x02c00020`; cold branches are `noinline` outside it. Device A/B
 against m1: `docs/device-tests.md` "m1b".
 
+**v2 (2026-11-10): the per-voice path cut to 1,608 bytes.** m1b on the device: the grouped section helped engines up
+to ~4-7 KB of code (rings sympathetic -33 k a block) and lost 12-24 k with 8-12 KB (`docs/m1-results.md` "m1b"): its
+79 lines filled one way of sets 1-79, so an engine with 2-3 lines in every set, next to the stock's own per-voice SDRAM
+code, overflowed the 4 ways there [I]. v2 makes the section smaller (51 lines, sets 1-51) and removes per-voice code
+that sat outside it. Same audio, same stats:
+- **The bookkeeping once a block.** `coop_eng_cost` (542 -> 180 bytes) and `coop_eng_render` (868 -> 476) only record
+  each render (`g_vrec`, `g_prec`: function, cycles, the two counter deltas); `eng_fold` / `prec_fold` enter the
+  records at the block's end, or when a list is full, in the same order with the same arithmetic (the 64-bit sums, the
+  engine table lookup, first-of-block vs the rest).
+- **The marks.** One out-of-line copy (`coop_mark_hot`, `coop_mark_hot1`) for the edges every image keeps (0x10 / 0x18,
+  0x21). The gap profile's own edges (0x12, 0x14, 0x1C, 0x23) are a test of `g_coop_gap_prof` and a call to cold code
+  (`coop_mark_prof_cold`, `coop_m1_thunk_in` outside the section, the synth thunk tests the word in assembly), so a
+  release image runs none of their code; 0x14 / 0x1C no longer appear in a release image's `slow` lines.
+- **LFO 2's `sync` once a block** (`lfo2.cc` `g_live`): it ran for every voice, reading the sound and the parameter
+  words through code outside the section; inside a block they cannot change (the voice loop runs in the audio
+  interrupt), and a note-on's own `sync` refreshes the cached answer.
+- `voice_of`'s divide by 36 is a multiply by 1,821 and a shift (exact for every voice offset; the divide brought a
+  64-bit multiply sequence).
+
+Every call that leaves the section is now cold or conditional (objdump): the stock-sum fallback (stereo off, debug
+compare), LFO 2's `process` (LFO 2 on), `sync_block` (once a block), the folds (once a block), `voice_start` (a note
+on), the gap profile's marks (the profile on).
+
+op1emu [C op1emu; no cache, so no gain can show there]: `det_chord` against the m1b image is identical over the whole
+run in the m1 configuration (`COOP_M1=1`, `g_coop_gap_prof=1`; 2,055,504 frames) and in the release one (1,643,307
+frames; one earlier pair differed from frame 1 by up to 7 LSB, and each image against itself differs the same way:
+op1emu's two run-to-run outcomes). No fault. `run_m1_mode0.txt` lands all 17 sections; per block with six voices the
+thunk is 0.74 k and the dispatcher 0.2 k cheaper, the hook 0.1 k dearer (the mark's call), and the block start 0.8 k
+(a stock engine) to 1.4 k (a plugin engine) dearer (the folds): +0.2-0.3 % a block in op1emu, where every fetch is
+free. On the device the folds run once a block from cold code; the per-voice path is what an engine's code evicts six
+times a block. The device run decides (`docs/device-tests.md`).
+
 ## Out of scope for now
 
 Engines on the drum side (the drum voices are not engine objects, `docs/tracker.md` "Drums beside the synth"),

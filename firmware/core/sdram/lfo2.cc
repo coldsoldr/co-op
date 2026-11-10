@@ -173,31 +173,43 @@ static void trigger(uint32_t *o, int set)
     g_lfo2_triggers++;
 }
 
+/* v2 (the m1b result): sync's answer once a block per set. It read the sound and the parameter words for every voice
+ * (code outside the per-voice section, fetched again after every render); they cannot change inside a block (the
+ * voice loop runs in the audio interrupt), so the first voice's answer is every voice's. -1 = not asked this block
+ * (coop_lfo2_block_start); a note-on's own sync (trigger, below) refreshes it. */
+static int g_live[2] = { -1, -1 };
+static __attribute__((noinline)) int sync_block(int set) { int l = sync(set); g_live[set] = l; return l; }
+extern "C" void coop_lfo2_block_start(void) { g_live[0] = -1; g_live[1] = -1; }
+
 /* From coop_synth_render_thunk, before the stock render: stage 0 (engine knobs / pitch / volume). */
 #include "coop_cost.h"
 extern "C" COOP_HOT_VOICE void coop_lfo2_pre_render_synth(uint32_t voice)
 {
-    if (voice >= SYNTH_VOICES || !sync(0)) return;
-    process(g_synth_obj[voice], 0, 0);
+    if (voice >= SYNTH_VOICES) return;
+    int l = g_live[0];
+    if (l < 0) l = sync_block(0);
+    if (l) process(g_synth_obj[voice], 0, 0);
 }
 
 /* From coop_drum_render_thunk, before the stock render: stage 3 (drum engine). */
 extern "C" void coop_lfo2_pre_render_drum(uint32_t voice)
 {
-    if (voice >= DRUM_VOICES || !sync(1)) return;
-    process(g_drum_obj[voice], 3, 1);
+    if (voice >= DRUM_VOICES) return;
+    int l = g_live[1];
+    if (l < 0) l = sync_block(1);
+    if (l) process(g_drum_obj[voice], 3, 1);
 }
 
 /* Note-on: from the Core::NoteOn hook (synth) and the drum first-render heuristic (stereo_bus.cc). */
 extern "C" void coop_lfo2_trigger_synth(uint32_t voice)
 {
-    if (voice >= SYNTH_VOICES || !sync(0)) return;
+    if (voice >= SYNTH_VOICES || !sync_block(0)) return;
     trigger(g_synth_obj[voice], 0);
 }
 
 extern "C" void coop_lfo2_trigger_drum(uint32_t voice)
 {
-    if (voice >= DRUM_VOICES || !sync(1)) return;
+    if (voice >= DRUM_VOICES || !sync_block(1)) return;
     trigger(g_drum_obj[voice], 1);
 }
 

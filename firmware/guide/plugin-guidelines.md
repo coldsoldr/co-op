@@ -104,6 +104,14 @@ What the words mean:
 - The contract gives the device-measured average and peak from the stats file's `cost` line (`fx1_plugin=`,
   `s2_instr=`, `s2_master=`). Emulator figures don't count, because the device is 10-35 % higher.
 - A bypassed or unselected plugin costs nothing beyond a check.
+- **An engine: keep the code one render runs under ~4-7 KB.** [C device, `docs/m1-results.md` "m1b"] A synth
+  engine renders six times a block, and coop's per-voice code and the stock's run between the renders from the same
+  4-way, 16 KB instruction cache. Against `probe_alu` (the same render cost, almost no code) the whole callback cost
+  8 k a block more with 4 KB of engine code, 93 k with 8 KB and 121 k with 12 KB (m1b, before the v2 cut of coop's
+  own path). Count the code a render actually runs (the control code included),
+  not the file size. Measure it before porting: `tests/plugins/probe_code` (4 / 8 / 12 KB, `fn` + blue) at your
+  render's cost (`fn` + green) gives the collateral for each size on the device; compare your engine's
+  `collateral` in `tools/m1_table.py` with the probe's.
 - Over-budget switch-off ([proposed], after Opus): the core switches off a plugin that runs more than 25 % over its
   declared peak in 8 of the last 64 blocks, and the stats file names it.
 

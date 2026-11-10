@@ -80,8 +80,10 @@ static inline int engine_of(const int16_t *params)
 static inline int voice_of(const void *self)                             /* -1: not one of the six iter voices */
 {
     uint32_t d = (uint32_t)(uintptr_t)self - VOICE_BASE;
-    if (d >= VOICE_SIZE * COOP_VOICES || d % VOICE_SIZE) return -1;
-    return (int)(d / VOICE_SIZE);
+    if (d >= VOICE_SIZE * COOP_VOICES) return -1;
+    uint32_t v = (d * 1821u) >> 16;                                       /* v2: d / 36 for d < 216 (exact), no divide */
+    static_assert(VOICE_SIZE == 36 && COOP_VOICES <= 6, "voice_of's reciprocal");
+    return v * VOICE_SIZE == d ? (int)v : -1;
 }
 static inline void *state_of(int n, int v) { return g_eng[n].state ? g_eng[n].state + g_eng[n].stride * (uint32_t)v : 0; }
 static inline int32_t velocity_q15(int v)                                 /* kennel op1_voice_vel_gain: 0 / out of range = full */
@@ -108,6 +110,32 @@ extern "C" void coop_eng_note_on(void *self, const int16_t *params)
     voice_start(self, params, v, engine_of(params));
 }
 
+/* v2 (the m1b result): one plugin render's bookkeeping, recorded in the hot path and entered once a block (or when
+ * the list is full) in the same order and arithmetic as the per-render code before. */
+struct prec { uint32_t n, dt, d0, d1; };
+#define PREC_N 8                                                          /* six voices a block, and margin */
+static struct prec g_prec[PREC_N];
+static uint32_t g_prec_n;
+static __attribute__((noinline)) void prec_fold(void)
+{
+    uint32_t m = g_prec_n;
+    for (uint32_t k = 0; k < m; k++) {
+        const struct prec *r = &g_prec[k];
+        uint32_t dt = r->dt;
+        struct coop_cost *p = &g_coop_cost[COOP_COST_PENG];               /* m1: per render, per section (the runner) */
+        p->sum += dt; p->n++; if (dt > p->max) p->max = dt;
+        p->p0 += r->d0; p->p1 += r->d1;
+        g_peng_blk += dt;
+        g_peng_blk_pf[0] += r->d0; g_peng_blk_pf[1] += r->d1;
+        if (dt > g_eng_cycles_max) g_eng_cycles_max = dt;
+        g_eng_renders++;
+        struct ecost *c = &g_ecost[r->n];
+        c->sum += dt; c->n++; if (dt > c->max) c->max = dt;
+        c->bacc += dt;
+    }
+    g_prec_n = 0;
+}
+
 /* iter vtable +0x14 (through coop_synth_render_thunk: the cost line names this function). */
 extern "C" COOP_HOT_VOICE void coop_eng_render(void *self, int16_t *out, const int16_t *params)
 {
@@ -116,25 +144,25 @@ extern "C" COOP_HOT_VOICE void coop_eng_render(void *self, int16_t *out, const i
     int n = engine_of(params);
     if (n != g_voice_eng[v]) voice_start(self, params, v, n);            /* the engine changed under a live voice */
     if (!n) { g_eng_iter_renders++; ITER_RENDER(self, out, params); return; }
-    uint32_t pf0[2]; coop_pf_now(pf0);
+    uint32_t a0 = 0, a1 = 0, b0 = 0, b1 = 0;
+    if (g_coop_pf_live) { a0 = COOP_PFCNTR0; a1 = COOP_PFCNTR1; }
     uint32_t c0 = coop_cost_now();
-    coop_mark_at_pf(0x14, c0, pf0[0], pf0[1]);                           /* m1: the plugin's own render starts */
+    if (g_coop_gap_prof) coop_mark_hot(0x14, c0, a0, a1);                 /* m1: the plugin's own render starts */
     g_eng[n].e->render(v, state_of(n, v), out, PITCH_INC, params);
     uint32_t dt = coop_cost_now() - c0;
-    coop_cost_add_pf(COOP_COST_PENG, dt, pf0);                            /* m1: per render, per section (the runner) */
-    coop_mark(0x1C);                                                      /* m1: ... and ends */
-    g_peng_blk += dt;
-    if (g_coop_pf_live) { uint32_t p[2]; coop_pf_now(p); g_peng_blk_pf[0] += p[0] - pf0[0]; g_peng_blk_pf[1] += p[1] - pf0[1]; }
-    if (dt > g_eng_cycles_max) g_eng_cycles_max = dt;
-    g_eng_renders++;
-    struct ecost *c = &g_ecost[n];
-    c->sum += dt; c->n++; if (dt > c->max) c->max = dt;
-    c->bacc += dt;
+    if (g_coop_pf_live) { b0 = COOP_PFCNTR0; b1 = COOP_PFCNTR1; }
+    if (g_coop_gap_prof) coop_mark_prof_cold(0x1C);                       /* m1: ... and ends */
+    uint32_t k = g_prec_n;                                                /* v2: the bookkeeping once a block (prec_fold) */
+    if (k == PREC_N) { prec_fold(); k = 0; }
+    struct prec *r = &g_prec[k];
+    r->n = (uint32_t)n; r->dt = dt; r->d0 = b0 - a0; r->d1 = b1 - a1;
+    g_prec_n = k + 1;
 }
 
 /* e4: the block's total per engine (coop_stats.cc coop_eng_block_end, after the voice loop) */
 extern "C" void coop_engine_block_end(void)
 {
+    prec_fold();
     if (g_peng_blk) {                                                     /* m1: every plugin render of the block */
         struct coop_cost *c = &g_coop_cost[COOP_COST_PENG_B];
         c->sum += g_peng_blk; c->n++; if (g_peng_blk > c->max) c->max = g_peng_blk;

@@ -92,6 +92,12 @@ static inline void coop_mark_at(uint32_t id, uint32_t t)
 static inline void coop_mark(uint32_t id) { coop_mark_at(id, coop_cost_now()); }
 /* m1: marks that exist only for the gap profile (the per-voice and dispatcher edges): nothing when it is off. */
 static inline void coop_mark_prof(uint32_t id) { if (g_coop_gap_prof) coop_mark(id); }
+/* v2 (coop_stats.cc): the per-voice path's marks out of line, one copy in the hot section; and the gap profile's
+ * own marks outside it, so the per-voice path carries only a test of g_coop_gap_prof for them. */
+extern "C" void coop_mark_hot(uint32_t id, uint32_t t, uint32_t p0, uint32_t p1);
+extern "C" void coop_mark_prof_cold(uint32_t id);
+extern "C" void coop_mark_hot1(uint32_t id);                             /* coop_mark(id), the hot copy */
+static inline void coop_mark_prof_hot(uint32_t id) { if (g_coop_gap_prof) coop_mark_prof_cold(id); }
 
 /* The gap profile (p5g diagnostic, g_coop_gap_prof = 1): every block, the time between each pair of consecutive marks
  * (in time order) is added up by pair, key = prev id << 8 | id. The time between two coop marks is stock code (or an
