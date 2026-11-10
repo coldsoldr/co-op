@@ -321,7 +321,8 @@ test('opens a manual with its table and screenshot', async ({ page }) => {
 
   const manual = page.getByRole('region', { name: 'Manual of rings' });
   await expect(manual.getByRole('heading', { name: 'Controls' })).toBeVisible();
-  const table = manual.getByRole('table');
+  await expect(manual.getByRole('table')).toHaveCount(2);           // the encoders (both builds), then coop's fn layer
+  const table = manual.getByRole('table').first();
   await expect(table).toBeVisible();
   await expect(table.getByRole('columnheader', { name: 'Encoder' })).toBeVisible();
   await expect(table.getByRole('row')).toHaveCount(5);
