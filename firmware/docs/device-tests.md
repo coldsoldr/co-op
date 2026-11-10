@@ -1581,4 +1581,27 @@ any coop code), "1. Upload firmware", flash e4b. Then it should boot with saw in
 above. If it still crashes, a photo again; to get out, flash e3 (it refuses saw 0.2 for its import and boots) and
 remove the file from co-op.
 
+**Result (owner, 2026-11-10): PASS.** "Everything is working well with the saw plugin test now": e4b boots with saw 0.2
+installed and the e4 checklist passed (the shape and sub controls, the screen, randomise, save and power cycle). Two
+UI bugs found and fixed in e4c (below), and the rings port is cleared to resume.
+
+## e4c: the settings menu's plugin rows and Shift + Help — device test (pending, 2026-11-10)
+
+- `build/pkg/op1_246_coop_e4c_settings_fn.op1` (sha256 `7b974fc41a3b72d85f9b9a0223c5317e37c53fc28dedb609c7bf8b75a89211bd`),
+  copy in Downloads. `--tape-stereo --set-word g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only
+  `OP1_vdk.ldr` differs. Build tag `e4c`. e4b plus the owner's two reports:
+  1. Settings > plugins: "the row stays ON" when pushed. The rows only took a push, while every other value row in the
+     menu takes the green turn (the owner's menu design, ui-features §1), and a push that bounced toggled OFF and back
+     ON. Now green sets the row (clockwise ON, anticlockwise OFF) and a push toggles once per 250 ms.
+  2. Shift down, Help down, Help up opened the stock date and time screen (a Help tap is passed to the stock, and
+     Shift was still held). Now Help never reaches the stock while Shift is held, on the press or the release (the
+     owner's choice); plain Help taps still open help.
+- op1emu (`tests/sim/det_ui_e4c.txt`, a NAND with saw): `set_plugin_turns 2 set_plugin_pushes 1 set_plugin_bounces 1`,
+  the settings file then lists `saw.coop`, the next boot skips it (`loaded 0 disabled 1`); `fn_shift_kept 1
+  help_taps 0`, no date screen. `det_chord.txt` identical to e4b.
+
+**What to do**: settings > plugins: turn green left on the saw row: OFF; right: ON; push: toggles once. Leave the menu
+with saw OFF, power-cycle: saw is gone from the engine list (a sound on it plays iter). Then Shift down, Help down,
+Help up: nothing opens. Help alone: help as before.
+
 Result: (pending)

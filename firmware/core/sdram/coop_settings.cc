@@ -174,6 +174,14 @@ static void close_menu(void)
     s_open = 0;
     if (s_dirty) { s_dirty = 0; s_save_pending = 1; }
 }
+volatile uint32_t g_set_plugin_turns, g_set_plugin_pushes, g_set_plugin_bounces;
+static uint64_t s_last_push;
+static inline uint64_t cycles_now(void)                                 /* 64 bits: CYCLES alone wraps every ~10.7 s */
+{
+    uint32_t lo, hi;
+    __asm__ __volatile__("%0 = CYCLES; %1 = CYCLES2;" : "=d"(lo), "=d"(hi));
+    return ((uint64_t)hi << 32) | lo;
+}
 static void toggle_plugin(int i)
 {
     const char *name = coop_plugin_file_name(i);
@@ -199,7 +207,14 @@ extern "C" int coop_settings_key(int code, int pressed)
     if (code == KEY_RIGHT) { enter(); return 1; }
     if (code >= KEY_ENC0 && code <= KEY_ENC0 + 3) {                     /* a push: enter at the top, toggle a plugin row */
         if (!s_level) enter();
-        else if (s_cur[0] == 2) toggle_plugin(s_cur[1]);
+        else if (s_cur[0] == 2) {                                       /* e4c: a push toggles once: a second press within
+                                                                           250 ms is the switch bouncing, which put the row
+                                                                           straight back ON on the device */
+            uint64_t t = cycles_now();
+            if (s_last_push && t - s_last_push < 100000000ull) g_set_plugin_bounces++;   /* 250 ms at 400 MHz */
+            else { toggle_plugin(s_cur[1]); g_set_plugin_pushes++; }
+            s_last_push = t | 1u;
+        }
     }
     return 1;
 }
@@ -215,6 +230,9 @@ extern "C" int coop_settings_knob(int knob, int steps)
         s_pct = clampi(s_pct + steps, 0, 100);
         g_coop_spread = (uint32_t)(s_pct * 32767 / 100);
         s_dirty = 1;
+    } else if (knob == 1 && s_level == 1 && s_cur[0] == 2 && steps) {   /* e4c: green sets a plugin row, as every value row */
+        const char *name = coop_plugin_file_name(s_cur[1]);
+        if (name && (steps > 0) == (coop_plugin_disabled(name) != 0)) { toggle_plugin(s_cur[1]); g_set_plugin_turns++; }
     }
     return 1;                                                         /* the other values have no alternative yet */
 }

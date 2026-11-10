@@ -65,11 +65,16 @@ static uint64_t s_swallow;
 /* ---- Help as fn ---- */
 extern "C" int coop_fn_held(void) { return s_fn_held; }
 extern "C" void coop_fn_use(void) { if (s_fn_held) s_fn_used = 1; }      /* e4: fn was a modifier for another control */
+/* e4c (the owner, 2026-11-10): Help with Shift held never reaches the stock. Shift + Help is the deep layer's modifier
+ * pair, so shift down, Help down, Help up opened the stock's date and time screen when nothing else was touched. Shift
+ * held on the press or on the release keeps the tap. */
+volatile uint32_t g_fn_shift_kept;
 extern "C" int coop_fn_key(int code, int pressed)                      /* 1 = consumed */
 {
     if (code != KEY_HELP) return 0;
-    if (pressed) { s_fn_held = 1; s_fn_used = 0; return 1; }
+    if (pressed) { s_fn_held = 1; s_fn_used = SHIFT_HELD ? 1 : 0; if (SHIFT_HELD) g_fn_shift_kept++; return 1; }
     s_fn_held = 0;
+    if (!s_fn_used && SHIFT_HELD) { s_fn_used = 1; g_fn_shift_kept++; }
     if (!s_fn_used) { KEY_DISPATCH(KEY_HELP, 1); KEY_DISPATCH(KEY_HELP, 0); g_fn_taps++; }   /* a tap: help, as stock */
     return 1;
 }

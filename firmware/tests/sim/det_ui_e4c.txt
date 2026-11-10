@@ -1,0 +1,50 @@
+# e4c: the settings menu's plugin row and Shift + Help (the owner's device report, 2026-11-10). Needs a NAND with
+# saw.coop only. The combo opens settings; blue two rows down (plugins); right; green anticlockwise: saw OFF
+# (set_plugin_turns 1); then two pushes 150 ms apart: one toggle (ON), one bounce (set_plugin_pushes 1,
+# set_plugin_bounces 1); green anticlockwise again: OFF; left, left: the menu closes and saves. Then Shift down, Help
+# down, Help up, Shift up: no help (fn_shift_kept, help_taps 0). The next boot skips saw (det_eng_reload.txt).
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+press synth
+at 30200
+press drum
+at 30400
+press tape
+at 30600
+press mixer
+at 31600
+release mixer
+release tape
+release drum
+release synth
+at 32500
+turn enc1 cw 4
+at 33000
+tap right 200
+at 34000
+turn enc2 ccw 2
+at 35500
+tap enc2 80
+at 35650
+tap enc2 80
+at 37000
+turn enc2 ccw 2
+at 38500
+tap left 200
+at 39000
+tap left 200
+at 40500
+tap synth 200
+at 42000
+press shift
+at 42300
+press help
+at 42800
+release help
+at 43100
+release shift
+wait 52000
+screenshot /root/op1emu-work/e4c_end.ppm
+wait 3000
+quit

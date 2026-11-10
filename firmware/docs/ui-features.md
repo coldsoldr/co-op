@@ -19,8 +19,8 @@ Process rule (the owner): **mock up everything before building it.**
     alternatives are shown greyed until specified.
   - **UI**: tape position (bottom, stock / top, as the op1repacker mod); date and time (for file timestamps on save;
     24 h; `yyyy/mm/dd`).
-  - **Plugins**: one row per file with kind, version and measured cost; encoder click toggles enabled / disabled,
-    applied at the next boot.
+  - **Plugins**: one row per file with kind, version and measured cost; green turn sets enabled (right) / disabled
+    (left), an encoder click toggles (once per 250 ms: e4c), applied at the next boot.
 
 ## 2. Pitch bend (per synth preset) — built in u5 (2026-11-07), device test pending (the semitone scale of the stock bend word is inferred: calibrate on the device)
 - Bend stays stock: shift + left / right.
@@ -125,3 +125,5 @@ The owner's decisions (2026-11-10, from the rings port, `docs/request-engine-con
   (they would need the v2 parameter store's CC map and a velocity source per control).
 - Collisions checked: fn + an encoder had no meaning before (bend and drum pan use shift on T2, LFO 2 and FX 2 use
   lift / drop and their page keys, the settings menu takes its own keys while open).
+- e4c (the owner, 2026-11-10): Help with Shift held never reaches the stock (Shift + Help + Help up opened the date and
+  time screen); a plain Help tap still opens help.
