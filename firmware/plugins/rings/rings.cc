@@ -134,6 +134,18 @@ op1::CoefficientBudget coefficient_budget;   // the modal model's updates per bl
 static_assert(op1::ReverbBus::kBlock == kRingsBlockSize, "reverb bus: one block per call");
 op1rings::Scratch scratch_fallback;          // when the core lends less L1 scratch than a Scratch
 
+// OP1RINGS_COOP_POLY4 (rings 0.3, the owner's choice after the 0.2 device run): the polyphony setting 0 ("all" in
+// te-op1-cfw: six voices of 14 modes, each its own resonator) plays as Rings' own polyphony 4 (four voices, the
+// oldest stolen and faded), with 10 modes a modal voice instead of Rings' 12. Polyphony 1 and 2 are Rings'.
+#if OP1RINGS_COOP_POLY4
+const int32_t kPoly4Modes = 10;
+inline op1::PolyState PlayedPoly(op1::PolyState poly) { return poly == op1::POLY_ALL ? op1::POLY_4 : poly; }
+inline int32_t PolyModes(op1::PolyState poly) { return poly == op1::POLY_4 ? kPoly4Modes : op1::kPolyModes[poly]; }
+#else
+inline op1::PolyState PlayedPoly(op1::PolyState poly) { return poly; }
+inline int32_t PolyModes(op1::PolyState poly) { return op1::kPolyModes[poly]; }
+#endif
+
 #if OP1RINGS_CONTROL_HALVED
 // The control rate halved (the owner's choice, 2026-11-10: the device ran out of cycles): each voice does its control
 // work (coefficients, cutoff, string parameters: src/op1_voice.h set_control_hold) every other OP-1 block, 2.9 ms
@@ -142,14 +154,42 @@ op1rings::Scratch scratch_fallback;          // when the core lends less L1 scra
 uint32_t clock_rendered;
 int32_t clock_last;
 uint32_t clock_block;
-bool ControlBlock(int32_t v) {
-  if (((clock_rendered >> v) & 1) || v < clock_last) {
+// Before voice v renders: true when it starts a new OP-1 block.
+bool NewBlock(int32_t v) {
+  const bool fresh = ((clock_rendered >> v) & 1) || v < clock_last;
+  if (fresh) {
     clock_rendered = 0;
     ++clock_block;
   }
   clock_rendered |= 1u << v;
   clock_last = v;
-  return ((clock_block + static_cast<uint32_t>(v)) & 1) == 0;
+  return fresh;
+}
+inline bool Turn(int32_t v) { return ((clock_block + static_cast<uint32_t>(v)) & 1) == 0; }
+#endif
+
+#if OP1RINGS_CONTROL_BATCHED
+static_assert(OP1RINGS_CONTROL_HALVED, "the batch runs the halved schedule");
+// The control work batched (rings 0.3, the owner's choice): at a block's first render, the control work of every
+// voice whose turn it is (Turn) runs back to back, with each voice's pitch and smoothed knobs from its last block,
+// so that code is fetched once a block instead of once a voice, and the renders that follow run the audio path
+// only (held). A voice that strikes, fades, sleeps or has no last block does its own control in its render, as in
+// the halved schedule. The modal coefficient budget is not used: at most two voices of 10 modes, or one of 60
+// (polyphony 1, which the budget always let through), update in a block.
+uint32_t last_inc[op1::kNumVoices];
+VoicePatch last_patch[op1::kNumVoices];
+bool have_last[op1::kNumVoices];
+uint32_t batched_block[op1::kNumVoices];   // the block whose control the batch did for the voice (+ 1; 0 = none)
+
+void Batch() {
+  for (int32_t u = 0; u < op1::kNumVoices; ++u) {
+    if (!Turn(u) || !have_last[u] || allocator.silent(u) || allocator.fading(u) || voices[u]->striking() ||
+        voices[u]->asleep()) {
+      continue;
+    }
+    voices[u]->Control(last_inc[u], last_patch[u]);
+    batched_block[u] = clock_block + 1;
+  }
 }
 #endif
 
@@ -201,7 +241,7 @@ int Init() {
   op1rings::g_scratch = &scratch_fallback;   // Init below may touch it: not inside a note_on or render yet
   for (int32_t v = 0; v < op1::kNumVoices; ++v) {
     voices[v] = &states[v];
-    voices[v]->Init(op1::kPolyModes[op1::POLY_ALL]);
+    voices[v]->Init(PolyModes(PlayedPoly(op1::POLY_ALL)));
     upsamplers[v].Init();
     smoothers[v].Init();
   }
@@ -216,6 +256,19 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
   const int32_t v = voice;
   if (v < 0 || v >= op1::kNumVoices) return;
   BindScratch();
+#if OP1RINGS_CONTROL_HALVED
+  // The block clock ticks on every render, silent voices too (the order tells the blocks apart); a new block's
+  // first render runs the batch.
+#if OP1RINGS_CONTROL_BATCHED
+  if (NewBlock(v)) {
+    PROF_START(t_batch);
+    Batch();
+    PROF_ADD(PROF_BATCH, t_batch);
+  }
+#else
+  NewBlock(v);
+#endif
+#endif
   if (allocator.silent(v) ||
       (voices[v]->asleep() && !allocator.fading(v) &&
        voices[v]->model() != op1rings::MODEL_STRING_AND_REVERB)) {
@@ -251,8 +304,14 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
   // The modal model recomputes its coefficients within a budget per block (op1/coefficient_budget.h); a voice fading
   // out after a steal keeps its own and asks for none.
   const bool fading = allocator.fading(v);
-#if OP1RINGS_CONTROL_HALVED
-  const bool control = ControlBlock(v) || voices[v]->striking();
+#if OP1RINGS_CONTROL_BATCHED
+  // The batch did this voice's control already (or it isn't its turn): hold. A strike, or a turn the batch couldn't
+  // take, does its own. No coefficient budget (above).
+  const bool control = voices[v]->striking() || (Turn(v) && batched_block[v] != clock_block + 1);
+  const bool allowed = control;
+  voices[v]->set_control_hold(!control);
+#elif OP1RINGS_CONTROL_HALVED
+  const bool control = Turn(v) || voices[v]->striking();
   // A held block asks the budget for nothing: its grant waits for the voice's next control block.
   const bool allowed = control && coefficient_budget.Allow(v);
   voices[v]->set_control_hold(!control);
@@ -265,7 +324,14 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
                         carrier ? reverb_bus.send() : nullptr, shared ? wet_share : nullptr);
   PROF_ADD(PROF_VOICE, t_voice);
   const int32_t demand = voices[v]->TakeCoefficientDemand();
+#if OP1RINGS_CONTROL_BATCHED
+  (void)demand;
+  last_inc[v] = rings_inc;
+  last_patch[v] = patch;
+  have_last[v] = true;
+#else
   coefficient_budget.Report(v, demand, fading);
+#endif
   PROF_START(t_up);
   upsamplers[v].Process(out_buffer, out);
   PROF_ADD(PROF_UPSAMPLE, t_up);
@@ -292,7 +358,7 @@ void NoteOn(int voice, void* state, int32_t velocity, const int16_t* params) {
   if (v < 0 || v >= op1::kNumVoices) return;
   BindScratch();
   const int32_t model = op1::ModelSetting(params);
-  op1::PolyState poly = op1::PolySetting(params);
+  op1::PolyState poly = PlayedPoly(op1::PolySetting(params));
   // String + reverb: "all" plays as Rings' polyphony 4, its maximum (op1/reverb_bus.h).
   if (model == op1rings::MODEL_STRING_AND_REVERB && poly == op1::POLY_ALL) poly = op1::POLY_4;
 
@@ -309,10 +375,10 @@ void NoteOn(int voice, void* state, int32_t velocity, const int16_t* params) {
     // The shared reverb's share goes with the ring.
     if (model == op1rings::MODEL_STRING_AND_REVERB) reverb_bus.Transfer(u, v);
   } else if (action.reset) {
-    voices[v]->Init(op1::kPolyModes[poly]);
+    voices[v]->Init(PolyModes(poly));
     upsamplers[v].Init();
   }
-  voices[v]->set_resolution(op1::kPolyModes[poly]);
+  voices[v]->set_resolution(PolyModes(poly));
   voices[v]->set_polyphony(op1::kRingsPolyphony[poly]);
   voices[v]->set_model(static_cast<op1rings::ResonatorModel>(model));
   voices[v]->NoteOn();

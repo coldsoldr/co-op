@@ -150,7 +150,11 @@ The owner chose plugin screens in the first build. Kennel's model, ported:
   - **rings 0.2 (2026-11-10)**: the upsampler's half-band stage in assembly (bit-identical) and the control rate
     halved (the owner's choice). op1emu: `eng_rings=13412/30417/118592`, `eng_rings_block=76056/143676/20914` (-11 %),
     every model sounding at the 0.1 levels, `ctl_turns 8`, no fault. Profile, simulator figures and what is left:
-    `plugins/rings/README.md` "Optimisation". Device: pending.
+    `plugins/rings/README.md` "Optimisation". **Device (2026-11-10): felt worse** (the tape recording):
+    `eng_rings_block=173719/278457`, 5 % below 0.1; the callback peaked at 882 k.
+  - **rings 0.3 (2026-11-10)**: four voices at most (Rings' polyphony 4; the steps are 4, 1, 2), 10 modal modes, and
+    the control work batched once a block (fewer code fetches). op1emu (e4e): `eng_rings_block=55373/122785` (-27 %
+    from 0.2), every model sounding, `ctl_turns 8`, no fault. Device: pending.
 - Then on the device: one package for E1 + E2 + saw, the owner's verdict, then rings.
 
 ## e4: controls, L1, memory, screen exports, cost (2026-11-10)

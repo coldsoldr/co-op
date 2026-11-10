@@ -67,6 +67,8 @@ class StringVoice {
   // OP1RINGS_CONTROL_HALVED (the coop build): a held block runs the strings with the parameters of the last
   // unheld one (no tuning, no reconfiguration); the LFOs keep their pace, and a glide step covers both blocks.
   void set_hold(bool hold) { hold_ = hold; }
+  // OP1RINGS_CONTROL_BATCHED: this block's parameters and string configuration, ahead of the render (string_voice.cc).
+  void Control(int32_t f0, const VoicePatch& patch, size_t size);
 
   int32_t num_strings() const { return state_.num_strings; }
   // String k's frequency / f0 (for tests).
@@ -75,6 +77,7 @@ class StringVoice {
  private:
   bool hold_ = false;
   void UpdateTuning(int32_t structure);
+  uint32_t SetParameters(int32_t f0, const VoicePatch& patch, size_t size, bool advance_lfo);
 
   // Everything but the delay lines, copied in one go by CopyFrom.
   struct State {

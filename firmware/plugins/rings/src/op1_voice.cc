@@ -316,6 +316,32 @@ void RingsVoice::CopyFrom(const RingsVoice& other) {
   string_voice_.CopyFrom(other.string_voice_);
 }
 
+void RingsVoice::Control(uint32_t phase_increment, const VoicePatch& patch) {
+  const int32_t f0 = static_cast<int32_t>(phase_increment >> 1);   // Q31
+  if (model_ == MODEL_FM_VOICE) return;
+  if (model_ == MODEL_SYMPATHETIC_STRING || model_ == MODEL_STRING ||
+      model_ == MODEL_SYMPATHETIC_STRING_QUANTIZED || model_ == MODEL_STRING_AND_REVERB) {
+    string_voice_.Configure(model_, polyphony_);
+    string_voice_.Control(f0, patch, kControlBlockSize);
+    return;
+  }
+  // The modal model: RenderSubblock's control half (the cutoff, the resonator's parameters and coefficients).
+  if (!cutoff_valid_ || cutoff_f0_ != f0 || cutoff_brightness_ != patch.brightness) {
+    cutoff_fc_ = ExcitationCutoff(f0, patch.brightness);
+    excitation_filter_.SetCutoff(cutoff_fc_.ToQ31());
+    cutoff_f0_ = f0;
+    cutoff_brightness_ = patch.brightness;
+    cutoff_valid_ = true;
+  }
+  resonator_.set_frequency(f0);
+  resonator_.set_structure(patch.structure);
+  resonator_.set_brightness(MulQ31Fast(patch.brightness, patch.brightness));
+  resonator_.set_damping(patch.damping);
+  resonator_.set_position(patch.position);
+  resonator_.set_hold(false);
+  resonator_.UpdateCoefficients();
+}
+
 void RingsVoice::RenderSubblock(uint32_t phase_increment, const VoicePatch& patch,
                                 int32_t* out, int32_t* aux) {
   static constexpr FFloat k0_25 = FFloat::Raw(1073741824, -32) /* FFloat(0.25) */;

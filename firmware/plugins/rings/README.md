@@ -13,14 +13,15 @@ E3 in `docs/engines.md`.
 | Click | — | — | — | — |
 | Shift + turn | structure fine | brightness fine | damping fine | position fine |
 | Shift + click | — | — | — | — |
-| fn + turn | model (6 steps, 2 detents a step) | polyphony (4 steps) | — | — |
+| fn + turn | model (6 steps, 2 detents a step) | polyphony (3 steps) | — | — |
 | fn + click | — | — | — | — |
 | Shift + fn + turn | — | — | — | — |
 | Shift + fn + click | — | — | — | — |
 
 - Model: `modal` (modal resonator), `symp` (sympathetic strings), `string` (inharmonic string), `fm` (FM voice),
-  `quant` (quantized sympathetic strings), `verb` (string and reverb). Polyphony: `all` (6 voices, 14 modes each),
-  `1` (60 modes), `2` (28), `4` (12), Rings' own trade of voices for modes; string and reverb plays `all` as 4.
+  `quant` (quantized sympathetic strings), `verb` (string and reverb). Polyphony (0.3): `4` (four voices, the
+  oldest stolen and faded; 10 modes a modal voice), `1` (60 modes), `2` (28), Rings' own trade of voices for modes.
+  0.1 / 0.2 had `all` (six voices of 14 modes) first and Rings' `4` last; a sound saved with either plays as `4`.
 - Both are latched at note on: a change applies from the next note and never clicks a ringing voice.
 - Stored in knob words 5 and 6 as the step index (plugin.json `controls`), saved with the sound; the core shows
   `MODEL VERB` etc. when one moves, and the screen draws both rows, bracketed while fn is held.
@@ -98,16 +99,49 @@ What 0.2 changes:
 - Tried and dropped: `-Os` on the control-heavy files shrinks `.text` 43.0 -> 31.4 KB but costs 27-75 % more compute
   (the fixed-point helpers stop inlining in the per-sample C), more than the fetches it could save.
 
-Still open, by size: the string kernels and the mode bank (already assembly, ~23 cycles a mode-sample), the
-upsampler's 2x stage and copies (~2.8 k), the limiter (~47 cycles a sample), batching the voices' control work in
-one pass a block (the largest lever on code fetches), and fewer modes in "all" (14 per voice).
+**Device, 0.2 (owner, 2026-11-10, `coop_stats (22).txt`, the tape recording, no effect):** it felt worse.
+`eng_rings=31037/113871`, `eng_rings_block=173719/278457`: 5 % below 0.1 on average, the peak a third lower; the
+code-fetch stalls a render fell 8,551 -> 5,003 (`synth_rest` p0), the compute did not move. The callback averaged
+460-470 k in the busy windows and peaked at 882 k with the recording on (~25 k a block in the interrupt, the flushes
+on the main loop); idle it is ~100 k, and rings, the voice hook, the stage and the recorder add ~330 k, so ~130 k is
+the rest of the block running slower beside rings (its code and state pushing the stock's out of the caches) [I].
+A rings voice costs about three stock voices (digital ~11 k a render). Shaving percentages could not make it fit.
+
+## Optimisation (0.3, 2026-11-10)
+
+The owner chose four cuts; three went in, each behind its own switch (plugin.json), so with them off the host test
+still proves the rest bit-identical to te-op1-cfw:
+- **`OP1RINGS_COOP_POLY4`: four voices at most.** The polyphony setting 0 plays as Rings' polyphony 4 (the oldest
+  voice stolen and faded) instead of six voices of their own: Rings' own maximum. The steps are `4`, `1`, `2`.
+- **Fewer modal modes (same switch):** 10 a voice at polyphony 4 instead of Rings' 12 (0.1 / 0.2: 14 at "all").
+- **`OP1RINGS_CONTROL_BATCHED`: the control work batched.** At a block's first render the control work of every
+  voice whose turn it is (the halved schedule) runs back to back (`RingsVoice::Control`: the modal cutoff and
+  coefficients, the strings' parameters and configuration, `StringVoice::Control` / `StringFixed::Prepare`), with
+  each voice's last pitch and smoothed knobs; the renders then run the audio path only. A strike, a fading or
+  sleeping voice, or a voice with no last block does its own. The coefficient budget is no longer used (at most two
+  voices of 10 modes, or one of 60, update in a block). Against the halved schedule alone, steady state at
+  polyphony 4, the voices' block levels match (medians 0.00-0.39 dB; `make -C tests/host/rings batched`); the modal
+  coefficients now follow the knobs without waiting for the budget.
+- **Not done: the shorter half-band filter.** With the kernel in assembly (0.2) the stage costs ~1.2 k; half its taps
+  would save ~0.5 k a render, and the 6-tap design (Kaiser, `te-op1-cfw/ports/rings/resources/gen_halfband.py`,
+  N_SIDE 11) lets the images of 9-10 kHz through at 12-13 kHz only 12-24 dB down (now 21-59 dB). Not worth it; the
+  2x stage and the copies (~1.6 k) can go to assembly bit-identically instead.
+
+Simulator, per block at the default polyphony (0.2 six voices -> 0.3 four): modal 110,371 -> 75,616, symp
+104,537 -> 75,575, string 116,119 -> 83,862, fm 85,076 -> 61,290, quant 103,547 -> 74,948, verb 94,128 -> 94,843
+(it already played four); the batch itself 0.7-2.3 k a block. op1emu (e4e, `det_eng_rings.txt`):
+`eng_rings_block=55373/122785` (0.2: 76,056; 0.1: 85,742), every model sounding within ~1 dB of 0.2.
+
+Still open: the upsampler's 2x stage and copies in assembly (~1.6 k a render, bit-identical), the limiter (~47
+cycles a sample), the string kernels and the mode bank (assembly already, ~23 cycles a mode-sample).
 
 ## Building and checking
 
 ```sh
 make -C plugins                      # build/plugins/rings.coop
 make -C tests/host/rings             # bit-identical to te-op1-cfw's engine over a 90 s scenario (halving off)
-make -C tests/host/rings halved      # the shipped build against te-op1-cfw: levels and spectra
+make -C tests/host/rings halved      # the halved schedule against te-op1-cfw: levels and spectra
+make -C tests/host/rings batched     # the batch against the halved schedule (steady state), and the shipped build
 make -C tests/host/rings halfband-check   # the upsampler kernel against its C loop, in the simulator
 make -C tests/host/rings profile     # cycles per render by model and stage, in the simulator
 ```
@@ -127,6 +161,7 @@ The DSP files (`src/`, `op1/`) are te-op1-cfw's, with only what coop's rules req
   compiler's own `memcpy` / `memset` calls (struct copies) their plugin-local bodies, as kennel did.
 - `op1/settings.h` decodes words 5 and 6 as step indexes (`OP1_COOP`).
 - 0.2: the half-band kernel and the halved control rate (above); `src/profile.h` stage timers.
+- 0.3: four voices, 10 modal modes, the batched control work (above).
 
 The host test (`tests/host/rings/rings_compare.cc`) builds te-op1-cfw's own engine and this one from the same seeded
 call sequence (4,367 notes, every model and polyphony pair, knob jumps, bends, steals, idle gaps): the outputs are

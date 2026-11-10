@@ -15,7 +15,7 @@ SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree
 PROFILE_BLOCKS ?= 62010
 PROFILE_MODEL ?=
 
-.PHONY: all clean profile halfband-check halved
+.PHONY: all clean profile halfband-check halved batched
 all: $(BUILD)/rings_ref $(BUILD)/rings_coop
 	$(BUILD)/rings_ref $(BUILD)/ref.raw
 	$(BUILD)/rings_coop $(BUILD)/coop.raw
@@ -65,3 +65,23 @@ halved: $(BUILD)/rings_halved $(BUILD)/rings_ref
 	$(BUILD)/rings_halved $(BUILD)/halved.raw
 	python3 -I compare_raw.py $(BUILD)/ref.raw $(BUILD)/halved.raw
 	python3 -I compare_spectra.py $(BUILD)/ref.raw.mix $(BUILD)/halved.raw.mix
+
+# The batched control work (OP1RINGS_CONTROL_BATCHED) against the halved schedule alone, and the build as it ships
+# (plugin.json: halved, batched, POLY4). `make batched` compares the first two in a steady state (no knob jumps or
+# bends: the batch uses each voice's last block, so only a moving control lands differently).
+$(BUILD)/rings_batched: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) -DOP1_COOP -DOP1RINGS_CONTROL_HALVED=1 -DOP1RINGS_CONTROL_BATCHED=1 -I$(COOP) \
+	  -I../../../sdk rings_compare.cc $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) -o $@
+
+$(BUILD)/rings_shipped: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) -DOP1_COOP -DOP1RINGS_CONTROL_HALVED=1 -DOP1RINGS_CONTROL_BATCHED=1 -DOP1RINGS_COOP_POLY4=1 \
+	  -I$(COOP) -I../../../sdk rings_compare.cc $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) -o $@
+
+batched: $(BUILD)/rings_halved $(BUILD)/rings_batched $(BUILD)/rings_shipped
+	@for m in 0 1 2 3 4 5; do \
+	  RINGS_NO_JUMP=1 RINGS_NO_BEND=1 $(BUILD)/rings_halved $(BUILD)/h$$m.raw 8000 $$m 3 > /dev/null; \
+	  RINGS_NO_JUMP=1 RINGS_NO_BEND=1 $(BUILD)/rings_batched $(BUILD)/b$$m.raw 8000 $$m 3 > /dev/null; \
+	  printf "model $$m, polyphony 4: "; python3 -I block_levels.py $(BUILD)/h$$m.raw $(BUILD)/b$$m.raw; done
+	$(BUILD)/rings_shipped $(BUILD)/shipped.raw

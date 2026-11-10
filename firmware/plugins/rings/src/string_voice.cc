@@ -254,42 +254,11 @@ void StringVoice::UpdateTuning(int32_t structure) {
   for (int32_t i = 0; i < n; ++i) state_.ratios[i] = SemitonesToRatio(notes[i]);
 }
 
-void StringVoice::Process(int32_t f0, const VoicePatch& patch, int32_t* out, size_t size) {
+// The strings' parameters for a block (dispersion, tuning, the sympathetic strings' brightness, damping, position and
+// glide, each string's frequency), and which strings may update their tone: bit k of the result. advance_lfo: move
+// the LFOs on by the block (Process does; the coop batch, which runs ahead of the block's render, doesn't).
+uint32_t StringVoice::SetParameters(int32_t f0, const VoicePatch& patch, size_t size, bool advance_lfo) {
   const int32_t n = state_.num_strings;
-
-  // Scratch shared by all voices (src/scratch.h: L1 on the OP-1, where the
-  // string kernels read and write it once per string and sample).
-  int32_t* excitation = scratch()->strings.excitation;
-  int32_t* sympathetic = scratch()->strings.sympathetic;
-  int32_t* mono = scratch()->strings.mono;
-
-  // Excitation: the plucker through the voice's DC blocker (the audio input
-  // is silent on the OP-1). Once both are quiet, it's zeros.
-  if (!state_.plucker.quiet() || !state_.dc_blocker.idle()) {
-    state_.plucker.Process(excitation, size);
-    state_.dc_blocker.Process(excitation, size);
-  } else {
-    for (size_t i = 0; i < size; ++i) excitation[i] = 0;
-  }
-  for (size_t i = 0; i < size; ++i) mono[i] = 0;
-
-  if (hold_) {
-    // A held block: the strings keep their parameters; only the LFOs advance (their pace is per sample).
-    for (int32_t k = 0; k < n; ++k) state_.lfo_phase[k] += kLfoIncrements[k] * static_cast<uint32_t>(size);
-    for (int32_t k = 0; k < n; ++k) {
-      strings_[k].Process(k == 0 ? excitation : sympathetic, mono, size,
-                          state_.dispersion ? &stretch_ : nullptr, false);
-      if (k == 0 && n > 1) {
-        int32_t log2_n = 0;
-        while ((1 << log2_n) < n) ++log2_n;
-        const int32_t gain = 429496730 /* Q(0.2, 31) */ >> log2_n;   // 0.2 / n, as below
-        for (size_t i = 0; i < size; ++i) sympathetic[i] = MulQ31Fast(mono[i], gain);
-      }
-    }
-    for (size_t i = 0; i < size; ++i) out[i] = ShlSat(mono[i], 2);   // Q25 -> Q27
-    return;
-  }
-
   // Dispersion from structure, with a dead zone at 0.24-0.26.
   const int32_t structure = patch.structure;
   int32_t dispersion = 0;
@@ -350,7 +319,7 @@ void StringVoice::Process(int32_t f0, const VoicePatch& patch, int32_t* out, siz
   for (int32_t k = 0; k < n; ++k) {
     StringFixed& s = strings_[k];
     const int32_t lfo = Lfo(state_.lfo_phase[k]);
-    state_.lfo_phase[k] += kLfoIncrements[k] * static_cast<uint32_t>(size);
+    if (advance_lfo) state_.lfo_phase[k] += kLfoIncrements[k] * static_cast<uint32_t>(size);
 
     int32_t brightness = patch.brightness;
     int32_t damping = patch.damping;
@@ -399,6 +368,58 @@ void StringVoice::Process(int32_t f0, const VoicePatch& patch, int32_t* out, siz
       k = k + 1 < n ? k + 1 : 1;
     }
   }
+
+  return allowed;
+}
+
+// OP1RINGS_CONTROL_BATCHED (the coop build): the block's control work ahead of its render, in the engine's batch
+// (plugins/rings/rings.cc): the parameters, then each string's configuration; the render that follows holds them
+// (set_hold) and runs the strings only.
+void StringVoice::Control(int32_t f0, const VoicePatch& patch, size_t size) {
+  const uint32_t allowed = SetParameters(f0, patch, size, false);
+  for (int32_t k = 0; k < state_.num_strings; ++k) strings_[k].Prepare((allowed >> k) & 1, state_.dispersion);
+}
+
+void StringVoice::Process(int32_t f0, const VoicePatch& patch, int32_t* out, size_t size) {
+  const int32_t n = state_.num_strings;
+
+  // Scratch shared by all voices (src/scratch.h: L1 on the OP-1, where the
+  // string kernels read and write it once per string and sample).
+  int32_t* excitation = scratch()->strings.excitation;
+  int32_t* sympathetic = scratch()->strings.sympathetic;
+  int32_t* mono = scratch()->strings.mono;
+
+  // Excitation: the plucker through the voice's DC blocker (the audio input
+  // is silent on the OP-1). Once both are quiet, it's zeros.
+  if (!state_.plucker.quiet() || !state_.dc_blocker.idle()) {
+    state_.plucker.Process(excitation, size);
+    state_.dc_blocker.Process(excitation, size);
+  } else {
+    for (size_t i = 0; i < size; ++i) excitation[i] = 0;
+  }
+  for (size_t i = 0; i < size; ++i) mono[i] = 0;
+
+  if (hold_) {
+    // A held block: the strings keep their parameters; only the LFOs advance (their pace is per sample).
+    for (int32_t k = 0; k < n; ++k) state_.lfo_phase[k] += kLfoIncrements[k] * static_cast<uint32_t>(size);
+    for (int32_t k = 0; k < n; ++k) {
+      strings_[k].Process(k == 0 ? excitation : sympathetic, mono, size,
+                          state_.dispersion ? &stretch_ : nullptr, false);
+      if (k == 0 && n > 1) {
+        int32_t log2_n = 0;
+        while ((1 << log2_n) < n) ++log2_n;
+        const int32_t gain = 429496730 /* Q(0.2, 31) */ >> log2_n;   // 0.2 / n, as below
+        for (size_t i = 0; i < size; ++i) sympathetic[i] = MulQ31Fast(mono[i], gain);
+      }
+    }
+    for (size_t i = 0; i < size; ++i) out[i] = ShlSat(mono[i], 2);   // Q25 -> Q27
+    return;
+  }
+
+  const uint32_t allowed = SetParameters(f0, patch, size, true);
+  int32_t log2_n = 0;
+  while ((1 << log2_n) < n) ++log2_n;
+  const int32_t string_index_shift = 31 - log2_n;
 
   for (int32_t k = 0; k < n; ++k) {
     strings_[k].Process(k == 0 ? excitation : sympathetic, mono, size,

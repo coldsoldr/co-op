@@ -1698,3 +1698,19 @@ Then send `coop_stats.txt`: the `engines` line (`eng_rings=`, `eng_rings_block=`
 columns) and the `win` lines of the busy part.
 
 Result: (pending)
+
+## Rings 0.3: four voices, fewer modes, batched control — device test (pending, 2026-11-10)
+
+- Result of 0.2 (owner, `coop_stats (22).txt`): felt worse. With the tape recording, the callback averaged 460-470 k
+  in the busy windows and peaked at 882 k; rings itself 173,719 / 278,457 a block (5 % below 0.1).
+- `build/plugins/rings.coop` 0.3 (111,888 bytes, sha256 `3552d8453560ca022e68991c3a23a15e30705d0b3cdb8958cf4e5b18c355cadb`):
+  four voices at most (the polyphony steps are now 4, 1, 2; an old sound plays as 4), 10 modes a modal voice, and
+  the voices' control work batched once a block. op1emu: 55,373 a block (0.2: 76,056; 0.1: 85,742).
+
+**What to do**: install over 0.2, power-cycle. Two short sessions, one change at a time so the stats separate them:
+1. Rings alone, no recording, no effect: six-note chords (four sound; the oldest fades) in each model, encoders
+   turning. Copy `coop_stats.txt`.
+2. The same with the tape recording (and then with one effect, if 1 went well). Copy it again.
+Listen for crackles and UI lag in each, and whether four voices is enough for how you play rings.
+
+Result: (pending)

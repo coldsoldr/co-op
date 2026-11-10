@@ -2,8 +2,9 @@
 # after pulse and before sampler, one row above where saw sits), close the list (seq, then synth), then:
 # a chord in the modal model (polyphony all); fn + blue one step at a time through the other five models (2 detents
 # a step: `turn N` is N Gray transitions, two a detent, so 4), a chord in each; fn + green to polyphony 1 (1 detent a
-# step: turn 2) and fast notes (steals and fades); fn + green two steps to 4 (turn 4), a chord.
-# Expected at the end: words 5, 6 = 5, 3 (op1.db), every model rendered.
+# step: turn 2) and fast notes (steals and fades); fn + green two steps on (turn 4: from 0.3 the steps are 4, 1, 2,
+# so it stops at 2), a chord.
+# Expected at the end: words 5, 6 = 5, 2 (op1.db; 5, 3 with 0.1 / 0.2), every model rendered.
 # Screenshots (wall-timed, after every event: `at` does not block): the page at the end, and with fn held. Stats: engines eng_rings, ctl_turns.
 accel 64 -64 512
 wait-frames 1 300000

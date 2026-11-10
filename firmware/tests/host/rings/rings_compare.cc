@@ -58,7 +58,7 @@ extern "C" void* coop_l1_scratch(uint32_t* bytes) {
 #endif
 
 #ifdef RINGS_PROFILE
-namespace op1rings { extern uint64_t g_profile[14]; }
+namespace op1rings { extern uint64_t g_profile[15]; }
 namespace prof {
 inline uint32_t Now() {
   uint32_t c;
@@ -256,14 +256,14 @@ int main(int argc, char** argv) {
                   (unsigned long)(no.n ? no.total / no.n : 0), (unsigned long)no.max);
     }
   {
-    static const char* const kStage[14] = { "smoother", "reverb bus", "voice (all below)", "upsampler",
+    static const char* const kStage[15] = { "smoother", "reverb bus", "voice (all below)", "upsampler",
                                             "fade+screen", "  excitation", "  modal coeffs", "  weights+copy",
                                             "  mode bank", "  strings", "  fm", "  limiter", "  peak",
-                                            "    string config" };
+                                            "    string config", "batch (in the first render)" };
     uint64_t renders = 0;
     for (int m = 0; m < 6; ++m) for (int p = 0; p < 4; ++p) renders += prof::render[m][p].n;
     std::printf("stages, cycles per render (all models, %lu renders):\n", (unsigned long)renders);
-    for (int s = 0; s < 14; ++s)
+    for (int s = 0; s < 15; ++s)
       std::printf("  %-20s %8lu\n", kStage[s], (unsigned long)(op1rings::g_profile[s] / (renders ? renders : 1)));
   }
   std::printf("heaviest calls:\n");

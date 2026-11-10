@@ -327,6 +327,16 @@ void StringFixed::ConfigureDispersion() {
   target_ap_gain_ = (kApGain * x * FFloat::Reciprocal(k0_15 + FFloat::Abs(x))).ToQ31();
 }
 
+void StringFixed::Prepare(bool update_tone, bool stretch) {
+  if (!tone_configured_ || (update_tone && needs_tone_update())) {
+    ConfigureTone();
+    Configure();
+  } else if (!configured_ || frequency_ != configured_frequency_) {
+    Configure();
+  }
+  if (stretch && (!dispersion_configured_ || dispersion_ != configured_dispersion_)) ConfigureDispersion();
+}
+
 void StringFixed::Process(const int32_t* in, int32_t* out, size_t size, StretchLine* stretch,
                           bool update_tone) {
   PROF_START(t_config);

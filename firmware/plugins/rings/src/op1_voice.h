@@ -151,6 +151,10 @@ class RingsVoice {
   // OP1RINGS_CONTROL_HALVED (the coop build): a held block reuses the last block's control work (the modal
   // coefficients, the excitation cutoff, the strings' parameters). A strike never holds.
   void set_control_hold(bool hold) { control_hold_ = hold; }
+  // OP1RINGS_CONTROL_BATCHED (the coop build): this block's control work (modal: excitation cutoff and coefficients;
+  // strings: parameters and configuration; FM: none) ahead of its render, which then holds (set_control_hold).
+  // phase_increment as RenderMono's (the Rings rate).
+  void Control(uint32_t phase_increment, const VoicePatch& patch);
   bool striking() const { return strum_; }
   // The modes whose coefficients the parameters asked to recompute since
   // the last call (updated or held): the resolution, or 0.

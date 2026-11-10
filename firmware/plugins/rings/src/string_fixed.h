@@ -113,6 +113,9 @@ class StringFixed {
   // (StringVoice spreads these updates); frequency changes always apply.
   void Process(const int32_t* in, int32_t* out, size_t size, StretchLine* stretch,
                bool update_tone = true);
+  // The configuration Process would do first (tone, delay, dispersion), on its own: the coop batch runs it ahead of
+  // the render, whose Process then finds everything configured.
+  void Prepare(bool update_tone, bool stretch);
 
  private:
   void ConfigureTone();

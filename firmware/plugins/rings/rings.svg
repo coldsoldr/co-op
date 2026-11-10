@@ -48,7 +48,7 @@
 <circle id="model4" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="285" cy="54" r="3.5"></circle>
 <circle id="model5" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="299" cy="54" r="3.5"></circle>
 <rect id="pbox" display="none" fill="none" stroke="#00EE92" stroke-width="1.5" x="220" y="74" width="90" height="40"></rect>
-<g id="plabel0"><polyline fill="none" stroke="#00EE92" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="224,89.8 224,82.8 227.5,80 231,82.8 231,89.8"></polyline><polyline fill="none" stroke="#00EE92" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="224,85.6 231,85.6"></polyline><polyline fill="none" stroke="#00EE92" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="234,80 234,89.8 241,89.8"></polyline><polyline fill="none" stroke="#00EE92" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="244,80 244,89.8 251,89.8"></polyline></g>
+<g id="plabel0"><polyline fill="none" stroke="#00EE92" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="229.6,89.8 229.6,80 224,87 231,87"></polyline></g>
 <g id="plabel1" display="none"><polyline fill="none" stroke="#00EE92" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="225.4,82.8 227.5,80 227.5,89.8"></polyline></g>
 <g id="plabel2" display="none"><polyline fill="none" stroke="#00EE92" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="224,80 231,80 231,84.9 224,84.9 224,89.8 231,89.8"></polyline></g>
 <g id="plabel3" display="none"><polyline fill="none" stroke="#00EE92" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="229.6,89.8 229.6,80 224,87 231,87"></polyline></g>
