@@ -7,7 +7,9 @@ The trace build calls RingsBlockMarker at each block's start (rings_compare.cc, 
 .. LAST-1 it counts the distinct 32-byte lines (the I-cache's line) of plugin code executed in each block (the test
 driver and the C library are left out), their average and the union, the 4 KB cache-set spread (how many of the 128
 sets the lines fall in, and how many sets hold 3 or more rings lines: the 16 KB cache is 4-way, so those sets leave
-the stock code one way or none), and the functions by bytes touched. NM: bfin-elf-nm. Stdlib only, Python 3.8.
+the stock code one way or none), the same for the blocks with no note on, and the functions by bytes touched: over
+all the blocks (union) and on average in a block (rings 0.4). The driver's own stdio (memmove, _write) still shows
+in the list: it is not rings'. NM: bfin-elf-nm. Stdlib only, Python 3.8.
 """
 import bisect, collections, re, subprocess, sys
 
@@ -49,6 +51,10 @@ def main():
     block = -1
     per_block, union, func_lines = [], set(), collections.defaultdict(set)
     lines = set()
+    block_func = collections.defaultdict(set)    # this block's lines by function
+    func_sum = collections.Counter()             # lines a block, summed over the blocks
+    note_blocks = 0                              # blocks with a note on (NoteOn ran)
+    quiet = []                                   # per_block of the blocks without one
     cache = {}
     for text in sys.stdin:
         if not text.startswith('insn:'):
@@ -57,8 +63,15 @@ def main():
         if pc == marker:
             if first <= block < last:
                 per_block.append(len(lines))
+                noted = any('NoteOn' in n for n in block_func)
+                note_blocks += noted
+                if not noted:
+                    quiet.append(len(lines))
+                for n, ls in block_func.items():
+                    func_sum[n] += len(ls)
             block += 1
             lines = set()
+            block_func = collections.defaultdict(set)
             if block >= last:
                 break
             continue
@@ -74,6 +87,7 @@ def main():
         lines.add(ln)
         union.add(ln)
         func_lines[name].add(ln)
+        block_func[name].add(ln)
     if not per_block:
         sys.exit('no complete block in range')
     sets = collections.Counter(ln & 127 for ln in union)
@@ -82,8 +96,13 @@ def main():
              max(per_block), len(union), 32 * len(union) / 1024))
     print('cache sets used %d of 128; sets with >= 3 rings lines: %d, with 4+: %d'
           % (len(sets), sum(1 for c in sets.values() if c >= 3), sum(1 for c in sets.values() if c >= 4)))
-    for name, ls in sorted(func_lines.items(), key=lambda kv: -len(kv[1]))[:25]:
-        print('  %5d B  %s' % (32 * len(ls), name[:100]))
+    if quiet:
+        print('blocks without a note on: %d of %d, rings code a block %.0f lines (%.1f KB) avg'
+              % (len(quiet), len(per_block), sum(quiet) / len(quiet), 32 * sum(quiet) / len(quiet) / 1024))
+    print('  union B  B/block  function')
+    n = len(per_block)
+    for name, ls in sorted(func_lines.items(), key=lambda kv: -func_sum[kv[0]])[:25]:
+        print('  %7d  %7.0f  %s' % (32 * len(ls), 32 * func_sum[name] / n, name[:100]))
 
 
 if __name__ == '__main__':

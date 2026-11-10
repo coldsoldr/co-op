@@ -137,6 +137,9 @@ class RingsVoice {
   ResonatorModel model() const { return model_; }
   // Modes per voice (the coefficients are recomputed on the next render).
   void set_resolution(int32_t resolution) { resonator_.set_resolution(resolution); }
+  // coop (rings 0.4): an L1 home for the modal model's first `capacity` modes (ModalResonator::set_l1_bank); once,
+  // from the engine's init, after Init.
+  void set_l1_modes(Mode* slab, int32_t capacity) { resonator_.set_l1_bank(slab, capacity); }
   int32_t resolution() const { return resonator_.resolution(); }
   // RenderMono's voice has been below kSleepLevel long enough to stop
   // computing until its next note (it renders silence, or only its share

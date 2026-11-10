@@ -308,7 +308,13 @@ void RingsVoice::CopyFrom(const RingsVoice& other) {
   cutoff_f0_ = other.cutoff_f0_;
   cutoff_brightness_ = other.cutoff_brightness_;
   cutoff_fc_ = other.cutoff_fc_;
-  resonator_ = other.resonator_;
+  {
+    // The plain copy takes other's L1 home for the modes with it: this voice keeps its own (ModalResonator::RebindBank).
+    Mode* const slab = resonator_.l1_bank();
+    const int32_t slab_modes = resonator_.l1_bank_modes();
+    resonator_ = other.resonator_;
+    resonator_.RebindBank(slab, slab_modes, other.resonator_);
+  }
   fm_voice_ = other.fm_voice_;
   excitation_filter_ = other.excitation_filter_;
   limiter_ = other.limiter_;

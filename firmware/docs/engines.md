@@ -194,7 +194,9 @@ From the rings port's request (`docs/request-engine-controls-l1.md`); everything
   up to 4096 bytes for all engines together; 0 when refused. Leases come down from the top of the L1 pool
   (`0xFF900820..0xFF902900`, 8,416 bytes) while coop's own blocks go up from the bottom (3,200 bytes with saw loaded:
   some are taken after the plugin scan), and a lease leaves coop at least 3,584 bytes. With saw (192 bytes leased) the
-  stats say `free 5024`: room for rings' 4 KB and ~900 bytes for later effect plugins.
+  stats say `free 5024`: room for rings' 4 KB and ~900 bytes for later effect plugins. Rings 0.4 leases 3,296 bytes
+  (its per-render state, the modal modes, the soft-limit table: `plugins/rings/README.md` "0.4"), so beside saw the
+  engines hold 3,488 of the 4,096; each part rings asks for falls back to SDRAM on its own when refused.
 - `void *coop_l1_scratch(uint32_t *bytes)`: 1312 bytes of the L1 scratchpad at `0xFFB000E0`, per call, inside the
   engine's own `note_on` / `render` only. While a plugin engine is the live engine the stock voice objects are iter's
   six (`0xD8` bytes) and the effect objects start at `0xFFB00600`; the op1emu write tracer saw no store to

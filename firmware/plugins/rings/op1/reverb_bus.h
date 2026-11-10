@@ -126,7 +126,11 @@ class ReverbBus {
     static const int32_t kShares[kNumVoices + 1] = {
       0, INT32_MAX, 1073741824, 715827883, 536870912, 429496730, 357913941 };
     share_ = kShares[n];
-    for (int32_t i = 0; i < kBlock; ++i) send_[i] = 0;
+    // Only a carrier writes send_ (RenderMono, through send()): with none it is still zero, and four SDRAM lines a
+    // block stay clean (rings 0.4; the same output).
+    if (carriers_) {
+      for (int32_t i = 0; i < kBlock; ++i) send_[i] = 0;
+    }
     last_carriers_ = carriers_;
     rendered_ = carriers_ = 0;
   }

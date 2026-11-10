@@ -15,11 +15,22 @@ SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree
 PROFILE_BLOCKS ?= 62010
 PROFILE_MODEL ?=
 
-.PHONY: all clean profile halfband-check halved batched footprint
-all: $(BUILD)/rings_ref $(BUILD)/rings_coop
+.PHONY: all clean profile halfband-check halved batched footprint dirty
+all: $(BUILD)/rings_ref $(BUILD)/rings_coop $(BUILD)/rings_coop_m14
 	$(BUILD)/rings_ref $(BUILD)/ref.raw
 	$(BUILD)/rings_coop $(BUILD)/coop.raw
 	cmp $(BUILD)/ref.raw $(BUILD)/coop.raw && echo "rings: coop == te-op1-cfw, bit-identical"
+	RINGS_NO_LEASE=1 $(BUILD)/rings_coop $(BUILD)/coop_nolease.raw
+	cmp $(BUILD)/ref.raw $(BUILD)/coop_nolease.raw && echo "rings, every lease refused: bit-identical"
+	$(BUILD)/rings_coop_m14 $(BUILD)/coop_m14.raw
+	cmp $(BUILD)/ref.raw $(BUILD)/coop_m14.raw && echo "rings, 14 modes a voice in L1 (moves across it): bit-identical"
+
+# rings 0.4's L1 home for the modes holds 10 (the shipped polyphony 4); this build's "all" plays 14, so with 14 in L1
+# the modes move between L1 and the voice state on every polyphony change.
+$(BUILD)/rings_coop_m14: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) -DOP1_COOP -DOP1RINGS_L1_MODES=14 -I$(COOP) -I../../../sdk rings_compare.cc $(COOP)/rings.cc \
+	  $(addprefix $(COOP)/,$(DSP)) -o $@
 
 # te-op1-cfw's own engine (the firmware build's engine.cc in its simulator mode: its screen, input and patch table
 # only have to link).
@@ -94,9 +105,22 @@ ASM := $(COOP)/src/mode_bank_bfin.S $(COOP)/src/string_kernel_bfin.S $(COOP)/src
        $(COOP)/src/reverb_bfin.S $(COOP)/src/halfband_bfin.S
 $(BUILD)/rings_trace.elf: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
 	@mkdir -p $(BUILD)
-	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DOP1_COOP -DRINGS_TRACE $(SHIPPED_FLAGS) -I$(COOP) -I../../../sdk \
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DOP1_COOP -DRINGS_TRACE $(SHIPPED_FLAGS) $(FOOTPRINT_FLAGS) -I$(COOP) -I../../../sdk \
 	  rings_compare.cc $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) $(ASM) -o $@
 
 footprint: $(BUILD)/rings_trace.elf
 	$(BFIN)/bfin-elf-run --trace-insn=on $< $(BUILD)/trace.raw 160 $(FOOTPRINT_MODEL) 0 2>&1 | \
 	  python3 -I code_footprint.py $< $(BFIN)/bfin-elf-nm 120 160
+
+# Rings' store footprint per block (dirty_lines.py): the shipped build in the simulator, its .bss compared block to
+# block in 32-byte lines (rings_compare.cc -DRINGS_DIRTY): make dirty [DIRTY_MODEL=m] [DIRTY_BLOCKS=n]
+DIRTY_MODEL ?= 0
+DIRTY_BLOCKS ?= 400
+$(BUILD)/rings_dirty.elf: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
+	@mkdir -p $(BUILD)
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -g -DOP1_COOP -DRINGS_DIRTY $(SHIPPED_FLAGS) $(DIRTY_FLAGS) -I$(COOP) -I../../../sdk \
+	  rings_compare.cc $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) $(ASM) -o $@
+
+dirty: $(BUILD)/rings_dirty.elf
+	$(BFIN)/bfin-elf-run $< $(BUILD)/dirty.raw $(DIRTY_BLOCKS) $(DIRTY_MODEL) 0 | \
+	  python3 -I dirty_lines.py $< $(BFIN)
