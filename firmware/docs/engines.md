@@ -207,6 +207,14 @@ six voices in unison: 7,396 / 7,491 per voice, 37,015 / 44,790 per block.
 - Memory: above. Screen: the shape icons light the chosen shape and turn dim blue while fn is held (sampled pixel
   `#31457b` while held, the dim grey after), the octave dots show -1 / -2.
 
+**e4b (2026-11-10): the cache sync.** The device crashed at boot with saw 0.2 (undefined instruction in heap 0): the
+loader never wrote back the data cache or dropped the instruction cache after relocating a plugin, and saw 0.2 is the
+first plugin that runs (its `init` calls the L1 lease through a call stub) right after relocation. Fixed as kennel does
+it (`plugin_host.cc code_sync`: FLUSH, SSYNC, IFLUSH, CSYNC over the image and its stubs, after every relocation). The
+rings request's "the OP-1 runs without a data cache" (from `te-op1-cfw/ports/rings/src/scratch.h`) does not hold for
+this: SDRAM is cached at least for these stores. L1 still matters for the same reason (an uncached SDRAM line costs a
+bus wait).
+
 ## Out of scope for now
 
 Engines on the drum side (the drum voices are not engine objects, `docs/tracker.md` "Drums beside the synth"),

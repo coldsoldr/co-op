@@ -83,7 +83,8 @@ typedef struct coop_engine_t {
  * ---- e4: L1 for engines ----
  * coop_l1_lease: from the engine's init only (main thread, at load): a zeroed, 32-byte aligned block in L1 data bank B,
  * kept for the session; up to 4096 bytes for all engines together; 0 when refused (no pool, over the limit, called
- * from anywhere else): keep an SDRAM fallback. The OP-1 has no data cache, so the per-sample hot data belongs here.
+ * from anywhere else): keep an SDRAM fallback. SDRAM lines cost a bus wait whenever they aren't cached, L1 never
+ * does: the per-sample hot data belongs here.
  * coop_l1_scratch: per-call scratch in the L1 scratchpad (1312 bytes at 0xFFB000E0), valid only inside the engine's
  * own note_on and render: nothing survives between calls. Both are core exports (sdk/coop_exports.cc). */
 #ifdef __cplusplus

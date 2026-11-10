@@ -1557,3 +1557,28 @@ page), power-cycle, pick saw (shift + T1). Then on saw's page:
    costs rings will be judged against).
 
 Result: (pending)
+
+**Result (owner, 2026-11-10, e4 + saw 0.2): FAIL, crash at boot** with the new `saw.coop` installed: `SEQSTAT 0x21`
+(undefined instruction), `RETX 0x648d0` (heap 0, where plugin code is relocated), `ADDR 0xa`, `STATUS 0x3e`, call
+stack `0xffa00424`, `0xffa035a8`. Cause [I, strong]: the loader wrote the relocated code with data stores and never
+wrote the data cache back or dropped the instruction cache before running it; e4's saw calls into the core (the L1
+lease, through a call stub) from `init` right after its relocation at boot, so the core could fetch stale bytes. Kennel
+syncs both caches after every relocation (`kn_boot.c sync_caches`); coop's port of the loader had left it out, and
+op1emu models no caches. Earlier plugins only ran later (FX init on selection, renders), by when the lines had been
+written back. Fixed in e4b (below).
+
+## e4b: cache sync after relocation — device test (pending, 2026-11-10)
+
+- `build/pkg/op1_246_coop_e4b_cache_sync.op1` (sha256 `d9bd3b1054498c6c7ccfdbd53458fdac34b65b203fb56f7a3ad86d141cd76fef`),
+  copy in Downloads. `--tape-stereo --set-word g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only
+  `OP1_vdk.ldr` differs. Build tag `e4b`. e4 plus `code_sync` in plugin_host.cc: after every relocation (each effect
+  instance, each engine) `FLUSH` every line of the image and its call stubs, `SSYNC`, `IFLUSH` every line, `CSYNC`,
+  before anything of the plugin runs. Stats `plugins` line: `code_syncs` (7 with saw, stereo_delay and a test engine
+  in op1emu: 5 + 1 + 1). op1emu: no fault, every plugin loads and plays, `det_chord.txt` identical to e4.
+
+**What to do**: the OP-1 crashes at boot while saw 0.2 is on it, so hold COM while switching on (te-boot runs before
+any coop code), "1. Upload firmware", flash e4b. Then it should boot with saw installed; continue with the e4 checklist
+above. If it still crashes, a photo again; to get out, flash e3 (it refuses saw 0.2 for its import and boots) and
+remove the file from co-op.
+
+Result: (pending)

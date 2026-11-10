@@ -228,6 +228,20 @@ static void list_dir(void)
     Y_CLOSEDIR(d);
 }
 
+/* e4b: the relocated code is written with data stores; before the core fetches any of it as instructions the data
+ * cache must be written back to SDRAM and the instruction cache dropped over the range, or the core can execute stale
+ * bytes (kennel kn_boot.c sync_caches). The device crashed at boot without it (SEQSTAT 0x21, undefined instruction, in
+ * heap 0) when e4's saw called into the core from init right after its relocation; op1emu models no caches. */
+volatile uint32_t g_code_syncs;
+static void code_sync(uint32_t lo, uint32_t hi)
+{
+    for (uint32_t a = lo & ~31u; a < hi; a += 32) __asm__ __volatile__("flush [%0];" : : "a"(a) : "memory");
+    __asm__ __volatile__("ssync;" ::: "memory");
+    for (uint32_t a = lo & ~31u; a < hi; a += 32) __asm__ __volatile__("iflush [%0];" : : "a"(a) : "memory");
+    __asm__ __volatile__("csync;" ::: "memory");
+    g_code_syncs++;
+}
+
 static struct fileinfo *g_cur_info;                                       /* e3: the file load_one is reading (boot) */
 static char g_eng_name[SLOTS][16];                                         /* E1: each engine's type name, by number */
 static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fname);   /* below */
@@ -270,6 +284,7 @@ static const char *load_one(const char *fname, uint8_t *stage)
             uint32_t base = ((uint32_t)(uintptr_t)raw + ARENA_ALIGN - 1) & ~(ARENA_ALIGN - 1);
             uint32_t room = cap - (base - (uint32_t)(uintptr_t)raw), used = 0;
             if (!kn_relocate_far(stage, &in, (uint8_t *)(uintptr_t)base, base, room, coop_exports, coop_exports_count, &err, &used)) {
+                code_sync(base, base + used);                               /* e4b: before anything of it runs */
                 const coop_fx_t *fx = (const coop_fx_t *)(uintptr_t)(base + in.entry_offset);
                 uint32_t text_end = base + in.text_size;
                 uint32_t pi = (uint32_t)(uintptr_t)fx->init, pr = (uint32_t)(uintptr_t)fx->render;
@@ -308,6 +323,7 @@ static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fn
     if (kn_relocate_far(stage, &in, (uint8_t *)(uintptr_t)base, base, room, coop_exports, coop_exports_count, &err, &used)) {
         FREE(raw); return err ? err : "relocation failed";
     }
+    code_sync(base, base + used);                                          /* e4b: before init or any call into it */
     const coop_engine_t *e = (const coop_engine_t *)(uintptr_t)(base + in.entry_offset);
     uint32_t text_end = base + in.text_size, image_end = base + in.image_size;
     uint32_t fn[4] = { (uint32_t)(uintptr_t)e->init, (uint32_t)(uintptr_t)e->note_on, (uint32_t)(uintptr_t)e->render,

@@ -81,8 +81,8 @@ What the words mean:
 - Nothing in render allocates memory, touches a file, waits or calls a long helper. [now]
 - Memory sources:
   - Long lines and tanks go in the plugin's own `.bss`. The loader zeroes it, five times over.
-  - Data the per-sample loop touches every block goes in L1 (the OP-1 has no data cache: every line touched in SDRAM
-    costs a bus wait, ~107 cycles measured by Opus). [now, e4, engines; `sdk/coop_plugin.h`, `docs/engines.md`]
+  - Data the per-sample loop touches every block goes in L1 (a line the audio interrupt touches in SDRAM costs a bus
+    wait when it isn't cached, ~107 cycles measured by Opus; L1 never does). [now, e4, engines; `sdk/coop_plugin.h`, `docs/engines.md`]
     - `coop_l1_lease(bytes)` from the engine's `init` only: a zeroed, 32-byte aligned block of L1 data bank B kept
       for the session, up to 4 KB for all engines together; 0 when refused, so keep an SDRAM fallback. Say in the
       contract how much the plugin takes.

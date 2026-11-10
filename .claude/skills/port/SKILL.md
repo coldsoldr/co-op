@@ -115,7 +115,8 @@ layer, memory), stop and write a request in `docs/request-<topic>.md` for the fi
 - **5e. Memory and L1**: big state in `.bss` (relocated once for engines; ~600 KB loads, `heap_largest` in the stats
   says what's left). Per-call scratch: `coop_l1_scratch(&bytes)` (1312 bytes, inside note_on / render only). Hot
   per-voice data: `coop_l1_lease(bytes)` from `init` only (up to 4 KB for all engines), always with an SDRAM
-  fallback. The OP-1 has no data cache: what the per-sample loop touches belongs in L1.
+  fallback. SDRAM lines cost a bus wait whenever they aren't cached; what the per-sample loop touches
+  belongs in L1.
 - **6e. Screen**: an SVG at the front of the file (`plugin.json` "screen": `svg`, `symbol`) and a `coop_screen_t`;
   draw through `sdk/coop_screen.h` (`coop_scr_find`, `_transform`, `_visible`, `_line_rgba` / `_fill_rgba`, `_draw`,
   `coop_scr_words` for all eight words, `coop_scr_mods` for the held layer). Kennel's `op1_find_node`,
