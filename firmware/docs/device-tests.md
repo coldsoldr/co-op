@@ -1657,4 +1657,21 @@ Result: (pending)
 left on saw: OFF; leave the menu; power-cycle: saw is gone. co-op's Switch off / on works too. If you can, copy the
 stats `plugins` line: `set_dropped` says how many bad names the device's file held.
 
+**Result (owner, 2026-11-10): PASS** for the menu: saw turns off in settings > plugins. Found: the switched-off saw was
+still in the engine list and loaded as iter (its `synth_types` row stayed: E1 never removed rows). Fixed in e4e.
+
+## e4e: the lists show only plugins that loaded — device test (pending, 2026-11-10)
+
+- `build/pkg/op1_246_coop_e4e_list_rows.op1` (sha256 `0f28fd8dc18fbf61497b9084dc334825eea8ad78ecf369a68e1ec18780cf0a2b`), copy in Downloads.
+  `--tape-stereo --set-word g_coop_spread=32767`; `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs.
+  Build tag `e4e`. e4d plus: at boot, every plugin in the number map that did not load (switched off, deleted, failed)
+  loses its `synth_types` / `fx_types` row in the factory database (read first: a boot that changes nothing writes
+  nothing; stock names never touched; also when no plugin file is left). Its number stays, and a sound saved on it
+  loads as iter (engines) or the filter (effects) and plays as the plugin again once it is back.
+- op1emu (a NAND with saw): saw on, row present; switched off in the menu (`det_ui_e4c.txt`), next boot `loaded 0
+  disabled 1 rows_dropped 1`, no saw row; switched on (`det_ui_plug_on.txt`), next boot `loaded 1`, the row back.
+
+**What to do**: flash e4e. Switch saw off in settings > plugins, leave the menu, power-cycle: saw is gone from the
+engine list (Shift + T1). Switch it on again, power-cycle: it is back between sampler and string, with its screen.
+
 Result: (pending)

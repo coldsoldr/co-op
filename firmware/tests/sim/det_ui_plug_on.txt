@@ -1,0 +1,28 @@
+# e4e: settings > plugins, green clockwise on the first row (saw ON again), leave the menu (saves).
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+press synth
+at 30200
+press drum
+at 30400
+press tape
+at 30600
+press mixer
+at 31600
+release mixer
+release tape
+release drum
+release synth
+at 32500
+turn enc1 cw 4
+at 33000
+tap right 200
+at 34000
+turn enc2 cw 2
+at 35500
+tap left 200
+at 36000
+tap left 200
+wait 45000
+quit

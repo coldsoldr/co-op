@@ -9,7 +9,13 @@ CXXFLAGS := -O2 -std=c++17 -Wall -Wno-unused-variable -Wno-unused-function -Wno-
 DSP := src/op1_voice.cc src/string_voice.cc src/string_fixed.cc src/reverb_fixed.cc src/fm_voice_fixed.cc \
        src/modal_resonator.cc src/fixed_tables.cc
 
-.PHONY: all clean
+BFIN ?= $(HOME)/op1-toolchain/bfin/bin
+SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns \
+            -Wno-class-memaccess $(RATE)
+PROFILE_BLOCKS ?= 62010
+PROFILE_MODEL ?=
+
+.PHONY: all clean profile
 all: $(BUILD)/rings_ref $(BUILD)/rings_coop
 	$(BUILD)/rings_ref $(BUILD)/ref.raw
 	$(BUILD)/rings_coop $(BUILD)/coop.raw
@@ -26,6 +32,16 @@ $(BUILD)/rings_coop: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(CO
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -DOP1_COOP -I$(COOP) -I../../../sdk rings_compare.cc $(COOP)/rings.cc \
 	  $(addprefix $(COOP)/,$(DSP)) -o $@
+
+# Compute cycles per call in the GNU simulator (no cache or SDRAM model): make profile [PROFILE_BLOCKS=n]
+$(BUILD)/rings_profile.elf: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
+	@mkdir -p $(BUILD)
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DOP1_COOP -DRINGS_PROFILE -I$(COOP) -I../../../sdk rings_compare.cc \
+	  $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) $(COOP)/src/mode_bank_bfin.S $(COOP)/src/string_kernel_bfin.S \
+	  $(COOP)/src/limiter_bfin.S $(COOP)/src/reverb_bfin.S -o $@
+
+profile: $(BUILD)/rings_profile.elf
+	$(BFIN)/bfin-elf-run $< $(BUILD)/profile.raw $(PROFILE_BLOCKS) $(PROFILE_MODEL)
 
 clean:
 	rm -rf $(BUILD)

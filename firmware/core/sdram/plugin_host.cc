@@ -213,6 +213,39 @@ static void row_ensure(void *db, const char *table, const char *name, const int1
     db_write(db, sql);
 }
 
+/* e4e: a plugin that did not load this boot (switched off, deleted, failed) loses its list row, so the engine and FX
+ * lists show only what plays (the owner, 2026-11-10: a switched-off saw was still in the engine list and loaded as
+ * iter). Its number stays in the map, and a sound saved on it still loads (as iter / the filter, the name compares)
+ * and plays as the plugin again when the file is back. Stock names are never touched. Read before write: a boot that
+ * changes nothing writes nothing to the factory database (kennel's pattern). */
+volatile uint32_t g_rows_dropped;
+static const char *const stock_type_names[] = { "fm", "digital", "drwave", "string", "cluster", "pulse", "sampler", "phase",
+    "drum", "dbox", "ls", "dna", "dsynth", "voltage", "iter", "delay", "grid", "punch", "phone", "spring", "filter", "nitro",
+    "cwo", 0 };
+static void row_drop(void *db, const char *table, const char *name)
+{
+    for (const char *const *q = stock_type_names; *q; q++) if (seq(*q, name)) return;
+    char sql[128], *o;
+    o = scat(scat(scat(scat(sql, "SELECT type FROM "), table), " WHERE type='"), name); scat(o, "'");
+    dstr r; dstr_init(&r);
+    DB_GET(&r, db, sql);
+    int exists = r.size != 0;
+    dstr_free(&r);
+    if (!exists) return;
+    o = scat(scat(scat(scat(sql, "DELETE FROM "), table), " WHERE type='"), name); scat(o, "'");
+    if (db_write(db, sql) == 0) g_rows_dropped++;
+}
+static void drop_unloaded_rows(void)
+{
+    void *fdb = DB_FACTORY();
+    if (!fdb) return;
+    for (int i = 0; i < g_map_n; i++) {
+        if (taken(g_map[i].n)) continue;                                   /* it loaded: its row stays */
+        row_drop(fdb, "synth_types", g_map[i].name);
+        row_drop(fdb, "fx_types", g_map[i].name);
+    }
+}
+
 /* ---- loading ---- */
 static void list_dir(void)
 {
@@ -392,7 +425,12 @@ extern "C" void coop_plugins_boot(void)
     coop_settings_boot();                                                  /* spread and the disabled list, before the scan */
     if (g_coop_no_plugins) { slot2_load(); return; }                       /* test images: as if /yaffs2/plugins were empty */
     list_dir();
-    if (!g_n_names) { slot2_load(); return; }
+    if (!g_n_names) {                                                      /* no files: still drop the rows of the ones that went */
+        void *udb0 = DB_HANDLE();
+        if (udb0) { map_load(udb0); drop_unloaded_rows(); }
+        slot2_load();
+        return;
+    }
     coop_settings_prune(g_names, g_n_names);                               /* e4d: the off list holds only files that are here
                                                                              (with none, nothing loads: left for the next boot
                                                                              that has files) */
@@ -414,6 +452,7 @@ extern "C" void coop_plugins_boot(void)
     for (int i = 0; i < g_map_n; i++)                                      /* files that went away keep their numbers, marked absent */
         if (g_map[i].present && !taken(g_map[i].n)) { g_map[i].present = 0; g_map_dirty = 1; }
     if (udb && g_map_dirty) map_save(udb);
+    drop_unloaded_rows();                                                  /* e4e: the lists show only what loaded */
     slot2_load();                                                          /* S2: after the plugins it may name */
 }
 

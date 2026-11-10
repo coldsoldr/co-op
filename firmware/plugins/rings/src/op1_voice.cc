@@ -5,6 +5,7 @@
 #include "src/ffloat.h"
 #include "src/fixed.h"
 #include "src/fixed_tables.h"
+#include "src/profile.h"
 #include "src/scratch.h"
 
 // The soft-limit table for src/limiter_bfin.S (C linkage). The kernel reads
@@ -320,6 +321,7 @@ void RingsVoice::RenderSubblock(uint32_t phase_increment, const VoicePatch& patc
   static constexpr FFloat k0_25 = FFloat::Raw(1073741824, -32) /* FFloat(0.25) */;
   const int32_t f0 = static_cast<int32_t>(phase_increment >> 1);   // Q31
 
+  PROF_START(t_exc);
   // Recomputed only when pitch or brightness changes (the same values give
   // the same coefficients: bit-identical).
   if (!cutoff_valid_ || cutoff_f0_ != f0 || cutoff_brightness_ != patch.brightness) {
@@ -349,6 +351,7 @@ void RingsVoice::RenderSubblock(uint32_t phase_increment, const VoicePatch& patc
   }
   int32_t* excitation = scratch()->modal.excitation;   // src/scratch.h
   excitation_filter_.Process(excitation, kSubblockSize);
+  PROF_ADD(PROF_EXCITATION, t_exc);
 
   resonator_.set_frequency(f0);
   resonator_.set_structure(patch.structure);
@@ -445,24 +448,32 @@ void RingsVoice::RenderMono(const uint32_t* phase_increment,
     if (asleep) {
       for (size_t k = 0; k < kControlBlockSize; ++k) out[i + k] = 0;
     } else if (strings) {
+      PROF_START(t_strings);
       RenderStringBlock(phase_increment[i], patch, out + i, send ? send + i : nullptr);
+      PROF_ADD(PROF_STRINGS, t_strings);
     }
     for (size_t j = 0; j < kControlBlockSize; j += kSubblockSize) {
       int32_t* o = out + i + j;
       if (asleep) {
       } else if (model_ == MODEL_FM_VOICE) {
+        PROF_START(t_fm);
         RenderFmSubblock(phase_increment[i], patch, o);
+        PROF_ADD(PROF_FM, t_fm);
       } else if (!strings) {
         // Both outputs summed by the mode bank itself (out == aux).
         RenderSubblock(phase_increment[i], patch, o, o);
       }
+      PROF_START(t_peak);
       peak = PeakOf(o, kSubblockSize, peak);
+      PROF_ADD(PROF_PEAK, t_peak);
       // The voice's silence is its own: the shared reverb's share comes
       // after the peak.
       if (wet) {
         for (size_t k = 0; k < kSubblockSize; ++k) o[k] += wet[i + j + k];
       }
+      PROF_START(t_lim);
       mono_limiter_.Process(o, kSubblockSize, gains);
+      PROF_ADD(PROF_LIMITER, t_lim);
     }
   }
   silent_blocks_ = peak < kSleepLevel ? silent_blocks_ + 1 : 0;

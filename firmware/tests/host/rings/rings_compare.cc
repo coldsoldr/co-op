@@ -12,12 +12,18 @@
 // fades and the shared reverb), knob jumps and walks, per-voice pitch with a bend inside a block, gaps that let the
 // shared reverb go idle. Each build writes every rendered block to a file; the Makefile compares the two.
 //
-//   rings_ref OUT.raw    /    rings_coop OUT.raw
+//   rings_ref OUT.raw    /    rings_coop OUT.raw    [BLOCKS]
+//
+// -DRINGS_PROFILE (the coop build for the Blackfin simulator, `make profile`): every note_on and render timed with
+// CYCLES (the simulator counts compute, ~1 cycle an instruction; no cache misses or SDRAM waits, which the device's
+// stats give), then the cost per model x polyphony (per render and per block) and the ten heaviest calls with what
+// they were doing.
 //
 // Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "op1/op1.h"
@@ -49,6 +55,35 @@ extern "C" void* coop_l1_scratch(uint32_t* bytes) {
   *bytes = sizeof(l1_scratch);
   return l1_scratch;
 }
+#endif
+
+#ifdef RINGS_PROFILE
+namespace op1rings { extern uint64_t g_profile[13]; }
+namespace prof {
+inline uint32_t Now() {
+  uint32_t c;
+  __asm__ __volatile__("%0 = CYCLES;" : "=d"(c));
+  return c;
+}
+struct Stat {
+  uint64_t n, total;
+  uint32_t max;
+  void Add(uint32_t c) { ++n; total += c; if (c > max) max = c; }
+};
+Stat render[6][4], block[6][4], note_on[6][4];
+struct Spike { uint32_t cycles; int kind, model, poly, voice; long block; };
+Spike top[10];
+long cur_block;
+uint32_t block_sum;
+void Record(uint32_t c, int kind, int model, int poly, int voice) {
+  (kind ? note_on : render)[model][poly].Add(c);
+  if (!kind) block_sum += c;
+  int k = 9;
+  if (c <= top[k].cycles) return;
+  while (k > 0 && top[k - 1].cycles < c) { top[k] = top[k - 1]; --k; }
+  top[k] = Spike{ c, kind, model, poly, voice, cur_block };
+}
+}  // namespace prof
 #endif
 
 namespace {
@@ -88,7 +123,13 @@ void NoteOn(int v, const int16_t* knobs4, int model, int poly) {
 #else
   int16_t k[8] = { knobs4[0], knobs4[1], knobs4[2], knobs4[3], 0x5320, static_cast<int16_t>(model),
                    static_cast<int16_t>(poly), 0 };
+#ifdef RINGS_PROFILE
+  const uint32_t t0 = prof::Now();
   ENGINE_rings.note_on(v, nullptr, 127 << 8, k);
+  prof::Record(prof::Now() - t0, 1, model, poly, v);
+#else
+  ENGINE_rings.note_on(v, nullptr, 127 << 8, k);
+#endif
 #endif
 }
 
@@ -101,17 +142,33 @@ void Render(int v, int16_t* out, const uint32_t* pitch, const int16_t* knobs4, i
 #else
   int16_t k[8] = { knobs4[0], knobs4[1], knobs4[2], knobs4[3], 0x5320, static_cast<int16_t>(model),
                    static_cast<int16_t>(poly), 0 };
+#ifdef RINGS_PROFILE
+  const uint32_t t0 = prof::Now();
   ENGINE_rings.render(v, nullptr, out, reinterpret_cast<const int32_t*>(pitch), k);
+  prof::Record(prof::Now() - t0, 0, model, poly, v);
+#else
+  ENGINE_rings.render(v, nullptr, out, reinterpret_cast<const int32_t*>(pitch), k);
+#endif
 #endif
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc != 2) {
-    std::fprintf(stderr, "usage: %s OUT.raw\n", argv[0]);
+  if (argc != 2 && argc != 3 && argc != 5) {
+    std::fprintf(stderr, "usage: %s OUT.raw [BLOCKS [MODEL POLY]]\n", argv[0]);
     return 2;
   }
+  const int blocks = argc >= 3 ? std::atoi(argv[2]) : kBlocks;
+  const int fixed_model = argc == 5 ? std::atoi(argv[3]) : -1, fixed_poly = argc == 5 ? std::atoi(argv[4]) : -1;
+#ifdef RINGS_PROFILE
+  {
+    uint32_t s;
+    __asm__ __volatile__("%0 = SYSCFG;" : "=d"(s));
+    s |= 2;   // CCEN: the cycle counter runs
+    __asm__ __volatile__("SYSCFG = %0; CSYNC;" : : "d"(s));
+  }
+#endif
   FILE* f = std::fopen(argv[1], "wb");
   if (!f) return 2;
 #ifndef RINGS_REF
@@ -124,14 +181,20 @@ int main(int argc, char** argv) {
   long sounding_blocks = 0, nonzero = 0, notes = 0;
   int16_t out[kBlock];
   uint32_t pitch[kBlock];
-  for (int b = 0; b < kBlocks; ++b) {
+  for (int b = 0; b < blocks; ++b) {
     op1::host_cycles += kCyclesPerBlock;
+#ifdef RINGS_PROFILE
+    if (prof::block_sum) prof::block[model][poly].Add(prof::block_sum);
+    prof::block_sum = 0;
+    prof::cur_block = b;
+#endif
     // A new section every ~3 s: the next model / polyphony pair, so every pair is played (6 x 4 = 24 sections in
     // 90 s at ~3.75 s), then random ones.
     if (b % 2584 == 0) {
       const int s = b / 2584;
       model = s < 24 ? s % 6 : Below(6);
       poly = s < 24 ? (s / 6) % 4 : Below(4);
+      if (fixed_model >= 0) { model = fixed_model; poly = fixed_poly; }   // one model x polyphony throughout
     }
     // Knobs: now and then a jump, otherwise a slow walk on one of them.
     if (Below(400) == 0) {
@@ -168,5 +231,36 @@ int main(int argc, char** argv) {
   }
   std::fclose(f);
   std::printf("%ld notes, %ld voice blocks rendered, %ld non-zero samples\n", notes, sounding_blocks, nonzero);
+#ifdef RINGS_PROFILE
+  static const char* const kModel[6] = { "modal", "symp", "string", "fm", "quant", "verb" };
+  static const char* const kPoly[4] = { "all", "1", "2", "4" };
+  std::printf("%-7s %-4s %19s %19s %19s\n", "model", "poly", "render avg/max", "block avg/max", "note_on avg/max");
+  for (int m = 0; m < 6; ++m)
+    for (int p = 0; p < 4; ++p) {
+      const prof::Stat& r = prof::render[m][p];
+      const prof::Stat& bl = prof::block[m][p];
+      const prof::Stat& no = prof::note_on[m][p];
+      if (!r.n) continue;
+      std::printf("%-7s %-4s %8lu/%-10lu %8lu/%-10lu %8lu/%-10lu\n", kModel[m], kPoly[p],
+                  (unsigned long)(r.total / r.n), (unsigned long)r.max,
+                  (unsigned long)(bl.n ? bl.total / bl.n : 0), (unsigned long)bl.max,
+                  (unsigned long)(no.n ? no.total / no.n : 0), (unsigned long)no.max);
+    }
+  {
+    static const char* const kStage[13] = { "smoother", "reverb bus", "voice (all below)", "upsampler",
+                                            "fade+screen", "  excitation", "  modal coeffs", "  weights+copy",
+                                            "  mode bank", "  strings", "  fm", "  limiter", "  peak" };
+    uint64_t renders = 0;
+    for (int m = 0; m < 6; ++m) for (int p = 0; p < 4; ++p) renders += prof::render[m][p].n;
+    std::printf("stages, cycles per render (all models, %lu renders):\n", (unsigned long)renders);
+    for (int s = 0; s < 13; ++s)
+      std::printf("  %-20s %8lu\n", kStage[s], (unsigned long)(op1rings::g_profile[s] / (renders ? renders : 1)));
+  }
+  std::printf("heaviest calls:\n");
+  for (int k = 0; k < 10 && prof::top[k].cycles; ++k)
+    std::printf("  %8lu %-7s %-6s poly %-3s voice %d block %ld\n", (unsigned long)prof::top[k].cycles,
+                prof::top[k].kind ? "note_on" : "render", kModel[prof::top[k].model], kPoly[prof::top[k].poly],
+                prof::top[k].voice, prof::top[k].block);
+#endif
   return 0;
 }

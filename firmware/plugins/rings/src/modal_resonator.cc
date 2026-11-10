@@ -6,6 +6,7 @@
 #include "src/ffloat.h"
 #include "src/fixed.h"
 #include "src/fixed_tables.h"
+#include "src/profile.h"
 #include "src/scratch.h"
 
 
@@ -292,7 +293,10 @@ void ModalResonator::ComputeWeights(int32_t position, int32_t* weights,
 
 void ModalResonator::Process(const int32_t* in, int32_t* out, int32_t* aux,
                              size_t size) {
+  PROF_START(t_coeffs);
   int32_t num_modes = ComputeFilters();
+  PROF_ADD(PROF_COEFFS, t_coeffs);
+  PROF_START(t_weights);
   int32_t n = (num_modes + 1) & ~1;
   if (n > resolution_) n = resolution_;
 
@@ -321,10 +325,16 @@ void ModalResonator::Process(const int32_t* in, int32_t* out, int32_t* aux,
   // unless the gains (or the number of modes) changed since.
   const bool kept = weights_valid_ && weights_n_ == n;
   if (!kept) ComputeWeights(previous_position_, start, n);
+  uint32_t weights_cycles = 0, bank_cycles = 0;
+  (void)weights_cycles;
+  (void)bank_cycles;
   const uint32_t profile_start = profile_clock ? profile_clock() : 0;
   for (int32_t k = 0; k < segments; ++k) {
     int32_t position = k + 1 == segments
         ? position_ : previous_position_ + (delta >> 2) * (k + 1);
+#ifdef RINGS_PROFILE
+    const uint32_t tw = ProfileNow();
+#endif
     if (kept && delta == 0) {
       for (int32_t i = 0; i < n; ++i) end[i] = start[i];
     } else {
@@ -336,10 +346,21 @@ void ModalResonator::Process(const int32_t* in, int32_t* out, int32_t* aux,
       start[i] = end[i];
     }
     const size_t offset = k * segment_size;
+#ifdef RINGS_PROFILE
+    const uint32_t tb = ProfileNow();
+    weights_cycles += tb - tw;
+#endif
     ModeBankProcess(modes_, n, in_scaled + offset, &previous_input_,
                     out + offset, aux + offset, segment_size, half_x);
+#ifdef RINGS_PROFILE
+    bank_cycles += ProfileNow() - tb;
+#endif
   }
   if (profile_clock) profile_mode_bank_cycles += profile_clock() - profile_start;
+#ifdef RINGS_PROFILE
+  g_profile[PROF_MODE_BANK] += bank_cycles;
+  g_profile[PROF_WEIGHTS] += ProfileNow() - t_weights - bank_cycles;
+#endif
   previous_position_ = position_;
   weights_valid_ = true;
   weights_n_ = n;

@@ -32,6 +32,7 @@
 #include "src/fixed_tables.h"
 #include "src/halfband_taps.h"
 #include "src/op1_voice.h"
+#include "src/profile.h"
 #include "src/scratch.h"
 
 static_assert(OP1RINGS_UPSAMPLE == 4 && OP1RINGS_SAMPLE_RATE == 22050, "the coop build is 22.05 kHz, upsampled 4x");
@@ -40,6 +41,9 @@ extern "C" const int32_t* kSoftLimitTable;           // src/op1_voice.cc: the li
 
 namespace op1rings {
 Scratch* g_scratch;                                    // src/scratch.h: this call's scratch
+#ifdef RINGS_PROFILE
+uint64_t g_profile[PROF_COUNT];
+#endif
 }
 
 namespace {
@@ -187,9 +191,11 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
     ScreenQuiet(v);
     return;
   }
+  PROF_START(t_smooth);
   int32_t target[op1::ParamSmoother::kNumParams];
   for (int32_t i = 0; i < op1::ParamSmoother::kNumParams; ++i) target[i] = ParamToQ31(params[i]);
   const int32_t* smoothed = smoothers[v].Process(target);
+  PROF_ADD(PROF_SMOOTH, t_smooth);
   VoicePatch patch;
   patch.structure = smoothed[0];
   patch.brightness = smoothed[1];
@@ -204,17 +210,24 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
   const bool carrier = voices[v]->model() == op1rings::MODEL_STRING_AND_REVERB && !allocator.fading(v);
   int32_t* out_buffer = op1rings::scratch()->render_out;
   int32_t* wet_share = op1rings::scratch()->wet_share;
+  PROF_START(t_bus);
   const bool shared = reverb_bus.Render(v, op1::Cycles(), patch, carrier, wet_share);
+  PROF_ADD(PROF_REVERB_BUS, t_bus);
   // The modal model recomputes its coefficients within a budget per block (op1/coefficient_budget.h); a voice fading
   // out after a steal keeps its own and asks for none.
   const bool fading = allocator.fading(v);
   const bool allowed = coefficient_budget.Allow(v);
   voices[v]->set_coefficient_hold(fading || !allowed);
+  PROF_START(t_voice);
   voices[v]->RenderMono(&rings_inc, patch, out_buffer, kRingsBlockSize,
                         carrier ? reverb_bus.send() : nullptr, shared ? wet_share : nullptr);
+  PROF_ADD(PROF_VOICE, t_voice);
   const int32_t demand = voices[v]->TakeCoefficientDemand();
   coefficient_budget.Report(v, demand, fading);
+  PROF_START(t_up);
   upsamplers[v].Process(out_buffer, out);
+  PROF_ADD(PROF_UPSAMPLE, t_up);
+  PROF_START(t_tail);
   allocator.Rendered(v);
   if (allocator.fading(v)) {
     // Linear fade-out (Q15 gain) of a voice whose note was taken over.
@@ -227,6 +240,7 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
     allocator.AdvanceFade(v, op1::kBlockSize);
   }
   ScreenRendered(v, out);
+  PROF_ADD(PROF_TAIL, t_tail);
 }
 
 void NoteOn(int voice, void* state, int32_t velocity, const int16_t* params) {
