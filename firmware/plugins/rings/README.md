@@ -226,6 +226,17 @@ loaded 1 failed 0`, `l1 ... leased 3296 leases 3 lease_refused 0 free 1920`, `en
 way: 55,457 / 122,785, `leased 1056 ... free 4160`; op1emu has no cache, so it can't show the gain), no fault. The device run decides: m1's `run_m1_mode0.txt`
 rings sections, against m1b.
 
+### 0.4: the 44.1 kHz voice
+
+Rings 0.4 also renders its voice at 44.1 kHz (`OP1RINGS_VOICE_44K=1` and `"voice_rate": 44100` in `plugin.json`, the
+core's `COOP_ENGINE_F_44K`, `firmware/docs/engines.md` "The 44.1 kHz voice"): `Upsampler::Process` writes the
+half-band's 64 outputs and drops the Lagrange 2x stage, the fade runs over 64 samples at twice the step a sample (the
+same length), and the screen's peak is taken over the 64. The core repeats each sample before the stock's half-band
+decimator. `make -C tests/host/rings voice44` [C host]: over the 90 s scenario the 44.1 kHz samples are the 88.2 kHz
+build's even samples bit for bit (19,232,320 samples, 0 differ); the odd ones were the Lagrange stage's, so what the
+OP-1 hears differs by the two interpolators' responses above the decimator, about 0.2 dB at 10 kHz [I, derived]. A
+core older than the 44.1 kHz voice refuses this file ("engine flags not supported yet").
+
 ## Building and checking
 
 ```sh

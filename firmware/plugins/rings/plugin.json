@@ -1,6 +1,7 @@
 {
   "name": "rings",
   "kind": "synth",
+  "voice_rate": 44100,
   "symbol": "ENGINE_rings",
   "sources": [
     "rings.cc",
@@ -30,6 +31,7 @@
     "-DOP1RINGS_CONTROL_HALVED=1",
     "-DOP1RINGS_CONTROL_BATCHED=1",
     "-DOP1RINGS_COOP_POLY4=1",
+    "-DOP1RINGS_VOICE_44K=1",
     "-fno-tree-loop-distribute-patterns"
   ],
   "defaults": [
@@ -78,5 +80,5 @@
   },
   "author": "coldsoldr",
   "version": "0.4",
-  "description": "Mutable Instruments Rings (Emilie Gillet, MIT) as a coop synth engine: te-op1-cfw's fixed-point port (the hundekraft kennel build, ports/knl/rings at 5aa314b), 22.05 kHz upsampled 4x. Blue structure, green brightness, white damping, orange position; fn + blue the model (modal, sympathetic strings, string, FM, quantized sympathetic strings, string and reverb), fn + green the polyphony (4, 1, 2)."
+  "description": "Mutable Instruments Rings (Emilie Gillet, MIT) as a coop synth engine: te-op1-cfw's fixed-point port (the hundekraft kennel build, ports/knl/rings at 5aa314b), 22.05 kHz upsampled 2x to a 44.1 kHz voice. Blue structure, green brightness, white damping, orange position; fn + blue the model (modal, sympathetic strings, string, FM, quantized sympathetic strings, string and reverb), fn + green the polyphony (4, 1, 2)."
 }

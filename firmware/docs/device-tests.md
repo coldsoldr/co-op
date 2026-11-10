@@ -1784,3 +1784,28 @@ FX 1 as last time**, and `run_m1_mode0.txt` once (mode 0 is enough). Send the `_
 all 17 sections, nitro on FX 1. Against m1 (callback over idle): rings sympathetic -33 k a block, modal -2 k,
 probe_code 4 KB -44 k, probe_code 8 KB +12 k, 12 KB +24 k (set conflicts, `docs/m1-results.md` "m1b"). Rings' remaining
 excess is now mostly stores.
+
+## m1c: the three levers together — device test (pending, 2026-11-10)
+
+The levers from m1b (`docs/m1-results.md` "m1b"), merged (`fw-m1c`), in one image and one plugin:
+- `build/pkg/op1_246_coop_m1c_three.op1` (sha256 `0e74601c522ac41b9afe1720789761991d90cb5bbc7fef7db92fb103cf825ee0`),
+  copy in Downloads. The m1 test image (`COOP_M1=1`, `g_coop_gap_prof=1`, the same thunks and scripts) plus:
+  - **v2, the per-voice path cut** (`docs/engines.md` "v2"): its bookkeeping once a block, the profile's marks cold,
+    LFO 2's `sync` once a block, no per-voice call out of the section; with the 44.1 kHz repeat it is 1,736 bytes
+    (`0x02c00020..0x02c006e8`, 55 lines; m1b 2,520);
+  - **the 44.1 kHz voice** (`docs/engines.md` "The 44.1 kHz voice"): `COOP_ENGINE_F_44K`, the core repeats each sample.
+  `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `m1c`.
+- `build/plugins/rings.coop` **0.4** (sha256 `6fa7541e01cbc7ba751b79f84aebfd5f73ed562645bf67d8daea2b6e077de63c`,
+  111,928 bytes), copy in Downloads: the per-block state in L1 (3,296 bytes leased; modal 86 -> 31 SDRAM lines written
+  a block) and the 44.1 kHz voice (no Lagrange stage). Host: bit-identical with 0.3 at 88.2 kHz; at 44.1 kHz the even
+  samples bit for bit (`plugins/rings/README.md` "0.4"). **An older core (e4e, m1, m1b) refuses this rings** ("engine
+  flags not supported yet"): after going back to one, reinstall rings 0.3.
+- op1emu (`run_m1_mode0.txt`, saw, rings 0.4 and the three probes) [C op1emu, no cache]: all 17 sections, `lost_sections
+  0`, no fault; rings modal renders 68.4 k a block (m1: 72.9 k), coop's thunk 1.2 k (2.1 k), the dispatcher 0.7 k (0.9 k).
+
+**What to do**: as m1b: flash m1c, **replace rings with 0.4** (the same name, so the same row; the probes and saw stay),
+the same sound slot with nitro in FX 1, `run_m1_mode0.txt` once, send the `_run.txt`. What should move against m1b:
+the 8-12 KB code probes (v2), both rings sections (all three), `thunk` and `hook` everywhere.
+
+Result: (pending)
+

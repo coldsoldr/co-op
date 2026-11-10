@@ -15,7 +15,7 @@ SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree
 PROFILE_BLOCKS ?= 62010
 PROFILE_MODEL ?=
 
-.PHONY: all clean profile halfband-check halved batched footprint dirty
+.PHONY: voice44 all clean profile halfband-check halved batched footprint dirty
 all: $(BUILD)/rings_ref $(BUILD)/rings_coop $(BUILD)/rings_coop_m14
 	$(BUILD)/rings_ref $(BUILD)/ref.raw
 	$(BUILD)/rings_coop $(BUILD)/coop.raw
@@ -89,6 +89,17 @@ $(BUILD)/rings_shipped: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -DOP1_COOP -DOP1RINGS_CONTROL_HALVED=1 -DOP1RINGS_CONTROL_BATCHED=1 -DOP1RINGS_COOP_POLY4=1 \
 	  -I$(COOP) -I../../../sdk rings_compare.cc $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) -o $@
+
+# 0.4's 44.1 kHz voice (OP1RINGS_VOICE_44K, plugin.json): its 64 samples a render, repeated as the core does, must be
+# the even samples of the 88.2 kHz build, bit for bit (the odd ones were the Lagrange stage's). `make voice44`.
+$(BUILD)/rings_shipped44: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) -DOP1_COOP -DOP1RINGS_CONTROL_HALVED=1 -DOP1RINGS_CONTROL_BATCHED=1 -DOP1RINGS_COOP_POLY4=1 	  -DOP1RINGS_VOICE_44K=1 -I$(COOP) -I../../../sdk rings_compare.cc $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) -o $@
+
+voice44: $(BUILD)/rings_shipped $(BUILD)/rings_shipped44
+	$(BUILD)/rings_shipped $(BUILD)/shipped.raw > /dev/null
+	$(BUILD)/rings_shipped44 $(BUILD)/shipped44.raw > /dev/null
+	python3 -I even_check.py $(BUILD)/shipped.raw $(BUILD)/shipped44.raw
 
 batched: $(BUILD)/rings_halved $(BUILD)/rings_batched $(BUILD)/rings_shipped
 	@for m in 0 1 2 3 4 5; do \

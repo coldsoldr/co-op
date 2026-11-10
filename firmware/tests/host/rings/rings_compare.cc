@@ -221,6 +221,9 @@ void DriveRender(int v, int16_t* out, const uint32_t* pitch, const int16_t* knob
 #else
   ENGINE_rings.render(v, nullptr, out, reinterpret_cast<const int32_t*>(pitch), k);
 #endif
+  if (ENGINE_rings.flags & COOP_ENGINE_F_44K) {   // what the core does (voice_rate.cc): every sample twice, in place
+    for (int i = COOP_VOICE_BLOCK_44K - 1; i >= 0; --i) out[2 * i + 1] = out[2 * i] = out[i];
+  }
 #endif
 }
 

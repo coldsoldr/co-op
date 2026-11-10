@@ -61,6 +61,20 @@ using op1rings::RingsVoice;
 using op1rings::VoicePatch;
 
 const int32_t kRingsBlockSize = op1::kBlockSize / OP1RINGS_UPSAMPLE;   // 32 samples at 22.05 kHz
+
+// 0.4: OP1RINGS_VOICE_44K renders the voice at 44.1 kHz (COOP_ENGINE_F_44K, docs/engines.md "The 44.1 kHz voice"):
+// out[0..63] are the half-band's outputs, the even samples of the 88.2 kHz build, and the core repeats each one. The
+// Lagrange 2x stage is gone; the fade and the screen's peak run over the 64 samples.
+#ifndef OP1RINGS_VOICE_44K
+#define OP1RINGS_VOICE_44K 0
+#endif
+#if OP1RINGS_VOICE_44K
+const int32_t kOutSamples = COOP_VOICE_BLOCK_44K;                      // 64 at 44.1 kHz
+const int32_t kOutStep = 2;                                             // 88.2 kHz samples a written sample
+#else
+const int32_t kOutSamples = op1::kBlockSize;                            // 128 at 88.2 kHz
+const int32_t kOutStep = 1;
+#endif
 static_assert(kRingsBlockSize == op1rings::kScratchBlock, "scratch block size");
 static_assert(kRingsBlockSize == static_cast<int32_t>(op1rings::kControlBlockSize),
               "one control block per render call (OP1RINGS_CONTROL_BLOCK_SIZE)");
@@ -106,10 +120,14 @@ class Upsampler {
       mid[3 + 2 * m + 1] = acc >> 14;
     }
 #endif
+#if OP1RINGS_VOICE_44K
+    for (int32_t k = 0; k < 2 * kRingsBlockSize; ++k) out[k] = op1::Saturate16(mid[k + 1]);
+#else
     for (int32_t k = 0; k < 2 * kRingsBlockSize; ++k) {
       out[2 * k] = op1::Saturate16(mid[k + 1]);
       out[2 * k + 1] = op1::Saturate16((9 * (mid[k + 1] + mid[k + 2]) - mid[k] - mid[k + 3]) >> 4);
     }
+#endif
     for (int32_t i = 0; i < kHistory; ++i) history_[i] = x[kRingsBlockSize + i];
     mid_history_[0] = mid[2 * kRingsBlockSize];
     mid_history_[1] = mid[2 * kRingsBlockSize + 1];
@@ -244,7 +262,7 @@ void ScreenQuiet(int32_t v) { screen_level[v] = static_cast<int16_t>(screen_leve
 // longer tops it up, the way the heard note stops.
 void ScreenRendered(int32_t v, const int16_t* out) {
   int32_t peak = 0;
-  for (int32_t i = 0; i < op1::kBlockSize; ++i) {
+  for (int32_t i = 0; i < kOutSamples; ++i) {
     const int32_t a = out[i] < 0 ? -out[i] : out[i];
     if (a > peak) peak = a;
   }
@@ -327,7 +345,7 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
        voices[v]->model() != op1rings::MODEL_STRING_AND_REVERB)) {
     // Its note was taken over by another voice and has faded out, or its tail has gone quiet (the shared reverb's
     // carriers keep rendering: a share of the reverb plays through them).
-    for (int32_t i = 0; i < op1::kBlockSize; ++i) out[i] = 0;
+    for (int32_t i = 0; i < kOutSamples; ++i) out[i] = 0;
     upsamplers[v].Init();
     ScreenQuiet(v);
     return;
@@ -393,8 +411,8 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
   if (allocator.fading(v)) {
     // Linear fade-out (Q15 gain) of a voice whose note was taken over.
     int32_t gain = allocator.fade_gain(v);
-    const int32_t step = allocator.fade_step(v);
-    for (int32_t i = 0; i < op1::kBlockSize; ++i) {
+    const int32_t step = allocator.fade_step(v) * kOutStep;            // the step stays per 88.2 kHz sample
+    for (int32_t i = 0; i < kOutSamples; ++i) {
       out[i] = static_cast<int16_t>((out[i] * (gain > 0 ? gain : 0)) >> 15);
       gain -= step;
     }
@@ -459,5 +477,5 @@ extern "C" void RingsScreenVoices(int16_t* level, uint16_t* age) {
 
 extern "C" const coop_screen_t SCREEN_rings;            // rings_screen.cc
 extern "C" const coop_engine_t ENGINE_rings = {
-  COOP_ENGINE_MAGIC, COOP_PLUGIN_API, 0, 0, Init, NoteOn, Render, NoteOff, &SCREEN_rings,
+  COOP_ENGINE_MAGIC, COOP_PLUGIN_API, OP1RINGS_VOICE_44K ? COOP_ENGINE_F_44K : 0u, 0, Init, NoteOn, Render, NoteOff, &SCREEN_rings,
 };

@@ -202,8 +202,9 @@ What it says [C device, this run; I for the 8-12 KB cause]:
 - **Rings sympathetic gains 33 k a block** (its callback 445 k -> 403 k with nitro on FX 1), modal 2 k; the 4 KB code
   probe's collateral falls to alu's plus 8 k. For engines with up to ~5-7 KB of hot code the per-voice path now stays
   in the cache.
-- **8-12 KB of engine code: worse.** The section makes no call outside itself (objdump: one indirect call, the
-  plugin's render), so the loss is set conflicts: the section sits in sets 1-79, one line each; an engine with 8 KB of
+- **8-12 KB of engine code: worse.** [Corrected: the first objdump read a stale 2 KB `coop_cb.elf`; in the combined
+  image the section did call out of itself per voice (LFO 2's `sync`, the 64-bit multiply of `voice_of`'s divide), which
+  v2 removed (`docs/engines.md` "v2").] Set conflicts are the likely cause: the section sits in sets 1-79, one line each; an engine with 8 KB of
   straight-line code puts 2 lines in every set, 12 KB 3, and the stock's per-voice path has SDRAM code too (`v_stock`'s
   code stalls grow with the probe's size: 10 k alu, 13 k 4 KB, 33 k 8 KB). Where a set then holds more than 4 lines
   used each voice, LRU evicts every one of them each pass, the engine's own lines included (the probe's render +9-12 k).
