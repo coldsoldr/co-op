@@ -326,3 +326,10 @@ block (445 k -> 403 k with nitro on FX 1; thunk -12.5 k, hook -5.4 k, rings' own
 What is left over `probe_alu` is mostly stores (the stock DSP outside the voices +10-11 k, the block start +4-7 k),
 then coop's thunk +5-6 k: the next rings lever is the L1 lease for its per-voice state written every block.
 
+### m1c on the device (2026-11-10): 0.4 with the three levers
+
+`firmware/docs/m1-results.md` "m1c, second run", nitro on FX 1: the callback beside rings modal 326 k a block (0.3 on
+m1: 364 k), sympathetic 391 k (445 k), knobs turning 370 k (m1b 395 k). Peaks: modal 554 k (under the 580 k budget),
+sympathetic 684 k and knobs turning 602 k (over: crackles possible). Over probe_alu, sympathetic still leaves +34 k:
+its strings' delay lines (too big for the lease) and its per-block control code (`SetParameters`, `Configure`).
+

@@ -1813,3 +1813,8 @@ modal, `code12k` played 8 KB; `docs/m1-results.md` "m1c"). Rings modal -28.5 k a
 -8.8 k. The scenario now positions every variant absolutely (`run_m1_mode0.txt` regenerated, 5 min 4 s): run it again
 in the m1b slot with nitro on FX 1.
 
+**Result, second run (owner, 2026-11-10): PASS.** `m1_mode0_20261110-2136`, nitro on FX 1, every variant switched, no
+fault. Against m1b, each section over idle: rings modal -29.2 k, sympathetic -13.0 k, knobs turning -25.9 k, probe_code
+8 KB -24.3 k, 12 KB -29.3 k, the rest -3 to -5 k; v2's once-a-block folds cost 5-6 k of that back (`cb_rest`). Rings'
+peaks still pass the budget with sympathetic (684 k) and the knobs turning (602 k). `docs/m1-results.md` "m1c, second run".
+
