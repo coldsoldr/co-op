@@ -1674,4 +1674,5 @@ still in the engine list and loaded as iter (its `synth_types` row stayed: E1 ne
 **What to do**: flash e4e. Switch saw off in settings > plugins, leave the menu, power-cycle: saw is gone from the
 engine list (Shift + T1). Switch it on again, power-cycle: it is back between sampler and string, with its screen.
 
-Result: (pending)
+**Result (owner, 2026-11-10): PASS.** "Yes it's working now": switched off, saw leaves the engine list; switched on, it
+is back with its screen.
