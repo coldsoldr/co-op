@@ -85,13 +85,13 @@ For opus the id is 1 to 40 lower-case letters, digits, `_`, `.` or `-`, and
 | `format` | Always `1`. |
 | `id` | Equals the folder name; see above. |
 | `name` | 1 to 60 characters, as the OP-1 shows it. |
-| `firmware` | `op1/hundekraft` or `op1/opus`. |
+| `firmware` | `op1/hundekraft`, `op1/coop` or `op1/opus`. |
 | `kind` | `synth`, `fx` or `feature`. For hundekraft it must match the kind in the file. An `.op1p` is a synth or an fx. |
 | `author` | 1 to 60 characters. |
 | `version` | 1 to 20 characters. If the file carries a version, use the same one (a mismatch is a warning). |
 | `description` | 1 to 500 characters. |
 | `license` | One of `GPL-3.0-or-later`, `GPL-3.0-only`, `GPL-2.0-or-later`, `MIT`, `BSD-3-Clause`, `Apache-2.0`, `MPL-2.0`, or `LicenseRef-Freeware` for a closed plugin that is free to use. A plugin built on an SDK must follow that SDK's licence (hundekraft's is GPL-3.0-or-later). |
-| `file` | hundekraft: `<id>.knl` or `<id>.op1p`. opus: a name ending in `.opmod`. |
+| `file` | hundekraft: `<id>.knl` or `<id>.op1p`. coop: `<id>.coop`. opus: a name ending in `.opmod`. |
 | `screenshot` | A `.png` file name in the folder, usually `screenshot.png`. |
 | `manual` | Always `manual.md`. |
 | `source` | Optional but strongly encouraged: an `https://` link to the source, at most 200 characters. |
@@ -100,6 +100,33 @@ For opus the id is 1 to 40 lower-case letters, digits, `_`, `.` or `-`, and
 | `video` | Optional: an `https://` link to an `.mp4` of the plugin with its real sound, at most 300 characters. Shown on its card. |
 | `tags` | Optional, up to 8 tags of 1 to 20 lower-case letters, digits or hyphens. |
 | `savedName` | opus only: `opus.<id>`. |
+
+### One plugin, a file per firmware
+
+A plugin built for more than one firmware keeps one folder and one entry,
+with a file per firmware. Move `firmware`, `file`, `version`, `requires` (and
+`savedName` for opus) into a `builds` list, one build per firmware; the rest
+of `plugin.json` is shared. `source` can be shared at the top, or given per
+build. Each build follows the rules above for its firmware, and the folder
+holds every build's file.
+
+```json
+{
+  "format": 1,
+  "id": "rings",
+  "name": "rings",
+  "kind": "synth",
+  "...": "the shared fields as above",
+  "builds": [
+    { "firmware": "op1/hundekraft", "file": "rings.knl", "version": "0.1", "requires": "hundekraft 3.0.3" },
+    { "firmware": "op1/coop", "file": "rings.coop", "version": "0.5", "requires": "coop e5" }
+  ]
+}
+```
+
+The plugin shows up under each of its firmwares, once, and the Plugins tab
+offers the file (with its version and requirements) for the firmware chosen
+in Settings.
 
 ## The checks
 

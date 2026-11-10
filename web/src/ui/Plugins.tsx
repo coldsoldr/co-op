@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { PLUGIN_FIRMWARE, PLUGIN_KINDS, type PluginIndex, type PluginIndexEntry } from '@co-op/shared/plugins';
+import {
+  PLUGIN_FIRMWARE,
+  PLUGIN_KINDS,
+  pluginBuilds,
+  pluginFor,
+  type PluginIndex,
+  type PluginIndexEntry,
+} from '@co-op/shared/plugins';
 import {
   fetchManual,
   fetchPluginBytes,
@@ -81,7 +88,18 @@ export function Plugins({ active, renderActions, firmwareId, deviceSection, onOp
     load();
   }, [active, load]);
 
-  const open = index?.plugins.find((p) => p.id === openId) ?? null;
+  // A plugin with a file per firmware is shown as the build for the firmware in the Firmware menu,
+  // or else the one chosen in Settings: its file, version and needs, and its install action.
+  const prefer = filter.firmware ?? (isPluginFirmware(firmwareId) ? firmwareId : undefined);
+  const view = useCallback(
+    (plugin: PluginIndexEntry): PluginIndexEntry => (prefer === undefined ? null : pluginFor(plugin, prefer)) ?? plugin,
+    [prefer],
+  );
+  // Kept the same object between renders: the manual loads again when its plugin changes.
+  const open = useMemo(() => {
+    const found = index?.plugins.find((p) => p.id === openId);
+    return found ? view(found) : null;
+  }, [index, openId, view]);
 
   return (
     <section aria-labelledby="plugins-heading">
@@ -150,6 +168,7 @@ export function Plugins({ active, renderActions, firmwareId, deviceSection, onOp
           onOpen={setOpenId}
           returnTo={returnTo}
           renderActions={renderActions}
+          view={view}
         />
       )}
     </section>
@@ -165,10 +184,12 @@ interface PluginListProps {
   onOpen: (id: string) => void;
   returnTo: string | null;
   renderActions: PluginsProps['renderActions'];
+  /** A plugin as it is shown: the build for the firmware the list follows. */
+  view: (plugin: PluginIndexEntry) => PluginIndexEntry;
 }
 
-function PluginList({ index, filter, onFilter, toggled, onToggle, onOpen, returnTo, renderActions }: PluginListProps) {
-  const shown = filterPlugins(index, filter);
+function PluginList({ index, filter, onFilter, toggled, onToggle, onOpen, returnTo, renderActions, view }: PluginListProps) {
+  const shown = filterPlugins(index, filter).map(view);
   const groups = groupByAuthor(shown);
   // A search or filter shows what it found. Otherwise several authors start closed, and a lone
   // author starts open, as a closed group would be all there is to see.
@@ -280,7 +301,12 @@ function PluginFacts({ plugin }: { plugin: PluginIndexEntry }) {
       <p className="badges">
         <span className="badge">{plugin.kind}</span>
         <span className="badge licence">{plugin.license}</span>
-        <span className="badge firmware">{firmwareLabel(plugin.firmware)}</span>
+        {/* The build shown first, then any other firmware the plugin has a file for. */}
+        {[plugin.firmware, ...pluginBuilds(plugin).map((b) => b.firmware).filter((f) => f !== plugin.firmware)].map((id) => (
+          <span key={id} className="badge firmware">
+            {firmwareLabel(id)}
+          </span>
+        ))}
       </p>
       {plugin.requires && <p>Needs {plugin.requires}.</p>}
       <p>{plugin.description}</p>

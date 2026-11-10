@@ -8,6 +8,7 @@ import { installedNames, requiredPlugins } from '../core/plugins/requirements';
 import { op1Opus } from '../core/profiles/op1-opus';
 import type { DeviceProfile } from '../core/profiles/types';
 import { messageOf, sleep } from '../core/util';
+import { CoopInstall } from './CoopPlugins';
 import { CopyToMods } from './CopyToMods';
 import { Dialog } from './Dialog';
 import { saveBlob } from './download';
@@ -75,6 +76,7 @@ export function usePluginPrompt(device: Device): {
       if (!index) return true;
       const loaded = installedNames(installedPlugins);
       const inMods = profile.id === op1Opus.id ? await modsFiles(device) : new Set<string>();
+      // requiredPlugins gives each plugin as its build for this profile, so firmware and file are that build's.
       const known = (p: PluginIndexEntry): boolean =>
         p.firmware === op1Opus.id ? inMods.has(p.file.toLowerCase()) : p.savedName !== undefined && loaded.has(p.savedName);
       const needed = new Map<string, PluginIndexEntry>();
@@ -112,6 +114,8 @@ export function usePluginPrompt(device: Device): {
             <strong>{plugin.name}</strong> (<code>{plugin.file}</code>){' '}
             {plugin.firmware === 'op1/hundekraft' ? (
               <InstallOverUsb plugin={plugin} onInstalled={device.setInstalledPlugins} />
+            ) : plugin.firmware === 'op1/coop' ? (
+              <CoopInstall plugin={plugin} onInventory={device.setInstalledPlugins} />
             ) : (
               <CopyToMods plugin={plugin} device={device} />
             )}{' '}

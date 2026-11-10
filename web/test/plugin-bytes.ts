@@ -15,10 +15,12 @@ export interface KnlOptions {
   /** Author and version for the extension table; without either there is no table. */
   author?: string;
   version?: string;
+  /** KNPL for a .knl (the default), COOP for a .coop, which has the same layout. */
+  magic?: 'KNPL' | 'COOP';
 }
 
 /** A valid .knl: the 144-byte header, 16 bytes of body and an optional extension table, with its CRC. */
-export function knlBytes({ kind = 2, name = 'tape drive', author, version }: KnlOptions = {}): Uint8Array {
+export function knlBytes({ kind = 2, name = 'tape drive', author, version, magic = 'KNPL' }: KnlOptions = {}): Uint8Array {
   const entries: [number, Uint8Array][] = [];
   if (author !== undefined) entries.push([2, ascii(`${author}\0`)]);
   if (version !== undefined) entries.push([3, ascii(`${version}\0`)]);
@@ -27,7 +29,7 @@ export function knlBytes({ kind = 2, name = 'tape drive', author, version }: Knl
   const extSize = entries.length === 0 ? 0 : entries.reduce((sum, [, data]) => sum + 4 + pad(data.length), 0) + 4;
   const bytes = new Uint8Array(extAt + extSize);
   const v = view(bytes);
-  bytes.set(ascii('KNPL'), 0);
+  bytes.set(ascii(magic), 0);
   v.setUint16(4, 1, true);
   v.setUint16(6, 144, true);
   v.setUint32(8, bytes.length, true);

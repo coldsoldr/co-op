@@ -11,8 +11,12 @@ import {
   checkOp1p,
   checkOpmod,
   checkScreenshot,
+  manifestBuilds,
   parsePluginManifest,
+  pluginBuilds,
+  pluginFor,
   pluginIndexEntry,
+  pluginIndexEntryOfBuilds,
   validatePluginFiles,
   type PluginIssue,
   type PluginManifest,
@@ -539,7 +543,8 @@ describe('validatePluginFiles', () => {
 
   it('accepts a complete hundekraft plugin and returns what its file says', async () => {
     const result = await check(manifest(), good());
-    expect(result).toEqual({ issues: [], warnings: [], info: { kind: 'fx', savedName: 'tape drive' } });
+    const info = { kind: 'fx', savedName: 'tape drive' };
+    expect(result).toEqual({ issues: [], warnings: [], info, infos: [info] });
   });
 
   it('ignores OS clutter', async () => {
@@ -639,7 +644,7 @@ describe('validatePluginFiles', () => {
   it('checks an opus plugin', async () => {
     const { manifest: m } = parsePluginManifest(opusValid(), 'opus.chorus-2');
     const files = { 'plugin.json': ascii('{}'), '10_chorus.opmod': ascii('OPMD1234'), 'manual.md': ascii('x'), 'screen.png': png(64, 64) };
-    expect(await check(m as PluginManifest, files)).toEqual({ issues: [], warnings: [], info: {} });
+    expect(await check(m as PluginManifest, files)).toEqual({ issues: [], warnings: [], info: {}, infos: [{}] });
     const bad = await check(m as PluginManifest, { ...files, '10_chorus.opmod': ascii('MZ') });
     expect(messages(bad.issues)).toBe('does not start with OPMD (not an opus plugin)');
   });
@@ -697,5 +702,121 @@ describe('coop plugins', () => {
     rejects({ firmware: 'op1/coop', id: 'saw', file: 'saw.knl', kind: 'synth' }, /file must be "saw.coop"/, 'saw');
     rejects({ firmware: 'op1/coop', id: 'saw', file: 'saw.coop', kind: 'feature' }, /synth or an fx/, 'saw');
     rejects({ firmware: 'op1/coop', id: 'my-saw', file: 'my-saw.coop', kind: 'synth' }, /lower-case letters, digits or _/, 'my-saw');
+  });
+});
+
+describe('plugins with a file per firmware', () => {
+  const coopFile = (options: KnlOptions = {}): Uint8Array =>
+    knlWith((b, h) => b.set(ascii('COOP'), h), { kind: 1, name: 'rings', ...options });
+  /** A rings manifest with a hundekraft and a coop build. */
+  const ringsJson = (overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+    const json: Record<string, unknown> = {
+      ...valid(),
+      id: 'rings',
+      name: 'rings',
+      kind: 'synth',
+      builds: [
+        { firmware: 'op1/hundekraft', file: 'rings.knl', version: '0.1', requires: 'hundekraft 3.0.3' },
+        { firmware: 'op1/coop', file: 'rings.coop', version: '0.5', requires: 'coop e5', source: 'https://example.com/coop' },
+      ],
+      ...overrides,
+    };
+    for (const key of ['firmware', 'file', 'version', 'requires']) if (!(key in overrides)) delete json[key];
+    return json;
+  };
+  const parseRings = (overrides: Record<string, unknown> = {}) => parsePluginManifest(ringsJson(overrides), 'rings');
+
+  it('parses the builds, with the shared source filled in, and the first at the top', () => {
+    const { manifest, issues } = parseRings();
+    expect(issues).toEqual([]);
+    const source = 'https://github.com/coldsoldr/te-op1-cfw';
+    expect(manifest?.builds).toEqual([
+      { firmware: 'op1/hundekraft', file: 'rings.knl', version: '0.1', requires: 'hundekraft 3.0.3', source },
+      { firmware: 'op1/coop', file: 'rings.coop', version: '0.5', requires: 'coop e5', source: 'https://example.com/coop' },
+    ]);
+    expect(manifest).toMatchObject({ firmware: 'op1/hundekraft', file: 'rings.knl', version: '0.1', requires: 'hundekraft 3.0.3' });
+    const [, coop] = manifestBuilds(manifest as PluginManifest);
+    expect(coop).toMatchObject({ id: 'rings', firmware: 'op1/coop', file: 'rings.coop', version: '0.5', requires: 'coop e5' });
+    expect(coop).not.toHaveProperty('builds');
+  });
+
+  it('refuses build fields at the top beside builds', () => {
+    const { issues } = parseRings({ firmware: 'op1/coop', version: '1' });
+    expect(messages(issues)).toMatch(/firmware goes in each of builds/);
+    expect(messages(issues)).toMatch(/version goes in each of builds/);
+  });
+
+  it('checks each build against its firmware', () => {
+    const bad = (builds: unknown, pattern: RegExp): void => {
+      const { manifest, issues } = parseRings({ builds });
+      expect(manifest).toBeNull();
+      expect(messages(issues)).toMatch(pattern);
+    };
+    bad([], /builds must be a list of 1 to 3/);
+    bad('x', /builds must be a list/);
+    bad([{ firmware: 'op1/coop', file: 'rings.knl', version: '1' }], /builds\[1\]: file must be "rings.coop"/);
+    bad([{ firmware: 'op1/coop', file: 'rings.coop' }], /builds\[1\]: version must be a string/);
+    bad([{ firmware: 'op1/coop', file: 'rings.coop', version: '1', extra: 1 }], /builds\[1\]: unknown field "extra"/);
+    bad(
+      [{ firmware: 'op1/coop', file: 'rings.coop', version: '1' }, { firmware: 'op1/coop', file: 'rings.coop', version: '2' }],
+      /builds\[2\]: a second build for op1\/coop/,
+    );
+    bad([{ firmware: 'op1/coop', file: 'rings.coop', version: '1', savedName: 'opus.x' }], /builds\[1\]: savedName is only for op1\/opus/);
+    bad(['x'], /builds\[1\]: a build must be a JSON object/);
+  });
+
+  it('checks every build file and indexes them all', async () => {
+    const { manifest } = parseRings();
+    const m = manifest as PluginManifest;
+    const files: Record<string, Uint8Array> = {
+      'plugin.json': ascii('{}'),
+      'rings.knl': knl({ kind: 1, name: 'rings' }),
+      'rings.coop': coopFile({ ext: [[3, '0.4']] }),
+      'manual.md': ascii('# rings\n'),
+      'screenshot.png': png(320, 240),
+    };
+    const listing = Object.entries(files).map(([path, bytes]) => ({ path, size: bytes.length }));
+    const read = async (path: string): Promise<Uint8Array> => files[path] as Uint8Array;
+    const result = await validatePluginFiles(m, listing, read);
+    expect(result.issues).toEqual([]);
+    expect(result.warnings).toEqual([
+      { plugin: 'rings', file: 'rings.coop', message: 'the file says version "0.4" but plugin.json says "0.5"' },
+    ]);
+    expect(result.infos).toEqual([
+      { kind: 'synth', savedName: 'rings' },
+      { kind: 'synth', savedName: 'rings', version: '0.4' },
+    ]);
+
+    const missing = await validatePluginFiles(m, listing.filter((f) => f.path !== 'rings.coop'), read);
+    expect(missing.issues).toEqual([{ plugin: 'rings', file: 'rings.coop', message: 'missing' }]);
+    expect(missing.infos).toBeNull();
+
+    const entry = pluginIndexEntryOfBuilds(m, [
+      { sizeBytes: 10, sha256: 'aa', info: { kind: 'synth', savedName: 'rings' } },
+      { sizeBytes: 20, sha256: 'bb', info: { kind: 'synth', savedName: 'rings', version: '0.4' } },
+    ]);
+    expect(entry).toMatchObject({ id: 'rings', firmware: 'op1/hundekraft', file: 'rings.knl', sizeBytes: 10, savedName: 'rings' });
+    expect(entry.builds).toEqual([
+      { firmware: 'op1/hundekraft', file: 'rings.knl', version: '0.1', requires: 'hundekraft 3.0.3', source: 'https://github.com/coldsoldr/te-op1-cfw', sizeBytes: 10, sha256: 'aa', savedName: 'rings' },
+      { firmware: 'op1/coop', file: 'rings.coop', version: '0.5', requires: 'coop e5', source: 'https://example.com/coop', sizeBytes: 20, sha256: 'bb', savedName: 'rings', headerVersion: '0.4' },
+    ]);
+
+    expect(pluginBuilds(entry).map((b) => b.firmware)).toEqual(['op1/hundekraft', 'op1/coop']);
+    expect(pluginFor(entry, 'op1/hundekraft')).toMatchObject({ file: 'rings.knl', version: '0.1' });
+    const coop = pluginFor(entry, 'op1/coop');
+    expect(coop).toMatchObject({ id: 'rings', name: 'rings', file: 'rings.coop', version: '0.5', requires: 'coop e5', sizeBytes: 20, sha256: 'bb', headerVersion: '0.4' });
+    expect(coop?.builds).toEqual(entry.builds);
+    expect(pluginFor(entry, 'op1/opus')).toBeNull();
+  });
+
+  it('leaves a single-firmware entry as it is', () => {
+    const { manifest } = parsePluginManifest(valid(), 'tape_drive');
+    const entry = pluginIndexEntryOfBuilds(manifest as PluginManifest, [{ sizeBytes: 1, sha256: 'ab', info: { kind: 'fx', savedName: 'tape drive' } }]);
+    expect(entry).not.toHaveProperty('builds');
+    expect(pluginFor(entry, 'op1/hundekraft')).toBe(entry);
+    expect(pluginFor(entry, 'op1/coop')).toBeNull();
+    expect(pluginBuilds(entry)).toEqual([
+      { firmware: 'op1/hundekraft', file: 'tape_drive.knl', version: '1.0', requires: 'hundekraft 3.0.3', source: 'https://github.com/coldsoldr/te-op1-cfw', sizeBytes: 1, sha256: 'ab', savedName: 'tape drive' },
+    ]);
   });
 });

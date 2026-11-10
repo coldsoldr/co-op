@@ -62,6 +62,21 @@ describe('requiredPlugins', () => {
     const traits = synth({ type: 'iter', knobs: [0, 0, 0, 0, 0x100, 0, 0, 0], opus: { plugin: 'opus.dx', fx_type: 'opus.chorus2' } });
     expect(ids(requiredPlugins(traits, INDEX, 'op1/opus'))).toEqual(['dx', 'chorus2']);
   });
+
+  it('gives a plugin with a file per firmware as its build for that firmware', () => {
+    const knl = entry('rings', 'op1/hundekraft', 'rings');
+    const coop = { firmware: 'op1/coop' as const, file: 'rings.coop', version: '0.5', sizeBytes: 2, sha256: '1'.repeat(64), savedName: 'rings' };
+    const { firmware, file, version, sizeBytes, sha256 } = knl;
+    const both: PluginIndex = {
+      ...INDEX,
+      plugins: [{ ...knl, builds: [{ firmware, file, version, sizeBytes, sha256, savedName: 'rings' }, coop] }],
+    };
+    const traits = synth({ type: 'rings' });
+    expect(requiredPlugins(traits, both, 'op1/coop')).toEqual([expect.objectContaining({ id: 'rings', firmware: 'op1/coop', file: 'rings.coop' })]);
+    expect(requiredPlugins(traits, both, 'op1/hundekraft')).toEqual([expect.objectContaining({ id: 'rings', file: 'rings.knl' })]);
+    expect(pluginContext(both, 'op1/coop', null)?.library).toEqual(new Map([['rings', 'rings']]));
+    expect(pluginContext(both, 'op1/opus', null)?.library.size).toBe(0);
+  });
 });
 
 describe('installedNames', () => {

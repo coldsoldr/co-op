@@ -1,4 +1,4 @@
-import type { PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
+import { pluginFor, type PluginIndex, type PluginIndexEntry } from '@co-op/shared/plugins';
 import type { SoundTraits } from '../codec/sound-traits';
 import { getProfile } from '../profiles/registry';
 import type { PluginContext } from '../profiles/types';
@@ -28,7 +28,12 @@ function pluginNames(traits: SoundTraits, firmwareId: string): Set<string> {
  */
 export function requiredPlugins(traits: SoundTraits, index: PluginIndex, firmwareId: string): PluginIndexEntry[] {
   const names = pluginNames(traits, firmwareId);
-  return index.plugins.filter((p) => p.firmware === firmwareId && p.savedName !== undefined && names.has(p.savedName));
+  return pluginsFor(index, firmwareId).filter((p) => p.savedName !== undefined && names.has(p.savedName));
+}
+
+/** The library plugins with a build for `firmwareId`, each as that build (pluginFor), in index order. */
+function pluginsFor(index: PluginIndex, firmwareId: string): PluginIndexEntry[] {
+  return index.plugins.flatMap((p) => pluginFor(p, firmwareId) ?? []);
 }
 
 /** The saved names of the plugins an inventory reports loaded; empty without an inventory. */
@@ -43,6 +48,6 @@ export function installedNames(inventory: Inventory | null): Set<string> {
 export function pluginContext(index: PluginIndex | null, firmwareId: string, inventory: Inventory | null): PluginContext | null {
   if (!index) return null;
   const library = new Map<string, string>();
-  for (const p of index.plugins) if (p.firmware === firmwareId && p.savedName !== undefined) library.set(p.savedName, p.id);
+  for (const p of pluginsFor(index, firmwareId)) if (p.savedName !== undefined) library.set(p.savedName, p.id);
   return { library, loaded: installedNames(inventory) };
 }
