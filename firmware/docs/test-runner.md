@@ -103,3 +103,12 @@ media devices at all, serve the page from localhost (a secure context) instead:
 wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware/tools && python3 -m http.server 8765'
 ```
 then open `http://localhost:8765/coop_sysex.html` in Chrome or Edge.
+
+## m1 additions (2026-11-10)
+
+- `#@pfmode N` (0..4, 255 off): event type 6, `a` = the mode; the runner reprograms the performance counters
+  (`coop_pf_set_mode`) when it plays; put it before the `#@mark` of the section it is for. Both compilers know it
+  (`run_script_check.mjs`: 5 scripts, 0 different).
+- `tests/sim/run_emu.sh`: `PLUGINS="a.coop b.coop"` puts plugin files on the NAND (both runs), `ONLY_B=1` runs only the
+  runner side; `tests/sim/idle_340s.txt` for scenarios up to ~5 min.
+- The run file holds 64 KB of text (the `stages` line and the gaps' stall columns per section).

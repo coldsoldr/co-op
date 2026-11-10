@@ -509,8 +509,56 @@ def core_noteon_patches(sdram_tramp_at=SDRAM_TRAMP_AT):
     return [(site, call24(site, CORE_NOTEON), call24(site, sdram_tramp_at)) for site in CORE_NOTEON_CALLERS]
 
 
+# m1 (docs/request-rings-collateral.md, test images only: COOP_M1=1): the stock callback's stage calls through the
+# timing thunks of core/sdram/m1_thunks.S. Each site is a CALL pcrel24 the stock makes, checked byte for byte; it is
+# retargeted at a 12-byte L1 trampoline (`[--SP] = P0; P0 = thunk; JUMP (P0)`, the thunk pops P0) placed in the dead
+# bytes of mix loop A (MIXA_SITE + 6 .. MIXA_RESUME: replaced by the mix trampoline, no branch reaches them; the
+# objdump of e4e's L1 shows none). The USB push is a CALL (P1) from an imm pair, repointed at its thunk directly.
+M1_SITES = (                                                      # (site, stock CALL bytes, thunk symbol)
+    (0xffa049e8, bytes.fromhex('ffe302e7'), 'coop_m1_dsp'),       # CALL 0xffa017ec: the DSP (voices, buses, master)
+    (0xffa02798, bytes.fromhex('ffe304f1'), 'coop_m1_voices'),    # CALL 0xffa009a0: the synth voice loop
+    (0xffa02282, bytes.fromhex('ffe301f2'), 'coop_m1_drums'),     # CALL 0xffa00684: the drum voice loop
+    (0xffa02116, bytes.fromhex('ffe39df6'), 'coop_m1_master_a'),  # CALL 0xffa00e50: the master stage, first site
+    (0xffa02db2, bytes.fromhex('ffe34ff0'), 'coop_m1_master_b'),  # CALL 0xffa00e50: the master stage, second site
+    (0xffa048fc, bytes.fromhex('ffe3e4f6'), 'coop_m1_tail'),      # CALL 0xffa036c4: the callback's last call
+)
+M1_PUSH_SITE = 0xffa049fc                                         # P1.L = 0x1b3c; P1.H = 0x019e; (CALL (P1) at 0xffa04a04)
+M1_PUSH_STOCK = bytes.fromhex('09e13c1b' '49e19e01')
+M1_TRAMP_AT = MIXA_SITE + 6
+M1_TRAMP_END = MIXA_RESUME
+
+
+def m1_tramp(thunk):
+    """[--SP] = P0 (48 01); P0.L / P0.H = thunk; JUMP (P0) (50 00): 12 bytes, every other register untouched."""
+    return bytes.fromhex('4801') + imm_pair_bytes(0, thunk) + bytes.fromhex('5000')
+
+
+def loaded_at(dxe, address, n):
+    for b in dxe:
+        loaded = ldr_dump.loaded_bytes(b)
+        if loaded is not None and b['target'] <= address and address + n <= b['target'] + len(loaded):
+            return bytes(loaded[address - b['target']:address - b['target'] + n])
+    raise SystemExit('{:#x} not found in a loaded block'.format(address))
+
+
+def m1_patches(dxe, syms):
+    if os.environ.get('COOP_NO_MIXA'):
+        raise SystemExit('COOP_M1 needs mix loop A replaced (its dead bytes hold the trampolines)')
+    out, a = [], M1_TRAMP_AT
+    for site, stock, name in M1_SITES:
+        t = m1_tramp(symbol_address(syms, name)[0])
+        if a + len(t) > M1_TRAMP_END:
+            raise SystemExit('m1 trampolines do not fit')
+        out.append((a, loaded_at(dxe, a, len(t)), t))
+        out.append((site, stock, call24(site, a)))
+        a += len(t)
+    out.append((M1_PUSH_SITE, M1_PUSH_STOCK, imm_pair_bytes(1, symbol_address(syms, 'coop_m1_push')[0])))
+    return out
+
+
 def thunk_addresses(elf):
     syms = read_elf_symbols(elf)
+    thunks_global['_syms'] = syms
     try:
         keyev = symbol_address(syms, 'coop_key_event')[0]
     except Exception:
@@ -666,6 +714,12 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
         patches.append((PHASE_LOOP_SITE, PHASE_LOOP_STOCK, jump_l(PHASE_LOOP_SITE, thunks['phase_loop'])))
     if tape:
         patches += tape_patches(tramps)
+    for address, stock, new in patches:
+        patch_at(dxe, address, stock, new)
+        lines.append('site {:#x}: {} -> {}'.format(address, stock.hex(), new.hex()))
+    patches = []
+    if os.environ.get('COOP_M1'):                          # m1 test images: after the mix patches made loop A dead
+        patches = m1_patches(dxe, thunks_global['_syms'])
     for address, stock, new in patches:
         patch_at(dxe, address, stock, new)
         lines.append('site {:#x}: {} -> {}'.format(address, stock.hex(), new.hex()))

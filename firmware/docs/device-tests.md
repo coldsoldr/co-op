@@ -1714,3 +1714,43 @@ Result: (pending)
 Listen for crackles and UI lag in each, and whether four voices is enough for how you play rings.
 
 Result: (pending)
+
+## m1: where the rest of the block goes while rings plays — device test (pending, 2026-11-10)
+
+From `docs/request-rings-collateral.md`. A **test image**, not a release: it plays as e4e, plus measuring.
+- `build/pkg/op1_246_coop_m1_collateral.op1` (sha256 `61a058bf4d8fed828c8b5d988c34910cc407d5907623b1017e43bd4895d16037`),
+  copy in Downloads. `COOP_M1=1`, `--tape-stereo --set-word g_coop_spread=32767 --set-word g_coop_gap_prof=1`;
+  `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `m1`. e4e plus:
+  - seven stock calls of the audio callback through timing thunks (`core/sdram/m1_thunks.S`: the DSP `0xffa017ec`,
+    the synth and drum voice loops, the master stage from its two sites, `l1v_push_lr`, the callback's last call
+    `0xffa036c4`), and marks at each voice's thunk entry, the voice hook's end and the plugin's own render, all with
+    the two performance counters; each runner section gets a `stages` line (`docs/performance.md` "m1");
+  - the runner's `#@pfmode` event (the counters' events per run).
+- Three test engines, in Downloads: `probe_alu.coop` (sha256 `2118b3d1...2929`), `probe_code.coop` (`9156a13f...a90f`),
+  `probe_sdram.coop` (`ae413921...bb17`). Each costs 25,000 cycles a render and loads one thing only: compute, 4-12 KB
+  of code, or 64 cache lines of SDRAM through a 16-128 KB region.
+- Runner scripts `tests/sim/run_m1_mode0.txt`, `run_m1_mode2.txt`, `run_m1_mode4.txt` (one counter mode each, 4 min
+  33 s): idle, voltage, rings modal, rings sympathetic, probe_alu, probe_code 4 / 8 / 12 KB, probe_sdram's eight loads,
+  rings modal with the four encoders turning; 10 s of a held six-note chord each.
+- op1emu (`tests/sim/run_emu.sh` with the five plugins, the runner from the NAND) [C op1emu]: every section landed
+  on the engine it names (`lost_sections 0`, `ctl_turns 22`: the variant steps the script asks for), no fault, and
+  the block adds up (`cb = dsp + push + cb_tail + the rest`). op1emu has no caches, so every engine there leaves the
+  same ~21.6 k a block beside its renders (the stock's per-voice work 19.4 k, coop's thunk 2.1 k): only the device
+  can show what rings adds. The chord scenario with the thunks wired matches the plain image but for 25-36 samples
+  1 LSB apart in the first 0.23 s (the boot's timing; a release image has none of this).
+
+**What to do**:
+1. Flash m1. Install `probe_alu.coop`, `probe_code.coop`, `probe_sdram.coop` (co-op Plugins > On your OP-1, or the
+   SysEx page); rings 0.3 and saw stay. **The synth engine list must hold exactly the stock engines, saw, rings and
+   the three probes**: the script picks engines by their row (remove or switch off any other synth plugin; effect
+   plugins don't matter). Power-cycle.
+2. Pick a sound slot in poly mode (the script changes its engine: voltage, rings, the probes; save anything you want
+   to keep first), stay on the synth page.
+3. The SysEx page, "Run a test": `run_m1_mode0.txt`, Run (recording on). It takes 4 min 33 s; don't touch the OP-1.
+   Then `run_m1_mode2.txt`, then `run_m1_mode4.txt` (the same session, other counters).
+4. Send the three `_run.txt` files (and the stats file of the last). If a section played the wrong engine (the
+   recording or your ears), say which: the rows are the one thing op1emu could not prove for your list.
+
+If the image crashes at boot (a photo), hold COM while switching on and flash e4e.
+
+Result: (pending)

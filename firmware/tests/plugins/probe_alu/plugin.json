@@ -1,0 +1,37 @@
+{
+  "name": "probe_alu",
+  "kind": "synth",
+  "symbol": "ENGINE_probe_alu",
+  "sources": [
+    "probe_alu.cc"
+  ],
+  "sdk_include_dirs": [
+    "plugins/probe_common"
+  ],
+  "defaults": [
+    16384,
+    16384,
+    16384,
+    16384
+  ],
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "m1 test engine (docs/request-rings-collateral.md): pure compute: a saw and a wait on CYCLES to the target cost. Not a real plugin.",
+  "controls": [
+    {
+      "id": "target",
+      "name": "cost",
+      "action": "fn_turn",
+      "encoder": "green",
+      "word": 6,
+      "kind": "steps",
+      "steps": [
+        "25k",
+        "12k",
+        "37k"
+      ],
+      "default": 0,
+      "random": false
+    }
+  ]
+}

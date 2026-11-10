@@ -345,7 +345,12 @@ extern "C" void coop_synth_voice_hook(uint32_t r7)
     coop_mark(0x21);
     if (r7 >= COOP_SYNTH_VOICES) return;
     voice_hook(g_pan_synth, (int)r7, 1u << r7, 0);
+    coop_mark_prof(0x23);                                                 /* m1: the hook's end (the stock's per-voice work follows) */
 }
+
+/* m1: from coop_synth_render_thunk's entry (stereo_thunks.S), before the second LFO's stage 0: so the gap from the
+ * previous voice's 0x23 to this one is the stock's own per-voice work (LFO, envelope, gain, the loop). */
+extern "C" void coop_m1_thunk_in(void) { coop_mark_prof(0x12); }
 
 /* R7 at the drum render call counts 12 down to 1 (0xffa0072a, 0xffa00946). The render's R0 (active) only sets the
  * voice's done flag (0xffa00906..0xffa0090c): the stock sums the voice either way, so the hook does too. */

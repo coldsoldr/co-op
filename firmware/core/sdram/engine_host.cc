@@ -43,6 +43,7 @@ extern volatile int g_l1_lease_open;                                       /* l1
 /* e4: cost per engine, per voice render and per block (all its voices in one block), for the stats `engines` line */
 struct ecost { uint64_t sum, bsum; uint32_t n, max, bn, bmax, bacc; };
 static struct ecost g_ecost[SLOTS];
+static uint32_t g_peng_blk, g_peng_blk_pf[2];                             /* m1: this block's plugin renders and their counters */
 
 extern "C" const coop_engine_t *coop_engine_at(int n) { return (n > 0 && n < SLOTS) ? g_eng[n].e : 0; }
 
@@ -115,9 +116,15 @@ extern "C" void coop_eng_render(void *self, int16_t *out, const int16_t *params)
     int n = engine_of(params);
     if (n != g_voice_eng[v]) voice_start(self, params, v, n);            /* the engine changed under a live voice */
     if (!n) { g_eng_iter_renders++; ITER_RENDER(self, out, params); return; }
+    uint32_t pf0[2]; coop_pf_now(pf0);
     uint32_t c0 = coop_cost_now();
+    coop_mark_at_pf(0x14, c0, pf0[0], pf0[1]);                           /* m1: the plugin's own render starts */
     g_eng[n].e->render(v, state_of(n, v), out, PITCH_INC, params);
     uint32_t dt = coop_cost_now() - c0;
+    coop_cost_add_pf(COOP_COST_PENG, dt, pf0);                            /* m1: per render, per section (the runner) */
+    coop_mark(0x1C);                                                      /* m1: ... and ends */
+    g_peng_blk += dt;
+    if (g_coop_pf_live) { uint32_t p[2]; coop_pf_now(p); g_peng_blk_pf[0] += p[0] - pf0[0]; g_peng_blk_pf[1] += p[1] - pf0[1]; }
     if (dt > g_eng_cycles_max) g_eng_cycles_max = dt;
     g_eng_renders++;
     struct ecost *c = &g_ecost[n];
@@ -128,6 +135,12 @@ extern "C" void coop_eng_render(void *self, int16_t *out, const int16_t *params)
 /* e4: the block's total per engine (coop_stats.cc coop_eng_block_end, after the voice loop) */
 extern "C" void coop_engine_block_end(void)
 {
+    if (g_peng_blk) {                                                     /* m1: every plugin render of the block */
+        struct coop_cost *c = &g_coop_cost[COOP_COST_PENG_B];
+        c->sum += g_peng_blk; c->n++; if (g_peng_blk > c->max) c->max = g_peng_blk;
+        c->p0 += g_peng_blk_pf[0]; c->p1 += g_peng_blk_pf[1];
+        g_peng_blk = 0; g_peng_blk_pf[0] = 0; g_peng_blk_pf[1] = 0;
+    }
     for (int n = 1; n < SLOTS; n++) {
         struct ecost *c = &g_ecost[n];
         if (!c->bacc) continue;

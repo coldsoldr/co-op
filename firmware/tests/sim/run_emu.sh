@@ -21,6 +21,9 @@ IMG="--tape-stereo --set-word g_coop_spread=32767 --set-word g_coop_force_stereo
 
 ov=$(mktemp -d); trap 'rm -rf "$ov"' EXIT
 mkdir -p "$ov/user"
+if [ -n "${PLUGINS:-}" ]; then                        # m1: plugin files on the NAND (both runs), e.g. PLUGINS="build/plugins/rings.coop ..."
+  mkdir -p "$ov/plugins"; for f in $PLUGINS; do cp -f "$f" "$ov/plugins/"; done
+fi
 info=$(python3 -I "$here/tools/run_script.py" "$SCEN" -o "$ov/user/coop_autorun.crun")
 echo "$info"
 origin=$(echo "$info" | sed -n 's/.*block 0 = op1emu guest \([0-9]*\) ms.*/\1/p')
@@ -35,13 +38,17 @@ rm -f "$WORK/${TAG}_nand.bin"
 flock "$LOCK" python3 -I "$here/tools/make_nand.py" --provision "$WORK/provision_nand.py" --firmware "$STOCK_OP1" \
     --mkyaffs2 "$WORK/yaffs2utils/mkyaffs2" --overlay "$ov" --output "$WORK/${TAG}_nand.bin" >/dev/null
 
-flock "$LOCK" "$here/tests/sim/hear.sh" "$WORK/${TAG}_img.ldr" "$SCEN" "$WORK/${TAG}_a.wav" | tail -1
+if [ -z "${ONLY_B:-}" ]; then                          # ONLY_B=1: the runner run alone (no A to compare with)
+  if [ -n "${PLUGINS:-}" ]; then NAND_KEEP=$WORK/${TAG}_nand_a.bin; cp -f "$WORK/${TAG}_nand.bin" "$NAND_KEEP"; export NAND_KEEP; fi
+  flock "$LOCK" "$here/tests/sim/hear.sh" "$WORK/${TAG}_img.ldr" "$SCEN" "$WORK/${TAG}_a.wav" | tail -1
+  unset NAND_KEEP
+fi
 NAND_KEEP=$WORK/${TAG}_nand.bin flock "$LOCK" "$here/tests/sim/hear.sh" "$WORK/${TAG}_auto.ldr" "$IDLE" "$WORK/${TAG}_b.wav" | tail -1
 
 echo "== A (op1emu input) vs B (runner), aligned on the onset"
-python3 -I "$here/tools/wav_compare.py" "$WORK/${TAG}_a.wav" "$WORK/${TAG}_b.wav" --skip-seconds 5 --align 200 || true
-python3 -I "$here/tools/wav_levels.py" "$WORK/${TAG}_a.wav" 2>/dev/null | tail -3 || true
+[ -z "${ONLY_B:-}" ] && { python3 -I "$here/tools/wav_compare.py" "$WORK/${TAG}_a.wav" "$WORK/${TAG}_b.wav" --skip-seconds 5 --align 200 || true; }
+[ -z "${ONLY_B:-}" ] && { python3 -I "$here/tools/wav_levels.py" "$WORK/${TAG}_a.wav" 2>/dev/null | tail -3 || true; }
 python3 -I "$here/tools/wav_levels.py" "$WORK/${TAG}_b.wav" 2>/dev/null | tail -3 || true
 echo "== B: coop_run.txt"
 python3 -I "$here/tools/nand_file.py" "$WORK/${TAG}_nand.bin" coop_run.txt || true
-grep -ciE "fault|exception" "$WORK/${TAG}_a.log" "$WORK/${TAG}_b.log" || true
+grep -ciE "fault|exception" $([ -z "${ONLY_B:-}" ] && echo "$WORK/${TAG}_a.log") "$WORK/${TAG}_b.log" || true

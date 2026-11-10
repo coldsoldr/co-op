@@ -1127,3 +1127,54 @@ This closes the data placement work for now (the owner, 2026-11-08: "let's do 3 
 left on the table, priced in `docs/fx-data-placement-plan.md` §5: the kernel-only priority page (4 k + 5-15 k per
 active effect, behind a switch, a CPLB table edit) and the data levers for spring, cwo, grid, delay and phone
 (4-12 k each). The engines are compute-bound: no memory lever applies to them.
+
+## m1: the callback split by stage, and three probe engines (2026-11-10) [I until the device]
+
+The rings port's request (`docs/request-rings-collateral.md`): beside rings 0.3 the callback spends ~95 k a block
+that is neither rings' renders, coop's hook nor the recorder; beside six voltage voices ~6 k. m1 measures where, in
+a test image (`COOP_M1=1` at build, `g_coop_gap_prof=1`), and which resource a playing engine spends to cause it.
+
+**Stage sites.** The gap profile's marks (p5g) carry the two performance counters (`g_mk_pf`, `coop_mark_at_pf`) and
+`coop_gap_block` turns each block's sorted marks into spans, entered once a block into the cost table (so every
+runner section has them, with p0 / p1): the `stages` line, cycles per block. The stock edges come from seven call
+sites in L1, each a 4-byte `CALL pcrel24` retargeted at a 12-byte trampoline in the dead bytes of mix loop A
+(`[--SP] = P0; P0 = thunk; JUMP (P0)`) and from there to a thunk in `core/sdram/m1_thunks.S` that marks, calls the
+stock function with the stock's registers and stack pointer (the return address kept in a static word), and marks
+again; the USB push's imm pair is repointed at its thunk [C bytes: the objdump of e4e's L1; C op1emu].
+
+| span | marks | what |
+|---|---|---|
+| `cb` | 0x01-0x03 | CoopAudioCb's entry to the stock callback's return |
+| `dsp` | 0x60-0x61 | `0xffa017ec` (from `0xffa049e8`): the voice loops, buses, FX, the master stage |
+| `voices` | 0x62-0x63 | the synth voice loop `0xffa009a0` (from `0xffa02798`) |
+| `drums` | 0x64-0x65 | the drum voice loop `0xffa00684` (from `0xffa02282`; not reached with no drum voice) |
+| `master_a` / `_b` | 0x66-0x69 | `0xffa00e50` from `0xffa02116` and `0xffa02db2` (decimation, FX, pan-mix, EQ, comp, downmix) |
+| `push` | 0x6a-0x6b | `l1v_push_lr` `0x019e1b3c` |
+| `cb_tail` | 0x6c-0x6d | the callback's last call `0xffa036c4` (made on its way out, `0xffa048fc`) |
+| `voice_coop` | 0x12-0x23 | per synth voice: coop's render thunk from its entry to the voice hook's end |
+| `render` | 0x10-0x18 | the render as the thunk times it (a plugin engine: the dispatcher and the plugin) |
+| `plugin` | 0x14-0x1c | the plugin's own render, inside the dispatcher |
+| `hook` | 0x21-0x23 | coop's voice hook |
+
+`tools/m1_table.py` derives the rest: the dispatcher (`render - plugin`), coop's thunk (`voice_coop - render - hook`:
+LFO 2's stage 0, the counters, the bookkeeping), **the stock's own per-voice work** (`voices - voice_coop`: LFO,
+envelope, gain, the loop), `dsp_rest`, `cb_rest` (`cb - dsp - push - cb_tail`: coop's block start and the stock's
+input stages), and the **collateral**: `(cb - render - hook)` over the idle section's, with each stage's increase.
+
+op1emu (`run_m1_mode0.txt`, saw, rings and the probes installed) [C op1emu, no cache: the device numbers are the
+ones that count]: idle `cb` 46,326 = `dsp` 44,841 (master stage 32,269, `dsp_rest` 12,301) + `push` 128 + `cb_tail`
+119 + `cb_rest` 1,238. Six voltage voices: renders 50,349, hook 14,262, collateral 21,544 = the stock's per-voice
+work 19,361 + coop's thunk 2,106; rings modal: renders 72,944 (rings itself 72,014, the dispatcher 930), the same
+collateral 21,665; every probe the same within 30 cycles.
+
+**Probes** (`tests/plugins/probe_*`, test plugins): `probe_alu` (a saw, then a wait on CYCLES in registers),
+`probe_code` (4, 8 or 12 KB of straight-line NOPs a render, word 5), `probe_sdram` (64 cache lines a render through
+a 16, 64 or 128 KB region of its `.bss`: sequential reads, sequential writes, or one access per line 4,128 bytes
+apart; word 5). Each waits on CYCLES until its render has cost the target (word 6: 25,000 by default, 12,500,
+37,500), so a probe's render costs what rings' does on the device and only what it leaves for the rest of the
+block differs. Whichever probe's collateral matches rings' says which resource to attack.
+
+**Counter modes per run**: the runner's event 6 (`#@pfmode N` in a script) reprograms the counters at a section
+boundary (`coop_pf_set_mode`, on the layout the boot probe kept). The three scripts run modes 0 (code / data stall
+cycles), 2 (code stalls / 0x98 data stalls) and 4 (code stalls / 0x95 fill-buffer stalls); the p6h sweep proved
+0x83, 0x99, 0x98, 0x95 on this unit.

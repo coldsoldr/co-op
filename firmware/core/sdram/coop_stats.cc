@@ -127,8 +127,8 @@ extern "C" void coop_eng_cost(uint32_t fn, uint32_t dt, int drum)
     uint32_t now = coop_cost_now();
     uint32_t d[2] = { 0, 0 };
     if (g_coop_pf_live) { coop_pf_now(d); d[0] -= g_eng_pf0[0]; d[1] -= g_eng_pf0[1]; }
-    coop_mark_at(0x10 + (drum & 1), now - dt);                     /* the render's start (the thunk read CYCLES there) */
-    coop_mark_at(0x18 + (drum & 1), now);
+    coop_mark_at_pf(0x10 + (drum & 1), now - dt, g_eng_pf0[0], g_eng_pf0[1]);   /* the render's start (the thunk read CYCLES there) */
+    coop_mark_at_pf(0x18 + (drum & 1), now, d[0] + g_eng_pf0[0], d[1] + g_eng_pf0[1]);
     if (!drum) cost_add_d(g_eng_blk[0] ? COOP_COST_VREST : COOP_COST_VFIRST, dt, d[0], d[1]);   /* p6f: first of the block vs the rest */
     g_eng_blk[drum & 1] += dt;
     g_eng_blk_pf[drum & 1][0] += d[0]; g_eng_blk_pf[drum & 1][1] += d[1];
@@ -159,6 +159,7 @@ extern "C" void coop_eng_block_end(void)
  * that ran over g_coop_slow_th cycles plus the worst one since boot. */
 volatile uint32_t g_mk_n, g_mk_lost;
 uint32_t g_mk[COOP_MK_N][2];
+uint32_t g_mk_pf[COOP_MK_N][2];
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_slow_th = 1000000; }   /* ~1.7 blocks */
 #define SLOW_KEEP 4
 struct slow { uint32_t dt, block, n, lost; uint32_t mk[COOP_MK_N][2]; };
@@ -185,15 +186,54 @@ extern "C" void coop_slow_keep(uint32_t dt)
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_gap_prof = 0; }
 struct coop_gap g_gap[COOP_GAP_N];
 uint32_t g_gap_blocks, g_gap_full;
+
+/* m1 (docs/request-rings-collateral.md): stage spans from the block's sorted marks, each summed over the block (a
+ * span that recurs, as the per-voice ones, adds up) and entered once a block into the cost table, so the runner's
+ * sections carry them with the counters. From the start mark to the next end mark of the same span. */
+static const uint8_t m1_span[COOP_M1_N][2] = {
+    { 0x60, 0x61 },   /* 0 dsp: the stock 0xffa017ec (voices, buses, FX, master) */
+    { 0x62, 0x63 },   /* 1 voices: the synth voice loop 0xffa009a0 */
+    { 0x64, 0x65 },   /* 2 drums: the drum voice loop 0xffa00684 */
+    { 0x66, 0x67 },   /* 3 master_a: 0xffa00e50 from 0xffa02116 */
+    { 0x68, 0x69 },   /* 4 master_b: 0xffa00e50 from 0xffa02db2 */
+    { 0x6a, 0x6b },   /* 5 push: l1v_push_lr 0x019e1b3c */
+    { 0x6c, 0x6d },   /* 6 cb_tail: the callback's last call 0xffa036c4 */
+    { 0x12, 0x23 },   /* 7 voice_coop: a synth render thunk, entry to the voice hook's end */
+    { 0x10, 0x18 },   /* 8 render: the thunk-timed render (for a plugin engine: the dispatcher and the plugin) */
+    { 0x14, 0x1c },   /* 9 plugin: the plugin's own render */
+    { 0x21, 0x23 },   /* 10 hook: coop's synth voice hook */
+    { 0x01, 0x03 },   /* 11 cb: CoopAudioCb's entry to the stock callback's return */
+};
+static void m1_spans(uint32_t n)
+{
+    uint32_t open_t[COOP_M1_N], open_p[COOP_M1_N][2], sum[COOP_M1_N], ps[COOP_M1_N][2];
+    uint8_t is_open[COOP_M1_N], seen[COOP_M1_N];
+    for (int k = 0; k < COOP_M1_N; k++) { is_open[k] = 0; seen[k] = 0; sum[k] = 0; ps[k][0] = ps[k][1] = 0; }
+    for (uint32_t i = 0; i < n; i++) {
+        uint32_t id = g_mk[i][0] & 0xFF;
+        for (int k = 0; k < COOP_M1_N; k++) {
+            if (id == m1_span[k][0]) { is_open[k] = 1; open_t[k] = g_mk[i][1]; open_p[k][0] = g_mk_pf[i][0]; open_p[k][1] = g_mk_pf[i][1]; }
+            else if (id == m1_span[k][1] && is_open[k]) {
+                is_open[k] = 0; seen[k] = 1;
+                sum[k] += g_mk[i][1] - open_t[k];
+                ps[k][0] += g_mk_pf[i][0] - open_p[k][0]; ps[k][1] += g_mk_pf[i][1] - open_p[k][1];
+            }
+        }
+    }
+    for (int k = 0; k < COOP_M1_N; k++) if (seen[k]) cost_add_d(COOP_COST_M1 + k, sum[k], ps[k][0], ps[k][1]);
+}
 extern "C" void coop_gap_block(void)
 {
     uint32_t n = g_mk_n;
     if (n > COOP_MK_N) n = COOP_MK_N;
     for (uint32_t i = 1; i < n; i++) {
-        uint32_t id = g_mk[i][0], t = g_mk[i][1], j = i;
+        uint32_t id = g_mk[i][0], t = g_mk[i][1], q0 = g_mk_pf[i][0], q1 = g_mk_pf[i][1], j = i;
         uint32_t t0 = g_mk[0][1];
-        while (j > 0 && g_mk[j - 1][1] - t0 > t - t0) { g_mk[j][0] = g_mk[j - 1][0]; g_mk[j][1] = g_mk[j - 1][1]; j--; }
-        g_mk[j][0] = id; g_mk[j][1] = t;
+        while (j > 0 && g_mk[j - 1][1] - t0 > t - t0) {
+            g_mk[j][0] = g_mk[j - 1][0]; g_mk[j][1] = g_mk[j - 1][1];
+            g_mk_pf[j][0] = g_mk_pf[j - 1][0]; g_mk_pf[j][1] = g_mk_pf[j - 1][1]; j--;
+        }
+        g_mk[j][0] = id; g_mk[j][1] = t; g_mk_pf[j][0] = q0; g_mk_pf[j][1] = q1;
     }
     for (uint32_t i = 1; i < n; i++) {
         uint32_t key = (g_mk[i - 1][0] & 0xFF) << 8 | (g_mk[i][0] & 0xFF), dt = g_mk[i][1] - g_mk[i - 1][1];
@@ -202,7 +242,10 @@ extern "C" void coop_gap_block(void)
         if (k == COOP_GAP_N) { g_gap_full++; continue; }
         struct coop_gap *g = &g_gap[k];
         g->key = key; g->n++; g->sum += dt; if (dt > g->max) g->max = dt;
+        g->p0 += g_mk_pf[i][0] - g_mk_pf[i - 1][0];               /* m1: 0 while the monitor is off (op1emu) */
+        g->p1 += g_mk_pf[i][1] - g_mk_pf[i - 1][1];
     }
+    m1_spans(n);
     g_gap_blocks++;
 }
 
@@ -251,6 +294,14 @@ static void pf_program(int layout)
     g_coop_pf_layout_used = (uint32_t)layout;
 }
 extern "C" void coop_pf_boot(void) { pf_program(g_coop_pf_layout == 1 ? 1 : 0); }   /* auto starts as 0; the probe decides */
+/* m1: the test runner's #@pfmode event (coop_runner.cc, the audio interrupt, at a section boundary): the counters'
+ * events change for the sections that follow, on the layout the boot probe kept. Nothing happens while the monitor
+ * never came up (op1emu): the mode word is still set so the run file says what was asked. */
+extern "C" void coop_pf_set_mode(uint32_t m)
+{
+    g_coop_pf_mode = m;
+    if (g_coop_pf_live || m > 4) pf_program((int)(g_coop_pf_layout_used & 1u));
+}
 
 /* p6f: the instruction-cache probe (docs/fx-data-placement-plan.md §5, the voice table's open question): a 4 KB
  * straight-line function (2048 NOPs: 128 cache lines, no loads, no branches) run three times from the main thread at
@@ -375,6 +426,7 @@ static void put_cost_lines(void)                             /* the "cost" and "
     put("engines avg/max/n");                                /* per voice render, by engine; synth= / drum= per block */
     put_cost("synth=", COOP_COST_SYNTH); put_cost("drum=", COOP_COST_DRUM);
     put_cost("synth_first=", COOP_COST_VFIRST); put_cost("synth_rest=", COOP_COST_VREST);   /* p6f: per render, the block's first synth voice vs the others */
+    put_cost("plugin_own=", COOP_COST_PENG); put_cost("plugin_own_block=", COOP_COST_PENG_B);   /* m1: inside the dispatcher, per section */
     for (int i = 0; i < COOP_ENG_N; i++) {
         if (!g_coop_eng_fn[i]) break;
         put_cost(eng_name(g_coop_eng_fn[i]), COOP_COST_ENG + i);
@@ -382,11 +434,21 @@ static void put_cost_lines(void)                             /* the "cost" and "
     for (int n = 1; n < 64; n++) {                                     /* e4: each plugin engine, per voice render and per block */
         uint32_t c[6];
         if (!coop_engine_cost(n, c)) continue;
-        const char *nm = coop_engine_name(n);
-        put(" eng_"); put(nm ? nm : "?"); put("="); putn(c[0]); put("/"); putn(c[1]); put("/"); putn(c[2]);
-        put(" eng_"); put(nm ? nm : "?"); put("_block="); putn(c[3]); put("/"); putn(c[4]); put("/"); putn(c[5]);
+        const char *nm0 = coop_engine_name(n);
+        char nm[24]; int q = 0;                                        /* m1: the list's name has spaces for '_': one token */
+        for (const char *p = nm0 ? nm0 : "?"; *p && q < 23; p++) nm[q++] = *p == ' ' ? '_' : *p;
+        nm[q] = 0;
+        put(" eng_"); put(nm); put("="); putn(c[0]); put("/"); putn(c[1]); put("/"); putn(c[2]);
+        put(" eng_"); put(nm); put("_block="); putn(c[3]); put("/"); putn(c[4]); put("/"); putn(c[5]);
     }
     put("\n");
+    if (g_cost_src[COOP_COST_M1 + 11].n) {                   /* m1: the gap profile's spans (g_coop_gap_prof, a COOP_M1 image) */
+        put("stages avg/max/n/p0/p1 per block");
+        static const char *const m1_names[COOP_M1_N] = { "dsp=", "voices=", "drums=", "master_a=", "master_b=", "push=", "cb_tail=",
+                                                          "voice_coop=", "render=", "plugin=", "hook=", "cb=" };
+        for (int k = 0; k < COOP_M1_N; k++) put_cost(m1_names[k], COOP_COST_M1 + k);
+        put("\n");
+    }
 }
 
 static void puthex2(uint32_t v) { char b[3] = { "0123456789abcdef"[(v >> 4) & 15], "0123456789abcdef"[v & 15], 0 }; put(b); }
@@ -454,14 +516,15 @@ static void put_gaps(const struct coop_gap *g, uint32_t blocks)
     if (!blocks || !g[0].n) return;
     static uint8_t done[COOP_GAP_N];
     for (int i = 0; i < COOP_GAP_N; i++) done[i] = 0;
-    put("gaps per-block/avg/max/n"); kv("blocks", blocks);
-    for (int k = 0; k < 24; k++) {
+    put("gaps per-block/avg/max/n/p0/p1"); kv("blocks", blocks);   /* m1: p0 / p1 per block, when the monitor counts */
+    for (int k = 0; k < 40; k++) {
         int best = -1;
         for (int i = 0; i < COOP_GAP_N; i++) if (g[i].n && !done[i] && (best < 0 || g[i].sum > g[best].sum)) best = i;
         if (best < 0) break;
         done[best] = 1;
         put(" "); puthex2(g[best].key >> 8); put(">"); puthex2(g[best].key); put("=");
         putn((uint32_t)(g[best].sum / blocks)); put("/"); putn((uint32_t)(g[best].sum / g[best].n)); put("/"); putn(g[best].max); put("/"); putn(g[best].n);
+        if (g[best].p0 || g[best].p1) { put("/"); putn((uint32_t)(g[best].p0 / blocks)); put("/"); putn((uint32_t)(g[best].p1 / blocks)); }
     }
     put("\n");
 }

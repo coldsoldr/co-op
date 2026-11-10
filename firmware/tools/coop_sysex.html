@@ -295,7 +295,7 @@ const RS_KEYS = {
   enc1: 0x3b, enc2: 0x3c, enc3: 0x3d, enc4: 0x3e,
 };
 const RS_ENC = { enc1: 0, enc2: 1, enc3: 2, enc4: 3 };
-const EV_KEY = 1, EV_KNOB = 2, EV_CLICK = 3, EV_MARK = 4, EV_END = 5;
+const EV_KEY = 1, EV_KNOB = 2, EV_CLICK = 3, EV_MARK = 4, EV_END = 5, EV_PFMODE = 6;
 const RS_SKIP = new Set(['accel', 'wait', 'wait-frames', 'screenshot', 'quit', 'volume']);
 const msToBlock = ms => Math.floor((ms * 44100 + 32000) / 64000);
 function compileScript(text, defaultName) {
@@ -315,6 +315,11 @@ function compileScript(text, defaultName) {
         if (!arg || enc.encode(arg).length > 16) fail(n, 'mark name of 1..16 bytes expected');
         if (!marks.includes(arg)) marks.push(arg);
         raw.push([t, seq++, EV_MARK, marks.indexOf(arg), 0]);
+      } else if (d === 'pfmode') {
+        if (t === null) fail(n, '#@pfmode needs a preceding at');
+        const pm = toInt(arg, n);
+        if (!((pm >= 0 && pm <= 4) || pm === 255)) fail(n, '#@pfmode 0..4 or 255 expected');
+        raw.push([t, seq++, EV_PFMODE, pm, 0]);
       } else if (d === 'tail') tail = toInt(arg, n);
       else if (d === 'lead') lead = toInt(arg, n);
       else if (d === 'name') name = arg;

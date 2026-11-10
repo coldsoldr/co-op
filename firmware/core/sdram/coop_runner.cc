@@ -28,6 +28,7 @@
  */
 #include <stdint.h>
 #include "coop_cost.h"
+extern "C" void coop_pf_set_mode(uint32_t m);                    /* coop_stats.cc (m1) */
 
 #define PUSH_KEY  ((void (*)(int))0x019C2F24u)                    /* KeyHandler::PushKey(key | state << 8) */
 #define WAKE_KEYS ((void (*)(void))0x019C2F04u)                   /* post the KeyHandler semaphore */
@@ -46,7 +47,7 @@
 #define FILE_MAX  (HDR + MAX_MARKS * MARK_LEN + MAX_EV * 8)
 #define SNAPS     4
 
-enum { EV_KEY = 1, EV_KNOB = 2, EV_CLICK = 3, EV_MARK = 4, EV_END = 5 };
+enum { EV_KEY = 1, EV_KNOB = 2, EV_CLICK = 3, EV_MARK = 4, EV_END = 5, EV_PFMODE = 6 };   /* 6: m1, the counters' events */
 enum { RS_IDLE = 0, RS_ARMED = 1, RS_RUNNING = 2, RS_DONE = 3, RS_ABORTED = 4, RS_ERROR = 5 };
 
 struct ev { uint32_t block; uint8_t type, a; int8_t b; uint8_t pad; };
@@ -60,7 +61,7 @@ static char g_marks[MAX_MARKS][MARK_LEN + 1];
 static uint16_t g_nev, g_nmarks;
 static struct snap g_snap[SNAPS];
 static volatile uint32_t g_snap_w, g_snap_r;
-static char g_run_text[24576];                                   /* p5g: a gaps line per section */
+static char g_run_text[65536];                                   /* p5g: a gaps line per section (m1: with the stall columns) */
 static int g_run_len;
 
 volatile uint32_t g_run_state, g_run_block, g_run_idx, g_run_sections, g_run_abort, g_run_click, g_run_error;
@@ -136,6 +137,7 @@ static int parse(const uint8_t *f, int n)
         if (e.type == EV_KEY) ok = ok && key_ok(e.a) && (e.b == 0 || e.b == 1);
         else if (e.type == EV_KNOB) ok = ok && e.a < 4 && e.b != 0 && e.b >= -4 && e.b <= 4;
         else if (e.type == EV_MARK) ok = ok && e.a < nmarks;
+        else if (e.type == EV_PFMODE) ok = ok && (e.a <= 4 || e.a == 0xFF);
         else ok = ok && (e.type == EV_CLICK || e.type == EV_END);
         if (!ok) return 4;
         g_ev[i] = e; prev = e.block;
@@ -169,6 +171,7 @@ extern "C" void coop_runner_block(void)
         case EV_KNOB:  ADD_KNOB(e->a, e->b); WAKE_KEYS(); break;
         case EV_CLICK: g_run_click = 1; break;
         case EV_MARK:  close_section(); g_sec_mark = e->a; break;
+        case EV_PFMODE: coop_pf_set_mode(e->a); break;         /* m1: put it just before a mark: the section starts clean */
         case EV_END:   release_all(); close_section(); g_run_state = RS_DONE; return;
         }
     }

@@ -16,6 +16,8 @@ op1emu ignores them:
     #@tail MS       how long the run goes on after the last event (default 8000)
     #@lead MS       the gap from the start click to the first event (default 1000)
     #@name NAME     the script name in the run file (default: the file name)
+    #@pfmode N      m1: the performance counters' mode (0..4, 255 off; coop_stats.cc) from the current `at` time on;
+                    put it before the #@mark of the section it is for
 
 Times are made relative: the first event lands LEAD ms after the start click (block 0), every other event keeps its
 distance from the first. A block is 64 samples at 44.1 kHz. The end click and the END event come TAIL ms after the
@@ -38,7 +40,7 @@ KEYS = {
     'enc1': 0x3b, 'enc2': 0x3c, 'enc3': 0x3d, 'enc4': 0x3e,
 }
 ENCODERS = {'enc1': 0, 'enc2': 1, 'enc3': 2, 'enc4': 3}
-EV_KEY, EV_KNOB, EV_CLICK, EV_MARK, EV_END = 1, 2, 3, 4, 5
+EV_KEY, EV_KNOB, EV_CLICK, EV_MARK, EV_END, EV_PFMODE = 1, 2, 3, 4, 5, 6
 NAME_LEN, MARK_LEN, MAX_EV, MAX_MARKS = 32, 16, 2048, 32
 SKIP = {'accel', 'wait', 'wait-frames', 'screenshot', 'quit', 'volume'}
 
@@ -75,6 +77,13 @@ def compile_script(text, default_name='script'):
                 if arg not in marks:
                     marks.append(arg)
                 raw.append((t, seq, EV_MARK, marks.index(arg), 0)); seq += 1
+            elif d == 'pfmode':
+                if t is None:
+                    raise ScriptError('line %d: #@pfmode needs a preceding at' % n)
+                m = int(arg)
+                if not (0 <= m <= 4 or m == 255):
+                    raise ScriptError('line %d: #@pfmode 0..4 or 255 expected' % n)
+                raw.append((t, seq, EV_PFMODE, m, 0)); seq += 1
             elif d == 'tail':
                 tail = int(arg)
             elif d == 'lead':
@@ -166,7 +175,8 @@ def main():
         names = {v: k for k, v in KEYS.items()}
         for blk, ty, a, b in events:
             what = {EV_KEY: 'key %s %s' % (names.get(a, hex(a)), 'down' if b else 'up'), EV_KNOB: 'knob %d %+d' % (a, b),
-                    EV_CLICK: 'click', EV_MARK: 'mark %s' % (marks[a] if ty == EV_MARK else ''), EV_END: 'end'}[ty]
+                    EV_CLICK: 'click', EV_MARK: 'mark %s' % (marks[a] if ty == EV_MARK else ''), EV_END: 'end',
+                    EV_PFMODE: 'pfmode %d' % a}[ty]
             print('%7d  %9.1f ms  %s' % (blk, blk * 64000.0 / 44100, what))
     print('%s: %d events, %d marks, %d blocks (%.1f s), %d bytes; block 0 = op1emu guest %d ms'
           % (name, len(events), len(marks), events[-1][0], events[-1][0] * 64.0 / 44100, len(data), origin))

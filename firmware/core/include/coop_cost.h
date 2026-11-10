@@ -19,7 +19,11 @@ struct coop_cost { uint64_t sum; uint32_t n, max; uint64_t p0, p1; };   /* p0 / 
 #define COOP_ENG_N        16
 #define COOP_COST_VFIRST  (COOP_COST_ENG + COOP_ENG_N)       /* p6f: the first synth voice render of a block ... */
 #define COOP_COST_VREST   (COOP_COST_VFIRST + 1)             /* ... and the others (where the code refetch happens) */
-#define COOP_COST_N       (COOP_COST_VREST + 1)
+#define COOP_COST_PENG    (COOP_COST_VREST + 1)              /* m1: a plugin engine's own render, inside the dispatcher */
+#define COOP_COST_PENG_B  (COOP_COST_PENG + 1)               /* m1: the same summed per block (all its voices) */
+#define COOP_COST_M1      (COOP_COST_PENG_B + 1)             /* m1: COOP_M1_N stage spans per block (coop_gap_block) */
+#define COOP_M1_N         12
+#define COOP_COST_N       (COOP_COST_M1 + COOP_M1_N)
 
 extern uint32_t g_coop_eng_fn[COOP_ENG_N];   /* the render function of each COOP_COST_ENG entry (0 = free) */
 
@@ -66,19 +70,29 @@ static inline void coop_cost_add_pf(int i, uint32_t dt, const uint32_t p0[2])
 #define COOP_MK_N 128
 extern volatile uint32_t g_mk_n, g_mk_lost;
 extern uint32_t g_mk[COOP_MK_N][2];
-static inline void coop_mark_at(uint32_t id, uint32_t t)
+extern uint32_t g_mk_pf[COOP_MK_N][2];       /* m1: the two counters at each mark, while the gap profile runs */
+extern "C" volatile uint32_t g_coop_gap_prof;
+static inline void coop_mark_at_pf(uint32_t id, uint32_t t, uint32_t p0, uint32_t p1)
 {
     uint32_t n = g_mk_n;
-    if (n < COOP_MK_N) { g_mk[n][0] = id; g_mk[n][1] = t; g_mk_n = n + 1; } else g_mk_lost++;
+    if (n < COOP_MK_N) { g_mk[n][0] = id; g_mk[n][1] = t; g_mk_pf[n][0] = p0; g_mk_pf[n][1] = p1; g_mk_n = n + 1; } else g_mk_lost++;
+}
+static inline void coop_mark_at(uint32_t id, uint32_t t)
+{
+    uint32_t p[2] = { 0, 0 };
+    if (g_coop_gap_prof) coop_pf_now(p);                       /* m1: read beside the mark (t is a few cycles earlier) */
+    coop_mark_at_pf(id, t, p[0], p[1]);
 }
 static inline void coop_mark(uint32_t id) { coop_mark_at(id, coop_cost_now()); }
+/* m1: marks that exist only for the gap profile (the per-voice and dispatcher edges): nothing when it is off. */
+static inline void coop_mark_prof(uint32_t id) { if (g_coop_gap_prof) coop_mark(id); }
 
 /* The gap profile (p5g diagnostic, g_coop_gap_prof = 1): every block, the time between each pair of consecutive marks
  * (in time order) is added up by pair, key = prev id << 8 | id. The time between two coop marks is stock code (or an
  * interrupt), so the table says where an ordinary block spends what coop does not measure. The runner snapshots it
  * per section. */
-struct coop_gap { uint32_t key, n, max; uint64_t sum; };
-#define COOP_GAP_N 48
+struct coop_gap { uint32_t key, n, max; uint64_t sum, p0, p1; };   /* m1: p0 / p1, the counters' deltas over the gap */
+#define COOP_GAP_N 64
 extern struct coop_gap g_gap[COOP_GAP_N];
 extern uint32_t g_gap_blocks, g_gap_full;
 #endif
