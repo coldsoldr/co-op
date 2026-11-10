@@ -134,3 +134,13 @@ All four parts are built (`docs/performance.md` "m1", `docs/device-tests.md` "m1
 op1emu (no caches) gives ~21.6 k of collateral for every engine, rings included: 19.4 k of it is the stock's own
 per-voice work for six voices, which the request's "unaccounted" figure included. The device run decides the rest;
 the table goes into `plugins/rings/README.md` when it is back.
+
+
+## Result (device, 2026-11-10)
+
+`plugins/rings/README.md` "m1: where the collateral goes" (tables: `docs/m1-results.md`). Against `probe_alu` (the same
+render cost with no memory and no code), rings modal adds 23 k a block outside its renders and sympathetic 47 k. The
+code probes reproduce it (4 KB +33 k, 12 KB +47 k), mostly as coop's own per-voice code (render thunk, LFO 2 stage 0,
+bookkeeping, voice hook) being fetched again after every render; the write probe gives the rest of rings' pattern
+(+10-12 k in the stock DSP outside the voices). Reads and region size matter little. Next: keep the core's
+per-voice path resident (a core change, every plugin engine gains), then rings' code per render and its hot stores.

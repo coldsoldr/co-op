@@ -1753,4 +1753,8 @@ From `docs/request-rings-collateral.md`. A **test image**, not a release: it pla
 
 If the image crashes at boot (a photo), hold COM while switching on and flash e4e.
 
-Result: (pending)
+**Result (owner, 2026-11-10): PASS, the run is in.** Three runs (`m1_mode0_20261110-1645`, `m1_mode2_20261110-1656`,
+`m1_mode4_20261110-1701`), every section on its engine, `lost_sections 0`, no crash; the last two sections
+(`sdram_ws128k`, `rings_knobs`) did not fit the run file's 64 KB (raised to 128 KB). The slot had nitro in FX 1.
+Tables in `docs/m1-results.md`, the reading in `plugins/rings/README.md` "m1: where the collateral goes": code
+(coop's per-voice code refetched after every render) is the larger part, stores the other.

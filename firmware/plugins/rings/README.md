@@ -182,3 +182,48 @@ The DSP files (`src/`, `op1/`) are te-op1-cfw's, with only what coop's rules req
 The host test (`tests/host/rings/rings_compare.cc`) builds te-op1-cfw's own engine and this one from the same seeded
 call sequence (4,367 notes, every model and polyphony pair, knob jumps, bends, steals, idle gaps): the outputs are
 bit-identical, and a 1-LSB change to a live constant makes them differ.
+
+## m1: where the collateral goes (device, 2026-11-10)
+
+From `firmware/docs/request-rings-collateral.md`; the full tables are in `firmware/docs/m1-results.md`. Cycles per
+block, six-note chords, rings 0.3; "collateral" is the callback minus the engine's renders and coop's hook, over the
+idle section. `probe_alu` renders as much as rings (149 k a block) with no memory and almost no code, so its collateral
+is what **any** engine costs beside its renders here; the rest is what rings' resources add:
+
+| section | renders | hook | collateral | over alu | where the excess is (vs alu) |
+|---|---|---|---|---|---|
+| voltage (stock) | 59,111 | 19,916 | 50,075 | | |
+| probe_alu | 149,308 | 19,401 | 52,012 | 0 | |
+| rings modal | 100,172 | 23,648 | 75,152 | +23,140 | coop's thunk +6.1 k, hook +4.2 k, the rest of the DSP +10.3 k, coop's block start / input +3.1 k |
+| rings sympathetic | 154,420 | 26,153 | 98,545 | +46,533 | thunk +18.1 k, hook +6.8 k, the stock's per-voice work +6.6 k, DSP rest +11.6 k, block start +6.9 k, dispatcher +3.2 k |
+| probe_code 4 KB | 149,812 | 36,238 | 85,044 | +33,032 | thunk +23.9 k, hook +16.8 k (not in the collateral) |
+| probe_code 12 KB | 177,071 | 39,543 | 99,003 | +46,991 | thunk +33.2 k, hook +20.1 k, the stock's per-voice work +5.9 k |
+| probe_sdram reads, 128 KB | 158,759 | 21,347 | 65,219 | +13,207 | DSP rest +4.5 k, block start +5.0 k |
+| probe_sdram writes, 128 KB | 159,061 | 21,647 | 81,934 | +29,922 | DSP rest +12.3 k, block start +10.2 k, master +1.7 k |
+
+What the probes say [C device, this run]:
+1. **Code is the larger part.** A render that runs several KB of code evicts coop's own per-voice code between the
+   renders (the render thunk, LFO 2's stage 0, the counters and bookkeeping, the voice hook: SDRAM code that runs six
+   times a block, once after every render), and it is fetched again after every voice: the hook's code fetch stalls
+   go from 3.2 k a block (alu) to 17.9 k (code 4 KB), the thunk grows by 24 k (4 KB) to 33 k (12 KB). Rings' thunk
+   and hook grow less (modal +6 k / +4 k, sympathetic +18 k / +7 k): its code eviction is smaller than the 4 KB
+   probe's, and its stores (2.) make up the rest. Inside its own render rings is code-bound too: of the sympathetic
+   render's 154 k a block, 51 k are code fetch stalls (modal 21 k of 100 k).
+2. **Stores are the other part.** The write probe adds 12 k to the stock DSP outside the voices and 10 k to the
+   block start (dirty lines written back, the stock's data evicted); rings adds 10-12 k to the DSP rest, as the write
+   probe does, where the read probe adds 4.5 k. Region size made little difference (16 KB within ~15 % of 128 KB for
+   reads, equal for writes): the probe's 12 KB a block did not stay in the data cache from one block to the next.
+3. **Not the dispatcher, not the stock's per-voice work, not the master stage**: each moves 1-7 k.
+
+So rings' ~95 k (request) is in this run: ~52 k that any engine of rings' cost leaves (half of it the stock's own
+per-voice work, 25 k, which the request's "unaccounted" included), plus 23 k (modal) / 47 k (sympathetic) from code
+and stores. The m1 marks themselves add to the thunk path (op1emu: 2.1 k of thunk a block; device with alu: 15.4 k),
+so the thunk figures are high in absolute terms; the differences between sections are what the probes measure.
+
+Next levers, by size:
+- **Core: keep coop's per-voice code resident.** The thunk + hook path between renders is SDRAM code refetched six
+  times a block once an engine's code is large (+24-40 k for 4-12 KB of engine code). Shrinking it and keeping it
+  contiguous, or running it from L1 instruction memory, helps every plugin engine, not only rings.
+- **Rings: less code per render** (the control code compact, the sympathetic path's footprint) and fewer SDRAM
+  stores in the hot state (the L1 lease for the per-voice state that is written every block).
+- The 44.1 kHz voice interface (~5 % of rings' render) comes after both.

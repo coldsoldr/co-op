@@ -61,7 +61,7 @@ static char g_marks[MAX_MARKS][MARK_LEN + 1];
 static uint16_t g_nev, g_nmarks;
 static struct snap g_snap[SNAPS];
 static volatile uint32_t g_snap_w, g_snap_r;
-static char g_run_text[65536];                                   /* p5g: a gaps line per section (m1: with the stall columns) */
+static char g_run_text[131072];                                   /* p5g: a gaps line per section (m1: with the stall columns) */
 static int g_run_len;
 
 volatile uint32_t g_run_state, g_run_block, g_run_idx, g_run_sections, g_run_abort, g_run_click, g_run_error;
