@@ -33,6 +33,7 @@ struct Scratch {
       int32_t excitation[kScratchSubblock];
       int32_t in_scaled[kScratchSubblock];
       int32_t half_x[kScratchSubblock];
+      int32_t weights_end[64];           // ModalResonator::Process: the block's end weights (kMaxModalModes)
     } modal;
     struct {                             // the string models' block
       int32_t excitation[kScratchBlock];

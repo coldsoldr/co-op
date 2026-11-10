@@ -48,6 +48,8 @@ levels from the engine (`RingsScreenVoices`).
   work area: 748 bytes) in the core's scratchpad loan (`coop_l1_scratch`, 1312 bytes), and the limiter's soft-limit
   table (1,028 bytes, read every sample of every voice) in the lease (`coop_l1_lease`, 1,056 bytes taken). SDRAM
   fallbacks for both. The other tables are read per block, or are too big (the FM model's 16 KB sine table).
+  0.4: the scratch holds the modal end weights too (896 bytes), and the lease also takes the engine's per-render
+  state and the modal modes (3,296 bytes in all; "0.4" below).
 - Cost (avg / max / n; the budget is 580,499 cycles a block):
 
   | | per voice render | per block |
@@ -151,15 +153,91 @@ when still, for 2-9 % more compute a block (`RecomputeFilters` slower). Neither 
 footprint needs the control code rewritten (the modal coefficients in compact assembly), and the ~95 k may not be
 code at all.
 
+## 0.4: fewer SDRAM stores (2026-11-10)
+
+After m1b the rest of rings' excess over `probe_alu` on the device was mostly stores (the write probe's pattern:
+`dsp_rest` +10-11 k, `cb_rest` +4-7 k a block). 0.4 moves what rings writes every block out of SDRAM. **The output is
+bit-identical with 0.3**; only where the state lives changes. Gates [C host / simulator]: `make -C
+tests/host/rings` (te-op1-cfw's engine over the 90 s scenario: with the lease, with every lease refused
+(`RINGS_NO_LEASE`), and with 14 modes a voice in L1 so the te-op1-cfw build's "all" moves its modes across the L1 home
+at every polyphony change); the shipped build 0.4 against 0.3 with and without the lease (300,505 voice blocks, the
+output and the mix); `halfband-check` 0 mismatches.
+
+**Measured first: `make -C tests/host/rings dirty [DIRTY_MODEL=m]`** (`dirty_lines.py`, `rings_compare.cc
+-DRINGS_DIRTY`): the shipped build in the GNU simulator compares its `.bss` block to block in 32-byte lines and names
+each written line (the symbol, and inside the voice states the member, from the debug info). A lower bound: a store
+of the value already there is not seen. 0.3, polyphony 4, the scenario's notes and knob walk: SDRAM lines written a
+block (the core's L1 scratch loan and the lease excluded) modal 86, symp 136, string 95, fm 34, quant 134, verb 136.
+Modal's were the mode bank's state (`Mode`: lp, bp and the weights, every sample: ~33 lines), the engine's own
+per-render state (the upsamplers' history 8.5, the smoothers, the batch's records, the allocator, the block clock,
+the screen levels: ~19) and the modal control arrays (~25, every other block). The string models' are the delay
+lines (45 lines a block in symp, 1.3-2.6 K distinct lines), the plucker's comb (25), the strings' own scalars: too big
+for the lease, they stay.
+
+What moved:
+- **The engine's per-render state** (`rings.cc` `Hot`: the upsamplers, smoothers, allocator, the batch's records, the
+  block clock, the screen's levels and the voice pointers; 800 bytes) into the L1 lease, `hot_fallback` in `.bss`
+  when refused.
+- **The modal modes** of each voice state, the first 10 (polyphony 4's count; `OP1RINGS_L1_MODES`), into the lease
+  (6 x 10 x 24 = 1,440 bytes): `ModalResonator::set_l1_bank`. While the resolution fits, modes 0-9 live there and the
+  voice state keeps only those above; `set_resolution` moves them across when polyphony 1 (60 modes) or 2 (28) is
+  struck, and `RingsVoice::CopyFrom` (a steal) keeps each voice state's own L1 home (`RebindBank`).
+- **The modal end weights** (`scratch_end_`, 256 bytes a voice state, written every render and read only inside it)
+  into the core's per-call L1 scratch (`src/scratch.h` `modal.weights_end`; the Scratch is now 896 of the loan's
+  1,312 bytes, a `static_assert` guards it).
+- `op1/reverb_bus.h`: the send buffer is zeroed only when a carrier wrote into it (it is otherwise zero already):
+  four lines a block in every model but verb that the scan can't see (the same values) [I: from the code].
+- The soft-limit table stays leased (now third in line). Init leases most-written first; each part falls back to
+  SDRAM on its own. **Rings 0.4 leases 3,296 bytes** (0.3: 1,056); with saw's 192 the engines hold 3,488 of the
+  4,096 (`docs/engines.md` "L1").
+
+Result, SDRAM lines written a block (simulator, the same scenario; on the device each is a cache miss now and a
+write-back later):
+
+| model | 0.3 | 0.4 |
+|---|---|---|
+| modal | 86 | 31 |
+| symp | 136 | 117 |
+| string | 95 | 77 |
+| fm | 34 | 17 |
+| quant | 134 | 115 |
+| verb | 136 | 117 |
+
+What modal still writes: the control arrays (`scratch_start_`, `gain_`, `log2_pf_`, `geometry_`, ~20 lines a block,
+6 x ~400 bytes: more than the lease has left). Compute does not move (simulator, `make profile` with the shipped
+flags: per render -0.1 to -0.3 %, note on +300 cycles for the moves across the L1 home); `.text` 43,264 -> 44,048
+bytes.
+
+**Code per render: measured, nothing cut.** `code_footprint.py` now also prints each function's lines per block and
+the blocks without a note on. Shipped build, polyphony 4, knobs still (`FOOTPRINT_FLAGS="-DRINGS_STILL
+-DRINGS_NO_JUMP -DRINGS_NO_BEND"`): modal 4.9 KB a block without a note on (6.0 KB with notes), symp 7.4 / 8.3 KB;
+0.3 the same within 0.2 KB (the lease's pointer). Of modal's, `Render` is 1.5 KB and runs every line in every block
+(each voice's path differs: silent, fading, batch, upsampler, screen), so moving code out of line saves no fetches;
+the rest are the kernels and their glue (the mode bank's process 0.64 KB, the half-band and limiter kernels, the
+excitation). Symp adds ~2 KB of control code a block even with the knobs still (`StringVoice::SetParameters` 1.2 KB,
+`StringFixed::Configure`, `Prepare`): the sympathetic strings' positions follow their LFOs, so the parameters move
+every block and can't be skipped bit-identically. The upsampler's remaining C (the 2x stage and copies) is ~0.6 k
+cycles of the stage's 1.8 k, not 1.6 k as estimated above: not worth assembly for the code it saves (~100 bytes). A
+smaller per-block footprint still needs the control code rewritten (0.3's note), or a lower control rate (the owner's
+call).
+
+op1emu (`build/e4e.ldr`, a NAND with only `rings.coop`, `tests/sim/det_eng_rings.txt`) [C op1emu]: `plugins seen 1
+loaded 1 failed 0`, `l1 ... leased 3296 leases 3 lease_refused 0 free 1920`, `eng_rings_block=55378/122341` (0.3 the same
+way: 55,457 / 122,785, `leased 1056 ... free 4160`; op1emu has no cache, so it can't show the gain), no fault. The device run decides: m1's `run_m1_mode0.txt`
+rings sections, against m1b.
+
 ## Building and checking
 
 ```sh
 make -C plugins                      # build/plugins/rings.coop
-make -C tests/host/rings             # bit-identical to te-op1-cfw's engine over a 90 s scenario (halving off)
+make -C tests/host/rings             # bit-identical to te-op1-cfw's engine over a 90 s scenario (halving off),
+                                     # with the L1 lease, with every lease refused, and with 14 modes in L1
 make -C tests/host/rings halved      # the halved schedule against te-op1-cfw: levels and spectra
 make -C tests/host/rings batched     # the batch against the halved schedule (steady state), and the shipped build
 make -C tests/host/rings halfband-check   # the upsampler kernel against its C loop, in the simulator
 make -C tests/host/rings profile     # cycles per render by model and stage, in the simulator
+make -C tests/host/rings footprint   # rings' code lines a block (FOOTPRINT_MODEL, FOOTPRINT_FLAGS)
+make -C tests/host/rings dirty       # rings' SDRAM lines written a block, by owner (DIRTY_MODEL)
 ```
 
 ## Differences from te-op1-cfw

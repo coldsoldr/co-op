@@ -44,7 +44,13 @@ namespace op1 { uint32_t host_cycles; }
 alignas(32) static uint8_t l1_lease[4096];
 alignas(32) static uint8_t l1_scratch[1312];
 static uint32_t leased;
+extern "C" __attribute__((weak)) uint32_t g_rings_l1;   // rings.cc (0.4): what the lease got; weak for older ones
+// RINGS_NO_LEASE (environment, or -D for the simulator): every lease refused, the engine's SDRAM fallbacks only.
 extern "C" void* coop_l1_lease(uint32_t bytes) {
+#ifdef RINGS_NO_LEASE
+  return nullptr;
+#endif
+  if (std::getenv("RINGS_NO_LEASE")) return nullptr;
   bytes = (bytes + 31u) & ~31u;
   if (leased + bytes > sizeof(l1_lease)) return nullptr;
   void* p = l1_lease + leased;
@@ -89,6 +95,49 @@ void Record(uint32_t c, int kind, int model, int poly, int voice) {
 #ifdef RINGS_TRACE
 // The instruction-trace build (`make trace`): a call at each block's start, so the trace can be cut into blocks.
 extern "C" __attribute__((noinline)) void RingsBlockMarker(int block) { __asm__ __volatile__("" : : "r"(block)); }
+#endif
+
+#ifdef RINGS_DIRTY
+// The store-footprint build (`make dirty`, dirty_lines.py): at each block's start the program's .data and .bss are
+// compared with their copy from the last block, 32 bytes (a data cache line) at a time; a line that changed was
+// written in the block. Over blocks [DIRTY_FIRST, end) each line's count of written blocks is printed at the end. A
+// lower bound: a store of the value already there is not seen.
+#include <cstdlib>
+#include <cstring>
+extern "C" char __bss_start[], _end[];   // the linker's: rings' state is all .bss
+namespace dirty {
+const int kFirst = 100;
+uint8_t* base;
+uint8_t* copy;
+uint32_t bytes, lines;
+uint16_t* count;
+void Scan(int block) {
+  if (!base) {
+    base = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(__bss_start) & ~uintptr_t(31));
+    bytes = static_cast<uint32_t>(_end - reinterpret_cast<char*>(base));
+    lines = (bytes + 31) / 32;
+    copy = static_cast<uint8_t*>(std::malloc(lines * 32));
+    count = static_cast<uint16_t*>(std::calloc(lines, 2));
+    std::memcpy(copy, base, bytes);
+    return;
+  }
+  for (uint32_t l = 0; l < lines; ++l) {
+    const uint32_t* a = reinterpret_cast<const uint32_t*>(base + l * 32);
+    uint32_t* c = reinterpret_cast<uint32_t*>(copy + l * 32);
+    bool changed = false;
+    for (int w = 0; w < 8; ++w) {
+      if (l * 32 + w * 4 >= bytes) break;
+      if (a[w] != c[w]) { changed = true; c[w] = a[w]; }
+    }
+    if (changed && block > kFirst) ++count[l];
+  }
+}
+void Print(int blocks) {
+  std::printf("dirty base 0x%08lx blocks %d\n", (unsigned long)reinterpret_cast<uintptr_t>(base), blocks - kFirst);
+  for (uint32_t l = 0; l < lines; ++l)
+    if (count[l]) std::printf("dirty 0x%08lx %u\n", (unsigned long)(reinterpret_cast<uintptr_t>(base) + l * 32), count[l]);
+}
+}  // namespace dirty
 #endif
 
 namespace {
@@ -214,6 +263,9 @@ int main(int argc, char** argv) {
 #ifdef RINGS_TRACE
     RingsBlockMarker(b);
 #endif
+#ifdef RINGS_DIRTY
+    dirty::Scan(b);
+#endif
 #ifdef RINGS_PROFILE
     if (prof::block_sum) prof::block[model][poly].Add(prof::block_sum);
     prof::block_sum = 0;
@@ -266,6 +318,14 @@ int main(int argc, char** argv) {
   std::fclose(f);
   if (mix) std::fclose(mix);
   std::printf("%ld notes, %ld voice blocks rendered, %ld non-zero samples\n", notes, sounding_blocks, nonzero);
+#ifndef RINGS_REF
+  const uint32_t got = &g_rings_l1 ? g_rings_l1 : 0;
+  std::fprintf(stderr, "rings L1: %s%s%s(%u bytes leased)\n", got & 1 ? "state " : "", got & 2 ? "modes " : "",
+               got & 4 ? "table " : "", leased);
+#endif
+#ifdef RINGS_DIRTY
+  dirty::Print(blocks);
+#endif
 #ifdef RINGS_PROFILE
   static const char* const kModel[6] = { "modal", "symp", "string", "fm", "quant", "verb" };
   static const char* const kPoly[4] = { "all", "1", "2", "4" };

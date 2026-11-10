@@ -43,6 +43,11 @@ extern "C" void HalfbandAsm(const int16_t* x, const int16_t* xs, int32_t* mid3);
 
 extern "C" const int32_t* kSoftLimitTable;           // src/op1_voice.cc: the limiter kernel's table
 
+// What the L1 lease got at init (rings 0.4), one bit each: 1 the engine's state (Hot), 2 the modal modes, 4 the
+// soft-limit table. For the tests.
+extern "C" { uint32_t g_rings_l1; }
+enum { L1_HOT = 1, L1_MODES = 2, L1_TABLE = 4 };
+
 namespace op1rings {
 Scratch* g_scratch;                                    // src/scratch.h: this call's scratch
 #ifdef RINGS_PROFILE
@@ -126,11 +131,11 @@ alignas(RingsVoice) uint8_t states_memory[sizeof(RingsVoice) * op1::kNumVoices];
 alignas(op1::ReverbBus) uint8_t reverb_memory[sizeof(op1::ReverbBus)];
 #define states (reinterpret_cast<RingsVoice*>(states_memory))
 #define reverb_bus (*reinterpret_cast<op1::ReverbBus*>(reverb_memory))   // string + reverb's, shared by the voices
-RingsVoice* voices[op1::kNumVoices];
-Upsampler upsamplers[op1::kNumVoices];
-op1::ParamSmoother smoothers[op1::kNumVoices];
-op1::VoiceAllocator allocator;
-op1::CoefficientBudget coefficient_budget;   // the modal model's updates per block
+// rings 0.4: the engine's own state that every render writes (the upsamplers' history, the smoothed knobs, the voice
+// allocator, the batch's records, the block clock, the screen's levels) in one block, leased in L1 at init (`Hot`
+// below); `hot_fallback` in .bss when the lease is refused. On the device each SDRAM line the render writes is a
+// cache miss now and a write-back later, beside the stock's own data (plugins/rings/README.md "m1").
+op1::CoefficientBudget coefficient_budget;   // the modal model's updates per block (not used by the batch)
 static_assert(op1::ReverbBus::kBlock == kRingsBlockSize, "reverb bus: one block per call");
 op1rings::Scratch scratch_fallback;          // when the core lends less L1 scratch than a Scratch
 
@@ -146,14 +151,55 @@ inline op1::PolyState PlayedPoly(op1::PolyState poly) { return poly; }
 inline int32_t PolyModes(op1::PolyState poly) { return op1::kPolyModes[poly]; }
 #endif
 
+struct Hot {
+  RingsVoice* voices[op1::kNumVoices];
+  Upsampler upsamplers[op1::kNumVoices];
+  op1::ParamSmoother smoothers[op1::kNumVoices];
+  op1::VoiceAllocator allocator;
+  uint32_t clock_rendered;   // the halved schedule's block clock (NewBlock)
+  int32_t clock_last;
+  uint32_t clock_block;
+  uint32_t last_inc[op1::kNumVoices];   // the batch's records (Batch)
+  VoicePatch last_patch[op1::kNumVoices];
+  uint32_t batched_block[op1::kNumVoices];
+  bool have_last[op1::kNumVoices];
+  // For the screen (rings_screen.cc): each voice's level (the block's peak, decaying) and its age in blocks since its
+  // note on. Written by the audio thread, read by the GUI thread: 16-bit words, no tearing.
+  volatile int16_t screen_level[op1::kNumVoices];
+  volatile uint16_t screen_age[op1::kNumVoices];
+  volatile uint8_t screen_released[op1::kNumVoices];   // key up: the stock envelope is closing
+};
+Hot hot_fallback;
+Hot* hot = &hot_fallback;
+#define voices (hot->voices)
+#define upsamplers (hot->upsamplers)
+#define smoothers (hot->smoothers)
+#define allocator (hot->allocator)
+#define clock_rendered (hot->clock_rendered)
+#define clock_last (hot->clock_last)
+#define clock_block (hot->clock_block)
+#define last_inc (hot->last_inc)
+#define last_patch (hot->last_patch)
+#define batched_block (hot->batched_block)
+#define have_last (hot->have_last)
+#define screen_level (hot->screen_level)
+#define screen_age (hot->screen_age)
+#define screen_released (hot->screen_released)
+
+// rings 0.4: the modal model's mode state (op1rings::Mode: written every sample) in L1 for the first kL1Modes modes of
+// each voice state, the polyphony-4 voice's 10 (ModalResonator::set_l1_bank); polyphony 1 and 2 (60 and 28 modes) keep
+// theirs in the voice state. Leased at init after Hot; refused: every voice keeps its own. The host test builds it
+// with 14 (-DOP1RINGS_L1_MODES=14), the te-op1-cfw build's "all", so the moves across it are checked bit for bit.
+#ifndef OP1RINGS_L1_MODES
+#define OP1RINGS_L1_MODES 10
+#endif
+const int32_t kL1Modes = OP1RINGS_L1_MODES;
+
 #if OP1RINGS_CONTROL_HALVED
 // The control rate halved (the owner's choice, 2026-11-10: the device ran out of cycles): each voice does its control
 // work (coefficients, cutoff, string parameters: src/op1_voice.h set_control_hold) every other OP-1 block, 2.9 ms
 // apart instead of 1.45 ms, the voices offset so half of them do it in any block, and a strike always does. A block
 // is told by the render order, as op1/coefficient_budget.h tells it: a voice rendered twice, or a lower index.
-uint32_t clock_rendered;
-int32_t clock_last;
-uint32_t clock_block;
 // Before voice v renders: true when it starts a new OP-1 block.
 bool NewBlock(int32_t v) {
   const bool fresh = ((clock_rendered >> v) & 1) || v < clock_last;
@@ -176,10 +222,8 @@ static_assert(OP1RINGS_CONTROL_HALVED, "the batch runs the halved schedule");
 // only (held). A voice that strikes, fades, sleeps or has no last block does its own control in its render, as in
 // the halved schedule. The modal coefficient budget is not used: at most two voices of 10 modes, or one of 60
 // (polyphony 1, which the budget always let through), update in a block.
-uint32_t last_inc[op1::kNumVoices];
-VoicePatch last_patch[op1::kNumVoices];
-bool have_last[op1::kNumVoices];
-uint32_t batched_block[op1::kNumVoices];   // the block whose control the batch did for the voice (+ 1; 0 = none)
+// last_inc, last_patch, have_last (Hot): each voice's pitch and smoothed knobs from its last block; batched_block: the
+// block whose control the batch did for the voice (+ 1; 0 = none).
 
 void Batch() {
   for (int32_t u = 0; u < op1::kNumVoices; ++u) {
@@ -192,12 +236,6 @@ void Batch() {
   }
 }
 #endif
-
-// For the screen (rings_screen.cc): each voice's level (the block's peak, decaying) and its age in blocks since its
-// note on. Written by the audio thread, read by the GUI thread: 16-bit words, no tearing.
-volatile int16_t screen_level[op1::kNumVoices];
-volatile uint16_t screen_age[op1::kNumVoices];
-volatile uint8_t screen_released[op1::kNumVoices];   // key up: the stock envelope is closing
 
 void ScreenQuiet(int32_t v) { screen_level[v] = static_cast<int16_t>(screen_level[v] - (screen_level[v] >> 2)); }
 
@@ -220,6 +258,8 @@ void ScreenRendered(int32_t v, const int16_t* out) {
   if (screen_age[v] != 0xffff) screen_age[v] = static_cast<uint16_t>(screen_age[v] + 1);
 }
 
+// The core lends 1312 bytes (sdk/coop_plugin.h coop_l1_scratch): a bigger Scratch would silently fall back to SDRAM.
+static_assert(sizeof(op1rings::Scratch) <= 1312, "the L1 scratch loan");
 // This call's scratch: the core's L1 loan when it is big enough, else the SDRAM fallback.
 void BindScratch() {
   uint32_t bytes = 0;
@@ -231,17 +271,30 @@ void BindScratch() {
 inline int32_t ParamToQ31(int16_t p) { return p <= 0 ? 0 : static_cast<int32_t>(p) << 16; }
 
 int Init() {
-  // The limiter's soft-limit table into L1 (read every sample of every voice); refused: it stays in SDRAM.
+  // Into L1, most written first (each refused part stays in SDRAM, the output the same): the engine's per-render state
+  // (Hot, ~0.8 KB), the modal voices' modes (6 x 10 x 24 bytes), the limiter's soft-limit table (1,028 bytes, read
+  // every sample of every voice). Engines share 4,096 bytes of lease (docs/engines.md "L1"); this takes ~3.3 KB and
+  // leaves saw its 192.
+  g_rings_l1 = 0;
+  if (Hot* l1 = static_cast<Hot*>(coop_l1_lease(sizeof(Hot)))) {   // zeroed, as hot_fallback is
+    hot = l1;
+    g_rings_l1 |= L1_HOT;
+  }
+  op1rings::Mode* slabs =
+      static_cast<op1rings::Mode*>(coop_l1_lease(sizeof(op1rings::Mode) * kL1Modes * op1::kNumVoices));
+  if (slabs) g_rings_l1 |= L1_MODES;
   const uint32_t kTableBytes = sizeof(op1rings::kSoftLimitQ30);
   int32_t* table = static_cast<int32_t*>(coop_l1_lease(kTableBytes));
   if (table) {
     for (uint32_t i = 0; i < kTableBytes / 4; ++i) table[i] = op1rings::kSoftLimitQ30[i];
     kSoftLimitTable = table;
+    g_rings_l1 |= L1_TABLE;
   }
   op1rings::g_scratch = &scratch_fallback;   // Init below may touch it: not inside a note_on or render yet
   for (int32_t v = 0; v < op1::kNumVoices; ++v) {
     voices[v] = &states[v];
     voices[v]->Init(PolyModes(PlayedPoly(op1::POLY_ALL)));
+    if (slabs) voices[v]->set_l1_modes(slabs + v * kL1Modes, kL1Modes);
     upsamplers[v].Init();
     smoothers[v].Init();
   }

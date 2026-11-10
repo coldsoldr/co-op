@@ -103,6 +103,10 @@ void ModalResonator::Init() {
     m.lp = m.bp = m.half_f = m.half_q = m.weight = m.weight_increment = 0;
     gain_[i] = 0;
   }
+  for (int32_t i = 0; i < slab_modes_; ++i) {   // the L1 home (set_l1_bank), when there is one
+    Mode& m = slab_[i];
+    m.lp = m.bp = m.half_f = m.half_q = m.weight = m.weight_increment = 0;
+  }
 }
 
 int32_t ModalResonator::ComputeFilters() {
@@ -172,6 +176,7 @@ int32_t ModalResonator::RecomputeFilters() {
   const int32_t u0 = previous_input_;
 
   int32_t num_modes = geometry_changed ? 0 : num_modes_;
+  Mode* const bank_modes = bank();
   for (int32_t i = 0; i < resolution_; ++i) {
     Geometry g;
     if (geometry_changed) {
@@ -209,7 +214,7 @@ int32_t ModalResonator::RecomputeFilters() {
     g.x = ShiftRight(MulQ31Fast(r_m, sc), r_shift);
     g.rho = InterpHalf(kRhoQ31, g.x);
 
-    Mode& mode = modes_[i];
+    Mode& mode = bank_modes[i];
     const int32_t half_f = MulQ31Fast(g.sin, g.rho);
     const int32_t half_q = ShiftRight(MulQ31Fast(MulQ31Fast(r_m, g.cos), g.rho), 1 + r_shift);
     gain_[i] = MulQ31Fast(g.cos, g.rho) >> 1;
@@ -320,7 +325,7 @@ void ModalResonator::Process(const int32_t* in, int32_t* out, int32_t* aux,
   const int32_t recip_segment_size = segment_size == 32 ? kOne / 32
       : segment_size == 8 ? kOne / 8 : kOne / static_cast<int32_t>(segment_size);
   int32_t* start = scratch_start_;
-  int32_t* end = scratch_end_;
+  int32_t* end = scratch()->modal.weights_end;   // rings 0.4: per call, in the L1 scratch (src/scratch.h)
   // The last block ended at previous_position_: its weights are still right
   // unless the gains (or the number of modes) changed since.
   const bool kept = weights_valid_ && weights_n_ == n;
@@ -329,6 +334,7 @@ void ModalResonator::Process(const int32_t* in, int32_t* out, int32_t* aux,
   (void)weights_cycles;
   (void)bank_cycles;
   const uint32_t profile_start = profile_clock ? profile_clock() : 0;
+  Mode* const bank_modes = bank();   // L1 when the engine leased it (set_l1_bank)
   for (int32_t k = 0; k < segments; ++k) {
     int32_t position = k + 1 == segments
         ? position_ : previous_position_ + (delta >> 2) * (k + 1);
@@ -341,8 +347,8 @@ void ModalResonator::Process(const int32_t* in, int32_t* out, int32_t* aux,
       ComputeWeights(position, end, n);
     }
     for (int32_t i = 0; i < n; ++i) {
-      modes_[i].weight = start[i];
-      modes_[i].weight_increment = MulQ31Fast(end[i] - start[i], recip_segment_size);
+      bank_modes[i].weight = start[i];
+      bank_modes[i].weight_increment = MulQ31Fast(end[i] - start[i], recip_segment_size);
       start[i] = end[i];
     }
     const size_t offset = k * segment_size;
@@ -350,7 +356,7 @@ void ModalResonator::Process(const int32_t* in, int32_t* out, int32_t* aux,
     const uint32_t tb = ProfileNow();
     weights_cycles += tb - tw;
 #endif
-    ModeBankProcess(modes_, n, in_scaled + offset, &previous_input_,
+    ModeBankProcess(bank_modes, n, in_scaled + offset, &previous_input_,
                     out + offset, aux + offset, segment_size, half_x);
 #ifdef RINGS_PROFILE
     bank_cycles += ProfileNow() - tb;
