@@ -5,13 +5,17 @@
   "firmware": "op1/coop",
   "kind": "synth",
   "author": "coldsoldr",
-  "version": "0.1",
-  "description": "The reference coop synth engine: two detuned saws, a square an octave down and a low-pass filter, with its own screen.",
+  "version": "0.2",
+  "description": "The reference coop synth engine: two detuned oscillators (saw, square or triangle), a square one or two octaves down and a low-pass filter, with its own screen.",
   "license": "GPL-3.0-or-later",
   "file": "saw.coop",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/saw",
-  "requires": "coop e2",
-  "tags": ["synth", "engine", "saw"]
+  "requires": "coop e4b",
+  "tags": [
+    "synth",
+    "engine",
+    "saw"
+  ]
 }
