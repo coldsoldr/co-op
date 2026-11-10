@@ -135,6 +135,22 @@ Simulator, per block at the default polyphony (0.2 six voices -> 0.3 four): moda
 Still open: the upsampler's 2x stage and copies in assembly (~1.6 k a render, bit-identical), the limiter (~47
 cycles a sample), the string kernels and the mode bank (assembly already, ~23 cycles a mode-sample).
 
+**Device, 0.3 (owner, 2026-11-10, `coop_stats (23).txt` rings alone, `(24)` with the tape recording):** rings
+25,701 a render, 148,180 / 270,880 a block (0.2: 173,719 / 278,457); the callback 330-360 k in the busy windows, peak
+603 k alone, 380-395 k and 705 k with the recording. Busy minus idle is ~270 k, of which rings, the voice hook and the
+recorder are ~175 k: the rest of the block still runs ~95 k slower beside rings (six voltage voices: ~6 k) [I: code,
+data or SDRAM writes; the counters don't tell]. The first render of a block 54 k (27 k code-fetch stalls).
+
+**Tried after 0.3, not kept: the code footprint.** `make -C tests/host/rings footprint` (`code_footprint.py`, an
+instruction trace in the GNU simulator, `RINGS_TRACE`) counts rings' 32-byte code lines a block. 0.3, polyphony 4:
+5.0 KB (modal) / 7.0 KB (symp) a block while playing with the knobs still, 8.0 / 10.0 KB while knobs move and notes
+come fast (the control code), of the 16 KB 4-way cache. Hot code first in its own section (`.text.hot` first in
+merge.ld) with the control code apart: no fewer lines, no better spread (laying ~10 KB a block into 16 KB fills the
+sets whatever the order). The control code compiled for size (GCC `cold`): 8.0 -> 7.2 / 10.0 -> 9.1 KB busy, nothing
+when still, for 2-9 % more compute a block (`RecomputeFilters` slower). Neither is worth a device run; a smaller
+footprint needs the control code rewritten (the modal coefficients in compact assembly), and the ~95 k may not be
+code at all.
+
 ## Building and checking
 
 ```sh

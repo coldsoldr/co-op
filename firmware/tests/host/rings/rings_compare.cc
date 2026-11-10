@@ -86,7 +86,30 @@ void Record(uint32_t c, int kind, int model, int poly, int voice) {
 }  // namespace prof
 #endif
 
+#ifdef RINGS_TRACE
+// The instruction-trace build (`make trace`): a call at each block's start, so the trace can be cut into blocks.
+extern "C" __attribute__((noinline)) void RingsBlockMarker(int block) { __asm__ __volatile__("" : : "r"(block)); }
+#endif
+
 namespace {
+
+// The scenario switches (all builds run the same scenario with them): from the environment on the host, or at
+// compile time (-DRINGS_STILL etc.) for the GNU simulator, which passes no environment to the program.
+bool ScenarioFlag(const char* name) {
+  if (std::getenv(name)) return true;
+  const char* s = name + 6;   // after "RINGS_"
+#ifdef RINGS_STILL
+  if (s[0] == 'S') return true;
+#endif
+#ifdef RINGS_NO_JUMP
+  if (s[0] == 'N' && s[3] == 'J') return true;
+#endif
+#ifdef RINGS_NO_BEND
+  if (s[0] == 'N' && s[3] == 'B') return true;
+#endif
+  (void)s;
+  return false;
+}
 
 const int kVoices = 6;
 const int kBlock = 128;
@@ -115,7 +138,7 @@ uint32_t Increment(int note) {
   return static_cast<uint32_t>(oct >= 0 ? inc << oct : inc >> -oct);
 }
 
-void NoteOn(int v, const int16_t* knobs4, int model, int poly) {
+void DriveNoteOn(int v, const int16_t* knobs4, int model, int poly) {
 #ifdef RINGS_REF
   int16_t k[8] = { knobs4[0], knobs4[1], knobs4[2], knobs4[3], static_cast<int16_t>(model * 4096),
                    static_cast<int16_t>(poly * 4096), 4096 /* ENGINE_RINGS */, 0 };
@@ -133,7 +156,7 @@ void NoteOn(int v, const int16_t* knobs4, int model, int poly) {
 #endif
 }
 
-void Render(int v, int16_t* out, const uint32_t* pitch, const int16_t* knobs4, int model, int poly) {
+void DriveRender(int v, int16_t* out, const uint32_t* pitch, const int16_t* knobs4, int model, int poly) {
 #ifdef RINGS_REF
   (void)model;
   (void)poly;
@@ -188,6 +211,9 @@ int main(int argc, char** argv) {
   uint32_t pitch[kBlock];
   for (int b = 0; b < blocks; ++b) {
     op1::host_cycles += kCyclesPerBlock;
+#ifdef RINGS_TRACE
+    RingsBlockMarker(b);
+#endif
 #ifdef RINGS_PROFILE
     if (prof::block_sum) prof::block[model][poly].Add(prof::block_sum);
     prof::block_sum = 0;
@@ -202,9 +228,9 @@ int main(int argc, char** argv) {
       if (fixed_model >= 0) { model = fixed_model; poly = fixed_poly; }   // one model x polyphony throughout
     }
     // Knobs: now and then a jump, otherwise a slow walk on one of them.
-    if (Below(400) == 0 && !std::getenv("RINGS_NO_JUMP")) {   // test switches: the same in both builds
+    if (Below(400) == 0 && !ScenarioFlag("RINGS_NO_JUMP")) {   // test switches: the same in both builds
       knobs[Below(4)] = static_cast<int16_t>(Below(32768));
-    } else if (Below(8) == 0) {
+    } else if (Below(8) == 0 && !ScenarioFlag("RINGS_STILL")) {   // RINGS_STILL: no knob walk (playing without turning)
       const int k = Below(4);
       int v = knobs[k] + Below(1025) - 512;
       knobs[k] = static_cast<int16_t>(v < 0 ? 0 : (v > 32767 ? 32767 : v));
@@ -216,11 +242,11 @@ int main(int argc, char** argv) {
       const int v = Below(kVoices);
       note[v] = 36 + Below(48);
       left[v] = 40 + Below(600);
-      NoteOn(v, knobs, model, poly);
+      DriveNoteOn(v, knobs, model, poly);
       ++notes;
     }
     if (bend_blocks > 0) --bend_blocks;
-    else if (Below(300) == 0) bend_blocks = std::getenv("RINGS_NO_BEND") ? 0 : 20 + Below(100);
+    else if (Below(300) == 0) bend_blocks = ScenarioFlag("RINGS_NO_BEND") ? 0 : 20 + Below(100);
     for (int i = 0; i < kBlock; ++i) mixed[i] = 0;
     for (int v = 0; v < kVoices; ++v) {
       if (left[v] <= 0) continue;
@@ -229,7 +255,7 @@ int main(int argc, char** argv) {
       for (int i = 0; i < kBlock; ++i) {   // a bend moves the words inside the block (the engine latches pitch[0])
         pitch[i] = bend_blocks ? base + ((base >> 6) * static_cast<uint32_t>((b * kBlock + i) % 4096)) / 4096 : base;
       }
-      Render(v, out, pitch, knobs, model, poly);
+      DriveRender(v, out, pitch, knobs, model, poly);
       std::fwrite(out, sizeof(out), 1, f);
       for (int i = 0; i < kBlock; ++i) mixed[i] += out[i];
       ++sounding_blocks;

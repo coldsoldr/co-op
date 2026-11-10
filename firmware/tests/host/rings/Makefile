@@ -15,7 +15,7 @@ SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree
 PROFILE_BLOCKS ?= 62010
 PROFILE_MODEL ?=
 
-.PHONY: all clean profile halfband-check halved batched
+.PHONY: all clean profile halfband-check halved batched footprint
 all: $(BUILD)/rings_ref $(BUILD)/rings_coop
 	$(BUILD)/rings_ref $(BUILD)/ref.raw
 	$(BUILD)/rings_coop $(BUILD)/coop.raw
@@ -85,3 +85,18 @@ batched: $(BUILD)/rings_halved $(BUILD)/rings_batched $(BUILD)/rings_shipped
 	  RINGS_NO_JUMP=1 RINGS_NO_BEND=1 $(BUILD)/rings_batched $(BUILD)/b$$m.raw 8000 $$m 3 > /dev/null; \
 	  printf "model $$m, polyphony 4: "; python3 -I block_levels.py $(BUILD)/h$$m.raw $(BUILD)/b$$m.raw; done
 	$(BUILD)/rings_shipped $(BUILD)/shipped.raw
+
+# Rings' instruction working set per block (code_footprint.py), the shipped build in the simulator with an
+# instruction trace: make footprint [FOOTPRINT_MODEL=m] (blocks 120..159 of the scenario at polyphony setting 0).
+SHIPPED_FLAGS := -DOP1RINGS_CONTROL_HALVED=1 -DOP1RINGS_CONTROL_BATCHED=1 -DOP1RINGS_COOP_POLY4=1
+FOOTPRINT_MODEL ?= 0
+ASM := $(COOP)/src/mode_bank_bfin.S $(COOP)/src/string_kernel_bfin.S $(COOP)/src/limiter_bfin.S \
+       $(COOP)/src/reverb_bfin.S $(COOP)/src/halfband_bfin.S
+$(BUILD)/rings_trace.elf: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
+	@mkdir -p $(BUILD)
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DOP1_COOP -DRINGS_TRACE $(SHIPPED_FLAGS) -I$(COOP) -I../../../sdk \
+	  rings_compare.cc $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) $(ASM) -o $@
+
+footprint: $(BUILD)/rings_trace.elf
+	$(BFIN)/bfin-elf-run --trace-insn=on $< $(BUILD)/trace.raw 160 $(FOOTPRINT_MODEL) 0 2>&1 | \
+	  python3 -I code_footprint.py $< $(BFIN)/bfin-elf-nm 120 160
