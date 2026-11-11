@@ -13,6 +13,8 @@
 #                                                                       -> 16056/0/8192/1
 #  p4 master FX 2 (drop, pick, push, T3): fn + white 2 up (8848)        -> 16384/0/8848/0
 #  p1 drum FX 1 (drum T3, the list): fn + blue 1 up (16712), green click -> 16712/1/8192/0
+# Randomise (synth key + right arrow) at 45.5 s on the synth FX 1 page and at 57.3 s on FX 2: gain ("random": false)
+# keeps its value, depth and polarity are drawn, latches untouched (fxctl random 2, rnd_slot2 1).
 # FX 1 is off in the pristine sounds: a second T3 on each FX 1 page switches it on.
 # Then a synth chord and drum keys, and the page left on the drum's FX page. Stats: fxctl turns 6, fine 1,
 # clicks 3, latches 4, ignored 1, cancelled 1. det_fx_reload.txt (same NAND) checks what was saved.
@@ -70,6 +72,12 @@ at 44100
 release shift
 at 45000
 tap enc4 200
+at 45500
+press synth
+at 45700
+tap right 200
+at 46100
+release synth
 at 46500
 tap drop 200
 at 48000
@@ -102,6 +110,12 @@ at 56800
 release enc1
 at 57000
 release shift
+at 57300
+press synth
+at 57450
+tap right 200
+at 57750
+release synth
 at 58000
 tap lift 200
 at 59000

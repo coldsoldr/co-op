@@ -195,7 +195,9 @@ controls (`plugin.json` "controls", `docs/engines.md` "Controls") [now, e4]. **E
 effect page, at every position (FX 1 of synth, drum and master; FX 2 of instrument and master) [now, e6; op1emu,
 device test pending]: saved `steps` and `continuous` controls in words 5..7, `latch` clicks (not saved) as bits of
 `params[8]`, and a continuous fn + turn may take its encoder's shift + fn + turn as its fine adjustment (`"fine"`,
-4.1). `docs/plugins.md` "Effect controls". The full v2 parameter store (formats, CC map, smoothing) stays [proposed].
+4.1). A latch is momentary: the core clears it whenever the effect starts at that position, including when the stock
+restarts the instrument effect on a synth / drum switch (accepted by the owner, 2026-11-11); never rely on it
+surviving. `docs/plugins.md` "Effect controls". The full v2 parameter store (formats, CC map, smoothing) stays [proposed].
 
 | Action | What goes here | Rule |
 |---|---|---|
@@ -234,7 +236,9 @@ The rules:
   - A plugin never handles keys itself.
 - **The core shows what changed:** a declared control's name and value appear top left in its encoder's colour for
   about a second (e4), for every engine, with or without a screen; a plugin screen may draw more.
-- **Randomise** (synth key + right arrow) draws a declared control within its steps, or 0..32767 when continuous,
+- **Randomise** (synth key + right arrow; e6: also on the effect page, for an effect's saved controls at the synth and
+  drum FX 1 and the instrument's FX 2; latches never) draws a declared control within its steps, or 0..32767 when
+  continuous,
   unless the control says `"random": false` (e4).
 
 ### 4.1 Shift + turn: second row or fine

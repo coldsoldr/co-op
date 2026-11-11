@@ -47,7 +47,10 @@ typedef struct coop_fx_t {
  *                   then be declared on that encoder's shift_fn_turn.
  *   "kind": "latch" on a click action, with "bit": 0..15 instead of "word": momentary state (freeze, hold), off
  *                   whenever the plugin is (re)initialised at the position (selected, a sound change), never saved,
- *                   never randomised. A click flips it.
+ *                   never randomised. A click flips it. The stock restarts the instrument effect on a synth / drum
+ *                   switch, so a latch at positions 0-1 is off after one (accepted: docs/ui-features.md §14).
+ *   "random"        as for engines (default true): randomise on the effect page draws the control (steps within the
+ *                   count, continuous 0..32767); "random": false keeps it (input gain).
  * Saved controls ("steps", "continuous") name "word": 5, 6 or 7 and a "default"; they are saved with the sound (slots
  * 0-2: the sound's fx_params[5..7]; slots 3-4: coop's FX 2 file) and the file's FX list row starts them at the default.
  * The core dispatches them on the effect page at every position (FX 1 and FX 2, instrument and master), shows the

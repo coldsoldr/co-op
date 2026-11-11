@@ -52,7 +52,7 @@ extern const char *volatile g_plugins_last_error;
 extern volatile uint32_t g_set_plugin_pushes, g_set_plugin_bounces, g_set_plugin_turns, g_fn_shift_kept, g_set_dropped, g_set_listed;   /* coop_settings.cc, coop_tape_ui.cc (e4c) */
 extern volatile uint32_t g_engines_loaded, g_heap_largest, g_code_syncs, g_rows_dropped;   /* plugin_host.cc (E1, e4) */
 extern volatile uint32_t g_ctl_turns, g_ctl_clicks, g_ctl_ignored, g_ctl_cancelled, g_ctl_engines, g_ctl_popup_frames;   /* engine_ui.cc (e4) */                                 /* plugin_host.cc (E1) */
-extern volatile uint32_t g_ctl_fx, g_fxc_turns, g_fxc_fine, g_fxc_clicks, g_fxc_latches, g_fxc_ignored, g_fxc_cancelled, g_fxc_popup_frames;   /* engine_ui.cc (e6) */
+extern volatile uint32_t g_ctl_fx, g_fxc_turns, g_fxc_fine, g_fxc_clicks, g_fxc_latches, g_fxc_ignored, g_fxc_cancelled, g_fxc_popup_frames, g_fxc_random;   /* engine_ui.cc (e6) */
 extern volatile uint32_t g_fxc_blocks[5], g_fxc_inits[5], g_fxc_from_params, g_master_saves; extern volatile int16_t g_fxc_seen[5][4];   /* plugin_host.cc (e6) */
 extern volatile uint32_t g_eng_44k_renders;   /* voice_rate.cc (v1) */
 extern volatile uint32_t g_eng_renders, g_eng_noteons, g_eng_iter_renders, g_eng_switches, g_eng_foreign, g_eng_cycles_max;   /* engine_host.cc */
@@ -629,7 +629,7 @@ static void write_file(void)
     if (g_plugins_last_error) { put(" last "); put(g_plugins_last_name); put(": "); put(g_plugins_last_error); }
     put("\n");
     put("fxctl"); kv("fx", g_ctl_fx); kv("turns", g_fxc_turns); kv("fine", g_fxc_fine); kv("clicks", g_fxc_clicks); kv("latches", g_fxc_latches);   /* e6 */
-    kv("ignored", g_fxc_ignored); kv("cancelled", g_fxc_cancelled); kv("popup_frames", g_fxc_popup_frames); kv("from_params", g_fxc_from_params); kv("master_saves", g_master_saves);
+    kv("ignored", g_fxc_ignored); kv("cancelled", g_fxc_cancelled); kv("popup_frames", g_fxc_popup_frames); kv("from_params", g_fxc_from_params); kv("master_saves", g_master_saves); kv("random", g_fxc_random);
     for (int p = 0; p < 5; p++) {                                       /* per position: blocks rendered with the block, words 5/6/7/latch last passed */
         char k[4] = { ' ', 'p', (char)('0' + p), 0 }; put(k); put("="); putn(g_fxc_blocks[p]); put("i"); putn(g_fxc_inits[p]);
         for (int w = 0; w < 4; w++) { put(w ? "/" : ":"); putn((uint32_t)(uint16_t)g_fxc_seen[p][w]); }

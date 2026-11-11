@@ -72,7 +72,7 @@ struct ctl {
 struct ctls { int n, fx; struct ctl c[CTL_MAX]; };                  /* e6: fx = an effect's (latches allowed) */
 static struct ctls *g_ctl[SLOTS];
 volatile uint32_t g_ctl_turns, g_ctl_clicks, g_ctl_ignored, g_ctl_cancelled, g_ctl_engines, g_ctl_popup_frames;
-volatile uint32_t g_ctl_fx, g_fxc_turns, g_fxc_fine, g_fxc_clicks, g_fxc_latches, g_fxc_ignored, g_fxc_cancelled, g_fxc_popup_frames;   /* e6 */
+volatile uint32_t g_ctl_fx, g_fxc_turns, g_fxc_fine, g_fxc_clicks, g_fxc_latches, g_fxc_ignored, g_fxc_cancelled, g_fxc_popup_frames, g_fxc_random;   /* e6 */
 
 /* ---- parse (main thread, at load) ---- */
 static int num(const char *&p, int *out)
@@ -449,6 +449,23 @@ static void fx_set(const struct fxt *t, int word, int value)
     if (t->pos == 0) SET_FX(PATCH_S(t->inst), v);                          /* the sound's fx_params, as the randomiser writes them */
     else if (t->pos == 1) SET_FX(PATCH_D(t->inst), v);
     else coop_master_save_request();                                       /* the master: op1.db's master row, from the main loop */
+}
+
+/* e6 (the owner, 2026-11-11): randomise (coop_random.cc) draws an effect's saved controls as an engine's, per control:
+ * steps within their count, continuous over 0..32767, unless the control says "random": false; latches never. v[] is
+ * indexed by word (v[5..7]). 1 = something was drawn. */
+extern "C" int coop_fx_ui_randomise(int n, int16_t *v, uint32_t (*rnd)(void))
+{
+    if (n <= 0 || n >= SLOTS || !coop_fx_is_plugin(n) || !g_ctl[n] || !g_ctl[n]->fx) return 0;
+    int changed = 0;
+    for (int k = 0; k < g_ctl[n]->n; k++) {
+        const struct ctl *c = &g_ctl[n]->c[k];
+        if (c->kind == 'l' || !c->random) continue;
+        v[c->word] = (int16_t)(c->kind == 's' ? (int)(rnd() % c->count) : (int)(rnd() % 32768u));
+        changed = 1;
+    }
+    if (changed) g_fxc_random++;
+    return changed;
 }
 
 extern "C" int coop_fx_ui_knob(int knob, int steps)

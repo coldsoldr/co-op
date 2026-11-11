@@ -15,5 +15,5 @@
   ],
   "author": "coldsoldr",
   "version": "0.1",
-  "description": "e6 test effect (not a real plugin): the effect controls at every position. fn + blue gain (Q15 16384 = unity, shift + fn + blue fine), green click polarity (steps, saved), fn + white depth (unused, shown), orange click mute (a latch, not saved). The audio says which arrived."
+  "description": "e6 test effect (not a real plugin): the effect controls at every position. fn + blue gain (Q15 16384 = unity, shift + fn + blue fine), green click polarity (steps, saved), fn + white depth (unused, shown), orange click mute (a latch, not saved). Randomise draws polarity and depth, never gain (\"random\": false) nor the latch. The audio says which arrived."
 }

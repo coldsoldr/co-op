@@ -193,7 +193,7 @@ device test is pending (`docs/device-tests.md` "e6").
 | `steps` | `steps`: 2..16 names (1-8 glyphs) | none |
 | `detents`, `wrap` | as e4 / e5 (steps) | none |
 | `fine` | `true` on a continuous `fn_turn`: shift + fn + turn on that encoder is its fine; nothing else may sit there | none |
-| `random` | default true (randomise ignores effect controls today, `docs/ui-features.md` §14) | always false |
+| `random` | default true: randomise draws it (steps within the count, continuous 0..32767); `false` keeps it (input gain) | never drawn (`random: true` is refused) |
 
 Worked examples (what the ports declare):
 
@@ -217,7 +217,11 @@ detents across the range); a steps control moves one step per `detents` detents 
   blocks; a latch flips at a block boundary).
 - Clamp what it reads, even though the core clamps: a stored word is whatever a sound holds.
 - Treat a latch as state that may be cleared under it: the core clears a position's latches whenever the effect's
-  `init` runs there (selected, a sound change, the stock switching between synth and drum).
+  `init` runs there (selected, a sound change, and the stock switching between synth and drum: it restarts the
+  instrument effect, so a freeze at the synth or drum position is off after a visit to the other instrument; the owner
+  accepted this on 2026-11-11, `docs/ui-features.md` §14) [C op1emu].
+- Declare `"random": false` on a control a random draw must not move (input gain: a level jump); everything else
+  saved is drawn by randomise.
 - Not keep its own copy of a saved word across `init`; not write `params`; not read past `params[15]`.
 - Declare `defaults` for the four turns as before; the saved words' defaults come from the controls (the packer sets
   the page-2 defaults from them; never write `page2_defaults` next to `controls`).
@@ -240,6 +244,13 @@ detents across the range); a steps control moves one step per `detents` detents 
 e6 refuses such a file ("plugin flags not supported yet"), so a port never runs with zero words and no latch word.
 A file without "controls" packs byte-identically to e5 (stereo_delay, saw, rings, probe_alu checked) and gets exactly
 the params it got before (the stock's pointer at slots 0-2, the 8-word block at 3-4).
+
+**Randomise** (the owner, 2026-11-11; `core/sdram/coop_random.cc`, `engine_ui.cc coop_fx_ui_randomise`): synth or drum
+key + right arrow on the effect page draws the saved controls of the effect in focus, per control, as for engines:
+steps within their count, continuous over 0..32767, skipped with `"random": false`; latches never. FX 1 (synth, drum):
+with the four turns, as before, all written through `Patch::SetFxParams`. FX 2 of the instrument holding a plugin
+(refused before e6): its four q15 knobs and its words, back with the left arrow as the other draws. The master has no
+randomise (the key combination is the synth / drum key's). The stats count draws in `fxctl random`.
 
 **Display.** On FX 1 the stock shows the filter type's page; on FX 2 coop's page. The core draws the control's name
 and value top left in the encoder's colour for ~1.2 s over either (latches show `on` / `off`). A plugin screen for

@@ -74,7 +74,11 @@ volatile uint32_t g_rnd_count, g_rnd_backs, g_rnd_refused, g_rnd_slot2;      /* 
 /* u10: the focused slot. On the effect page with FX 2 in focus (coop_ui.cc) the draw goes to slot 2's knobs (q15,
  * uniform over the type's turnable ranges, plugin_host.cc knob_map); on the LFO page with LFO 2 in focus to the
  * shown sound's LFO 2 parameters (lfo2.cc ranges, the stock's "scale 0 = not turnable" rule). Both refuse while the
- * slot is off, as the stock page does; a plugin in FX 2 is refused (no range table). The history keeps the slot. */
+ * slot is off, as the stock page does. The history keeps the slot.
+ * e6 (the owner, 2026-11-11): a plugin effect's declared saved controls are drawn too, per control (steps within
+ * their count, continuous 0..32767) unless "random": false; latches never. FX 1 (synth / drum T3): words 5..7 with the
+ * four turns; FX 2 holding a plugin (refused before e6): its four q15 knobs and its words. The master has no
+ * randomise (the synth / drum keys only). */
 extern "C" int coop_fx2_focused(int pos2);                                     /* coop_ui.cc: 0 instrument, 1 master */
 extern "C" int coop_lfo2_focused(int pos);                                     /* coop_ui.cc: 0 synth, 1 drum */
 extern "C" int coop_slot2_req_type(int pos2);                                  /* plugin_host.cc: -1 none / plugin */
@@ -86,8 +90,13 @@ extern "C" int coop_lfo2_kind_type(int *on);                                   /
 extern "C" void coop_lfo2_page_params(int16_t *p8);                            /* coop_ui.cc: its parameters */
 extern "C" void coop_lfo2_set_sound(int type, int on, const int16_t *p);
 extern "C" const int16_t *coop_lfo2_ranges(int type);                          /* {min, max, scale} x 8 */
-enum { H_STOCK, H_FX2, H_LFO2 };
-struct hist { int kind, mode, page, inst; int t, on; int16_t v[8]; };        /* H_FX2: v[0..3] q15 knobs of type t; H_LFO2: the 8 params of type t */
+extern "C" int coop_fx_ui_randomise(int n, int16_t *v, uint32_t (*rnd)(void));   /* engine_ui.cc (e6): an effect's declared controls */
+extern "C" int coop_slot2_plugin(int pos2);                                    /* plugin_host.cc (e6): FX 2's plugin, 0 none */
+extern "C" int coop_slot2_ext(int pos2, int word);
+extern "C" void coop_slot2_ext_set(int pos2, int word, int v);
+enum { H_STOCK, H_FX2, H_LFO2, H_FX2P };
+struct hist { int kind, mode, page, inst; int t, on; int16_t v[8]; };        /* H_FX2: v[0..3] q15 knobs of type t; H_LFO2: the 8 params of type t;
+                                                                                 H_FX2P (e6): plugin t's q15 knobs v[0..3] and words v[5..7] */
 static struct hist s_hist[HIST];
 static int s_hist_n;
 static uint32_t s_seed;
@@ -131,8 +140,36 @@ static void commit_fx2(int t, const int16_t *q)                               /*
     for (int i = 0; i < 4; i++) k[i] = (uint16_t)q[i];
     if (coop_slot2_set(0, 1, t, k)) coop_ui_slot2_touched();
 }
+/* e6: FX 2 holding a plugin effect: its four knobs over the whole q15 range (knob_map spreads them over the filter
+ * ranges the plugin is given) and its declared random controls; the words follow the slot file */
+static void commit_fx2p(int n, const int16_t *v)
+{
+    uint16_t k[4];
+    for (int i = 0; i < 4; i++) k[i] = (uint16_t)v[i];
+    if (!coop_slot2_set(0, 2, n, k)) return;
+    for (int w = 5; w < 8; w++) coop_slot2_ext_set(0, w, v[w]);
+    coop_ui_slot2_touched();
+}
+static int randomise_fx2_plugin(int mode)
+{
+    int n = coop_slot2_plugin(0);
+    if (!n || coop_slot2_bypassed(0)) return 0;
+    uint8_t b[10]; coop_slot2_get(0, b);
+    int16_t cur[8], v[8];
+    for (int i = 0; i < 8; i++) cur[i] = 0;
+    for (int i = 0; i < 4; i++) cur[i] = (int16_t)(b[2 + 2 * i] | (b[3 + 2 * i] << 8));
+    for (int w = 5; w < 8; w++) cur[w] = (int16_t)coop_slot2_ext(0, w);
+    for (int i = 0; i < 8; i++) v[i] = cur[i];
+    for (int k = 0; k < 4; k++) v[k] = draw(0, 32767);
+    coop_fx_ui_randomise(n, v, rnd);
+    struct hist *h = push_hist(H_FX2P, mode, 2, 0, cur); h->t = n;
+    commit_fx2p(n, v);
+    g_rnd_count++; g_rnd_slot2++;
+    return 1;
+}
 static int randomise_fx2(int mode)                                            /* FX 2 of the instrument shown */
 {
+    if (coop_slot2_plugin(0)) return randomise_fx2_plugin(mode);             /* e6 */
     int t = coop_slot2_req_type(0);
     if (t < 0 || t > 7 || coop_slot2_bypassed(0)) return 0;                  /* a plugin, nothing, or off */
     uint8_t b[10]; coop_slot2_get(0, b);
@@ -197,6 +234,7 @@ static int randomise(void)
         int t = mode == 0 ? FX_TYPE_S(inst) : FX_TYPE_D(inst);
         if (t < 0 || t > 7) return 0;
         for (int k = 0; k < 4; k++) { const volatile int16_t *rg = FX_RANGE(t, k); if (rg[2] == 0 || !filled(rg)) continue; v[k] = draw(rg[0], rg[1]); changed = 1; }
+        if (t == 5 && coop_fx_ui_randomise(v[4] - 0x5300, v, rnd)) changed = 1;   /* e6: a plugin effect's declared controls */
     } else {
         if (!(mode == 0 ? LFO_ACTIVE_S(inst) : LFO_ACTIVE_D(inst))) return 0;
         int t = mode == 0 ? LFO_TYPE_S(inst) : LFO_TYPE_D(inst);
@@ -214,6 +252,7 @@ static int back(void)
     if (!s_hist_n) return 0;
     struct hist *h = &s_hist[--s_hist_n];
     if (h->kind == H_FX2) { if (coop_slot2_req_type(0) == h->t) commit_fx2(h->t, h->v); }   /* the slot still holds that type */
+    else if (h->kind == H_FX2P) { if (coop_slot2_plugin(0) == h->t) commit_fx2p(h->t, h->v); }   /* e6: the same plugin */
     else if (h->kind == H_LFO2) { int on, t = coop_lfo2_kind_type(&on); if (t == h->t) coop_lfo2_set_sound(t, on, h->v); }
     else commit(h->mode, h->page, h->inst, h->v);
     g_rnd_backs++;

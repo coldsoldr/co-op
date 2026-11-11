@@ -1844,7 +1844,7 @@ Result: (pending)
 
 The owner's decisions of 2026-11-11 (`docs/ui-features.md` §14), for the eleven kennel effect ports: effects get the
 engines' control layers at every effect position (`docs/plugins.md` "Effect controls").
-- `build/pkg/op1_246_coop_e6.op1` (sha256 `079f650d40a823ffc4d5afbf1d9f0f0961d4f1f1a9be5bb5ba26161f0c98236d`), copy in Downloads. A **release** image as e5 (no
+- `build/pkg/op1_246_coop_e6.op1` (sha256 `eb766c8dd7fcd1078996915154f61cbbbcf5948b5fc64f8b4a4ccb4fdc4ea788`), copy in Downloads. A **release** image as e5 (no
   `COOP_M1`, no gap profile, `--tape-stereo --set-word g_coop_spread=32767`), plus e6. `verify_bootloader.py` PASS,
   `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `e6`.
 - `build/plugins/test_fx.coop` (sha256 `4f118ea6b9384ec0213f1d82f55ca4a4f9fbd4f6582acffc2b5e908eb7a9a223`, 420 bytes): the test effect, not a real plugin. fn + blue = gain
@@ -1864,8 +1864,12 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
 3. Mixer T3: master FX test_fx (shift + T3, pick, T3 on): Help + blue, orange click. Drop: master FX 2, the same.
 4. Drum: T3, pick test_fx, T3: Help + blue, green click.
 5. Power-cycle. Gain, polarity and depth are as you left them at every position; every mute is off.
-6. Leave mute on at the synth, switch to drum and back: mute is off (the stock restarts the instrument effect; say
-   whether that is acceptable for freeze / hold).
+6. Leave mute on at the synth, switch to drum and back: mute is off (the stock restarts the instrument effect;
+   accepted by the owner, 2026-11-11).
+6b. Randomise: on the synth's FX page with test_fx (FX 1 on), hold the synth key and press right a few times:
+   polarity and depth change (the popup does not show; check the depth by Help + white one detent), **gain stays**
+   (`"random": false`), mute stays as it was. The same on the instrument's FX 2 with test_fx: the four dials move too.
+   Left arrow with the synth key held steps back.
 7. Copy `/yaffs2/user/coop_stats.txt`: the `fxctl` line.
 
 **If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e5.op1` (or stock).
@@ -1887,6 +1891,17 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
   ctl_cancelled 1 help_taps 1`, slot 0 knobs `[20000,8000,6000,4000,21280,1,0,1]`, as e4.
 - The e6 probe (`COOP_PROBE_ITER`): `filter_ranges [64,14528,14464] [0,24576,10485] [0,22528,32767] [8192,32767,10485]
   [0,32767,0] [0,32767,0] [0,32767,0] [0,32767,0]`: words 5..7 of the filter type accept 0..32767.
+- **Randomise (the owner's rule, 2026-11-11), PROVISIONAL**: these runs overlapped other agents' builds on the machine
+  (the "one run at a time on an idle machine" rule was broken), to be repeated on a quiet machine. The scenario now
+  randomises on the synth FX 1 page and on the instrument FX 2 page. `det_fx_controls.txt`:
+  `fxctl fx 1 turns 11 fine 1 clicks 3 latches 4 ignored 1 cancelled 1 popup_frames 406 from_params 0 master_saves 1
+  random 2 p0=36116i2:15092/1/13005/0 p1=35623i2:16712/1/8192/0 p2=54367i1:16056/0/8192/1 p3=64082i1:17040/0/4157/0
+  p4=45821i1:16384/0/8848/0`, `rnd 2 rnd_refused 0 rnd_slot2 1`: gain (`"random": false`) kept 15092 / 17040, depth
+  drawn (8520 -> 13005, 8192 -> 4157), polarity drawn (p3 1 -> 0), latches untouched. `det_fx_reload.txt`: the same
+  words after the power cycle, every latch 0. stereo_delay `det_fx_select.txt` identical to e5 over 1,816,705 frames
+  (`plugin_blocks 8188`). The pristine `det_chord.txt` against e5 differed from 31.6 s on (1,677,125 samples, max 5120)
+  while the other builds ran; the identical run above predates them, and the randomise change touches only the key
+  path, so this is taken as the wall-time effect `docs/emulator.md` describes until a quiet re-run says otherwise [I].
 - Unproven [I]: device timing and feel; the master writer called from coop's main loop (op1emu: one call, no fault);
   the drum and master pages' stock handling of encoder clicks (op1emu: coop takes them first, nothing else reacts);
   the popup's look over the filter page (counted, not seen: op1emu screenshots are wall-timed).

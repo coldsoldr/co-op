@@ -146,8 +146,12 @@ tape_drive, tape_echo, wavefolder, cs_hall, cs_plate, cs_clouds, cs_clouds_delay
 - The colour follows the encoder (blue, green, white, orange); the core shows the name and value top left in that
   colour for about a second, over FX 1's page and over coop's FX 2 page.
 - A plugin effect with no declared controls behaves exactly as before (fn + turn is then a plain turn, as it was).
-- Not decided, left as built: randomise does not touch an effect's declared controls (e4's engine rule draws them; for
-  an input gain a random draw is a level jump). Say if effects should follow the engine rule.
-- Found on the way (op1emu): the stock starts the instrument effect again when you switch between synth and drum, so
-  a latch at the synth or drum position is off after a visit to the other instrument (the effect's own state starts
-  again there too; this is not new).
+- **Randomise** (the owner, 2026-11-11): effects follow the engine rule, per control. Randomise (synth / drum key +
+  right arrow, on the effect page) draws every saved effect control (steps within their count, continuous over
+  0..32767) unless the control declares `"random": false`; latches are never drawn. The ports declare
+  `"random": false` on input gain, so gain never jumps. It applies to FX 1 of the synth and the drum (with the four
+  turns, as before) and to the instrument's FX 2 holding a plugin (its four knobs too; refused before e6). The master
+  has no randomise.
+- **Latches and the synth / drum switch** (the owner, 2026-11-11: acceptable): the stock starts the instrument effect
+  again when you switch between synth and drum, so a latch at the synth or drum position is off after a visit to the
+  other instrument (the effect's own state starts again there too; this is not new) [C op1emu].
