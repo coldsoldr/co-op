@@ -1,0 +1,79 @@
+# freq_shift (plugins/freq_shift) at the synth position, with freq_shift.coop alone on the NAND: selected through the
+# stock FX list as det_fx_controls.txt does (the plugin is the last row), FX 1 switched on (a second T3), then a chord
+# held while the four turns and the two controls move. Guest-timed; op1emu: `turn ENC cw 2` = one detent.
+#   36.5 s  the chord starts (mix at its default 16384: half wet, shift ~ +8 Hz)
+#   38 s    blue down through 0 Hz to about -1 kHz, then back up past 0 to about +250 Hz
+#   44 s    green up (feedback towards 0.93: the barber-pole), white up (spread: L up, R down)
+#   48 s    orange to the top (all wet)
+#   50 s    green click: ring mode (MODE RING in green); 54 s green click again: shift mode
+#   56 s    fn + blue 6 detents down (gain -), shift + fn + blue 2 detents up (fine)
+#   58 s    orange to the bottom (mix 0: the dry chord, bit for bit), the chord released at 60 s, the tail
+# Read: `plugins seen 1 loaded 1 failed 0`, `plugin_blocks` > 0, `fxctl fx 1 ... clicks 2`, `p0=...:14457/0/0/0`
+# (gain 16384 - 6 x 328 + 20 + 21, mode back at shift) [I: the expected words, by det_fx_controls.txt's arithmetic],
+# the cost line's `fx1_plugin=`; no fault. The dump: the chord audible throughout, dry after 58.5 s.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 96
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 35500
+tap t3 200
+at 36000
+tap t3 200
+at 36500
+press c4
+press e4
+press g4
+at 38000
+turn enc1 ccw 60
+at 41000
+turn enc1 cw 80
+at 44000
+turn enc2 cw 80
+at 46000
+turn enc3 cw 80
+at 48000
+turn enc4 cw 80
+at 50000
+tap enc2 200
+at 54000
+tap enc2 200
+at 56000
+press help
+at 56300
+turn enc1 ccw 12
+at 56800
+release help
+at 57000
+press shift
+at 57200
+press help
+at 57500
+turn enc1 cw 4
+at 57800
+release help
+at 58000
+release shift
+at 58500
+turn enc4 ccw 200
+at 60000
+release c4
+release e4
+release g4
+wait 8000
+screenshot /root/op1emu-work/freq_shift.ppm
+wait 2000
+quit

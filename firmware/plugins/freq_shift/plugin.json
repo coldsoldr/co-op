@@ -1,0 +1,29 @@
+{
+  "name": "freq_shift",
+  "kind": "fx",
+  "symbol": "FX_freq_shift",
+  "sources": [
+    "freq_shift.cc",
+    "src/shift.cc",
+    "src/shift_bfin.S",
+    "op1/support.cc"
+  ],
+  "include_dirs": [
+    "."
+  ],
+  "defaults": [
+    19000,
+    8192,
+    0,
+    16384
+  ],
+  "controls": [
+    {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
+     "default": 16384, "fine": true, "random": false},
+    {"id": "mode", "name": "mode", "action": "click", "encoder": "green", "word": 6, "kind": "steps",
+     "steps": ["shift", "ring"], "default": 0, "wrap": true}
+  ],
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "Frequency shifter and ring modulator after Mutable Instruments Warps (Emilie Gillet, MIT): te-op1-cfw's fixed-point port (ports/fx/src/shift, the hundekraft kennel plugin freq_shift 0.2, at 5aa314b), MIT, conveyed under the GPL. Blue shift (-2 kHz .. 0 .. +2 kHz), green feedback (barber-pole), white spread (L up, R down), orange mix; fn + blue input gain on the wet path (-6 .. +6 dB, shift + fn + blue fine), green click shift / ring. Stereo at every position, a Hilbert pair per channel."
+}
