@@ -2452,3 +2452,45 @@ a plain line in op1emu at the default sync setting).
 e9 port files load on e8 with the stock pages.
 
 Result: (pending)
+
+## e10: the boot picture, co-op's logo and the build's version — device test (pending, 2026-11-11)
+
+What changed (`docs/screens.md` "e10"): the picture at power-on is the app's (a raw RGB565 image the app LDR loads at
+0x02000000, shown until the GUI's first frame, ~2 s after the app starts), with the version printed by the stock
+console from the string at 0x018F7358. `tools/boot_logo.py` (in `tools/build_image.sh`) replaces the picture with
+coop's (four dots blue / green / white / orange in coop's brights, the "co-op" wordmark) and the line with
+`coop e10 - 246`, generated from `COOP_BUILD_TAG` at build time. Data only: no code, no hook, no CALLBACK block; the
+stock picture's sha256 and the stock string are checked first. te-boot and its own screen are untouched. Build tag
+`e10`; the core is e9's otherwise.
+
+- `build/pkg/op1_246_coop_e10.op1` sha256 `f184a2f46b34af90bc045cb818ca57a31c46004d47ad91a95b1e29627fd41fee`, copy in
+  Downloads. Release image as e9 (`--tape-stereo --set-word g_coop_spread=32767`). `verify_bootloader.py` PASS (no
+  te-boot.ldr), `pkg_check` = only `OP1_vdk.ldr` differs. Its L1 decrypts back to the op1emu-gated `e10.ldr` byte for
+  byte. Loaded memory against the e9 image: the picture (7,977 bytes in 0x0200622C..0x0201F729), the console string
+  (9 bytes in 0x018F7384..0x018F738E), and the core's build tag ("e10": the core's data and its two near/region-C
+  references move, 8,235 + 15 bytes).
+
+**Gate notes (op1emu, 2026-11-11, one run at a time, fresh NAND each)** [C op1emu]:
+
+| Run | Result |
+|---|---|
+| e10, boot, screenshots every 1.5 s | the first frame is coop's picture with `coop e10 - 246` under it (equal to the tool's preview within RGB565 rounding, max 7 / 255); the tape screen from the 7th shot (~9 s wall) on, identical to stock's and e9's; no fault |
+| stock and e9 (`e9base.ldr`), the same | TE logo + `R. 00246` until the tape screen; e9's picture identical to stock's (the reference) |
+| pristine `det_chord.txt`, e9 vs e10, twice each, alternating | no fault; ch0 rms equal pairwise (58.1 / 58.2, 58.8 / 58.8); e10 vs e9 max 3,073 unaligned / 14 aligned (`--align 200`), within the run-to-run spread of one image (e9 vs e9: 3,073 / 1; e10 vs e10: 14 / 14). No regression |
+
+**What to do:**
+1. Flash `op1_246_coop_e10.op1` through the te-boot menu (COM at power-on, "1. Upload firmware").
+2. Power on normally and look at the boot picture (about 2 s before the tape screen): on black, four dots left to
+   right blue, green, white, orange/red, then "co-op" in white, centred; a line `coop e10 - 246` below in the small
+   white console font, centred under it. Note: whether the whole picture is on the panel (the left / right edges,
+   the dots' and wordmark's colours and edges), whether it is centred, how long it shows, any flicker or a TE logo
+   flash before it. If the picture is shifted (other panel variants place it 12 or 40 px further left [I]), say by how much.
+3. It must then boot to the tape screen as e9 does; play a chord.
+4. Power-cycle once more: the same picture. (The first boot after a tape rebuild may show console text over or instead
+   of it, as stock does, e.g. "(re-)creating fat AIFC file": that is the stock log, not the picture.)
+5. Hold COM at power-on: te-boot's own screen with TE's logo and the menu must appear as before (recovery path).
+
+**If something is wrong:** power off; hold COM at power-on and flash `op1_246_coop_e9.op1` (or stock). A wrong picture
+cannot stop the boot (it is only data the display shows), and te-boot is reached before any app code runs.
+
+Result: (pending)

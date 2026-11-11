@@ -15,7 +15,8 @@
 #
 # Pipeline: inject_app (region A payload + callback imm seam) -> l1_decrypt decrypt-ldr (plaintext L1,
 # key read from otp.bin at run time, never stored) -> l1_insert --imm-pair-site (coop master stage at the
-# getter site, docs/audio-graph.md) -> l1_stereo_insert (milestone C1 trampolines + site rewrites).
+# getter site, docs/audio-graph.md) -> l1_stereo_insert (milestone C1 trampolines + site rewrites) -> boot_logo
+# (the boot picture and version line, docs/screens.md e10).
 # Every L1 patch checks the stock bytes before writing (CLAUDE.md hard rules).
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -52,7 +53,10 @@ python3 -I "$here/tools/inject_app.py" "$STOCK_LDR" "$work/inj.ldr" "$ELF" "${se
 python3 -I "$here/tools/l1_decrypt.py" decrypt-ldr "$work/inj.ldr" "$key" "$work/plain.ldr" --patches "$PATCHES"
 python3 -I "$here/tools/l1_insert.py" "$work/plain.ldr" "$work/master.ldr" \
     --imm-pair-site 0xffa017a4 --imm-stock 0x019d90e8 --fn "$master_fn"
-python3 -I "$here/tools/l1_stereo_insert.py" "$work/master.ldr" "$OUT" --elf "$ELF" $tape
+python3 -I "$here/tools/l1_stereo_insert.py" "$work/master.ldr" "$work/stereo.ldr" --elf "$ELF" $tape
+# The boot picture (e10): coop's logo at 0x02000000 and the version line from core/include/coop_build.h; plain SDRAM
+# blocks appended before FINAL and the stock console string, both checked against the stock bytes (tools/boot_logo.py).
+python3 -I "$here/tools/boot_logo.py" "$work/stereo.ldr" "$OUT"
 echo "# $OUT: plaintext coop image (op1emu); payload $ELF; master stage at $master_fn"
 if [ -n "$device" ]; then
   # The key arrangement check-key reports for this key (`--swap le --order 1032 --words "<"`; verified:

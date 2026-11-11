@@ -453,8 +453,23 @@ function drawUtil(){return drawPlugin()}
 function drawClock(){const s=S.save;const p=clamp((now()-s.start)/S.cfg.hold,0,1);let o=R(0,0,320,160,null,'#000');o+=E(160,76,30,30,C.dim);o+=arc(160,76,30,-90,-90+360*p,C.white,2.5);o+=T(160,126,(s.over?'overwrite ':'save to ')+s.key.toUpperCase(),C.lav,12,'middle');return o}
 function drawPopup(){const p=S.popup;return R(40,56,240,48,C.lav,'#000')+T(160,86,p.text,C.white,16,'middle')}
 
+
+/* ---------------- boot picture (e10; tools/boot_logo.py draws the same at build time) ---------------- */
+// Units here are the screen's SVG units (px / 1.25). Dots: coop's brights; "co-op": Instrument Sans SemiBold outlines
+// (OFL), the website's .brand row scaled 1.6 px a CSS px. The line below is the stock console's text, rewritten.
+const BOOT_WORDMARK='M288 10Q211 10 152 -24Q94 -58 60 -118Q27 -179 27 -256Q27 -333 60 -392Q94 -452 152 -486Q211 -520 288 -520Q351 -520 402 -496Q453 -473 486 -430Q519 -388 528 -332H407Q396 -373 365 -396Q334 -419 290 -419Q249 -419 220 -399Q190 -379 174 -342Q158 -305 158 -256Q158 -206 174 -169Q190 -132 220 -112Q250 -91 290 -91Q334 -91 365 -114Q396 -137 407 -178H528Q519 -122 486 -80Q452 -37 402 -14Q351 10 288 10Z M826 10Q745 10 684 -24Q622 -58 588 -118Q554 -179 554 -257Q554 -335 588 -394Q622 -453 684 -486Q745 -520 826 -520Q908 -520 969 -486Q1030 -453 1064 -394Q1098 -335 1098 -257Q1098 -179 1064 -118Q1029 -58 968 -24Q907 10 826 10ZM826 -91Q866 -91 898 -112Q930 -132 948 -170Q966 -207 966 -258Q966 -333 926 -376Q887 -419 826 -419Q765 -419 725 -376Q685 -333 685 -258Q685 -207 704 -170Q722 -132 754 -112Q785 -91 826 -91Z M1166 -219V-325H1525V-219Z M1866 10Q1785 10 1724 -24Q1662 -58 1628 -118Q1594 -179 1594 -257Q1594 -335 1628 -394Q1662 -453 1724 -486Q1785 -520 1866 -520Q1948 -520 2009 -486Q2070 -453 2104 -394Q2138 -335 2138 -257Q2138 -179 2104 -118Q2069 -58 2008 -24Q1947 10 1866 10ZM1866 -91Q1906 -91 1938 -112Q1970 -132 1988 -170Q2006 -207 2006 -258Q2006 -333 1966 -376Q1927 -419 1866 -419Q1805 -419 1765 -376Q1725 -333 1725 -258Q1725 -207 1744 -170Q1762 -132 1794 -112Q1825 -91 1866 -91Z M2497 10Q2424 10 2379 -25Q2347 -48 2332 -85V205H2206V-510H2329V-426Q2346 -463 2383 -487Q2433 -520 2505 -520Q2573 -520 2624 -488Q2674 -455 2702 -396Q2730 -337 2730 -257Q2730 -176 2701 -116Q2672 -56 2620 -23Q2568 10 2497 10ZM2465 -94Q2526 -94 2562 -136Q2598 -179 2598 -256Q2598 -333 2562 -375Q2525 -417 2464 -417Q2404 -417 2367 -374Q2330 -332 2330 -255Q2330 -178 2367 -136Q2404 -94 2465 -94Z';
+function drawBoot(){
+ const u=1/1.25,K=1.6,dot=14*K,gap=4*K,tgap=12*K,fs=20*K,sc=fs/1000,w=4*dot+3*gap+tgap+2760*sc,left=200-w/2,cy=84;
+ let o='<g transform="scale('+u+')">';
+ [C.blue,C.green,C.white,C.red].forEach((c,n)=>{o+=`<circle cx="${f(left+dot/2+n*(dot+gap))}" cy="${cy}" r="${f(dot/2)}" fill="${c}"/>`});
+ const base=cy-610*sc+970*sc;
+ o+=`<path d="${BOOT_WORDMARK}" fill="#FFFFFF" transform="translate(${f(left+4*dot+3*gap+tgap)} ${f(base)}) scale(${sc})"/>`;
+ o+=`<text x="200" y="143" fill="#FFFFFF" font-size="8" font-family="ui-monospace,Consolas,monospace" text-anchor="middle">coop ${esc(S.bootTag||'e10')} - 246</text>`;
+ return o+'</g>';
+}
 function draw(){
  let o='';
+ if(S.boot)return svg(drawBoot());
  if(S.settings)o=drawSettings();
  else if(S.util.open)o=drawUtil();
  else if(S.mode==='tape')o=drawTape();
@@ -647,9 +662,10 @@ const SCEN=[
  {id:'fx2',name:'Two effect slots',how:'<kbd>Shift</kbd> + T3 opens the list: blue column FX 1, green column FX 2 (none by default). T3 loads. On the FX page <b>lift</b> focuses FX 1, <b>drop</b> FX 2; T3 again toggles the focused slot: FX1 OFF / FX2 OFF.',set(){S.mode='synth';S.page=2;S.list={kind:'fx',pos:'synth'}}},
  {id:'lfo2',name:'Two LFO slots',how:'<kbd>Shift</kbd> + T4: blue column LFO 1, green column LFO 2. Lift / drop focus them on the LFO page.',set(){S.mode='synth';S.page=3;S.list={kind:'lfo',pos:'synth'}}},
  {id:'tape',name:'Mute, solo and markers (tape)',how:'<kbd>Shift</kbd> + T1–T4 mutes. <kbd>Shift</kbd> + <kbd>H</kbd> + T1–T4 solos (exclusive). <kbd>Shift</kbd> + an encoder push drops that colour\'s marker at the playhead (again on it: removes; elsewhere: moves). A plain push jumps to it. ◂ ▸ move the playhead.',set(){S.mode='tape'}},
+ {id:'boot',name:'Boot picture (e10)',how:'<b>Power-on.</b> The picture the app shows from its first frame until the first GUI frame (about 2 s): the four encoder dots in the coop brights and the co-op wordmark, and under them the version line the stock console prints, now <code>coop &lt;build tag&gt; - 246</code> (the tag is read from <code>core/include/coop_build.h</code> at build time). The te-boot screen (COM at power-on) keeps the TE logo. No keys act here.',set(){S.boot=true}},
  {id:'random',name:'Randomise',how:'Hold <b>synth</b> (<kbd>S</kbd>) + ▸ randomises the current page\'s parameters (T1 engine, T2 envelope, T3 FX, T4 LFO). Synth + ◂ steps back through the last five.',set(){S.mode='synth';S.page=0;S.plugin=clonePreset(PRESETS.scope);syncVals(true)}}];
 function latch(k){latched.add(k);if(!held.has(k)){held.add(k);onKey(k,true)}}
-function resetDevice(){held.forEach(k=>{held.delete(k)});latched.clear();S.list=null;S.rename=null;S.settings=null;S.util.open=false;S.save=null;S.popup=null;S.readout=null;S.confirm=null;S.bend.cur=0}
+function resetDevice(){S.boot=false;held.forEach(k=>{held.delete(k)});latched.clear();S.list=null;S.rename=null;S.settings=null;S.util.open=false;S.save=null;S.popup=null;S.readout=null;S.confirm=null;S.bend.cur=0}
 function setScenario(id){const sc=SCEN.find(s=>s.id===id);if(!sc)return;S.scenario=id;resetDevice();sc.set();document.getElementById('howto').innerHTML=sc.how;fillPluginEditor();update()}
 
 function fillPluginEditor(){

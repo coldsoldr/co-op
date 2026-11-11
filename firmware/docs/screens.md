@@ -317,3 +317,41 @@ The owner's u7 device notes: the FX 2 page's dials did not follow the encoders (
   `coop_fx_service`) constructs the posted change: it clears `kind_on`, waits for a render in flight (`rendering`),
   builds, publishes `built = req`; the audio thread runs the slot only while `req == built`, so a slot whose change is
   pending passes dry for a few blocks.
+
+## e10: the boot picture (2026-11-11) [C in the bytes and op1emu; I until the device]
+
+The picture at power-on (the TE logo and "R. 00246") is the **app's**, not te-boot's:
+- te-boot's init DXE touches no PPI or PPI-DMA register (its MMRs: TWI, GPIO, NFC, EBIU, OTP), and in app mode the
+  Boot ROM goes straight from it to `OP1_vdk.ldr`; op1emu, which loads the app LDR without te-boot, shows the same
+  picture. te-boot has its own copy for its menu (its DXE 1 block at 0x02000000, different bytes), which coop does not
+  touch: COM at power-on still shows TE's logo and the menu.
+- **The picture** is a raw 240 x 320 RGB565 image the app LDR loads at `0x02000000` (0x25800 bytes, plain SDRAM:
+  short data runs and zero FILLs, no CALLBACK block). Early in the boot (`0x01976474`, guest 0.33 s in op1emu) the
+  stock re-strides it in place from 240 to the display's 256-pixel rows at `0x02000000 + 0x5000` (0x3800 or 0 for
+  other panel variants, from the flags `0xFF906A54/56` and `0x018BE698`), then clears the margins. The PPI DMA
+  (`0xFFC00C04..`) shows 400 lines of 200 pixels with that 512-byte stride: landscape (400 x 200 px = the SVG units x
+  1.25), picture row r and column c land at x = 359 - r, y = c; columns 200..239 are never shown.
+- **The version** is a console string at `0x018F7358`: 17 newlines, 33 spaces, `R. 00246` (59 bytes with its NUL).
+  The display interrupt (`0x01A2FB68`, from the DMA handler `0x01A2FD04`) sees the boot flag `0x018B6460` (1 in the
+  image), prints the string through the stock console (`0x019416EA` buffers it, `0x01941558` draws it: an 8-pixel
+  ASCII font at `0x01001478` / `0x01001AC8`, cells black where a bit is clear, x 0 = landscape x 43), points the DMA
+  at the picture, clears the flag. The same "00246" elsewhere (`0x018E4358`) is not this one.
+- **How long**: the first PPI frame at 0.80 s guest to the GUI's first frame, which moves the DMA to `0x03000000`, at
+  2.85 s guest (op1emu, pristine NAND, stock and coop alike); on the device add the ROM's load of the LDR before it
+  [I]. Nothing of the app's screen machinery (SVGs, the TE heap, the screen table) is involved or up by then.
+- **Other pictures**: console text the stock logs while booting (the first-boot tape FAT's "(re-)creating fat AIFC
+  file: N%", the "side_b.aif 94 %" screen of docs/plugins.md) and the fatal-error text (`0x01919A20` prints into
+  0x02000000 and 0x03000000) go through the same console; they are not part of the picture and are unchanged [I: the
+  mechanism, from the code]. The app-side update path's messages are console text too.
+
+coop's picture (`tools/boot_logo.py`, run by `tools/build_image.sh` after the L1 inserts, so emulator and device
+images both carry it): four dots in coop's encoder brights (blue 698EFF, green 00ED95, white FFFFFF for the grey
+encoder, orange FF3A5D; the website's tokens differ) and the "co-op" wordmark as the website sets it (Instrument Sans
+SemiBold, letter spacing -0.025 em, outlines taken once from the font, OFL), the website's .brand row scaled 1.6 px a
+CSS px, centred at x 200, dots on y 84. The version line stays the stock console's (same font, same line 17, centred
+by the tool from the font's widths): `coop <COOP_BUILD_TAG> - <stock version>`, e.g. `coop e10 - 246`, read from
+`core/include/coop_build.h` at build time; the console draws ASCII only, so no middle dot. The tool checks the stock
+picture's sha256 and the stock string first, appends a zero FILL plus plain blocks for the new picture before the
+FINAL block (every stock block keeps its file offset) and rewrites the string in place. A mistake here is data only:
+it can draw a wrong picture, not stop the boot, and te-boot (COM at power-on) is reached before any app code runs.
+Mock: the playground's "Boot picture (e10)" scenario.
