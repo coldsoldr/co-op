@@ -37,6 +37,7 @@
 #define MAX_MSG   128                                              /* a message we accept (the host sends <= 96) */
 #define QN        4
 #define CHUNK     64
+#define INV_MAX   8192                                                  /* e7: the inventory text (48 rows of up to ~150 bytes) */
 #define PROTOCOL  1
 #include "coop_build.h"                                            /* p6k: the tag HELLO reports is the package tag */
 #define BUILD_TAG COOP_BUILD_TAG
@@ -299,7 +300,7 @@ static void handle(const uint8_t *m, int n)
     if (cmd == CX_INVENTORY) {
         /* e3: u32 offset -> status, u32 total, up to 64 bytes of the inventory text (plugin_host.cc). Offset 0 takes
          * a fresh snapshot; later offsets page through it, as FILE_GET pages a file. */
-        static char inv[2048];
+        static char inv[INV_MAX];                                           /* e7: 48 rows (was 2048) */
         static int inv_len;
         if (pn < 4) { out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
         uint32_t off = (uint32_t)in[0] | ((uint32_t)in[1] << 8) | ((uint32_t)in[2] << 16) | ((uint32_t)in[3] << 24);
@@ -343,7 +344,7 @@ static void selftest_ask(int cmd, const uint8_t *payload, int n)
 }
 static void selftest_inventory(void)
 {
-    for (uint32_t off = 0; off < 2048; off += CHUNK) {
+    for (uint32_t off = 0; off < INV_MAX; off += CHUNK) {
         uint8_t p[4] = { (uint8_t)off, (uint8_t)(off >> 8), 0, 0 };
         int before = st_len;
         selftest_ask(CX_INVENTORY, p, 4);

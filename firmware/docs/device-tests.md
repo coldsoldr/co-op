@@ -2244,3 +2244,44 @@ or dies, a click at the clear.
 delete the plugin from the Settings tab.
 
 Result: (pending)
+
+## e7: 32 plugin files, a plugin memory budget, the boot hang fixed — device test (pending, 2026-11-11)
+
+What changed (`docs/plugins.md` "e7"): up to 32 plugin files load (was 8), every file that does not load is named
+with a reason in the stats and the inventory, and the plugins may take at most 1,536 KiB of heap 0, so the stock tape
+cache (built from the same heap right after) always fits. The e6 hang with large sets was the stock tape asserting
+`tape_c.cpp:62 data` when a cache node no longer fit in heap 0 [C op1emu].
+
+- Package: **not built yet** (`build/pkg/op1_246_coop_e7.op1`, release image as e6: `--tape-stereo --set-word
+  g_coop_spread=32767`, build tag `e7`). The agent's WSL went read-only mid-gate when the C: drive filled up (0 bytes
+  free); the package and the remaining gates wait for space on C: [pending].
+- [C op1emu, e7 image, release core + `g_coop_force_stereo_out=1`] **rings + tape_echo + cs_hall + cs_plate (2.34 MB,
+  hung on e6), fresh NAND, `det_fx_select.txt`**: boots and plays (42.9 s of audio, no fault). Directory order: rings and
+  cs_plate load, tape_echo and cs_hall are refused:
+  ```
+  plugins seen 4 loaded 2 failed 2 disabled 0 skipped 0 over_budget 2 ...
+  plugmem budget 1572864 used 1103984 over_budget 2 heap_short 0 skipped 0 badname 0 tape_node 524288 heap_free_boot 14636460
+  plugfile tape_echo.coop failed needs 718480: over the plugin memory budget
+  plugfile cs_hall.coop failed needs 514880: over the plugin memory budget
+  ```
+  `heap_largest 1456596 heap_free 1622516 heap_top 1456596` at the end of the run (heap 0 left after the tape's cache).
+- Pending gates [pending]: pristine `det_chord.txt` against the e6 spread; `det_fx_controls.txt` / `det_fx_reload.txt`
+  (test_fx); saw `det_eng_controls.txt`; the 11-file NAND (nine ports + rings + saw) on a fresh NAND; the 2.34 MB set
+  with `--set-word g_coop_plug_budget=16777216` (the heap check alone must refuse and boot); a second boot of a NAND
+  that hung on e6.
+
+**What to do** (once the package exists):
+1. Flash `op1_246_coop_e7.op1`. Keep the plugins you have; power-cycle once. It boots to the tape as before.
+2. Install rings, tape_echo, cs_hall and cs_plate together (the set that would have hung on e6) and power-cycle. The
+   OP-1 must boot and play. Copy `/yaffs2/user/coop_stats.txt`: the `plugins` line, the `plugmem` line and every
+   `plugfile` line. Expected: two of the four refused with `over the plugin memory budget` (which two depends on the
+   directory order on the device).
+3. Open the librarian's plugin list: the refused files show as failed with the same reason and their sizes.
+4. Optional: put all nine effect ports, rings and saw on the device (11 files); every file is either loaded or has a
+   `plugfile` line; play an effect that loaded.
+5. Note `heap_free` / `heap_largest` on the `plugins` line after a few minutes of playing (the device's own heap margin).
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e6.op1` (or stock), and
+remove the big plugins before booting e6.
+
+Result: (pending)

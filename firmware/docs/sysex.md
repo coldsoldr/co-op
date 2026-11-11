@@ -69,11 +69,14 @@ loop like every command; capabilities bits 4 and 5 say they are there.
   - then one line per `.coop` file in `/yaffs2/plugins`, tab-separated: file, kind (`fx`, `synth`, `?` for a file the
     boot did not read), name (the type name the lists show), boot (`loaded`, `failed`, `disabled`: skipped by the
     settings list, `new`: the file came after the boot), next (`on` or `off`: what the next boot does), version,
-    author, size in bytes, reason (the loader's text for a failed file, else empty).
+    author, size in bytes, reason (the loader's text for a failed file, else empty). e7: up to 48 files (8 KB of text);
+    a file the boot refused for the plugin memory budget or skipped past the 32-file limit is `failed` with the reason
+    (`over the plugin memory budget (needs N KB, M KB of 1536 KB left)`, `not enough memory left for the tape`,
+    `more than 32 plugin files`).
 - `0x29 PLUGIN_SET`: payload enable byte (1 on, 0 off) + the file name (no directory). Puts the file on or off the
   settings file's disabled list and writes `/yaffs2/user/coop_settings.bin` at once. Reply: status, the enable byte.
   Status 2: the device's settings menu is open (its own edit wins: close it and retry); 3: a name with `/`; 4: the
-  list is full (16 files); 7: the write failed. Applied at the next boot, like the menu's toggle.
+  list is full (32 files since e7, 16 before); 7: the write failed. Applied at the next boot, like the menu's toggle.
 - No restart command exists: after PUT, DELETE or PLUGIN_SET the host asks the user to power-cycle.
 - Proven in op1emu with the image-time self-test `--set-word g_coop_sysex_selftest=1`: once the plugins are loaded,
   `coop_sysex_service` feeds `handle()` HELLO, a full INVENTORY, PLUGIN_SET off `saw.coop`, INVENTORY, PLUGIN_SET on,

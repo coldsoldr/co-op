@@ -516,15 +516,66 @@ cost slot of its own (the master runs the same render) [I].
   plugins in number order, so `det_fx_controls.txt`'s FX 2 picks worked unchanged with one plugin on the NAND.
 - Three port scenarios ended before their own events (their final `wait`, wall time, was too short):
   `det_fx_ensemble.txt` and `det_fx_freq_shift.txt` now wait 75 s, `det_fx_cs_plate.txt` 80 s.
-- **The core loads at most 8 plugin files** (`plugin_host.cc` `MAX_FILES 8`): a ninth and later file in
-  `/yaffs2/plugins` is skipped without a word (not counted in `seen`, not `failed`). With the nine ports, rings and saw
-  (11 files) on one NAND, 8 loaded (saw, tape_drive, bitcrusher, ensemble, rings, cs_plate, drive, tape_echo, in
-  directory order) and freq_shift, wavefolder and cs_hall were silently absent. Raising the limit is a core change for
-  the owner to decide.
-- **A boot hang above ~2.1 MB of plugin memory** (load x 5 for an effect, x 1 for an engine): rings + tape_echo +
-  cs_hall + cs_plate (2.34 MB) never reach audio on a fresh NAND (the stock's first boot stops at the tape FAT step,
-  no fault), while sets up to 2.05 MB boot and play (`docs/device-tests.md` "e6", the combined runs). The loader
-  finishes; no "plugin memory full" is reported, and `heap_largest` does not show the margin [I]. tape_echo (718 KB),
-  rings (666 KB), cs_hall (515 KB) and cs_plate (438 KB) are the large ones: the owner to decide (fewer relocations
-  for big effects, a memory budget the loader enforces, or smaller lines); until then don't install those together.
+- e6 loaded at most 8 plugin files and hung at boot above ~2.1 MB of plugin memory; both are fixed in e7 (next
+  section).
 - `det_chord.txt` is not exact run to run any more, for e5 and e6 alike (`docs/device-tests.md` "e6").
+
+## e7 (2026-11-11): 32 plugin files, every file not loaded named, a plugin memory budget
+
+The owner's decisions after the e6 gate: raise the file limit to 32 and report every file that does not load; find
+why large plugin sets hang at boot, then add a load budget so the OP-1 always boots.
+
+**The boot hang, found** [C op1emu]. rings + tape_echo + cs_hall + cs_plate (2.34 MB) on a fresh NAND, e6 image, with
+op1emu's new `--dump-at-exit LO+LEN:PATH` (guest memory to a file and the PC / SP / RETS logged at exit; a local
+addition to `gui/main.cpp` of the op1emu work tree, not yet captured as `tools/op1emu-patches/0004` [pending]):
+- The CPU sits at `0x0191995A`, `IDLE; JUMP.S self`, called from `0x01919B08`: the stock fatal handler (`0x01919AA8`).
+  Its message buffer (`0x01BA138C`) reads `..\src\dsp\tape_c.cpp:62 data` with the backtrace `0x1a5425e 0x19d7bc8
+  0x19f040a 0x19f0f08 0x1a9c290`. Nothing reaches the screen, so the last frame (the first-boot "side_b.aif 94 %")
+  stays.
+- `0x01A5425E` is in the tape cache constructor (`0x01A54168`, docs/tape-stereo.md): 24 nodes, each
+  `MALLOC(0x80000)` (heap 0; 512 KiB with the stereo tape) whose null result is that assertion.
+- heap 0 at the hang (descriptor at `0x100`, from `[0x01DFFC40]`): break `0x00FC9780`, 223,356 bytes above it, 7 free
+  blocks of 1,019,808 bytes, the largest 524,288: a node takes a 0x80008-byte block. So heap 0 ran out.
+- The break over the boot (`--watch-writes 0x10c`, the descriptor's break word): 0xE3BA0 when coop's plugin scan starts
+  (2.64 s), 0x449740 after it (the plugins and the 1 MiB staging block), **0xC49748 after e4's `heap_probe`** (+8 MiB),
+  then the tape's nodes: 15 fit in the 8 MiB block the probe left free, 7 from the break, one from the staging hole,
+  the 24th fails at 2.81 s.
+- **Why `heap_largest` said 8,388,608 every time**: the probe's binary search asks for 16 MiB (fails), then 8 MiB, which
+  succeeds from the break; heap 0 never moves its break back, so the freed 8 MiB becomes a free block and every larger
+  try fails. Any heap with 8 to 16 MiB left reports exactly 8 MiB, and the probe cost the tape a node of room (8 MiB
+  holds 15 nodes, not 16).
+- The same mechanism on every boot: the cache is built after the plugin scan on a fresh NAND (1.23 s) and on a booted
+  one (0.81 s). The pristine NAND's first boot ends with 2,729,052 bytes of heap 0 free, the second boot with 3,053,204
+  (op1emu, no plugin files, e6): the first boot makes the tape files and is the worst case. After the cache, the stock
+  takes another ~0.3 MB of heap 0 at boot (both boots) and nothing more through a minute of playing.
+
+**What e7 does** (`core/sdram/plugin_host.cc`):
+- `MAX_FILES 32` (numbers 32..63). The scan reads the whole directory: a 33rd and later `.coop` file is counted
+  (`skipped`), the first 8 of them named, and a `.coop` name of 40 characters or more is counted too (`badname`).
+  `seen` = loaded + failed + disabled + skipped. The settings menu's disabled list holds 32 (`DIS_MAX`, was 16); the
+  SysEx inventory lists up to 48 files (8 KB of text, was 16 files / 2 KB).
+- **The budget: 1,536 KiB (1,572,864 bytes) of heap 0 for all plugins**, counted as the heap takes it: each block
+  `(n + 15) & ~7` with its header; an effect = 5 relocations, an engine = its relocation + its per-voice state. Files
+  load in directory order; one that would take the total over the budget is refused before anything is allocated:
+  `over the plugin memory budget`. Why 1.5 MiB: the first boot leaves 2.6 MiB free with no plugins; 1.5 MiB keeps
+  ~1.1 MiB free after the boot, for what coop allocates later (an FX 2 delay / cwo line 173 KiB each, spring tanks
+  57 KiB, the master's grid tank 264 KiB: ~0.75 MiB at most), the USB disk heap (96 KiB) and unknown stock use. A booted
+  NAND has 0.3 MiB more. [I: the device's heap use is assumed to match op1emu's.]
+- **A second check, against the heap itself**: after a plugin's blocks are taken, heap 0 (read in place) must still hold
+  the tape's 24 nodes (node size read from the stock instruction at `0x01A54172`) and 512 KiB more, or the plugin is
+  freed and refused: `not enough memory left for the tape`. With the budget it never triggers in op1emu; it is there for
+  a device whose stock uses more heap before the scan (many files on the NAND) [I].
+- `heap_probe` is gone. The stats read heap 0 in place: `heap_largest`, `heap_free`, `heap_top` (above the break), on
+  the `plugins` line, at the time the stats are written.
+- Test switch `--set-word g_coop_plug_budget=N` (another budget; 0 = 1,536 KiB) to exercise the heap check.
+
+**Stats** (after the `plugins` line, which gains `skipped` and `over_budget`):
+```
+plugmem budget 1572864 used <bytes> over_budget N heap_short N skipped N badname N tape_node 524288 heap_free_boot <bytes>
+plugfile <file> <failed|disabled|skipped> needs <bytes>: <reason>      one per file not loaded
+plugfile unnamed_skipped N                                             files past the 8 named ones
+```
+**Inventory** (docs/sysex.md): a refused or skipped file is `failed` (the librarian's word for not loaded) with the
+reason, e.g. `over the plugin memory budget (needs 702 KB, 457 KB of 1536 KB left)`, `more than 32 plugin files`.
+
+**Gate** (op1emu, one run at a time): see `docs/device-tests.md` "e7".

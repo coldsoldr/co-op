@@ -67,3 +67,11 @@ When porting a kennel (.knl) or opus plugin to a coop FX, the port MUST satisfy:
 Per-voice panning is not only synths: **each drum-kit voice is independently pannable too** (the drum
 voices get their own per-voice pan + spread, same model as synth voices; `coop_voice.h` already sizes
 `COOP_MAX_VOICES` for the 12 drum voices). See docs/stereo-bus.md.
+
+## Memory (e7)
+
+An effect is relocated five times (one instance per position), so its load size (code + data + .bss) counts five
+times against the plugin memory budget: 1,536 KiB for all plugin files together (`docs/plugins.md` "e7"); an engine
+counts once plus its per-voice state. A file that would take the total over the budget is refused at boot, named in
+the stats (`plugfile`) and the inventory. Keep large lines and tanks small: tape_echo (718 KB) and cs_hall (515 KB)
+each take a third to a half of the budget.

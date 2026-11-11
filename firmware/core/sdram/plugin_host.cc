@@ -51,7 +51,8 @@
 #define RANGE_TABLE      ((const int16_t *)(0x01DE5C50u + 5 * 0x30))    /* fx type 5 knob ranges: min, max, default x 4 */
 
 #define DIR_PLUGINS "/yaffs2/plugins"
-#define MAX_FILES   8
+#define MAX_FILES   32                                                    /* e7 (was 8): one per file number 32..63 */
+#define SKIP_KEEP   8                                                     /* e7: files past MAX_FILES named in the report */
 #define NAME_MAX    40
 #define FILE_MAX    0x00100000u
 #define ARENA_ALIGN 32u
@@ -86,12 +87,20 @@ static struct plug g_plug[SLOTS];                                          /* by
 struct mapent { char name[16]; uint8_t n, present; };
 static struct mapent g_map[MAP_MAX];
 static int g_map_n, g_map_dirty;
-static char g_names[MAX_FILES][NAME_MAX];
-static int g_n_names;
-/* e3: what the boot scan made of each file, for the SysEx inventory (coop_inventory_text) */
-enum { FS_NONE, FS_LOADED, FS_FAILED, FS_DISABLED };
-struct fileinfo { uint8_t state, kind; char name[16]; char version[12]; char author[24]; uint32_t size; const char *reason; };
-static struct fileinfo g_finfo[MAX_FILES];
+/* g_names[0..g_n_names): the files the boot scan takes (at most MAX_FILES, directory order); e7: then the first
+ * SKIP_KEEP files past that limit, [MAX_FILES .. MAX_FILES + g_n_skipnames), kept only to be named in the report.
+ * g_plugins_skipped counts every file past the limit (named or not) and every .coop name too long to open. */
+static char g_names[MAX_FILES + SKIP_KEEP][NAME_MAX];
+static int g_n_names, g_n_skipnames;
+volatile uint32_t g_plugins_skipped, g_plugins_badname, g_plugins_over_budget, g_plugins_heap_short;
+/* e3: what the boot scan made of each file, for the SysEx inventory (coop_inventory_text) and (e7) the stats report */
+enum { FS_NONE, FS_LOADED, FS_FAILED, FS_DISABLED, FS_SKIPPED };
+struct fileinfo { uint8_t state, kind; char name[16]; char version[12]; char author[24]; uint32_t size; const char *reason;
+                  uint32_t need; };                                          /* e7: heap bytes it takes (or would have) */
+static struct fileinfo g_finfo[MAX_FILES + SKIP_KEEP];
+static const char *const R_SKIPPED = "more than 32 plugin files";
+static const char *const R_BUDGET = "over the plugin memory budget";
+static const char *const R_HEAP = "not enough memory left for the tape";
 static int g_cur[3] = { -1, -1, -1 };                                       /* the plugin each position initialised last */
 static void *g_self[2];                                                    /* the mono filter objects of positions 0 / 1 */
 static int16_t g_params_z[8];
@@ -258,10 +267,17 @@ static void list_dir(void)
     void *d = Y_OPENDIR(DIR_PLUGINS);
     if (!d) return;
     const uint8_t *e;
-    while ((e = Y_READDIR(d)) && g_n_names < MAX_FILES) {
+    while ((e = Y_READDIR(d))) {                                           /* e7: the whole directory; nothing skipped unsaid */
         const char *s = (const char *)e + 11;
-        if (s[0] == '.' || slen(s) >= NAME_MAX || !ends_with(s, ".coop")) continue;
-        scopy(g_names[g_n_names++], s, NAME_MAX);
+        if (s[0] == '.' || !ends_with(s, ".coop")) continue;
+        if (slen(s) >= NAME_MAX) { g_plugins_skipped++; g_plugins_badname++; continue; }   /* cannot be opened by name */
+        if (g_n_names < MAX_FILES) { scopy(g_names[g_n_names++], s, NAME_MAX); continue; }
+        g_plugins_skipped++;
+        if (g_n_skipnames < SKIP_KEEP) {
+            int k = MAX_FILES + g_n_skipnames++;
+            scopy(g_names[k], s, NAME_MAX);
+            g_finfo[k].state = FS_SKIPPED; g_finfo[k].reason = R_SKIPPED;
+        }
     }
     Y_CLOSEDIR(d);
 }
@@ -278,6 +294,79 @@ static void code_sync(uint32_t lo, uint32_t hi)
     for (uint32_t a = lo & ~31u; a < hi; a += 32) __asm__ __volatile__("iflush [%0];" : : "a"(a) : "memory");
     __asm__ __volatile__("csync;" ::: "memory");
     g_code_syncs++;
+}
+
+/* ---- e7: the plugin memory budget and heap 0 read in place ----
+ * Why (docs/plugins.md "e7"): the plugins load from heap 0 right before the stock tape builds its cache there, 24 nodes
+ * of one MALLOC each (tape_c, 0x01A54168; 512 KiB a node with the stereo tape, docs/tape-stereo.md). When a node does
+ * not fit, the stock asserts (`tape_c.cpp:62 data`) and halts in its fatal handler (0x01919AA8 -> IDLE loop
+ * 0x01919954): the e6 boot hang with ~2.1 MB of plugins. The cache is built after the plugin scan on every boot (op1emu:
+ * 1.23 s fresh, 0.81 s on a booted NAND); a fresh NAND's first boot leaves ~0.32 MB less of heap 0 (the tape files are
+ * made then), so it is the worst case.
+ *
+ * The heap, from the stock code (heap_malloc 0x01AA0318, sbrk 0x01A9F004; te-op1-cfw docs/memory-map.md §3): the heap
+ * list head 0x01DFFC40 points at heap 0's descriptor (at the heap's base, 0x100): +0 base, +4 length, +0xC the break
+ * (above it nothing was ever handed out), +0x18 the free list head. A block is { size with its 8-byte header, heap id,
+ * next (free blocks) }; MALLOC(n) takes a block of (n + 15) & ~7 from the first free block that holds it, else from
+ * the break. A block once taken from the break never goes back above it: freed, it joins the free list. */
+#define HEAP_LIST     (*(volatile uint32_t *)0x01DFFC40u)
+#define TAPE_NODE_OP  (*(volatile uint16_t *)0x01A54172u)                  /* tape_c: BITSET (R0, n), the node data size */
+#define TAPE_NODES    24                                                    /* the node loop's bound (0x01A54200: R4 < 0x18) */
+#define PLUG_BUDGET_DEFAULT (1536u * 1024u)                                 /* heap bytes all plugins may take (docs/plugins.md e7) */
+/* Image-time test switch (--set-word g_coop_plug_budget=N): another budget, so a gate can show the heap check (below)
+ * refusing what the budget would have let through. 0 = the default. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_plug_budget = 0; }
+#define PLUG_BUDGET   (g_coop_plug_budget ? g_coop_plug_budget : PLUG_BUDGET_DEFAULT)
+#define HEAP_RESERVE  (512u * 1024u)                                        /* heap 0 left after the tape's nodes, at least */
+static uint32_t blk(uint32_t n) { return (n + 15u) & ~7u; }                 /* the heap block MALLOC(n) takes */
+volatile uint32_t g_plug_mem_used, g_heap0_free_boot, g_tape_node;
+static uint32_t tape_node_size(void)
+{
+    uint32_t op = TAPE_NODE_OP, n = (op >> 3) & 31u;
+    return ((op & 0xFF07u) == 0x4A00u && n >= 16 && n <= 20) ? (1u << n) : 0x80000u;
+}
+struct heap0 { uint32_t free, largest, top, nodes; };
+/* Heap 0 as it is now, read only (no MALLOC: e4's heap_probe grew the break by 8 MiB each boot and so reported 8 MiB
+ * whatever was left). `extra` is a block about to be freed (the staging block): counted as free. nodes = how many
+ * blocks of `node` bytes the free blocks and the break could still give. Pointers are range-checked and the walk is
+ * bounded, so a list changing under it can only give a wrong figure. */
+static int heap0_read(struct heap0 *h, uint32_t node, uint32_t extra)
+{
+    h->free = h->largest = h->top = h->nodes = 0;
+    uint32_t desc = HEAP_LIST;
+    if (desc < 0x100u || desc >= 0x01000000u || (desc & 3)) return 0;
+    const volatile uint32_t *dp = (const volatile uint32_t *)(uintptr_t)desc;
+    uint32_t base = dp[0], end = dp[0] + dp[1], brk = dp[3];
+    if (base > brk || brk > end || end > 0x01000000u) return 0;
+    h->top = end - brk;
+    if (node) h->nodes = h->top / node;
+    h->largest = h->top;
+    uint32_t p = dp[6];
+    for (int i = 0; p && i < 4096; i++) {
+        if (p < base || p + 12u > brk || (p & 3)) break;
+        const volatile uint32_t *b = (const volatile uint32_t *)(uintptr_t)p;
+        uint32_t sz = b[0];
+        if (sz > end - base) break;
+        h->free += sz;
+        if (sz > h->largest) h->largest = sz;
+        if (node) h->nodes += sz / node;
+        p = b[2];
+    }
+    if (extra) { h->free += extra; if (node) h->nodes += extra / node; if (extra > h->largest) h->largest = extra; }
+    h->free += h->top;
+    return 1;
+}
+/* After a plugin's blocks are taken (and `pending` bytes more will be): would the tape's nodes and HEAP_RESERVE
+ * still fit? 1 = yes (or heap 0 cannot be read: then the budget alone decides). */
+static uint32_t g_stage_blk;                                                /* the staging block, live while files load */
+static int heap_room_ok(uint32_t pending)
+{
+    struct heap0 h;
+    uint32_t node = blk(g_tape_node ? g_tape_node : 0x80000u);
+    if (!heap0_read(&h, node, g_stage_blk)) return 1;
+    uint32_t need = TAPE_NODES * node + HEAP_RESERVE + pending;
+    if (h.nodes < TAPE_NODES + (pending + node - 1) / node) return 0;
+    return h.free >= need;
 }
 
 static struct fileinfo *g_cur_info;                                       /* e3: the file load_one is reading (boot) */
@@ -314,12 +403,15 @@ static const char *load_one(const char *fname, uint8_t *stage)
     if (in.controls && !(in.flags & KN_FLAG_PAGE2)) return "effect controls without the page-2 flag (repack)";
     int n = number_for(in.type_name);
     if (!n) return "no free plugin number";
+    /* e7: the budget first (five relocations, one block each), before anything is taken or set */
+    uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN, cost = POSITIONS * blk(cap);
+    if (g_cur_info) g_cur_info->need = cost;
+    if (g_plug_mem_used + cost > PLUG_BUDGET) { g_plugins_over_budget++; return R_BUDGET; }
     if (in.controls) { err = coop_fx_set_controls(n, in.controls); if (err) return err; }   /* e6, before anything runs */
     /* one relocated instance per position (P2b): a plugin selected at two positions at once keeps two states */
     const coop_fx_t *inst[POSITIONS];
     uint8_t *raws[POSITIONS] = { 0 };
     for (int k = 0; k < POSITIONS; k++) {
-        uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN;
         uint8_t *raw = (uint8_t *)MALLOC(cap);
         if (!raw) err = "plugin memory full";
         else {
@@ -337,8 +429,10 @@ static const char *load_one(const char *fname, uint8_t *stage)
                 else inst[k] = fx;
             }
         }
+        if (!err && k == POSITIONS - 1 && !heap_room_ok(0)) { err = R_HEAP; g_plugins_heap_short++; }   /* e7 */
         if (err) { for (int j = 0; j <= k; j++) if (raws[j]) FREE(raws[j]); return err; }
     }
+    g_plug_mem_used += cost;
     scopy(g_plug[n].name, in.type_name, 16);
     for (int i = 0; i < 4; i++) g_plug[n].def[i] = in.defaults[i];
     if (in.flags & KN_FLAG_PAGE2) {                                        /* e6 */
@@ -365,7 +459,9 @@ static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fn
     if (in.flags) return "plugin flags not supported yet";
     int n = number_for(in.type_name);
     if (!n) return "no free plugin number";
-    uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN;
+    uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN, cost = blk(cap);
+    if (g_cur_info) g_cur_info->need = cost;
+    if (g_plug_mem_used + cost > PLUG_BUDGET) { g_plugins_over_budget++; return R_BUDGET; }   /* e7: the code alone already */
     uint8_t *raw = (uint8_t *)MALLOC(cap);
     if (!raw) return "plugin memory full";
     uint32_t base = ((uint32_t)(uintptr_t)raw + ARENA_ALIGN - 1) & ~(ARENA_ALIGN - 1);
@@ -389,9 +485,17 @@ static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fn
         uint32_t sc = (uint32_t)(uintptr_t)e->screen;
         if (!err && sc && (sc < base || sc + sizeof(coop_screen_t) > image_end || (sc & 3))) err = "screen object outside the plugin";
     }
+    if (!err && e->voice_bytes <= COOP_VOICE_BYTES_MAX) {                  /* e7: with its per-voice state (engine_host.cc) */
+        uint32_t stride = (e->voice_bytes + 31u) & ~31u, vs = stride ? blk(stride * COOP_VOICES + 32u) : 0;
+        cost += vs;
+        if (g_cur_info) g_cur_info->need = cost;
+        if (g_plug_mem_used + cost > PLUG_BUDGET) { err = R_BUDGET; g_plugins_over_budget++; }
+        else if (!heap_room_ok(vs)) { err = R_HEAP; g_plugins_heap_short++; }
+    }
     if (!err) err = coop_engine_set_controls(n, in.controls);           /* e4: before the engine plays */
     if (!err) err = coop_engine_add(n, e);
     if (err) { FREE(raw); return err; }
+    g_plug_mem_used += cost;
     scopy(g_eng_name[n], in.type_name, 16);
     if (e->screen && in.svg) coop_engine_screen_file(n, fname);           /* E2: built on the Gfx thread later */
     g_engines_loaded++;
@@ -413,18 +517,14 @@ volatile uint32_t g_plugins_disabled;
 extern "C" int coop_plugin_file_count(void) { return g_n_names; }
 extern "C" const char *coop_plugin_file_name(int i) { return i >= 0 && i < g_n_names ? g_names[i] : 0; }
 
-/* e4: the largest block heap 0 can give after the plugins loaded (a binary search of MALLOC / FREE, main thread, boot),
- * for the stats `plugins` line: whether a large engine (rings: ~620 KB) still fits beside the others. */
-volatile uint32_t g_heap_largest;
-static void heap_probe(void)
+/* e4 measured heap 0's largest block here with a binary search of MALLOC / FREE; that grew the heap's break by 8 MiB
+ * on every boot with plugins (a block taken from the break never goes back), so it always said 8,388,608, and it cost
+ * the tape's cache a node of room (e7). e7 reads heap 0 in place instead (heap0_read, coop_heap0_stats). */
+extern "C" void coop_heap0_stats(uint32_t *free_b, uint32_t *largest, uint32_t *top)
 {
-    uint32_t lo = 0, hi = 32u << 20;
-    while (hi - lo > 4096u) {
-        uint32_t mid = lo + (hi - lo) / 2;
-        void *p = MALLOC(mid);
-        if (p) { FREE(p); lo = mid; } else hi = mid;
-    }
-    g_heap_largest = lo;
+    struct heap0 h;
+    heap0_read(&h, 0, 0);
+    *free_b = h.free; *largest = h.largest; *top = h.top;
 }
 
 /* Image-time test switch (--set-word g_coop_no_plugins=1): boot as if every plugin file were gone, with the number map,
@@ -442,20 +542,26 @@ extern "C" void coop_plugins_boot(void)
     tanks_boot();                                                          /* the instrument spring's own tank */
     coop_settings_boot();                                                  /* spread and the disabled list, before the scan */
     if (g_coop_no_plugins) { slot2_load(); return; }                       /* test images: as if /yaffs2/plugins were empty */
+    g_tape_node = tape_node_size();                                        /* e7 */
     list_dir();
+    g_plugins_seen = g_plugins_skipped;                                     /* e7: seen = loaded + failed + disabled + skipped */
+    if (g_plugins_skipped) { g_plugins_last_error = g_plugins_badname ? "plugin file name too long" : R_SKIPPED;
+                             if (g_n_skipnames) scopy(g_plugins_last_name, g_names[MAX_FILES], NAME_MAX); }
     if (!g_n_names) {                                                      /* no files: still drop the rows of the ones that went */
         void *udb0 = DB_HANDLE();
         if (udb0) { map_load(udb0); drop_unloaded_rows(); }
         slot2_load();
         return;
     }
-    coop_settings_prune(g_names, g_n_names);                               /* e4d: the off list holds only files that are here
-                                                                             (with none, nothing loads: left for the next boot
-                                                                             that has files) */
+    /* e4d: the off list holds only files that are here (with none, nothing loads: left for the next boot that has
+     * files); e7: the named files past the limit count as here, so switching one off survives (they follow the 32 in
+     * g_names: there are skipped names only when all 32 places are taken) */
+    coop_settings_prune(g_names, g_n_names + g_n_skipnames);
     void *udb = DB_HANDLE();
     if (udb) map_load(udb);
     uint8_t *stage = (uint8_t *)MALLOC(FILE_MAX);
     if (!stage) { g_plugins_last_error = "no staging memory"; return; }
+    g_stage_blk = blk(FILE_MAX);
     for (int i = 0; i < g_n_names; i++) {
         g_plugins_seen++;
         if (coop_plugin_disabled(g_names[i])) { g_plugins_disabled++; g_finfo[i].state = FS_DISABLED; continue; }   /* off in the settings menu */
@@ -466,7 +572,8 @@ extern "C" void coop_plugins_boot(void)
         else { g_plugins_loaded++; g_finfo[i].state = FS_LOADED; }
     }
     FREE(stage);
-    heap_probe();                                                          /* e4: the largest block heap 0 still has */
+    g_stage_blk = 0;
+    { struct heap0 h; heap0_read(&h, 0, 0); g_heap0_free_boot = h.free; }  /* e7: what the tape's cache will take from */
     for (int i = 0; i < g_map_n; i++)                                      /* files that went away keep their numbers, marked absent */
         if (g_map[i].present && !taken(g_map[i].n)) { g_map[i].present = 0; g_map_dirty = 1; }
     if (udb && g_map_dirty) map_save(udb);
@@ -1257,6 +1364,38 @@ extern "C" void coop_slot2_instr(int16_t *mid, int16_t *sl, int16_t *sr)
 extern "C" int coop_fx_plugin_loaded(void) { return g_plugins_loaded != 0; }
 extern "C" int coop_fx_plugin_render(int32_t *l, int32_t *r, int n) { (void)l; (void)r; (void)n; return 0; }   /* P1's master-insert path: retired */
 
+/* ---- e7: the stats report (coop_stats.cc, after the `plugins` line) ----
+ *   plugmem budget B used U over_budget N heap_short N skipped N badname N tape_node X heap_free_boot F
+ *   plugfile <file> <failed|disabled|skipped> needs <bytes>: <reason>     one line for every file the boot did not load
+ * `used` = heap bytes the loaded plugins took (blocks with their headers, five relocations an effect, an engine's code
+ * and voice state); `needs` = what that file takes or would have taken (0: not read that far); heap_free_boot = heap 0
+ * free right after the scan, before the tape's cache (12 MiB with the stereo tape) is taken from it. */
+extern "C" int coop_plugin_report(char *out, int cap)
+{
+    char *o = out, *end = out + cap - 1, num[12];
+    #define PUT(str) do { const char *q_ = (str); while (*q_ && o < end) *o++ = *q_++; } while (0)
+    #define PUTN(k, v) do { PUT(" "); PUT(k); PUT(" "); snum(num, (int)(v)); PUT(num); } while (0)
+    PUT("plugmem"); PUTN("budget", PLUG_BUDGET); PUTN("used", g_plug_mem_used); PUTN("over_budget", g_plugins_over_budget);
+    PUTN("heap_short", g_plugins_heap_short); PUTN("skipped", g_plugins_skipped); PUTN("badname", g_plugins_badname);
+    PUTN("tape_node", g_tape_node); PUTN("heap_free_boot", g_heap0_free_boot); PUT("\n");
+    for (int k = 0; k < MAX_FILES + SKIP_KEEP; k++) {
+        if (k >= g_n_names && k < MAX_FILES) continue;
+        if (k >= MAX_FILES && k >= MAX_FILES + g_n_skipnames) break;
+        const struct fileinfo *fi = &g_finfo[k];
+        if (fi->state == FS_LOADED) continue;
+        PUT("plugfile "); PUT(g_names[k]);
+        PUT(fi->state == FS_DISABLED ? " disabled" : fi->state == FS_SKIPPED ? " skipped" : fi->state == FS_FAILED ? " failed" : " not_read");
+        PUTN("needs", fi->need);
+        if (fi->reason) { PUT(": "); PUT(fi->reason); }
+        PUT("\n");
+    }
+    if (g_plugins_skipped > (uint32_t)g_n_skipnames) { PUT("plugfile"); PUTN("unnamed_skipped", g_plugins_skipped - (uint32_t)g_n_skipnames); PUT("\n"); }
+    #undef PUTN
+    #undef PUT
+    *o = 0;
+    return (int)(o - out);
+}
+
 /* ---- e3: the plugin inventory for the SysEx channel (INVENTORY 0x28, coop_sysex.cc; docs/sysex.md) ----
  * Text, built on the main loop when a host asks for offset 0, paged from the snapshot after that:
  *   coop-inventory 1<TAB>build <tag><TAB>protocol 1
@@ -1267,6 +1406,7 @@ extern "C" int coop_fx_plugin_render(int32_t *l, int32_t *r, int n) { (void)l; (
 -terminated.
  * A file gone since boot drops out; its number stays reserved in the map as always. */
 extern "C" int coop_plugin_disabled(const char *fname);
+#define INV_FILES (MAX_FILES + SKIP_KEEP + 8)                              /* e7: rows (was 16); coop_sysex.cc INV_MAX holds them */
 static const char *kind_word(int k) { return k == KN_KIND_FX ? "fx" : k == KN_KIND_SYNTH ? "synth" : "?"; }
 extern "C" int coop_inventory_text(char *out, int cap, const char *build)
 {
@@ -1275,28 +1415,38 @@ extern "C" int coop_inventory_text(char *out, int cap, const char *build)
     PUT("coop-inventory 1\tbuild "); PUT(build); PUT("\tprotocol 1\n");
     void *d = Y_OPENDIR(DIR_PLUGINS);
     if (d) {
-        static char now[16][NAME_MAX];
-        int n = 0;
+        static char now[INV_FILES][NAME_MAX];
+        int n = 0, more = 0;
         const uint8_t *e;
-        while ((e = Y_READDIR(d)) && n < 16) {
+        while ((e = Y_READDIR(d))) {
             const char *f = (const char *)e + 11;
             if (f[0] == '.' || slen(f) >= NAME_MAX || !ends_with(f, ".coop")) continue;
-            scopy(now[n++], f, NAME_MAX);
+            if (n < INV_FILES) scopy(now[n++], f, NAME_MAX); else more++;
         }
         Y_CLOSEDIR(d);
         for (int i = 0; i < n; i++) {
             const struct fileinfo *fi = 0;
             for (int k = 0; k < g_n_names; k++) if (seq(g_names[k], now[i])) fi = &g_finfo[k];
+            for (int k = MAX_FILES; k < MAX_FILES + g_n_skipnames; k++) if (seq(g_names[k], now[i])) fi = &g_finfo[k];
             char num[12];
             PUT(now[i]); PUT("\t");
             PUT(fi && fi->name[0] ? kind_word(fi->kind) : "?"); PUT("\t");
             PUT(fi ? fi->name : ""); PUT("\t");
-            PUT(!fi ? "new" : fi->state == FS_LOADED ? "loaded" : fi->state == FS_FAILED ? "failed" : fi->state == FS_DISABLED ? "disabled" : "new");
+            /* e7: a file past the limit or over the budget is "failed" (the librarian's word for not loaded) with a reason */
+            PUT(!fi ? "new" : fi->state == FS_LOADED ? "loaded" : (fi->state == FS_FAILED || fi->state == FS_SKIPPED) ? "failed" : fi->state == FS_DISABLED ? "disabled" : "new");
             PUT("\t"); PUT(coop_plugin_disabled(now[i]) ? "off" : "on"); PUT("\t");
             PUT(fi ? fi->version : ""); PUT("\t"); PUT(fi ? fi->author : ""); PUT("\t");
             snum(num, fi ? (int)fi->size : 0); PUT(num); PUT("\t");
-            PUT(fi && fi->reason ? fi->reason : ""); PUT("\n");
+            if (!fi && g_plugins_skipped > (uint32_t)g_n_skipnames) PUT(R_SKIPPED);   /* not named at boot: past the limit, or new */
+            PUT(fi && fi->reason ? fi->reason : "");
+            if (fi && (fi->reason == R_BUDGET || fi->reason == R_HEAP)) {     /* e7: how much it needs, how much is left */
+                PUT(" (needs "); snum(num, (int)((fi->need + 1023u) >> 10)); PUT(num); PUT(" KB, ");
+                snum(num, (int)((PLUG_BUDGET - g_plug_mem_used) >> 10)); PUT(num); PUT(" KB of ");
+                snum(num, (int)(PLUG_BUDGET >> 10)); PUT(num); PUT(" KB left)");
+            }
+            PUT("\n");
         }
+        (void)more;                                                         /* past INV_FILES: counted in the stats only */
     }
     #undef PUT
     *o = 0;

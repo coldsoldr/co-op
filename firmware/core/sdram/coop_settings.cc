@@ -41,7 +41,7 @@ extern "C" const char *coop_plugin_file_name(int i);
 extern volatile uint32_t g_coop_spread;                                 /* stereo_bus.cc, Q15, read every block */
 
 #define SET_FILE   "/yaffs2/user/coop_settings.bin"
-#define DIS_MAX    16
+#define DIS_MAX    32                                                   /* e7: was 16; 32 files load (plugin_host.cc MAX_FILES) */
 #define NAME_LEN   40                                                   /* p6k: the loader's own limit; v1 files had 16 (a 17-character name could never be disabled) */
 #define NAME_LEN_V1 16
 #define KEY_LEFT   0x24
@@ -150,7 +150,7 @@ extern "C" void coop_settings_boot(void)
  * (plugin_host.cc, main thread, right after its directory listing). The list keeps only names of files that are there
  * now, once each; anything else (a file deleted since, a duplicate, the bytes of a damaged file: the e2 crash happened
  * while this file was being written) is dropped and the cleaned list is saved by the main loop. So the 16 places can
- * only ever hold real files, and there are at most 8 of those. */
+ * only ever hold real files (e7: up to 32 of them, plus the named files past that limit). */
 extern "C" void coop_settings_prune(const char (*names)[40], int n_names)
 {
     int k = 0;
