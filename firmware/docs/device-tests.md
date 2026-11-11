@@ -2400,9 +2400,10 @@ wavefolder 0.2, cs_hall 0.2, cs_plate 0.2) have their kennel art and animation b
 file plus the screen code (1,292-3,560 bytes a port). The e9 port files load on an e8 image too (the screen is ignored
 there); an e8 port file on e9 plays with the stock page [I: by the ABI, not run].
 
-- `build/pkg/op1_246_coop_e9.op1` sha256 (below, the package commit), copy in Downloads with the nine e9 port files
-  and rings.coop and saw.coop (overwriting the older copies). Release image as e8 (`--tape-stereo --set-word
-  g_coop_spread=32767`, no `COOP_M1`), build tag `e9`.
+- `build/pkg/op1_246_coop_e9.op1` sha256 `32be0d0401d167e1f676beb308d8d54ee9fc5da23727dfa7bad8ecf99c82ec72`, copy in
+  Downloads with the nine e9 port files and rings.coop and saw.coop (overwriting the older copies). Release image as e8 (`--tape-stereo --set-word
+  g_coop_spread=32767`, no `COOP_M1`), build tag `e9`. `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr`
+  differs.
 
 **Gate notes (op1emu, 2026-11-11, one run at a time; e9 image `--tape-stereo --set-word g_coop_spread=32767 --set-word
 g_coop_force_stereo_out=1`, the release core of commit d4f26c7 on dev)** [C op1emu]:
