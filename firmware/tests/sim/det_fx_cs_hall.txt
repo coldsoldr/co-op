@@ -1,5 +1,5 @@
 # cs_hall gate (plugins/cs_hall/README.md "Gate plan"): det_fx_controls.txt's walk through the five effect positions
-# with cs_hall alone on the NAND in place of test_fx (the same list positions: one plugin, the last row of FX 1's list,
+# with cs_hall alone on the NAND in place of test_fx (FX 1: "cs hall" sorts first in the alphabetical list, so ccw 96 picks it;
 # 6 detents into FX 2's), its controls in place of test_fx's. Guest-timed; `turn ENC cw 2` = one detent (1024).
 # Expected words 5/6/7/latch per position (stats line fxctl, pN=blocks i inits:w5/w6/w7/latch), from the defaults
 # predelay 3277, early 16384, width 32767; 328 a coarse detent, 20 / 21 a fine one:
@@ -27,7 +27,7 @@ tap t3 200
 at 29700
 release shift
 at 31000
-turn enc1 cw 96
+turn enc1 ccw 96
 at 34000
 tap seq 200
 at 35000
@@ -113,7 +113,7 @@ tap t3 200
 at 62700
 release shift
 at 64000
-turn enc1 cw 96
+turn enc1 ccw 96
 at 67000
 tap seq 200
 at 68000
@@ -161,7 +161,7 @@ tap t3 200
 at 85200
 release shift
 at 86500
-turn enc1 cw 96
+turn enc1 ccw 96
 at 89500
 tap seq 200
 at 90500

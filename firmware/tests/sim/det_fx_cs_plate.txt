@@ -1,4 +1,4 @@
-# cs_plate (plugins/cs_plate) at the synth FX 1 position, alone on the NAND (the last row of the stock FX list):
+# cs_plate (plugins/cs_plate) at the synth FX 1 position, alone on the NAND (the first row of the alphabetical stock FX list: ccw 96):
 # select it as det_fx_select.txt does, switch FX 1 on (a second T3: FX 1 is off in the pristine sounds), then a
 # chord and its tail through the plate, its controls, the freeze latch and a size change under a ringing tail.
 # Guest-timed; op1emu: `turn ENC cw 2` = one detent; size has 4 detents a step.
@@ -10,9 +10,9 @@
 #   50.0 s  fn + blue 8 detents down under the frozen tail: size 5 -> 3 (fade, crossfade, fade in; the tail carries on)
 #   55.0 s  orange click: freeze off, the tail decays; 57.0 s shift + fn + blue (undeclared: fxctl ignored +1)
 #   58.0 s  a last chord, released at 59.0 s, then the tail to the end.
-# Expected (stats): `plugins seen 1 loaded 1 failed 0`, no fault; `fxctl fx 1 turns 4 fine 1 clicks 2 latches 2
+# Expected (stats): `plugins seen 1 loaded 1 failed 0`, no fault; `fxctl fx 1 turns 6 fine 1 clicks 0 latches 2
 # ignored 1 ... p0=<blocks>i1:3/23594/10178/0`; the cost line's `fx1_plugin=` (emulator figure, device 10-35 % higher).
-# Counts and words are [I] until the first run.
+# [C op1emu 2026-11-11: as above, p0=66818i1:3/23594/10178/0.]
 accel 64 -64 512
 wait-frames 1 300000
 at 26000
@@ -26,7 +26,7 @@ tap t3 200
 at 29700
 release shift
 at 31000
-turn enc1 cw 96
+turn enc1 ccw 96
 at 34000
 tap seq 200
 at 35000
@@ -103,7 +103,7 @@ at 59000
 release c4
 release e4
 release g4
-wait 20000
+wait 80000
 screenshot /root/op1emu-work/cs_plate_end.ppm
 wait 3000
 quit

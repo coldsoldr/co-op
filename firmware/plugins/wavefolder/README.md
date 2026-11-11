@@ -34,20 +34,21 @@ The four turns are kennel's four knobs (`params[0..3]`, in the filter type's ran
 | Click | — | — | — | — |
 | Shift + turn | fold fine (stock) | symmetry fine (stock) | tone fine (stock) | mix fine (stock) |
 | Shift + click | — | — | — | — |
-| fn + turn | gain (-6..+6 dB, 0 dB at the centre; saved, word 5) | — | — | — |
+| fn + turn | gain (-6..+6 dB, 0 dB at the centre, 0.5 dB a detent; saved, word 5) | — | — | — |
 | fn + click | — | — | — | — |
-| Shift + fn + turn | **gain fine** (the same control, 1/16 step) | — | — | — |
+| Shift + fn + turn | **gain fine** (the same control, 0.1 dB a detent) | — | — | — |
 | Shift + fn + click | — | — | — | — |
 
 `plugin.json` "controls":
 
 ```json
 {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
- "default": 16384, "fine": true, "random": false}
+ "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}
 ```
 
 - **Blue's shift + fn layer is gain fine** (the owner's decision, `docs/ui-features.md` §14): nothing else may sit
-  there. Coarse is 328 Q15 a detent (about 0.12 dB near the centre), fine 20.5 (about 0.008 dB).
+  there. Kennel's steps (the owner, 2026-11-11): coarse `"step": 1365` Q15 a detent (0.5 dB), fine `"fine_step": 273`
+  (0.1 dB).
 - Gain is not randomised (`"random": false`: a random draw would be a level jump). There is no other saved control.
 - What the gain does (upstream, unchanged): it scales the folder's gain only, kept inside the fold knob's own range
   (0.25..4 turns), so at either end of the fold knob it adds nothing; the level make-up follows the fold knob alone,
@@ -128,8 +129,8 @@ wavefolder alone on the NAND, so it is the list's last row as test_fx was; the e
    wet). Expect `plugins seen 1 loaded 1 failed 0`, no fault, audible folding in the dump, the cost line's
    `fx1_plugin=` (emulator figure; the device is 10-35 % higher).
 2. `tests/sim/det_fx_controls.txt`: every position (synth FX 1, instrument FX 2, master FX 1, master FX 2, drum FX 1)
-   and a chord plus drum keys at the end. Expect `fxctl fx 1`, words 5 per position as test_fx's: p0 15092, p3
-   17040, p2 16056, p4 16384, p1 16712; words 6 / 7 and the latch 0 everywhere; the green / orange clicks and fn +
+   and a chord plus drum keys at the end. Expect `fxctl fx 1`, words 5 per position as test_fx's: p0 11197, p3
+   19114, p2 15019, p4 16384, p1 17749; words 6 / 7 and the latch 0 everywhere; the green / orange clicks and fn +
    white `ignored` (undeclared); `master_saves 1`; the cost line's `fx1_plugin=`, `s2_instr=`, `s2_master=`.
 3. `tests/sim/det_fx_reload.txt` (power cycle on the same NAND): the five words kept.
 4. The pristine NAND with the same image: `det_chord.txt` unchanged.

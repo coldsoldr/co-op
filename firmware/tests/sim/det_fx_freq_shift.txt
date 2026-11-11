@@ -1,5 +1,5 @@
 # freq_shift (plugins/freq_shift) at the synth position, with freq_shift.coop alone on the NAND: selected through the
-# stock FX list as det_fx_controls.txt does (the plugin is the last row), FX 1 switched on (a second T3), then a chord
+# stock FX list as det_fx_controls.txt does (alphabetical: "freq shift" is row 2: ccw 96 to the top, then cw 16), FX 1 switched on (a second T3), then a chord
 # held while the four turns and the two controls move. Guest-timed; op1emu: `turn ENC cw 2` = one detent.
 #   36.5 s  the chord starts (mix at its default 16384: half wet, shift ~ +8 Hz)
 #   38 s    blue down through 0 Hz to about -1 kHz, then back up past 0 to about +250 Hz
@@ -8,8 +8,8 @@
 #   50 s    green click: ring mode (MODE RING in green); 54 s green click again: shift mode
 #   56 s    fn + blue 6 detents down (gain -), shift + fn + blue 2 detents up (fine)
 #   58 s    orange to the bottom (mix 0: the dry chord, bit for bit), the chord released at 60 s, the tail
-# Read: `plugins seen 1 loaded 1 failed 0`, `plugin_blocks` > 0, `fxctl fx 1 ... clicks 2`, `p0=...:14457/0/0/0`
-# (gain 16384 - 6 x 328 + 20 + 21, mode back at shift) [I: the expected words, by det_fx_controls.txt's arithmetic],
+# Read: `plugins seen 1 loaded 1 failed 0`, `plugin_blocks` > 0, `fxctl fx 1 ... clicks 2`, `p0=...:8740/0/0/0`
+# (gain 16384 - 6 x 1365 + 2 x 273, mode back at shift) [I: the expected words, by det_fx_controls.txt's arithmetic],
 # the cost line's `fx1_plugin=`; no fault. The dump: the chord audible throughout, dry after 58.5 s.
 accel 64 -64 512
 wait-frames 1 300000
@@ -24,7 +24,9 @@ tap t3 200
 at 29700
 release shift
 at 31000
-turn enc1 cw 96
+turn enc1 ccw 96
+at 33000
+turn enc1 cw 16
 at 34000
 tap seq 200
 at 35000
@@ -73,7 +75,7 @@ at 60000
 release c4
 release e4
 release g4
-wait 8000
+wait 75000
 screenshot /root/op1emu-work/freq_shift.ppm
 wait 2000
 quit

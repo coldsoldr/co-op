@@ -19,7 +19,7 @@
   ],
   "controls": [
     {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
-     "default": 16384, "fine": true, "random": false}
+     "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}
   ],
   "author": "coldsoldr",
   "version": "0.1",

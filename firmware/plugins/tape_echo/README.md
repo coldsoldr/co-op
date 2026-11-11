@@ -77,7 +77,7 @@ No `"stereo"` flag: a `coop_fx_t` is stereo by its ABI, and coop's loader reads 
 | shift + blue on page 1: a shifted click walked the time through the tempo divisions (1/16T .. 1/2; the tempo read at 0x01AADAD4); a free turn unlocked it; not saved | fn + green sync, steps (`off` + the 11 divisions), word 6, saved; 120 BPM until a tempo export | the owner, 2026-11-11: shift + turn is the core's fine step and the plugin never sees shift; a sync setting belongs to the sound |
 | `op1_fx_param_q15` (the stock range table at 0x01DE5C50) | the SDK's constant filter ranges, once a block | no firmware addresses in a plugin (§2.1) |
 | the instance in the position's scratch buffer (`op1_fx_scratch`) | `.bss` (one instance per relocation, i.e. per position) | §2.3 |
-| `TapeEcho::Init` clears the 133 KB tape on every (re)start, in the audio interrupt | the clear is spread over the first 17 blocks (2,048 pairs a block, 25 ms), the dry passing through | a slow init doesn't ship (§2.3) |
+| `TapeEcho::Init` clears the 133 KB tape on every (re)start, in the audio interrupt | the clear is spread over the first 17 blocks (2,048 pairs a block, 25 ms), the dry passing through (accepted as it is by the owner, 2026-11-11: listen for it) | a slow init doesn't ship (§2.3) |
 | the screen (`tape_echo.svg`, design B "Schematic") | the stock filter page; coop shows the control's name and value top left | effect screens are not built in coop (`docs/plugins.md` "Effect controls"); brief below |
 
 Time already has a fine step (shift + blue), so there is no separate delay-time fine control.

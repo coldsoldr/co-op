@@ -1,7 +1,7 @@
 # The ensemble port (plugins/ensemble), with ensemble.coop alone on the NAND: select it at the synth position through
-# the stock FX list (the plugin is the last row, as det_fx_select.txt), switch FX 1 on, then move the turns so every
+# the stock FX list (alphabetical: "ensemble" is row 2, after cwo and delay: ccw 96 to the top, then cw 16), switch FX 1 on, then move the turns so every
 # kernel runs: white (voices) to the top (the 3-voice kernel, the vibrato on), green (depth) up, orange (mix) up, blue
-# (rate) up; fn + blue 3 detents up (gain 16384 + 984 = 17368, stats fxctl p0 w5); a chord held 6 s, then white to
+# (rate) up; fn + blue 3 detents up (gain 16384 + 3 x 1365 = 20479, stats fxctl p0 w5); a chord held 6 s, then white to
 # the bottom (voices 0: the 1-voice chorus kernel) and a second chord. Guest-timed; `turn ENC cw 2` = one detent.
 # Expect: no fault, the stats plugins line counting ensemble's blocks at p0, the cost line's fx1_plugin= the figure to
 # compare with the simulator's 12.8 k mean (tests/host/ensemble `make sim`), audibly wide chorus in the WAV dump.
@@ -18,7 +18,9 @@ tap t3 200
 at 29700
 release shift
 at 31000
-turn enc1 cw 96
+turn enc1 ccw 96
+at 33000
+turn enc1 cw 16
 at 34000
 tap seq 200
 at 35000
@@ -59,7 +61,7 @@ at 61500
 release d4
 release f4
 release a4
-wait 30000
+wait 75000
 screenshot /root/op1emu-work/ens_end.ppm
 wait 3000
 quit

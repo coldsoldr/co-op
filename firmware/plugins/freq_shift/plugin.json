@@ -19,7 +19,7 @@
   ],
   "controls": [
     {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
-     "default": 16384, "fine": true, "random": false},
+     "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false},
     {"id": "mode", "name": "mode", "action": "click", "encoder": "green", "word": 6, "kind": "steps",
      "steps": ["shift", "ring"], "default": 0, "wrap": true}
   ],

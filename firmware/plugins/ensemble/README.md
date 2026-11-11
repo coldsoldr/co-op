@@ -16,9 +16,9 @@ upstream measurements: te-op1-cfw `docs/ensemble-port.md`.
 | Click | — | — | — | — |
 | Shift + turn | rate fine | depth fine | voices fine | mix fine |
 | Shift + click | — | — | — | — |
-| fn + turn | gain (input, -6..+6 dB) | — | — | — |
+| fn + turn | gain (input, -6..+6 dB, 0.5 dB a detent) | — | — | — |
 | fn + click | — | — | — | — |
-| Shift + fn + turn | gain fine | — | — | — |
+| Shift + fn + turn | gain fine (0.1 dB a detent) | — | — | — |
 | Shift + fn + click | — | — | — | — |
 
 - **The four turns** are kennel's four knobs (`params[0..3]`), unchanged: blue rate (0.05..8 Hz, log), green depth
@@ -32,14 +32,14 @@ upstream measurements: te-op1-cfw `docs/ensemble-port.md`.
   0 dB at 16384 (the default), +6 dB at the top, one table entry a dB, interpolated. It scales the wet path's input
   only (the decimated signal before the core), so at mix 0 it changes nothing. Saved with the sound (word 5), not
   randomised (`"random": false`: a random draw would be a level jump). **Blue's shift + fn layer is gain fine**
-  (`"fine": true`, the owner's decision, `docs/ui-features.md` §14): 1/16 of the coarse step (328 Q15 a detent
-  coarse, 20.5 fine), so nothing else sits there.
+  (`"fine": true`, the owner's decision, `docs/ui-features.md` §14), so nothing else sits there. Kennel's steps (the
+  owner, 2026-11-11): 0.5 dB a detent coarse (`"step": 1365` Q15), 0.1 dB fine (`"fine_step": 273`).
 - No latch, no steps control: the upstream has none, so nothing clears on the stock's synth / drum switch.
 
 ```json
 "controls": [
   {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
-   "default": 16384, "fine": true, "random": false}
+   "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}
 ]
 ```
 
@@ -134,17 +134,18 @@ static constructor, no division per sample (the knob and gain divisions run only
 
 ## op1emu gate plan (not run yet: gate runs go one at a time)
 
-With `build/plugins/ensemble.coop` **alone** on the NAND overlay (`PLUGINS=build/plugins/ensemble.coop`; it is then
-the last row of the FX list, where the scenarios' `turn enc1 cw 96` lands):
+With `build/plugins/ensemble.coop` **alone** on the NAND overlay (`PLUGINS=build/plugins/ensemble.coop`; the stock FX
+list is alphabetical with the plugins sorted in, so ensemble is row 2: the FX 1 picks are `ccw 96` then `cw 16`; run
+2026-11-11, results in `docs/device-tests.md`):
 
 1. `tests/sim/det_fx_select.txt`: synth FX 1, a chord through it. Expect no fault, `plugins seen 1 loaded 1 failed
    0`, the plugin's blocks counting, `fx1_plugin=` in the cost line (compare with 12.8 k).
 2. `tests/sim/det_fx_ensemble.txt` (new): synth FX 1, all four turns moved, white to the top (3-voice kernel) and to
-   the bottom (1-voice chorus kernel), fn + blue 3 detents up: `fxctl` `p0=...:17368/0/0/0`; a held chord each way.
+   the bottom (1-voice chorus kernel), fn + blue 3 detents up: `fxctl` `p0=...:20479/0/0/0`; a held chord each way.
    The WAV: wide, no clicks at the kernel switch.
 3. `tests/sim/det_fx_controls.txt`: the plugin at every position (p0 synth, p3 instrument FX 2, p2 master, p4 master
-   FX 2, p1 drum) with a chord and drum keys. Expected `fxctl` words 5/6/7/latch: p0 15092/0/0/0, p3 17040/0/0/0,
-   p2 16056/0/0/0, p4 16384/0/0/0, p1 16712/0/0/0 (the scenario's green and orange clicks, fn + white and shift + fn
+   FX 2, p1 drum) with a chord and drum keys. Expected `fxctl` words 5/6/7/latch: p0 11197/0/0/0, p3 19114/0/0/0,
+   p2 15019/0/0/0, p4 16384/0/0/0, p1 17749/0/0/0 (the scenario's green and orange clicks, fn + white and shift + fn
    + white are undeclared here: counted as `ignored`, `latches 0`, words 6 and 7 stay 0) [I].
 4. `tests/sim/det_fx_reload.txt` after 3 (power cycle, same NAND): the gain words kept at every position.
 5. A pristine-NAND `tests/sim/det_chord.txt` against the same image: unchanged.

@@ -15,9 +15,9 @@ design, mappings and measurements in te-op1-cfw `docs/drive-port.md`), as hundek
 | Click | — | — | — | — |
 | Shift + turn | drive fine | tone fine | bias fine | mix fine |
 | Shift + click | — | — | — | — |
-| fn + turn | gain (input, -6..+6 dB) | — | — | — |
+| fn + turn | gain (input, -6..+6 dB, 0.5 dB a detent) | — | — | — |
 | fn + click | — | — | — | — |
-| Shift + fn + turn | gain fine | — | — | — |
+| Shift + fn + turn | gain fine (0.1 dB a detent) | — | — | — |
 | Shift + fn + click | — | — | — | — |
 
 - **drive**: 0..+36 dB into the clipper, linear in dB. **tone**: a tilt, dark (+6 dB lows, -6 dB highs) .. flat at
@@ -25,7 +25,8 @@ design, mappings and measurements in te-op1-cfw `docs/drive-port.md`), as hundek
   at the bottom the output is the input bit for bit. Defaults as kennel's: drive 35 %, tone flat, bias 0, mix wet.
 - **gain** (fn + blue, word 5, Q15, default 16384 = 0 dB, saved with the sound, not randomised): the input gain into
   the clipper only. The dry side of the mix and the auto-level don't see it, so at mix 0 it changes nothing. -6 dB at
-  0, +6 dB at the top (kennel `knl::GainQ14`). Shift + fn + blue is its fine step (1/16 of the 1 % detent): blue's
+  0, +6 dB at the top (kennel `knl::GainQ14`). fn + blue moves it 0.5 dB a detent (`"step": 1365`), shift + fn + blue
+  0.1 dB (`"fine_step": 273`), kennel's steps (the owner, 2026-11-11): blue's
   shift + fn layer is gain fine (the owner's decision, `docs/ui-features.md` §14), so nothing else may sit there.
   The core shows `GAIN nn` top left in blue while it moves.
 - No latches: nothing here is cleared when the stock switches synth ↔ drum, beyond the effect's own state starting
@@ -34,8 +35,8 @@ design, mappings and measurements in te-op1-cfw `docs/drive-port.md`), as hundek
 **Upstream mapping.** Kennel drive: the four turns as here (Q15 through `op1_fx_param_q15`); a blue press flipped
 blue to page 2, where it turned the input gain (word 5), and shift + turn there gave a tenth-of-a-dB step through
 `knl::Fine`, which read the stock shift byte (0x01DD7F78) and rewrote word 5. coop retires the page-2 toggle
-(guidelines §4: every layer is held): the gain moves to fn + blue with `"fine": true` (the core's fine step, 20.5 Q15
-a detent, ~0.0075 dB, instead of kennel's 273 = 0.1 dB a click). No firmware address is left: the knob ranges are the
+(guidelines §4: every layer is held): the gain moves to fn + blue with `"fine": true`, 1365 Q15 (0.5 dB) a detent
+and 273 (0.1 dB, kennel's click) a fine detent. No firmware address is left: the knob ranges are the
 constant filter-type row (`kRange`, the same row kennel read at 0x01DE5C50 and the core's `fx_rng`), normalised once a
 block (cached while the words stand still). Nothing else in the upstream control set: green, white and orange had no
 presses (`OP1_PRESS_NONE`), so nothing else moved. Mix stays on the orange turn (§4.3).
@@ -112,7 +113,7 @@ turning to the end (`cw 96`) would land on spring.
    changed to `cw 16`, and its FX 2 picks (lines 78, 140: shift + blue `cw 6`) checked against where drive sits in
    the FX 2 list [I]. Only fn + blue (and its fine) is declared, so the gain moves as test_fx's did, and every other
    layer the scenario touches is undeclared and ignored. Expected `fxctl` per position w5 / w6 / w7 / latch:
-   p0 15092/0/0/0, p3 17040/0/0/0, p2 16056/0/0/0, p4 16384/0/0/0, p1 16712/0/0/0; `fine 1`, `clicks 0`,
+   p0 11197/0/0/0, p3 19114/0/0/0, p2 15019/0/0/0, p4 16384/0/0/0, p1 17749/0/0/0; `fine 1`, `clicks 0`,
    `latches 0`, `ignored` above test_fx's 1 (the green and orange clicks and the white turns are undeclared) [I:
    the exact count not worked out]; `master_saves 1`. Write the edited copy as `tests/sim/det_fx_drive_controls.txt`
    once the rows are confirmed.

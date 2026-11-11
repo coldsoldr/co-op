@@ -11,6 +11,10 @@ an early-reflections line (5 + 5 taps), three diffusing allpasses, eight modulat
 Householder feedback, even lines left and odd right, the early taps, a width matrix; interpolated back to 44.1 kHz
 and mixed equal-power with the dry signal through a soft limit. Freeze gates the input and makes the loop lossless.
 
+**A §2.2 exception, accepted (the owner, 2026-11-11):** the tank's input is the sum L + R. That is the reverb's
+design, not a mono collapse: the wet is stereo from the tank's taps (even lines left, odd right, then the width
+matrix), and the dry stays the full stereo input, so a voice's placement survives in the dry and the reverb is wide.
+
 ## Files
 
 | File | From | Changes |
@@ -64,15 +68,17 @@ toggle with kennel's quarter-click fine on shift) became fn + turn on the same e
 the fine step (the owner, 2026-11-11; guidelines §4, §4.1, held layers instead of the page toggle); kennel's orange
 `OP1_PRESS_LATCH` freeze is the orange click (guidelines §4.3). Mix stays on the orange turn (§4.3).
 - **Width at every position.** Kennel ran the mono render at synth and drum (mono in, mono out; width shown at the
-  master only). coop runs the stereo render everywhere, so width acts at every position.
+  master only). coop runs the stereo render everywhere, so width acts at every position, default full width
+  (accepted by the owner, 2026-11-11).
 - **Latches clear when the stock switches synth ↔ drum** (the stock starts the instrument effect again: freeze is
   off after a visit to the other instrument; `docs/ui-features.md` §14, accepted by the owner). A sound change and a
   re-selection clear it too.
 - **Units.** Guidelines §3.3 would show predelay in `MS` (0-200 linear: ms = Q15 × 200 / 32767); `plugin.json`
-  "controls" has no `format` field yet (`tools/plugin/pack.py`), so the core shows its default readout. Add
-  `"format": "ms"` with range 0-200 when the schema takes it.
-- **Randomise**: the three words are declared randomisable (the default); the core ignores effect controls on
-  randomise today (`docs/ui-features.md` §14). Freeze never is.
+  "controls" has no `format` field yet (`tools/plugin/pack.py`), so the core shows its default readout. **To do when
+  the schema has a `format` field** (the owner, 2026-11-11: show predelay in ms): add `"format": "ms"` with range
+  0-200.
+- **Randomise**: the three words are declared randomisable (the default), so e6's randomise (synth / drum key + right
+  arrow on the effect page) draws predelay, early and width; freeze never is.
 - **`"stereo": true` is not carried over**: in a kennel file that flag means kennel's `op1_fx_stereo_t` layout, and
   coop's loader would refuse a `coop_fx_t` with it ("plugin flags not supported yet"). A `coop_fx_t` is stereo by ABI.
 
@@ -86,7 +92,8 @@ the fine step (the owner, 2026-11-11; guidelines §4, §4.1, held layers instead
 - **The tank clear (guidelines §2.3).** Kennel zeroed the instance (84 KB) in `Init` and on a restart; coop's init
   runs in the audio interrupt at the stock positions, so `init` only resets the reverb's control state and marks the
   buffers. `render` then zeroes 4 KB a block (1024 word stores) and passes the input through dry until done: 21 blocks,
-  ~30 ms of dry signal after a sound change or a re-selection, when the tank was used. A tank the reverb hasn't
+  ~30 ms of dry signal after a sound change or a re-selection, when the tank was used (accepted as it is by the
+  owner, 2026-11-11: listen for it on the device). A tank the reverb hasn't
   written since it was last zero (the loader zeroes `.bss`) is not cleared: a fresh selection starts after one block,
   as kennel's did.
 - **The restart after a pause** is kennel's (`half_rate.h`): more than 5 ms between two renders (the effect bypassed
@@ -137,7 +144,7 @@ crossfades, infinite decay, freeze, a sound change (the 21-block clear) and a 5 
 simulator** (2026-11-11). Mutating the reference's clear length or the motion constant breaks the match (checked).
 In a worktree pass `TE=/mnt/i/GitHub/coldsoldr/te-op1-cfw/ports`.
 
-## Gate plan (op1emu, not run yet: gate runs go one at a time)
+## Gate plan (op1emu; run 2026-11-11, results in `docs/device-tests.md` "cs_hall": "cs hall" is the first row of the alphabetical FX list, picked with `ccw 96`)
 
 Build (WSL, `cd /mnt/i/GitHub/coldsoldr/co-op/firmware`): `make -C core/sdram combined` (the e6 core) and
 `make -C plugins` (`build/plugins/cs_hall.coop`). Then, one run at a time:

@@ -1844,7 +1844,7 @@ Result: (pending)
 
 The owner's decisions of 2026-11-11 (`docs/ui-features.md` §14), for the eleven kennel effect ports: effects get the
 engines' control layers at every effect position (`docs/plugins.md` "Effect controls").
-- `build/pkg/op1_246_coop_e6.op1` (sha256 `724f98ba0c1fd2d76d18ce25d5b4da430d980f33f9ba36e69484a20ed7e9cb5b`), copy in Downloads. A **release** image as e5 (no
+- `build/pkg/op1_246_coop_e6.op1` (first build sha256 `724f98ba...`; rebuilt after the port merge: `e8a9352a...`, the same `OP1_vdk.ldr`, below), copy in Downloads. A **release** image as e5 (no
   `COOP_M1`, no gap profile, `--tape-stereo --set-word g_coop_spread=32767`), plus e6. `verify_bootloader.py` PASS,
   `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `e6`.
 - `build/plugins/test_fx.coop` (sha256 `64e09115802e02f2d811d33655a8801d7802db4a56ecf17adea8fbb3be2e466d`, 432 bytes): the test effect, not a real plugin. fn + blue = gain
@@ -1876,7 +1876,7 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
 **If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e5.op1` (or stock).
 
 **Gate notes (op1emu, e6, 2026-11-11)** [C op1emu]:
-- `det_fx_controls.txt`, test_fx alone on the NAND: `fxctl fx 1 turns 11 fine 1 clicks 3 latches 4 ignored 1
+- (First runs, test_fx before the step fields: 328 / 20.5 a detent.) `det_fx_controls.txt`, test_fx alone on the NAND: `fxctl fx 1 turns 11 fine 1 clicks 3 latches 4 ignored 1
   cancelled 1 popup_frames 405 from_params 0 master_saves 1 p0=36117i2:15092/1/8520/0 p1=52852i2:16712/1/8192/0
   p2=71596i1:16056/0/8192/1 p3=81313i1:17040/1/8192/0 p4=63052i1:16384/0/8848/0` (pN = blocks, inits, words 5/6/7 and
   the latch word the render was last given). Expected per position: 15092 = 16384 - 4 x 328 + 20 (a fine detent),
@@ -1892,21 +1892,48 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
   ctl_cancelled 1 help_taps 1`, slot 0 knobs `[20000,8000,6000,4000,21280,1,0,1]`, as e4.
 - The e6 probe (`COOP_PROBE_ITER`): `filter_ranges [64,14528,14464] [0,24576,10485] [0,22528,32767] [8192,32767,10485]
   [0,32767,0] [0,32767,0] [0,32767,0] [0,32767,0]`: words 5..7 of the filter type accept 0..32767.
-- **Gain steps (the owner, 2026-11-11), NOT RUN YET in op1emu** (the machine was busy with other builds): test_fx's
-  gain now declares `"step": 1365, "fine_step": 273`, so `det_fx_controls.txt` expects gain 11197 (p0: 16384 - 4 x 1365
-  + 273), 19114 (p3), 15019 (p2), 17749 (p1); depth keeps the default 328 steps (8520, 8848). The figures below are
-  from the test_fx before the step fields (gain 328 / 20.5).
-- **Randomise (the owner's rule, 2026-11-11), PROVISIONAL**: these runs overlapped other agents' builds on the machine
-  (the "one run at a time on an idle machine" rule was broken), to be repeated on a quiet machine. The scenario now
-  randomises on the synth FX 1 page and on the instrument FX 2 page. `det_fx_controls.txt`:
-  `fxctl fx 1 turns 11 fine 1 clicks 3 latches 4 ignored 1 cancelled 1 popup_frames 406 from_params 0 master_saves 1
-  random 2 p0=36116i2:15092/1/13005/0 p1=35623i2:16712/1/8192/0 p2=54367i1:16056/0/8192/1 p3=64082i1:17040/0/4157/0
-  p4=45821i1:16384/0/8848/0`, `rnd 2 rnd_refused 0 rnd_slot2 1`: gain (`"random": false`) kept 15092 / 17040, depth
-  drawn (8520 -> 13005, 8192 -> 4157), polarity drawn (p3 1 -> 0), latches untouched. `det_fx_reload.txt`: the same
-  words after the power cycle, every latch 0. stereo_delay `det_fx_select.txt` identical to e5 over 1,816,705 frames
-  (`plugin_blocks 8188`). The pristine `det_chord.txt` against e5 differed from 31.6 s on (1,677,125 samples, max 5120)
-  while the other builds ran; the identical run above predates them, and the randomise change touches only the key
-  path, so this is taken as the wall-time effect `docs/emulator.md` describes until a quiet re-run says otherwise [I].
+- **Re-run on a quiet machine (2026-11-11, dev after the nine effect ports merged; the core is 50e7dbd's), one run at
+  a time, image rebuilt** (`e6.ldr` sha256 `09e6923d...`, release core, `--tape-stereo --set-word g_coop_spread=32767
+  --set-word g_coop_force_stereo_out=1`) [C op1emu]. Gain steps and randomise as built:
+  - `det_fx_controls.txt`, test_fx alone: `fxctl fx 1 turns 11 fine 1 clicks 3 latches 4 ignored 1 cancelled 1
+    popup_frames 406 from_params 0 master_saves 1 random 2 p0=36116i2:11197/1/24265/0 p1=63191i2:17749/1/8192/0
+    p2=81935i1:15019/0/8192/1 p3=91651i1:19114/1/2203/0 p4=73390i1:16384/0/8848/0`, `rnd 2 rnd_refused 0 rnd_slot2 1`,
+    `plugins seen 1 loaded 1 failed 0`, no fault. Every expected gain word (11197, 19114, 15019, 17749: the 1365 / 273
+    steps), depth drawn at p0 and p3 (8520 -> 24265, 8192 -> 2203), gain kept by randomise, p2's latch on, p0's
+    cleared by the drum visit. Cost (test_fx): `fx1_plugin=3068/3630 s2_instr=1804/2916 s2_master=1850/2117`.
+  - `det_fx_reload.txt` (same NAND): `p0=84349i2:11197/1/24265/0 p1=2402i1:17749/1/8192/0 p2=86751i1:15019/0/8192/0
+    p3=86146i1:19114/1/2203/0 p4=86146i1:16384/0/8848/0`: every word kept, every latch 0.
+  - stereo_delay `det_fx_select.txt` e6 vs e5: identical over 1,559,021 frames; `fxctl fx 0`.
+  - saw `det_eng_controls.txt` on e6: `help_taps 1 ctl_turns 1 ctl_clicks 1 ctl_ignored 1 ctl_cancelled 1`, slot 0
+    knobs `[20000,8000,6000,4000,21280,1,0,1]`, as e4.
+  - **Pristine `det_chord.txt`, e6 vs e5: no regression.** The first pair differed from frame 1,395,072 (31.634 s:
+    "64 vs 63", max 5120); aligned on the onset, max 10 LSB. Repeating each image showed why: **e5 against itself**
+    differs the same way at the same frame, and so does e6 against itself, while **e5 (second run) vs e6 (first run)
+    is identical over 3,501,612 frames**. The chord's onset lands on one block boundary or the next from run to run of
+    one image, on a quiet machine too: `det_chord.txt` is not exact run to run any more (it was when the earlier gates
+    ran), whichever image. A gate comparison has to try a second run (or `--align 200`) before calling a difference.
+    The cause in the harness is not found [I].
+  - **Combined NANDs (the nine ports, rings, saw)** [C op1emu], `det_fx_select.txt` (a longer wait where it hung):
+    - **At most 8 files load** (`plugin_host.cc` `MAX_FILES 8`): with all 11 on the NAND, 8 loaded (saw, tape_drive,
+      bitcrusher, ensemble, rings, cs_plate, drive, tape_echo: directory order) and freq_shift, wavefolder and
+      cs_hall were skipped without a word (`plugins seen 8 loaded 8 failed 0`). That set booted, no fault,
+      `heap_largest 8388608`, tape_echo at the synth `fx1_plugin=16614/18055`.
+    - **A boot hang above ~2.1 MB of plugin memory.** Sets by load (effects x 5 relocations, engines x 1): rings +
+      tape_echo + cs_plate + saw + freq_shift (1.89 MB), + wavefolder instead (1.87 MB), rings + cs_plate + saw +
+      ensemble + freq_shift + tape_drive + wavefolder (1.39 MB), the 11-file set's 8 above (2.05 MB), and the eight
+      heaviest effects without rings (tape_echo, cs_hall, cs_plate, bitcrusher, ensemble, freq_shift, tape_drive,
+      wavefolder: 1.97 MB) all booted and played. **rings + tape_echo + cs_hall + cs_plate (2.34 MB)**, and rings +
+      tape_echo + cs_plate + saw + ensemble + freq_shift + tape_drive + wavefolder (2.11 MB), and the same with
+      cs_hall for saw (2.62 MB) **never reached audio**: the screen stays on the first-boot tape FAT creation at
+      "side_b.aif 94 %" (3.5 min of wall time), no fault, no stats file. The loader finished (op1.db's
+      `coopplugins` map numbers all eight), so the stock's own boot runs out of something afterwards, most likely
+      heap 0 [I]. `heap_largest` stays 8,388,608 in every run that booted, so it does not show this margin [I].
+      Not tried on a NAND that has booted once (the FAT exists), nor on the device [I]: until then, keep rings,
+      tape_echo and cs_hall from being installed together.
+- **Package** (2026-11-11, rebuilt from dev after the merge): `build/pkg/op1_246_coop_e6.op1` sha256
+  `e8a9352a1ab9afd0992352eeb723733e9de3767ed9559dd2766f332173fe325a`, copy in Downloads; `verify_bootloader.py` PASS,
+  `pkg_check` = only `OP1_vdk.ldr` differs. Its `OP1_vdk.ldr` (sha256 `73cc1fe6...`) is byte-identical to the earlier
+  e6 package's (`724f98ba...`): the core did not change with the ports, only the archive's hash did.
 - Unproven [I]: device timing and feel; the master writer called from coop's main loop (op1emu: one call, no fault);
   the drum and master pages' stock handling of encoder clicks (op1emu: coop takes them first, nothing else reacts);
   the popup's look over the filter page (counted, not seen: op1emu screenshots are wall-timed).
@@ -1916,17 +1943,23 @@ Result: (pending)
 
 ## bitcrusher 0.1 (port of the kennel bitcrusher, e6 controls) — device test (pending, 2026-11-11)
 
-- On the e6 package (`build/pkg/op1_246_coop_e6.op1`, above); `build/plugins/bitcrusher.coop` (1,672 bytes),
+- On the e6 package (`build/pkg/op1_246_coop_e6.op1`, above); `build/plugins/bitcrusher.coop` (1,680 bytes with the gain steps, sha256
+  `d5286b0fa70e0b2e41b0c2a48531354ed557c2213c9f51c99247734d9a85f90a`),
   installed with the librarian, then a power cycle. Notes: `plugins/bitcrusher/README.md`.
-- [C host] bit-identical to te-op1-cfw's crush core and kennel mapping (`tests/host/bitcrusher`). op1emu gate: pending
-  (the README's plan: `det_fx_select.txt`, `det_fx_controls.txt`, `det_fx_reload.txt` with bitcrusher alone on the NAND).
+- [C host] bit-identical to te-op1-cfw's crush core and kennel mapping (`tests/host/bitcrusher`). op1emu gate: below.
+
+- **op1emu gate (2026-11-11, e6 image `09e6923d...` from dev after the merge, bitcrusher alone on the NAND, one run at a time)** [C op1emu]:
+  - `plugins seen 1 loaded 1 failed 0`, no fault in any run. In the alphabetical stock FX list it is row 0 (first: `ccw 96`).
+  - `det_fx_select.txt` (synth FX 1, the chord): `fx1_plugin=6467/8095`.
+  - `det_fx_controls.txt` (FX 1 picks `ccw 96`): `p0=36860i2:11197/0/0/0 p3=84765i1:19114/0/0/0 p2=74691i1:15019/0/0/0 p4=66504i1:16384/0/0/0 p1=57051i2:17749/0/0/0` (w5/w6/w7/latch; gain 11197 / 19114 / 15019 / 16384 / 17749: the 1365 / 273 steps), `master_saves 1`, `rnd 2 rnd_slot2 1`; `det_fx_reload.txt`: the same words after the power cycle, every latch 0. Cost: `fx1_plugin=6446/7415 s2_instr=5586/6254 s2_master=5440/5486`.
+  - Costs are op1emu figures (cycles a block, avg/peak); the device is typically 10-35 % higher. Well under 30 k at every metered position. Master FX 1 has no cost slot of its own (`fx1_plugin=` is the instrument FX 1; the master runs the same render) [I].
 
 **What to do** (play a chord or a drum loop through each):
 1. Synth: T3, shift + T3, pick **bitcrusher**, T3 (FX 1 on). Blue clockwise: a higher rate (cleaner), anticlockwise
    down to 500 Hz (heavy aliasing). Green clockwise: more bits; anticlockwise down to 2 bits. White: jitter (the
    rate gets rough, noisy). Orange: mix; at the bottom the dry sound unchanged.
 2. Hold Help and turn blue: "GAIN" top left in blue; the crusher is driven harder (+6 dB at the top, clipping) or
-   softer; with mix at 0 the sound must not change. Shift + Help + blue: the same gain in fine steps. Clicks and the
+   softer, 0.5 dB a detent; with mix at 0 the sound must not change. Shift + Help + blue: 0.1 dB a detent. Clicks and the
    other encoders' Help layers do nothing.
 3. Spread up, a chord at the synth position: both sides crush, the placement kept (stereo at every position is new).
 4. The same on FX 2 (drop), on the master (mixer T3) and its FX 2, and on the drum.
@@ -1939,16 +1972,21 @@ filter until it returns); recovery as e6.
 
 ## drive 0.1: the kennel drive effect on coop — device test (pending, 2026-11-11)
 
-Needs the e6 core (effect controls). `build/plugins/drive.coop` (9,608 bytes, sha256
-`2f3dcb9132c5ebc76ae84e06179cebecdc9d0c4d5158771f7223b4cfa506f387`), `plugins/drive/README.md`. The op1emu gate was
-still pending when this was written: run it first.
+Needs the e6 core (effect controls). `build/plugins/drive.coop` (9,616 bytes with the gain steps, sha256
+`a56f197a752e8df8a21ca17fa56c51ce5fd066be27be9a4faf72a5bb8ad9484b`), `plugins/drive/README.md`.
+
+- **op1emu gate (2026-11-11, e6 image `09e6923d...` from dev after the merge, drive alone on the NAND, one run at a time)** [C op1emu]:
+  - `plugins seen 1 loaded 1 failed 0`, no fault in any run. In the alphabetical stock FX list it is row 2 (after cwo and delay: `ccw 96` then `cw 16`; `tests/sim/det_fx_drive_select.txt` now does that).
+  - `det_fx_select.txt` (synth FX 1): `fx1_plugin=7617/10484`.
+  - `det_fx_controls.txt` (FX 1 picks `ccw 96`, `cw 16`): `p0=35291i2:11197/0/0/0 p3=70992i1:19114/0/0/0 p2=60007i2:15019/0/0/0 p4=52731i1:16384/0/0/0 p1=41705i2:17749/0/0/0` (w5/w6/w7/latch; gain 11197 / 19114 / 15019 / 16384 / 17749: the 1365 / 273 steps), `master_saves 1`, `rnd 2 rnd_slot2 1`; `det_fx_reload.txt`: the same words after the power cycle, every latch 0. Cost: `fx1_plugin=7615/10484 s2_instr=6348/8837 s2_master=6395/8884`.
+  - Costs are op1emu figures (cycles a block, avg/peak); the device is typically 10-35 % higher. Well under 30 k. Master FX 1 has no cost slot of its own (`fx1_plugin=` is the instrument FX 1; the master runs the same render) [I].
 
 **What to do** (install `drive.coop` with the librarian, power-cycle):
 1. Synth: T3, shift + T3, pick **drive** (between delay and grid), T3 (FX 1 on). Play a chord. Blue (drive) up: it
    saturates, the level stays about the same (auto-level). Green (tone): darker left, brighter right, flat at the
    centre. White (bias): fuller, more even harmonics. Orange (mix): fully left is the dry sound exactly.
 2. Hold Help and turn blue: `GAIN` top left in blue; more grit up, less down, the dry part unchanged. Shift + Help +
-   blue: the same gain in fine steps. Other encoders with Help: nothing.
+   blue: the same gain, 0.1 dB a detent (Help + blue: 0.5 dB). Other encoders with Help: nothing.
 3. Check the stereo survives: a wide chord (voice spread) through drive at the synth stays wide.
 4. The same at the drum (T3 on the drum page), the master (mixer T3), and in FX 2 of the instrument and the master.
 5. Power-cycle: the gain is where you left it at every position.
@@ -1959,12 +1997,19 @@ still pending when this was written: run it first.
 
 ## ensemble 0.3: the kennel ensemble as a coop effect, stereo everywhere — device test (pending, 2026-11-11)
 
-- `build/plugins/ensemble.coop` (10,820 bytes, sha256 `7f907a7977feac35aa3e993315e022d8abe93cf4a738c0e8ae0079563d988eb2`),
+- `build/plugins/ensemble.coop` (10,828 bytes with the gain steps, sha256
+  `2a0873d264ef56d8b5621cdfb01355fdda2ca3ca64dc584386249d4b526b92d6`),
   `plugins/ensemble` (`README.md` has the controls, the cost plan and the gate plan). Needs the e6 package
   (`op1_246_coop_e6.op1`): the file declares a control, so a core before e6 refuses it ("plugin flags not supported
   yet"). Install from the librarian, power-cycle.
 - Host and simulator: bit-identical to te-op1-cfw's kennel ensemble (`make -C tests/host/ensemble`, `sim`); coop render
-  12,801 mean / 14,823 max cycles a block in bfin-elf-run (no cache model). op1emu gate: pending (README).
+  12,801 mean / 14,823 max cycles a block in bfin-elf-run (no cache model). op1emu gate: below.
+
+- **op1emu gate (2026-11-11, e6 image `09e6923d...` from dev after the merge, ensemble alone on the NAND, one run at a time)** [C op1emu]:
+  - `plugins seen 1 loaded 1 failed 0`, no fault in any run. In the alphabetical stock FX list it is row 2 (`ccw 96` then `cw 16`).
+  - `det_fx_select.txt` (synth FX 1): `fx1_plugin=13522/14588`. `det_fx_ensemble.txt` (all four turns, white top and bottom: both kernels; its final `wait` lengthened to 75 s, the first run ended before its events): `p0=58371i1:20479/0/0/0` (gain + 3 x 1365), `fx1_plugin=12679/16085`.
+  - `det_fx_controls.txt` (FX 1 picks `ccw 96`, `cw 16`): `p0=35289i2:11197/0/0/0 p3=74433i1:19114/0/0/0 p2=63450i2:15019/0/0/0 p4=56173i1:16384/0/0/0 p1=45147i2:17749/0/0/0` (w5/w6/w7/latch; gain 11197 / 19114 / 15019 / 16384 / 17749: the 1365 / 273 steps), `master_saves 1`, `rnd 2 rnd_slot2 1`; `det_fx_reload.txt`: the same words after the power cycle, every latch 0. Cost: `fx1_plugin=13725/15176 s2_instr=12493/13871 s2_master=12161/13370`.
+  - Costs are op1emu figures (cycles a block, avg/peak); the device is typically 10-35 % higher. Under 30 k. Master FX 1 has no cost slot of its own (`fx1_plugin=` is the instrument FX 1; the master runs the same render) [I].
 
 **What to do**:
 1. Synth: T3, shift + T3, pick **ensemble**, T3 (FX 1 on). Play a chord. Turn white (voices) from the bottom (a plain
@@ -1972,7 +2017,7 @@ still pending when this was written: run it first.
    down; orange (mix) from dry to wet. Listen for clicks while turning, most of all on white near the bottom (the
    kernel switch) and on rate at the top.
 2. Hold Help and turn blue: "GAIN" top left in blue, the wet part louder or quieter (mix up to hear it; at mix 0
-   nothing changes). Shift + Help + blue: the same gain in fine steps.
+   nothing changes), 0.5 dB a detent. Shift + Help + blue: 0.1 dB a detent.
 3. Headphones: the chorus is wide at the synth position too (new on coop: kennel ran it mono there).
 4. The same at drum FX 1, master FX 1 and both FX 2 slots (drop, shift + blue to ensemble, blue push, T3).
 5. Switch FX 1 off (T3) for a few seconds with notes playing and on again: no burst of old sound (the restart passes
@@ -1987,11 +2032,16 @@ Compare by ear with the kennel build on hundekraft if you still have it (master 
 
 `plugins/freq_shift` (`docs/plugins.md` "Port: freq_shift", `plugins/freq_shift/README.md`). Needs the e6 core
 (`op1_246_coop_e6.op1`: effect controls).
-- `build/plugins/freq_shift.coop` (10,300 bytes; sha256 at this commit
-  `7a2061f12bd3b04c48f4f6e9c9bf7e11f75a76a25cf99b32695b32840ee25f56`). Load size 14,168 bytes, five relocations.
+- `build/plugins/freq_shift.coop` (10,308 bytes with the gain steps; sha256
+  `d73a8279ec6cdf6f22a62ca146bae677b9114e747c2f5fde63649b4f93602761`). Load size 14,168 bytes, five relocations.
 - [C host] bit-identical to te-op1-cfw's DSP per channel and, with L == R, to its stereo path; [C GNU simulator] the
-  assembly equals the host C; 9,762 / 14,383 cycles a block (one pair / two). op1emu gate: pending (run one at a time,
-  `plugins/freq_shift/README.md` "Gate plan").
+  assembly equals the host C; 9,762 / 14,383 cycles a block (one pair / two). op1emu gate: below.
+
+- **op1emu gate (2026-11-11, e6 image `09e6923d...` from dev after the merge, freq_shift alone on the NAND, one run at a time)** [C op1emu]:
+  - `plugins seen 1 loaded 1 failed 0`, no fault in any run. In the alphabetical stock FX list it is row 2 (`ccw 96` then `cw 16`).
+  - `det_fx_select.txt` (synth FX 1): `fx1_plugin=10561/13428`. `det_fx_freq_shift.txt` (the shift through 0 Hz, feedback, spread, ring and back, gain with its fine; its final `wait` lengthened to 75 s): `fxctl ... clicks 2 ... p0=41475i1:8740/0/0/0` (16384 - 6 x 1365 + 2 x 273), `fx1_plugin=11489/15753`.
+  - `det_fx_controls.txt` (FX 1 picks `ccw 96`, `cw 16`): `p0=35289i2:11197/0/0/0 p3=67541i1:19114/0/0/0 p2=56557i2:15019/0/0/0 p4=49280i1:16384/0/0/0 p1=38255i2:17749/1/0/0` (w5/w6/w7/latch; gain 11197 / 19114 / 15019 / 16384 / 17749: the 1365 / 273 steps), `master_saves 1`, `rnd 2 rnd_slot2 1`; `det_fx_reload.txt`: the same words after the power cycle, every latch 0. The mode: p1 1 (green click); p0 and p3 drawn by randomise after their clicks (both drew 0). Cost: `fx1_plugin=11159/16151 s2_instr=9776/14129 s2_master=8859/12211`.
+  - Costs are op1emu figures (cycles a block, avg/peak); the device is typically 10-35 % higher. Under 30 k. Master FX 1 has no cost slot of its own (`fx1_plugin=` is the instrument FX 1; the master runs the same render) [I].
 
 **What to do** (install `freq_shift.coop` with the librarian, power-cycle; play a sustained sound through it):
 1. Synth: T3, shift + T3, pick **freq shift**, T3 (FX 1 on). Orange up (wet). Turn blue slowly either side of the
@@ -2003,7 +2053,7 @@ Compare by ear with the kennel build on hundekraft if you still have it (master 
 4. Click green: `MODE RING` (green, top left), the sound becomes ring modulation (both sidebands, quieter by about
    6 dB, no click on the switch: a 6 ms crossfade). Click again: `MODE SHIFT`.
 5. Hold Help, turn blue: `GAIN` (blue) moves, the wet gets quieter / louder (-6 .. +6 dB), the dry part doesn't.
-   Hold Shift + Help and turn blue: the same value, 1/16 the step.
+   0.5 dB a detent. Hold Shift + Help and turn blue: 0.1 dB a detent.
 6. Orange to 0: exactly the dry sound (compare with FX 1 off: no difference).
 7. Repeat at the drum (drum T3), the master (mixer T3), and FX 2 of the instrument and the master (drop): the same
    behaviour; on the master the spread widens the whole mix.
@@ -2025,7 +2075,6 @@ Compare by ear with the kennel build on hundekraft if you still have it (master 
 - Port notes: `plugins/tape_drive/README.md`.
 - Host test (`make -C tests/host/tape_drive`): bit-identical to te-op1-cfw's DSP as kennel drove it, both on the
   host (C kernels) and in the simulator (assembly kernels). Simulator cost: avg 9,061, peak 9,286 cycles a block.
-- op1emu gate: pending (the README's gate plan).
 
 **Do:**
 1. Install `tape_drive.coop` over SysEx, then power-cycle.
@@ -2037,7 +2086,7 @@ Compare by ear with the kennel build on hundekraft if you still have it (master 
 3. fn + blue is the gain (`GAIN` top left in blue), -6..+6 dB into the saturation only.
    - At mix 0 nothing changes.
    - With saturate up you get more or less grit, and the level stays about the same.
-   - shift + fn + blue moves the same control in fine steps.
+   - 0.5 dB a detent; shift + fn + blue moves the same control 0.1 dB a detent.
 4. Repeat at the drum, the master, FX 2 of the instrument and FX 2 of the master. The instrument positions now hear
    the effect in stereo (kennel ran them mono): the voice spread should survive.
 5. Save the sound, power-cycle and reload: the gain should be kept.
@@ -2058,8 +2107,18 @@ returns), or recover as for e6.
 - [C host, GNU simulator] bit-identical with te-op1-cfw's tape echo and the kennel glue, sync included against
   kennel's tempo lock at 120 BPM (`make -C tests/host/tape_echo` 20,000 blocks; `sim`, 3,000 blocks with the
   assembly). Simulator compute 15,880 / 16,637 cycles a block.
-- op1emu gate: pending (plan in the README: `det_fx_select.txt`, `det_fx_tape_echo.txt`, `det_fx_reload.txt`, a
-  pristine `det_chord.txt`).
+
+- **op1emu gate (2026-11-11, e6 image `09e6923d...` from dev after the merge, tape_drive alone on the NAND, one run at a time)** [C op1emu]:
+  - `plugins seen 1 loaded 1 failed 0`, no fault in any run. In the alphabetical stock FX list it is row last (after spring: `cw 96`).
+  - `det_fx_select.txt` (synth FX 1): `fx1_plugin=10931/11837`.
+  - `det_fx_controls.txt` (FX 1 picks `cw 96`, unchanged): `p0=36117i2:11197/0/0/0 p3=67542i1:19114/0/0/0 p2=57825i1:15019/0/0/0 p4=49281i1:16384/0/0/0 p1=39081i2:17749/0/0/0` (w5/w6/w7/latch; gain 11197 / 19114 / 15019 / 16384 / 17749: the 1365 / 273 steps), `master_saves 1`, `rnd 2 rnd_slot2 1`; `det_fx_reload.txt`: the same words after the power cycle, every latch 0. Cost: `fx1_plugin=10931/12207 s2_instr=9666/10530 s2_master=9712/9966`.
+  - Costs are op1emu figures (cycles a block, avg/peak); the device is typically 10-35 % higher. Under 30 k. Master FX 1 has no cost slot of its own (`fx1_plugin=` is the instrument FX 1; the master runs the same render) [I].
+
+- **op1emu gate (2026-11-11, e6 image `09e6923d...` from dev after the merge, tape_echo alone on the NAND, one run at a time)** [C op1emu]:
+  - `plugins seen 1 loaded 1 failed 0`, no fault in any run. In the alphabetical stock FX list it is row last (`cw 96`).
+  - `det_fx_select.txt` (synth FX 1): `fx1_plugin=16778/18312`. `det_fx_tape_echo.txt`: `fxctl fx 1 turns 11 fine 1 clicks 5 latches 4 ignored 2 cancelled 1 ... p0=36117i2:11197/0/1/0 p1=39076i2:17749/0/1/0 p2=57821i1:15019/0/0/1 p3=67537i1:19114/0/1/0 p4=49276i1:16384/3/2/0`: every word and count as the scenario expects; `fx1_plugin=16787/18293 s2_instr=15536/16615 s2_master=15690/16237`.
+  - `det_fx_controls.txt` (test_fx's walk on tape_echo's layers): `p0=36116i2:11197/1/1/0 p1=42523i2:17749/0/0/0 p2=61266i1:15019/0/0/0 p3=70982i1:19114/2/1/1 p4=52721i1:16384/0/0/0` (sync and heads drawn by randomise at p0 and p3; the green click left hold on at p3), `master_saves 1`; `det_fx_reload.txt`: the same words, every latch 0. Cost `fx1_plugin=16821/18176 s2_instr=15632/16447 s2_master=15581/16140`.
+  - Costs are op1emu figures (cycles a block, avg/peak); the device is typically 10-35 % higher. Under 30 k. The restart's ~25 ms of dry is accepted (the owner, 2026-11-11): listen for it. Master FX 1 has no cost slot of its own (`fx1_plugin=` is the instrument FX 1; the master runs the same render) [I].
 
 **What to do** (install `tape_echo.coop` with the librarian, power-cycle; play through it):
 1. Synth: T3, shift + T3, pick **tape echo**, T3 (FX 1 on). Play short notes: echoes. Blue turn: the echo time (the
@@ -2077,7 +2136,7 @@ returns), or recover as for e6.
 6. Power-cycle: gain, sync and heads kept, hold off. Hold on at the synth, switch to drum and back: hold is off
    (accepted).
 7. Bypass (T3) and back on: the old echoes are gone (the tape starts clean), no click; the first ~25 ms after a
-   (re)start pass dry (the tape clear).
+   (re)start pass dry (the tape clear; accepted as it is by the owner, 2026-11-11): listen for it.
 8. Copy `/yaffs2/user/coop_stats.txt`: the `cost` line (`fx1_plugin=`, `s2_instr=`, `s2_master=`) and `fxctl`.
    Expected [I]: 20-35 k a position; over 60 k is a bug.
 
@@ -2089,14 +2148,20 @@ the previous coop image (or stock).
 Needs the e6 image (`op1_246_coop_e6.op1`, effect controls). `build/plugins/wavefolder.coop` (9,980 bytes; sha256 at
 packing `ad38fe00930b456bae51b54ed0a14d3d9ba0fbce1a9a6849bd2aca51ad1c6eb8`); contract in `plugins/wavefolder/README.md`.
 - [C host] bit-identical to te-op1-cfw's FOLD as the kennel plugin drove it (`tests/host/wavefolder`, native and
-  simulator). [I] the op1emu gate is not run yet (README "op1emu gate").
+  simulator). op1emu gate: below.
+
+- **op1emu gate (2026-11-11, e6 image `09e6923d...` from dev after the merge, wavefolder alone on the NAND, one run at a time)** [C op1emu]:
+  - `plugins seen 1 loaded 1 failed 0`, no fault in any run. In the alphabetical stock FX list it is row last (`cw 96`).
+  - `det_fx_select.txt` (synth FX 1): `fx1_plugin=6047/7292`.
+  - `det_fx_controls.txt` (FX 1 picks `cw 96`, unchanged): `p0=36116i2:11197/0/0/0 p3=81329i1:19114/0/0/0 p2=71614i1:15019/0/0/0 p4=63068i1:16384/0/0/0 p1=52870i2:17749/0/0/0` (w5/w6/w7/latch; gain 11197 / 19114 / 15019 / 16384 / 17749: the 1365 / 273 steps), `master_saves 1`, `rnd 2 rnd_slot2 1`; `det_fx_reload.txt`: the same words after the power cycle, every latch 0. Cost: `fx1_plugin=5786/7305 s2_instr=4532/6041 s2_master=5735/6088`.
+  - Costs are op1emu figures (cycles a block, avg/peak); the device is typically 10-35 % higher. Well under 30 k. Master FX 1 has no cost slot of its own (`fx1_plugin=` is the instrument FX 1; the master runs the same render) [I].
 
 **What to do** (install `wavefolder.coop` with the librarian, power-cycle; play a synth sound through it):
 1. Synth: T3, shift + T3, pick **wavefolder**, T3 (FX 1 on). Blue: more folds (brighter, buzzier) from about a third
    up; green: the folds turn lopsided either side of the centre (even harmonics), no thump while you turn it; white:
    darker to open; orange: dry to wet. At orange fully left the sound is exactly the dry sound.
 2. Hold Help and turn blue: "GAIN" top left in blue; up gives more folds at the same fold setting, down fewer; the
-   loudness hardly changes (the folder compresses). Shift + Help + blue: the same gain in very small steps. With
+   loudness hardly changes (the folder compresses); 0.5 dB a detent. Shift + Help + blue: 0.1 dB a detent. With
    orange fully left the gain changes nothing.
 3. The same on the drum (T3 list), the master (mixer T3) and both FX 2 slots (drop): it is stereo everywhere; a
    panned or spread sound keeps its width.
@@ -2114,7 +2179,12 @@ flash `op1_246_coop_e5.op1` (or stock).
   librarian (or `tools/coop_sysex.html`) and power-cycle.
 - Host: bit-identical to te-op1-cfw's hall through kennel's glue, on the host and in `bfin-elf-run` with the assembly
   (`make -C tests/host/cs_hall sim`): 18.2-22.0 k cycles a block avg, 26.2 k max (simulator, no cache stalls).
-- op1emu gate: pending (plan in the README; `tests/sim/det_fx_cs_hall.txt`).
+
+- **op1emu gate (2026-11-11, e6 image `09e6923d...` from dev after the merge, cs_hall alone on the NAND, one run at a time)** [C op1emu]:
+  - `plugins seen 1 loaded 1 failed 0`, no fault in any run. In the alphabetical stock FX list it is row 0 ("cs hall" sorts first: `ccw 96`; `tests/sim/det_fx_cs_hall.txt` now does that).
+  - `det_fx_select.txt` (synth FX 1): `fx1_plugin=20016/21780`. `det_fx_cs_hall.txt`: `p0=36860i2:1985/16384/32419/0 p1=36376i2:3605/16712/32767/0 p2=54017i1:2949/16384/32767/1 p3=64092i1:3933/16384/32767/0 p4=45831i1:3277/16384/32111/0`, every word as the scenario expects; `fx1_plugin=20004/22723 s2_instr=18757/20205 s2_master=18802/20252`.
+  - `det_fx_controls.txt`: `p0=36860i2:21943/19936/1568/0` and `p3=64080i1:15529/12294/31826/0` (all three drawn by randomise), `p1=...:3605/16384/32767/0 p2=...:2949/16384/32767/1 p4=...:3277/16384/32767/0` (width clamps at the top); `det_fx_reload.txt`: the same words, every latch 0. Cost `fx1_plugin=20010/26893 s2_instr=18763/25644 s2_master=18800/20252` (the peaks: size crossfades and randomised jumps).
+  - Costs are op1emu figures (cycles a block, avg/peak); the device is typically 10-35 % higher. Under 30 k on average; the highest peak of the nine (26.9 k). The ~30 ms dry after a restart, width at every position and the tank's L + R input are accepted (the owner, 2026-11-11): listen for the dry gap. Master FX 1 has no cost slot of its own (`fx1_plugin=` is the instrument FX 1; the master runs the same render) [I].
 
 **What to do**:
 1. Synth: T3, shift + T3, pick **cs hall**, T3 on. Play chords: a hall tail. Turn blue (size: no click while it
@@ -2123,7 +2193,8 @@ flash `op1_246_coop_e5.op1` (or stock).
    shift + Help + the same encoder moves it in fine steps. Width at 0 is mono.
 3. Click orange: FREEZE ON, the tail holds while you play (nothing new goes in); click again: it decays.
 4. The same on drum FX 1, master FX 1 (mixer T3) and both FX 2 (drop): the effect is stereo at each.
-5. Change sound (or re-pick cs hall): ~30 ms dry, then the reverb starts empty (no old tail, no click).
+5. Change sound (or re-pick cs hall): ~30 ms dry (accepted as it is by the owner, 2026-11-11: listen for it), then
+   the reverb starts empty (no old tail, no click).
 6. Power-cycle: predelay, early and width as you left them; freeze off.
 7. Copy `/yaffs2/user/coop_stats.txt` with cs hall on two positions and size moving: the `cost` line
    (`fx1_plugin=`, `s2_instr=`, `s2_master=`) and `plugins` (`heap_largest`). Budget: under 30 k a block, over 60 k
@@ -2140,7 +2211,13 @@ or dies, a click at the clear.
   `tools/coop_sysex.html`) and power-cycle.
 - Host: bit-identical to te-op1-cfw's plate and its kennel half-rate path (`make -C tests/host/cs_plate`; the
   simulator run checks the assembly against upstream's C too). GNU simulator: 17,456 cycles a block steady, 19,828
-  max. op1emu gate: pending (the plan is in the README). Load size ~87.5 KB a position (x 5 = ~438 KB of heap 0).
+  max. Load size ~87.5 KB a position (x 5 = ~438 KB of heap 0).
+
+- **op1emu gate (2026-11-11, e6 image `09e6923d...` from dev after the merge, cs_plate alone on the NAND, one run at a time)** [C op1emu]:
+  - `plugins seen 1 loaded 1 failed 0`, no fault in any run. In the alphabetical stock FX list it is row 0 (`ccw 96`; `tests/sim/det_fx_cs_plate.txt` now does that).
+  - `det_fx_select.txt` (synth FX 1): `fx1_plugin=19176/20585`. `det_fx_cs_plate.txt` (its final `wait` lengthened to 80 s: the first run ended before the scenario's events): `fxctl fx 1 turns 6 fine 1 clicks 0 latches 2 ignored 1 ... p0=66818i1:3/23594/10178/0` as expected; `fx1_plugin=19187/21218`.
+  - `det_fx_controls.txt`: `p0=...:1/22902/20068/0` and `p3=...:5/2114/13987/0` (drawn), `p1=39820i2:4/22938/9830/0`, `p2=57461i1:4/22938/9830/1`, `p4=49275i1:4/22938/10486/0` (size moves a step per 4 detents, so the 1- and 2-detent turns leave it; `master_saves 0`: nothing changed at the master); `det_fx_reload.txt`: the same words, every latch 0. Cost `fx1_plugin=19181/21187 s2_instr=17922/19934 s2_master=17966/18469`.
+  - Costs are op1emu figures (cycles a block, avg/peak); the device is typically 10-35 % higher. Under 30 k. The ~15 ms dry after a restart and the plate's L + R input are accepted (the owner, 2026-11-11): listen for the dry gap. Master FX 1 has no cost slot of its own (`fx1_plugin=` is the instrument FX 1; the master runs the same render) [I].
 
 **What to do**:
 1. Synth: T3, shift + T3, pick **cs plate**, T3 (FX 1 on). Play chords and short notes: a bright plate tail. Turn

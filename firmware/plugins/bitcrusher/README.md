@@ -22,9 +22,9 @@ No anti-aliasing: the aliasing is the sound.
 | Click | — | — | — | — |
 | Shift + turn | rate fine | bits fine | jitter fine | mix fine |
 | Shift + click | — | — | — | — |
-| fn + turn | gain (-6..+6 dB) | — | — | — |
+| fn + turn | gain (-6..+6 dB, 0.5 dB a detent) | — | — | — |
 | fn + click | — | — | — | — |
-| Shift + fn + turn | gain fine | — | — | — |
+| Shift + fn + turn | gain fine (0.1 dB a detent) | — | — | — |
 | Shift + fn + click | — | — | — | — |
 
 - The four turns are the stock's (`params[0..3]`, in the filter type's range units, normalised in the render as
@@ -32,8 +32,9 @@ No anti-aliasing: the aliasing is the sound.
   (the owner, 2026-10-27); the core's rate and bits are the amount of crushing, so both are the knob mirrored. Shift
   + turn is the stock fine adjustment.
 - **Blue's shift + fn layer is the gain's fine step** (the owner's decision, `docs/ui-features.md` §14): fn + blue
-  moves the gain 1 % of its range a detent (328 in Q15, about 0.12 dB), shift + fn + blue 1/16 of that (about 0.007
-  dB). Declared `"fine": true`, so nothing else sits on blue's shift + fn + turn.
+  moves the gain 0.5 dB a detent (`"step": 1365` Q15, 2730.7 a dB over the +-6 dB range), shift + fn + blue 0.1 dB
+  (`"fine_step": 273`), kennel's steps (the owner, 2026-11-11). Declared `"fine": true`, so nothing else sits on
+  blue's shift + fn + turn.
 - The gain is saved with the sound (word 5, default 16384 = 0 dB) and is not randomised (`"random": false`: a random
   draw would be a level jump).
 - No latch, so nothing is cleared when the stock switches synth ↔ drum (the crusher's own state, its phase and held
@@ -49,7 +50,7 @@ shift + fn + blue, both dispatched by the core. A sound saved under kennel keeps
 `plugin.json` "controls":
 
 ```json
-{"id":"gain","name":"gain","action":"fn_turn","encoder":"blue","word":5,"kind":"continuous","default":16384,"fine":true,"random":false}
+{"id":"gain","name":"gain","action":"fn_turn","encoder":"blue","word":5,"kind":"continuous","default":16384,"fine":true,"step":1365,"fine_step":273,"random":false}
 ```
 
 ## What changed from upstream
@@ -117,15 +118,16 @@ bits (top halves equal to upstream's, low halves the input's) [C host, 2026-11-1
 ## op1emu gate (not run yet: gates go one at a time)
 
 A NAND with `build/plugins/bitcrusher.coop` alone in `/plugins` (`tools/make_nand.py --overlay`, as `docs/plugins.md`
-"Building and testing"; or `PLUGINS=build/plugins/bitcrusher.coop tests/sim/run_emu.sh ...`), the e6 image. With one
-plugin it is the last row of every FX list, as test_fx was, so the e6 scenarios run unchanged:
+"Building and testing"; or `PLUGINS=build/plugins/bitcrusher.coop tests/sim/run_emu.sh ...`), the e6 image. The stock FX
+list is alphabetical with the plugins sorted in, so bitcrusher is its first row: the FX 1 picks are `turn enc1 ccw 96`
+instead of `cw 96` (FX 2's list is in plugin order: unchanged). Run 2026-11-11, results in `docs/device-tests.md`:
 1. `tests/sim/det_fx_select.txt`: bitcrusher at the synth position (FX 1), a chord through it. Expect `plugins seen
    1 loaded 1 failed 0`, `plugin_blocks` counting, no fault; the dump audibly crushed (defaults: ~15 kHz, 13 bits,
    fully wet).
 2. `tests/sim/det_fx_controls.txt`: all five positions (p0 synth FX 1, p3 instrument FX 2, p2 master FX 1, p4 master
    FX 2, p1 drum FX 1) with a chord and drum keys. Expect in the stats `fxctl` line `fx 1`, words 5 per position as
-   test_fx's run: p0 15092 (four coarse down, one fine up: the fine pairing), p3 17040, p2 16056 (`master_saves 1`),
-   p4 16384, p1 16712; words 6 / 7 and the latch word 0 everywhere; green / orange clicks and the white fn turns
+   test_fx's run: p0 11197 (four coarse down, one fine up: 16384 - 4 x 1365 + 273), p3 19114, p2 15019
+   (`master_saves 1`), p4 16384, p1 17749; words 6 / 7 and the latch word 0 everywhere; green / orange clicks and the white fn turns
    counted as `ignored` (undeclared) [I: the counts other than the words are not predicted].
 3. `tests/sim/det_fx_reload.txt` on the NAND step 2 left: the same words 5 after the power cycle.
 4. A pristine-NAND `det_chord.txt` run: unchanged against the e6 reference.

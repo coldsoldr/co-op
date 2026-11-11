@@ -15,13 +15,14 @@ permission) and the plugin file is conveyed under the GPL.
 | Click | — | mode: shift / ring (steps, saved, wraps) | — | — |
 | Shift + turn | shift fine (stock) | feedback fine (stock) | spread fine (stock) | mix fine (stock) |
 | Shift + click | — | — | — | — |
-| fn + turn | gain (-6 .. 0 .. +6 dB on the wet path) | — | — | — |
+| fn + turn | gain (-6 .. 0 .. +6 dB on the wet path, 0.5 dB a detent) | — | — | — |
 | fn + click | — | — | — | — |
-| Shift + fn + turn | gain fine (1/16 of fn + blue's step) | — | — | — |
+| Shift + fn + turn | gain fine (0.1 dB a detent) | — | — | — |
 | Shift + fn + click | — | — | — | — |
 
 - **Blue's shift + fn layer is the gain's fine** (the owner's decision, `docs/ui-features.md` §14, `"fine": true`):
-  nothing else may sit there.
+  nothing else may sit there. Kennel's steps (the owner, 2026-11-11): `"step": 1365` (0.5 dB a detent),
+  `"fine_step": 273` (0.1 dB).
 - The four turns are kennel's four knobs (`params[0..3]`, in the filter type's range units; `freq_shift.cc`
   normalises them to 0..32767 as kennel's `op1_fx_param_q15` did, from the ranges `sdk/coop_plugin.h` names).
   Shift: `2000 Hz x (2 (knob - 0.5))^3` (fine near 0; 16384 = 0 Hz). Feedback: loop gain 0..0.93. Spread: L at shift
@@ -39,7 +40,7 @@ permission) and the plugin file is conveyed under the GPL.
 ```json
 "controls": [
   {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
-   "default": 16384, "fine": true, "random": false},
+   "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false},
   {"id": "mode", "name": "mode", "action": "click", "encoder": "green", "word": 6, "kind": "steps",
    "steps": ["shift", "ring"], "default": 0, "wrap": true}
 ]
@@ -65,7 +66,7 @@ Every position runs the stereo path (guidelines §2.2). Upstream's stereo path (
 barber-pole loop and its own dry), to stay under its 5 MHz target. That is the "sum to mono and spread again" the
 guidelines forbid: at the instrument positions coop's bus carries per-voice placement, which the wet would lose. So
 the port gives **each channel its own Hilbert pair** (x = that channel's input), keeping upstream's shifters, loops
-and mixes per channel:
+and mixes per channel (approved by the owner, 2026-11-11: no L + R sum):
 - L is upstream's mono call on L at shift + spread, and R upstream's mono call on R at shift - spread, bit for bit
   (the host test).
 - **L == R** (a mono source, or a centred voice at an instrument position): the block runs one pair and both shifters
@@ -143,19 +144,20 @@ and through the C kernels, each compared with the host's output; and the cycles 
    image already built).
 2. NAND: `freq_shift.coop` alone in `build/nand_overlay/plugins/`, `tools/make_nand.py` as in `docs/plugins.md`
    "Building and testing" (plugin NAND), and a pristine NAND.
-3. `tests/sim/det_fx_select.txt` on the plugin NAND: freq_shift is the only plugin, so it is the last row of the FX
-   list as test_fx was; the chord plays through it at the synth position. Expect `plugins seen 1 loaded 1 failed 0`,
+3. `tests/sim/det_fx_select.txt` on the plugin NAND: the stock FX list is alphabetical with the plugins sorted
+   in, so "freq shift" is row 2 (`ccw 96` then `cw 16`; run 2026-11-11, results in `docs/device-tests.md`); the chord plays through it at the synth position. Expect `plugins seen 1 loaded 1 failed 0`,
    `plugin_blocks` > 0, no fault; the cost line's `fx1_plugin=`.
 4. `tests/sim/det_fx_controls.txt` on the plugin NAND (written for test_fx, whose controls sit where freq_shift's
    do on blue and green): it selects the effect at p0 synth, p3 instrument FX 2, p2 master, p4 master FX 2, p1 drum and
-   plays a chord and drum keys. Read `fxctl`: p0's w5 = 15092 (fn + blue 4 down, 1 fine up), w6 = 1 (green click:
+   plays a chord and drum keys. Read `fxctl`: p0's w5 = 11197 (fn + blue 4 down, 1 fine up), w6 = 1 (green click:
    ring); fn + white and the orange click land on undeclared slots here (`ignored` counts them; test_fx's depth and
-   mute are not freq_shift's). Expected `pN=...:w5/w6/0/0`: p0 15092/1/0/0, p3 17040/1/0/0, p2 16056/0/0/0,
-   p4 16384/0/0/0, p1 16712/1/0/0 [I: the counts of `ignored` and `latches` differ from test_fx's run].
+   mute are not freq_shift's). Expected `pN=...:w5/w6/0/0`: p0 11197/drawn/0/0, p3 19114/drawn/0/0, p2 15019/0/0/0,
+   p4 16384/0/0/0, p1 17749/1/0/0 (the scenario randomises p0 and p3 after their clicks: the mode is drawn there, the
+   gain kept) [I: the counts of `ignored` and `latches` differ from test_fx's run].
 5. `tests/sim/det_fx_reload.txt` on the NAND step 4 leaves: the words kept at every position (mode and gain saved).
 6. `tests/sim/det_fx_freq_shift.txt` (this port's): the plugin at the synth position, a chord held while the shift
    sweeps through 0 Hz, feedback up, spread up, mix to the top, the green click to ring and back, fn + blue gain with
-   its fine, then mix 0; no fault, `fxctl` `p0=...:14457/0/0/0`, the chord audible in the dump (`tools/wav_levels.py`:
+   its fine, then mix 0; no fault, `fxctl` `p0=...:8740/0/0/0` (16384 - 6 x 1365 + 2 x 273), the chord audible in the dump (`tools/wav_levels.py`:
    level and width move with the turns, dry after the mix goes to 0), the cost line's `fx1_plugin=`. Run it at the
    master too (mixer T3 instead of synth T3) for `p2` and the stereo spread on the master bus.
 7. Pristine NAND `det_chord.txt`: unchanged against e6.

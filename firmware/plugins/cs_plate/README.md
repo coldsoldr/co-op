@@ -71,7 +71,8 @@ every position (synth, drum, master, both second slots), with one state per posi
 
 Dattorro's plate sums its input to mono at the pre-delay (`(l + r) >> 1`). The stereo picture comes from the tank's
 two output tap sets, and the dry path keeps the full stereo input. This is the reverb's design, not a dual-mono wrap,
-so it is kept as it is. It is an open question for the owner against §2.2's "never sum L and R" rule.
+so it is kept as it is: **a §2.2 exception, accepted by the owner (2026-11-11)** against the "never sum L and R" rule
+(the wet is stereo from the tank taps, the dry stays stereo).
 
 ## What coop forbids, found and fixed
 
@@ -94,7 +95,8 @@ Blackfin always runs the assembly (`plate_bfin.S`, `halfband_bfin.S`, unchanged 
 ## Init and memory (guidelines §2.3)
 
 - `init(slot)` only sets a counter (a few cycles). The renders that follow zero the state 2048 words (8 KB) a block,
-  for 10 blocks (~14.5 ms), leaving the block untouched: the dry passes, as kennel's restart block did. Then the plate
+  for 10 blocks (~14.5 ms), leaving the block untouched: the dry passes, as kennel's restart block did (accepted as
+  it is by the owner, 2026-11-11: listen for it on the device). Then the plate
   is reset, and the next block is the first processed one. The halfband filters' and the mix smoother's start state
   is all zero, so there is nothing else to build. A clear block costs 2,152 cycles at most in the GNU simulator, which
   models no cache or SDRAM. On the device each cleared line is an SDRAM write [I].
@@ -162,8 +164,9 @@ have. Brief for when effect screens exist (to mock in `tools/playground/coop-pla
   the cycle figures above.
 - **op1emu gate**: not run in this port (gate runs go one at a time). The plan:
   1. `make -C plugins`, then a NAND with `build/plugins/cs_plate.coop` alone in `/yaffs2/plugins`
-     (`tools/make_nand.py ... --overlay`, `docs/plugins.md` "Building and testing"). Alone means it is the last row
-     of the stock FX list, as the scenarios assume.
+     (`tools/make_nand.py ... --overlay`, `docs/plugins.md` "Building and testing"). The stock FX list is
+     alphabetical with the plugins sorted in: "cs plate" is its first row, picked with `ccw 96` (run 2026-11-11,
+     results in `docs/device-tests.md`).
   2. `tests/sim/det_fx_select.txt`: synth position, a chord. Expect `plugins seen 1 loaded 1 failed 0`, no fault,
      and the plugin's blocks in the stats.
   3. `tests/sim/det_fx_cs_plate.txt` (new): synth FX 1 on, chord tails, fn + blue / green / white, the fine, a

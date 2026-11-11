@@ -28,20 +28,22 @@ coefficient design (Laurent de Soras, WTFPL).
 | Click | — | — | — | — |
 | Shift + turn | saturate fine (stock) | wobble fine (stock) | age fine (stock) | mix fine (stock) |
 | Shift + click | — | — | — | — |
-| fn + turn | gain, -6..+6 dB (continuous, saved) | — | — | — |
+| fn + turn | gain, -6..+6 dB, 0.5 dB a detent (continuous, saved) | — | — | — |
 | fn + click | — | — | — | — |
-| Shift + fn + turn | **gain fine** (the same control, 1/16 step: `"fine": true`) | — | — | — |
+| Shift + fn + turn | **gain fine** (the same control, 0.1 dB a detent: `"fine": true`) | — | — | — |
 | Shift + fn + click | — | — | — | — |
 
 Blue's shift + fn layer is the gain's fine adjustment. This is the owner's decision (`docs/ui-features.md` §14) and
-the e6 `"fine"` pairing (`guide/plugin-guidelines.md` §4.1), so nothing else can sit there.
+the e6 `"fine"` pairing (`guide/plugin-guidelines.md` §4.1), so nothing else can sit there. The steps are kennel's
+(the owner, 2026-11-11): `"step": 1365` (0.5 dB a detent: the word is (w - 16384) x 4 Q16 octaves, +-6 dB over the
+range) and `"fine_step": 273` (0.1 dB).
 
 ### Controls (`plugin.json`)
 
 ```json
 "controls": [
   {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
-   "default": 16384, "fine": true, "random": false}
+   "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}
 ]
 ```
 
@@ -64,7 +66,7 @@ the e6 `"fine"` pairing (`guide/plugin-guidelines.md` §4.1), so nothing else ca
 |---|---|
 | knobs blue saturate, green wobble, white age (mirrored), orange mix | the same four turns |
 | blue press `OP1_PRESS_PAGE`, page 2 blue = word 5 gain | `fn_turn` blue, word 5 (same word, same default 16384, same formula) |
-| shift + blue on page 2: a tenth of a dB a click (`knl::Fine`, 273 words, written back from the render through the shift byte at `0x01dd7f78`) | shift + fn + blue, the core's fine: 20.5 Q15 a detent. Coarse is 328 a detent (about 0.12 dB); fine is about 0.0075 dB |
+| shift + blue on page 2: a tenth of a dB a click (`knl::Fine`, 273 words, written back from the render through the shift byte at `0x01dd7f78`) | shift + fn + blue, the core's fine: 273 Q15 a detent (0.1 dB, kennel's click); coarse 1365 a detent (0.5 dB) |
 | green / white / orange presses | none (`OP1_PRESS_NONE`) |
 | `"stereo": true` (`op1_fx_stereo_t`: mono render at synth and drum, stereo at master) | no flag. A `coop_fx_t` is stereo by ABI, and coop's loader would read a kennel stereo flag as the `op1_fx_stereo_t` layout and refuse the file. The stereo render runs at every position |
 | `page2_defaults [16384, 0, 0]` | taken from the controls by the packer (never written next to `controls`) |
@@ -170,8 +172,8 @@ first.
    stock list's last row and, for FX 2, the same list turns as for test_fx: with one plugin on the NAND it is the
    same row [I]. Expect:
    - `fxctl fx 1`;
-   - word 5 exactly as for test_fx: `p0 ...:15092/0/0/0`, `p3 ...:17040/0/0/0`, `p2 ...:16056/0/0/0`,
-     `p4 ...:16384/0/0/0`, `p1 ...:16712/0/0/0`. tape_drive declares nothing on words 6 and 7 or the latch word, so
+   - word 5 exactly as for test_fx: `p0 ...:11197/0/0/0`, `p3 ...:19114/0/0/0`, `p2 ...:15019/0/0/0`,
+     `p4 ...:16384/0/0/0`, `p1 ...:17749/0/0/0`. tape_drive declares nothing on words 6 and 7 or the latch word, so
      they read 0, and test_fx's green and orange clicks and fn + white land in `ignored` instead;
    - `fine 1`, `master_saves 1`, `plugins seen 1 loaded 1 failed 0`, no fault.
 4. `tests/sim/det_fx_reload.txt`: power-cycle the NAND and expect word 5 kept at every position.

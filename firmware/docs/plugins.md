@@ -296,10 +296,10 @@ te-op1-cfw's kennel bitcrusher (`ports/knl/bitcrusher`, 5aa314b; DSP `ports/fx/s
 - Do not set plugin.json `"stereo"` on a coop effect: the loader then checks kennel's `op1_fx_stereo_t` layout
   (callbacks at +0, +4, +12) and a `coop_fx_t` fails it ("stereo callback outside plugin text") [I: read in
   `plugin_load.cc`, not run].
-- 1,672 bytes packed, load 1,356 (x5 = 6,780); simulator compute 5.3 k / 6.7 k cycles a block avg / max [C simulator];
-  device pending. op1emu gate pending (plan in the README).
+- 1,680 bytes packed (with the gain steps), load 1,356 (x5 = 6,780); simulator compute 5.3 k / 6.7 k cycles a block
+  avg / max [C simulator]; op1emu gate passed 2026-11-11 (below); device pending.
 
-## Port: drive (kennel effect, 2026-11-11) [C host + GNU simulator; op1emu gate and device pending]
+## Port: drive (kennel effect, 2026-11-11) [C host + GNU simulator + op1emu; device pending]
 
 `plugins/drive/` (README there): te-op1-cfw's oversampled soft-clip overdrive (`ports/fx/src/drive`, commit 9ced415;
 the kennel plugin `ports/knl/drive` 0.2), self-contained: `src/drive_dsp.{h,cc}`, `src/drive_bfin.S` (six passes,
@@ -320,9 +320,8 @@ the kennel plugin `ports/knl/drive` 0.2), self-contained: `src/drive_dsp.{h,cc}`
   bit-identical on the host (C passes) and in bfin-elf-run with the device build (assembly passes) against upstream's
   C; mix 0 = the input bit for bit. Simulator cost: 5,539 a block still, 7,578 avg / 8,042 peak moving (upstream's own
   figure 4,651 / 5,009 stereo; kennel ran 3,235 / 3,605 mono at the instruments).
-- op1emu gate: not run (one gate at a time). Plan in `plugins/drive/README.md`: `tests/sim/det_fx_drive_select.txt`
-  (new: drive is row 2 of the alphabetical FX list, not the last row), `det_fx_controls.txt` with its list turns
-  adjusted, `det_fx_reload.txt`, a pristine `det_chord.txt`.
+- op1emu gate passed 2026-11-11 (below): drive is row 2 of the alphabetical FX list (confirmed),
+  `tests/sim/det_fx_drive_select.txt` picks it with `ccw 96` then `cw 16`. 9,616 bytes with the gain steps.
 
 ## ensemble (2026-11-11): the kennel ensemble on e6
 
@@ -338,7 +337,7 @@ host (C) and in bfin-elf-run (assembly), 12.8 k mean / 14.8 k max cycles a block
 scenario `tests/sim/det_fx_ensemble.txt`: `plugins/ensemble/README.md`. Device test: `docs/device-tests.md`
 "ensemble 0.3".
 
-## Port: freq_shift (kennel freq_shift 0.2, 2026-11-11) [I until the gate and the device test]
+## Port: freq_shift (kennel freq_shift 0.2, 2026-11-11) [C op1emu; I until the device test]
 
 `plugins/freq_shift`: te-op1-cfw's frequency shifter / ring modulator after Mutable Instruments Warps (MIT,
 `ports/fx/src/shift` at 5aa314b, the kennel plugin `ports/knl/freq_shift`), self-contained (`src/` the DSP and its
@@ -357,9 +356,8 @@ assembly, `op1/support.cc`, `LICENSE-MIT`). Contract, stereo and cost: `plugins/
   spread, R at shift - spread), and with L == R to upstream's stereo path (`make -C tests/host/freq_shift`); the
   assembly equals the host C in the GNU simulator (`make ... sim`).
 - **Cost** (GNU simulator, cycles a block): 9,762 avg / 11,013 max with L == R, 14,383 / 15,868 with L != R
-  (upstream's stereo call: 6,585 / 7,187). op1emu and device pending. File 10,300 bytes, load 14,168 (x5 = 70,840).
-- Gate plan (not run in the port): `plugins/freq_shift/README.md` "Gate plan", scenario
-  `tests/sim/det_fx_freq_shift.txt`.
+  (upstream's stereo call: 6,585 / 7,187). op1emu: below; device pending. File 10,308 bytes, load 14,168 (x5 = 70,840).
+- Gated in op1emu 2026-11-11 (below); scenario `tests/sim/det_fx_freq_shift.txt`.
 
 ## tape_drive (2026-11-11): the kennel tape saturation, stereo at every position
 
@@ -379,8 +377,8 @@ Notes for other ports:
 - **Knob ranges.** `op1_fx_param_q15` becomes the SDK's constant ranges with kennel's formula: four divisions a
   block.
 - **Status.** Host test `tests/host/tape_drive`: bit-identical, on the host and in the simulator. Simulator cost:
-  9,061 cycles a block (upstream: 7,026 stereo, 4,128 mono). The op1emu gate and the device test are pending
-  (`docs/device-tests.md` "tape_drive 0.4").
+  9,061 cycles a block (upstream: 7,026 stereo, 4,128 mono). The op1emu gate passed 2026-11-11 (below); the device test is
+  pending (`docs/device-tests.md` "tape_drive 0.4").
 
 ## tape_echo (2026-11-11): the kennel tape echo, an e6 effect port
 
@@ -401,7 +399,7 @@ Instruments Beads (MIT, `plugins/tape_echo/LICENSE-MIT`). Contract, mapping, cos
   even with `-fno-tree-loop-distribute-patterns`: zero it with a loop of words; (3) two sources with the same stem
   (`tape_echo.cc`, `src/tape_echo.cc`) give one object name and a link error: rename one.
 - 10,664 bytes packed, `.bss` 134,764; load size 143,652 x 5 = 718,260 bytes of heap 0. GNU simulator 15,880 /
-  16,637 cycles a block (avg / max); op1emu and device pending (`docs/device-tests.md` "tape_echo 0.1").
+  16,637 cycles a block (avg / max); op1emu gate passed 2026-11-11 (below); device pending (`docs/device-tests.md` "tape_echo 0.1").
 
 ## wavefolder 0.1 (2026-11-11, a kennel effect port)
 
@@ -419,7 +417,7 @@ tone, mix as kennel; fn + blue the input gain (word 5, -6..+6 dB, `"fine": true`
 - Host test `tests/host/wavefolder` (`make TE=<te-op1-cfw>/ports all sim`): bit-identical to the upstream driven as
   `fold_knl.cc` drove it, natively (C kernels) and in the GNU simulator (assembly). Simulator cost a block: 5,716
   avg / 6,962 max stereo (upstream `Process` alone 4,807); device estimate 9-15 k [I]. Packed 9,980 bytes, load size
-  10,008 (x 5 = 50,040). op1emu gate: not run yet (plan in the README); device: pending.
+  10,008 (x 5 = 50,040). op1emu gate passed 2026-11-11 (below); device: pending. Packed 9,988 with the gain steps.
 
 ## cs_hall (2026-11-11): the hall reverb from te-op1-cfw (kennel cs_hall 0.1)
 
@@ -432,7 +430,7 @@ each with its fine on shift + fn (words 5-7, saved); freeze on the orange click 
 cleared in render, 4 KB a block (21 blocks dry), not in init (guidelines §2.3). Host test `tests/host/cs_hall`:
 bit-identical to the upstream through kennel's glue, host C and the Blackfin build in the simulator (18-22 k cycles a
 block, 26 k peak there). Load size 102,932 bytes (~515 KB for five relocations). No `format` field in the controls
-schema yet, so predelay can't be shown in ms. op1emu gate and device test pending (`docs/device-tests.md` "cs_hall").
+schema yet, so predelay can't be shown in ms. op1emu gate passed 2026-11-11 (below); device test pending (`docs/device-tests.md` "cs_hall").
 
 ## cs_plate (2026-11-11): the plate reverb, a kennel effect port on e6
 
@@ -450,4 +448,83 @@ orange click. Notes for the other effect ports:
 - The turns' range units map to Q15 with kennel's `op1_fx_param_q15` formula and the SDK's constant ranges.
 - Host test: `tests/host/cs_plate` (host: C both sides; GNU simulator: the plugin's assembly against upstream's C),
   bit-identical. Cost in the simulator: 17,456 cycles a block, of which the plate is 7,956 and the half-rate path
-  ~7,500. The op1emu gate and the device run are pending; the gate scenario is `tests/sim/det_fx_cs_plate.txt`.
+  ~7,500. The op1emu gate passed 2026-11-11 (below); the device run is pending.
+
+## The nine effect ports merged and gated (2026-11-11)
+
+bitcrusher, drive, ensemble, freq_shift, tape_drive, tape_echo, wavefolder, cs_hall and cs_plate are merged on dev
+(each port's own section above; device tests pending in `docs/device-tests.md`, one entry each).
+
+**The owner's decisions applied after the merge (2026-11-11):**
+- Input gain in kennel's steps on every port with a gain (bitcrusher, drive, ensemble, freq_shift, tape_drive,
+  wavefolder; tape_echo had it): `"step": 1365, "fine_step": 273` (0.5 dB / 0.1 dB a detent over the +-6 dB word).
+  The four files grew by 8 bytes each (the two fields in the controls extension).
+- freq_shift: a Hilbert pair per channel, approved (no L + R sum).
+- The dry pass-through for 15-30 ms after a restart (cs_hall, cs_plate, tape_echo: the tank or tape clear) is accepted
+  as it is; the device tests say to listen for it.
+- cs_hall: width at every position, default full width, accepted. cs_hall / cs_plate: the tank's L + R input is the
+  reverb's design (the wet is stereo from the tank taps, the dry stays stereo), a §2.2 exception, accepted.
+- cs_hall predelay is to show in ms once the controls schema has a `format` field (noted in its README).
+
+**Parked: cs_clouds and cs_clouds_delay** (branch `worktree-agent-a125e10b2d0409be0`, not merged). The owner parked
+them for their cost: GNU simulator average 30 k / 37 k cycles a block, peaks 69 k / 80 k (over the 60 k a plugin may
+cost).
+
+**Sizes** (packed / load / load x 5 relocations, bytes):
+
+| Plugin | Packed | Load | x 5 |
+|---|---|---|---|
+| bitcrusher | 1,680 | 1,356 | 6,780 |
+| drive | 9,616 | 9,948 | 49,740 |
+| ensemble | 10,828 | 19,380 | 96,900 |
+| freq_shift | 10,308 | 14,168 | 70,840 |
+| tape_drive | 11,072 | 13,912 | 69,560 |
+| tape_echo | 10,664 | 143,652 | 718,260 |
+| wavefolder | 9,988 | 10,008 | 50,040 |
+| cs_hall | 17,712 | 102,932 | 514,660 |
+| cs_plate | 11,460 | 87,534 | 437,670 |
+
+**op1emu gate** (e6 image from dev after the merge, release core; each port alone on a NAND; one run at a time on an
+idle machine). Every port: `plugins seen 1 loaded 1 failed 0`, no fault, the chord through it at the synth FX 1
+(`det_fx_select.txt`), the five positions with their declared controls (`det_fx_controls.txt`, chord and drum keys
+through all five), the words kept and the latches cleared after a power cycle (`det_fx_reload.txt`), and each port's
+own scenario where it has one. The words and figures per port are in its `docs/device-tests.md` entry. Cost, cycles a
+block, average / peak, **emulator figures (the device is typically 10-35 % higher)**; from the `det_fx_controls.txt`
+run (all five positions live), the synth-only `det_fx_select.txt` in brackets:
+
+| Plugin | instrument FX 1 (`fx1_plugin`) | instrument FX 2 (`s2_instr`) | master FX 2 (`s2_master`) |
+|---|---|---|---|
+| bitcrusher | 6,446 / 7,415 (6,467 / 8,095) | 5,586 / 6,254 | 5,440 / 5,486 |
+| drive | 7,615 / 10,484 (7,617 / 10,484) | 6,348 / 8,837 | 6,395 / 8,884 |
+| ensemble | 13,725 / 15,176 (13,522 / 14,588) | 12,493 / 13,871 | 12,161 / 13,370 |
+| freq_shift | 11,159 / 16,151 (10,561 / 13,428) | 9,776 / 14,129 | 8,859 / 12,211 |
+| tape_drive | 10,931 / 12,207 (10,931 / 11,837) | 9,666 / 10,530 | 9,712 / 9,966 |
+| tape_echo | 16,821 / 18,176 (16,778 / 18,312) | 15,632 / 16,447 | 15,581 / 16,140 |
+| wavefolder | 5,786 / 7,305 (6,047 / 7,292) | 4,532 / 6,041 | 5,735 / 6,088 |
+| cs_hall | 20,010 / 26,893 (20,016 / 21,780) | 18,763 / 25,644 | 18,800 / 20,252 |
+| cs_plate | 19,181 / 21,187 (19,176 / 20,585) | 17,922 / 19,934 | 17,966 / 18,469 |
+
+None is near 60 k; cs_hall's peak (26.9 k, size crossfades and randomised jumps) is the highest. Master FX 1 has no
+cost slot of its own (the master runs the same render) [I].
+
+**Found by the gate:**
+- **The stock FX list is alphabetical with the plugins sorted in among the stock types** ("bitcrusher", "cs hall",
+  "cs plate" before cwo; "drive", "ensemble", "freq shift" at row 2; "tape ...", "wavefolder" after spring). The e6
+  scenarios pick the last row (`turn enc1 cw 96`), which only lands on a plugin named after "spring". The gate picked
+  the first row with `ccw 96` and row 2 with `ccw 96` then `cw 16`; `det_fx_drive_select.txt`, `det_fx_ensemble.txt`,
+  `det_fx_freq_shift.txt`, `det_fx_cs_hall.txt` and `det_fx_cs_plate.txt` now do that. The FX 2 list (coop's) lists
+  plugins in number order, so `det_fx_controls.txt`'s FX 2 picks worked unchanged with one plugin on the NAND.
+- Three port scenarios ended before their own events (their final `wait`, wall time, was too short):
+  `det_fx_ensemble.txt` and `det_fx_freq_shift.txt` now wait 75 s, `det_fx_cs_plate.txt` 80 s.
+- **The core loads at most 8 plugin files** (`plugin_host.cc` `MAX_FILES 8`): a ninth and later file in
+  `/yaffs2/plugins` is skipped without a word (not counted in `seen`, not `failed`). With the nine ports, rings and saw
+  (11 files) on one NAND, 8 loaded (saw, tape_drive, bitcrusher, ensemble, rings, cs_plate, drive, tape_echo, in
+  directory order) and freq_shift, wavefolder and cs_hall were silently absent. Raising the limit is a core change for
+  the owner to decide.
+- **A boot hang above ~2.1 MB of plugin memory** (load x 5 for an effect, x 1 for an engine): rings + tape_echo +
+  cs_hall + cs_plate (2.34 MB) never reach audio on a fresh NAND (the stock's first boot stops at the tape FAT step,
+  no fault), while sets up to 2.05 MB boot and play (`docs/device-tests.md` "e6", the combined runs). The loader
+  finishes; no "plugin memory full" is reported, and `heap_largest` does not show the margin [I]. tape_echo (718 KB),
+  rings (666 KB), cs_hall (515 KB) and cs_plate (438 KB) are the large ones: the owner to decide (fewer relocations
+  for big effects, a memory budget the loader enforces, or smaller lines); until then don't install those together.
+- `det_chord.txt` is not exact run to run any more, for e5 and e6 alike (`docs/device-tests.md` "e6").
