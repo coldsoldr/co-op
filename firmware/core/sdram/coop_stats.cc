@@ -63,6 +63,8 @@ extern "C" void coop_eng_render(void *, int16_t *, const int16_t *);
 extern "C" int coop_engine_cost(int n, uint32_t *out6);                   /* engine_host.cc (e4) */
 extern "C" const char *coop_engine_name(int n);                           /* plugin_host.cc (e4) */
 extern volatile uint32_t g_escr_built, g_escr_failed, g_escr_swaps, g_escr_resets, g_escr_updates;   /* engine_screen.cc (E2) */
+extern volatile uint32_t g_fscr_built, g_fscr_failed, g_fscr_swaps, g_fscr_updates, g_fscr_skipped, g_fscr_te;   /* e9 */
+extern "C" uint32_t coop_te_used(void);
 extern volatile uint32_t g_st0_builds, g_st0_dry_blocks;           /* plugin_host.cc: slot 1's twin built off the audio path */
 extern char g_plugins_last_name[];                                 /* l1_pool.cc */
 extern "C" int coop_tape_write_tail(const char *text, int len);   /* tape_io.cc: the last 8 KiB of track 4's audio */
@@ -631,6 +633,8 @@ static void write_file(void)
     kv("code_syncs", g_code_syncs); kv("rows_dropped", g_rows_dropped); kv("ctl_turns", g_ctl_turns); kv("ctl_clicks", g_ctl_clicks); kv("ctl_ignored", g_ctl_ignored); kv("ctl_cancelled", g_ctl_cancelled); kv("ctl_engines", g_ctl_engines); kv("ctl_popup_frames", g_ctl_popup_frames);
     kv("eng_switches", g_eng_switches); kv("eng_foreign", g_eng_foreign); kv("eng_max", g_eng_cycles_max);
     kv("scr_built", g_escr_built); kv("scr_failed", g_escr_failed); kv("scr_swaps", g_escr_swaps); kv("scr_resets", g_escr_resets); kv("scr_updates", g_escr_updates);
+    kv("fscr_built", g_fscr_built); kv("fscr_failed", g_fscr_failed); kv("fscr_skipped", g_fscr_skipped); kv("fscr_swaps", g_fscr_swaps);   /* e9 */
+    kv("fscr_updates", g_fscr_updates); kv("fscr_te", g_fscr_te); kv("te_used", coop_te_used()); kv("te_max", ((const volatile uint32_t *)0x0106B7CCu)[2]); kv("te_sig", ((const volatile uint32_t *)0x0106B7CCu)[0]);
     if (g_plugins_last_error) { put(" last "); put(g_plugins_last_name); put(": "); put(g_plugins_last_error); }
     put("\n");
     { static char rep[4096]; coop_plugin_report(rep, (int)sizeof rep); put(rep); }   /* e7: plugmem, then a plugfile line a file not loaded */

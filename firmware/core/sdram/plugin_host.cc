@@ -86,8 +86,9 @@ char g_plugins_last_name[NAME_MAX];
  * state in the position buffers (coop_fx_scratch). Until the buffers exist (the end of the boot scan) such a file
  * waits in `pend` (fx 0: not selectable yet); raw = its image block, fi = its row in the boot report. */
 struct fileinfo;
+/* e9: scr = a scratch file (its state in the position buffers); fsc = its screen (COOP_FX_F_SCREEN, inst[0]'s) */
 struct plug { const coop_fx_t *fx; const coop_fx_t *inst[POSITIONS]; char name[16]; int16_t def[4]; int ctl; int16_t wmax[3], def5[3];
-              const coop_fx_t *pend; void *raw; struct fileinfo *fi; uint32_t img; };
+              const coop_fx_t *pend; void *raw; struct fileinfo *fi; uint32_t img; uint8_t scr; const coop_fx_screen_t *fsc; };
 static struct plug g_plug[SLOTS];                                          /* by number */
 struct mapent { char name[16]; uint8_t n, present; };
 static struct mapent g_map[MAP_MAX];
@@ -401,6 +402,21 @@ static int heap_room_ok(uint32_t cost)
     return h.free >= TAPE_NODES * node + HEAP_RESERVE + cost;
 }
 
+/* e9: an effect's screen object (COOP_FX_F_SCREEN): inside the image, its callbacks inside the code (or 0), and the
+ * file carries the SVG it draws. 0 = fine, else the refusal. */
+extern "C" uint32_t coop_screen_obj_bytes(void);                           /* engine_screen.cc */
+extern "C" void coop_fx_screen_file(int n, const char *file);
+static const char *fx_screen_check(const coop_fx_t *fx, uint32_t base, uint32_t text_end, uint32_t image_end, int has_svg)
+{
+    uint32_t sc = (uint32_t)(uintptr_t)fx->screen;
+    if (!sc || sc < base || sc + sizeof(coop_fx_screen_t) > image_end || (sc & 3)) return "screen object outside the plugin";
+    uint32_t fi = (uint32_t)(uintptr_t)fx->screen->init, fu = (uint32_t)(uintptr_t)fx->screen->update;
+    if ((fi && (fi < base || fi >= text_end || (fi & 1))) || !fu || fu < base || fu >= text_end || (fu & 1))
+        return "screen callbacks outside the plugin's code";
+    if (!has_svg) return "effect screen without its SVG (repack)";
+    return 0;
+}
+
 static struct fileinfo *g_cur_info;                                       /* e3: the file load_one is reading (boot) */
 static char g_eng_name[SLOTS][16];                                         /* E1: each engine's type name, by number */
 static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fname);   /* below */
@@ -445,7 +461,12 @@ static const char *load_one(const char *fname, uint8_t *stage)
     const int copies = scr ? 1 : POSITIONS;
     uint32_t each = scr ? (in.scratch + 31u) & ~31u : 0, new_max = each > g_scr_max ? each : g_scr_max;
     uint32_t grow = scr ? fxbuf_cost(new_max) - fxbuf_cost(g_scr_max) : 0;
-    uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN, cost = (uint32_t)copies * blk(cap) + grow;
+    /* e9: a file with an SVG may carry an effect screen; its screen object (engine_screen.cc, heap 0, once) is counted
+     * here, and its code is in the image (once with e8). The parsed SVG lives in the stock TE heap, not heap 0
+     * (engine_screen.cc build_fx_all keeps a reserve there). Charged up front; given back below if the effect has no
+     * screen after all. */
+    uint32_t scr_obj = in.svg ? blk(coop_screen_obj_bytes()) : 0;
+    uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN, cost = (uint32_t)copies * blk(cap) + grow + scr_obj;
     if (g_cur_info) g_cur_info->need = cost;
     if (g_plug_mem_used + cost > PLUG_BUDGET) { g_plugins_over_budget++; return R_BUDGET; }
     if (!heap_room_ok(cost)) { g_plugins_heap_short++; return R_HEAP; }
@@ -469,13 +490,19 @@ static const char *load_one(const char *fname, uint8_t *stage)
                 if (fx->magic != COOP_FX_MAGIC) err = "entry object is not a coop FX (magic)";
                 else if (fx->api != COOP_PLUGIN_API) err = "entry object built for another API";
                 else if (pi < base || pi >= text_end || pr < base || pr >= text_end || (pi & 1) || (pr & 1)) err = "callbacks outside the plugin's code";
-                else inst[k] = fx;
+                else if (fx->flags & ~COOP_FX_FLAGS) err = "effect flags not supported yet";   /* e9 */
+                else if (fx->flags & COOP_FX_F_SCREEN) err = fx_screen_check(fx, base, text_end, base + in.image_size, in.svg != 0);
+                if (!err) inst[k] = fx;
             }
         }
         if (err) { for (int j = 0; j <= k; j++) if (raws[j]) FREE(raws[j]); return err; }
     }
     for (int k = copies; k < POSITIONS; k++) inst[k] = inst[0];            /* e8: one image serves every position */
+    const coop_fx_screen_t *fsc = (inst[0]->flags & COOP_FX_F_SCREEN) ? inst[0]->screen : 0;   /* e9 */
+    if (!fsc && scr_obj) { cost -= scr_obj; if (g_cur_info) g_cur_info->need = cost; }   /* an SVG but no screen: nothing built */
     g_plug_mem_used += cost;
+    g_plug[n].scr = (uint8_t)scr; g_plug[n].fsc = fsc;
+    if (fsc) coop_fx_screen_file(n, fname);                                /* e9: built on the Gfx thread after the scan */
     scopy(g_plug[n].name, in.type_name, 16);
     for (int i = 0; i < 4; i++) g_plug[n].def[i] = in.defaults[i];
     if (in.flags & KN_FLAG_PAGE2) {                                        /* e6 */
@@ -535,6 +562,7 @@ static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fn
     if (!err && e->voice_bytes <= COOP_VOICE_BYTES_MAX) {                  /* e7: with its per-voice state (engine_host.cc) */
         uint32_t stride = (e->voice_bytes + 31u) & ~31u, vs = stride ? blk(stride * COOP_VOICES + 32u) : 0;
         cost += vs;
+        if (e->screen && in.svg) cost += blk(coop_screen_obj_bytes());    /* e9: its screen object is counted too */
         if (g_cur_info) g_cur_info->need = cost;
         if (g_plug_mem_used + cost > PLUG_BUDGET) { err = R_BUDGET; g_plugins_over_budget++; }
     }
@@ -611,11 +639,20 @@ extern "C" void coop_heap0_stats(uint32_t *free_b, uint32_t *largest, uint32_t *
  * the saved sounds and the factory rows left as they are (the E1 gate's "file removed" case). */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_no_plugins = 0; }
 
-/* From the tape mount hook (main thread, boot), once. */
+/* From the tape mount hook (main thread, boot), once. e9: g_plugins_scan_done = the scan has finished (every file
+ * loaded or refused, the position buffers taken): the effect screens are built on the first frame after it. */
+volatile uint32_t g_plugins_scan_done;
+static void plugins_boot_body(void);
 extern "C" void coop_plugins_boot(void)
 {
     if (g_plugins_booted) return;
     g_plugins_booted = 1;
+    plugins_boot_body();
+    __asm__ __volatile__("ssync;" ::: "memory");
+    g_plugins_scan_done = 1;
+}
+static void plugins_boot_body(void)
+{
     coop_pf_boot();                                                        /* p6a: the performance monitor (coop_stats.cc) */
     coop_icache_probe();                                                   /* p6f: the instruction-cache probe, right after the counters are on */
     coop_pf_sweep();                                                       /* p6h: the event sweep, against the probes */
@@ -1284,6 +1321,28 @@ extern "C" void coop_slot2_get(int pos, uint8_t *out10)
 extern "C" int coop_slot2_plugin(int pos2) { struct slot2 *s = &g_s2[pos2 & 1]; return s->kind == 2 ? s->id : 0; }
 extern "C" int coop_slot2_ext(int pos2, int word) { return (word >= 5 && word <= 7) ? g_s2[pos2 & 1].ext[word - 5] : 0; }
 extern "C" void coop_slot2_ext_set(int pos2, int word, int v) { if (word >= 5 && word <= 7) g_s2[pos2 & 1].ext[word - 5] = (int16_t)v; }
+
+/* ---- e9: what an effect screen is given (engine_screen.cc view_fill, GUI thread; sdk/coop_plugin.h coop_fx_view_t) ----
+ * The words as the render gets them (clamped to the controls; slots 0-2 the shown sound's stored words, 3-4 FX 2's),
+ * the latch word, the position buffer (scratch files) and whether this effect has been initialised there since it was
+ * selected: slots 0-2 the plugin the position last initialised (g_cur, set before its init runs), 3-4 the plugin FX 2
+ * built and initialised (kind_on / id_on, the build published). Reads only. */
+extern "C" const coop_fx_screen_t *coop_fx_screen_of(int n) { return fx_index(n) ? g_plug[n].fsc : 0; }
+extern "C" void coop_fx_view_core(int slot, int n, coop_fx_view_t *v)
+{
+    if (slot < 0 || slot >= POSITIONS || !fx_index(n)) return;
+    const struct plug *p = &g_plug[n];
+    const volatile int16_t *w57;
+    if (slot >= 3) w57 = g_s2[slot - 3].ext;
+    else w57 = (const volatile int16_t *)(slot == 2 ? 0xFF8016C4u
+        : (slot ? 0xFF8015C4u + (uint32_t)(*(volatile int *)0xFF8016D8u & 7) * 16 : 0xFF801444u + (uint32_t)(*(volatile int *)0xFF8016D4u & 7) * 16)) + 5;
+    if (p->ctl)
+        for (int w = 0; w < 3; w++) { int m = p->wmax[w], x = w57[w]; v->words[w] = (int16_t)(m < 0 || x < 0 ? 0 : (x > m ? m : x)); }
+    v->latches = p->ctl ? g_fx_latch[slot] : 0;
+    if (slot >= 3) { const struct slot2 *s = &g_s2[slot - 3]; v->live = s->kind_on == 2 && s->id_on == n && s->built == s->req; }
+    else v->live = g_cur[slot] == n;
+    if (p->scr) { uint32_t b = 0; v->state = coop_fx_scratch(slot, &b); v->state_bytes = v->state ? b : 0; }
+}
 
 /* the slot 2 page (coop_ui.cc): a loaded plugin's name by number, 0 if none */
 extern "C" const char *coop_plugin_name(int n) { return fx_index(n) ? g_plug[n].name : 0; }

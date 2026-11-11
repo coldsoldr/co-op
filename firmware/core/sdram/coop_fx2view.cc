@@ -51,6 +51,14 @@ static int focused_stock(int pos)                                          /* th
     int p2 = pos == 3 ? 1 : 0;
     return coop_fx2_focused(p2) && coop_slot2_req_type(p2) >= 0 ? p2 + 1 : 0;   /* 1 + pos2, or 0 */
 }
+/* e9: FX 2 in focus at the stock position holds a plugin whose screen is built (engine_screen.cc): its page is the
+ * filter id (0x0B), where the case-5 select puts the plugin's screen. 1 + pos2, or 0. */
+extern "C" int coop_fx2_has_screen(int pos2);
+static int focused_screen(int pos)
+{
+    int p2 = pos == 3 ? 1 : 0;
+    return coop_fx2_focused(p2) && coop_slot2_req_type(p2) < 0 && coop_fx2_has_screen(p2) ? p2 + 1 : 0;
+}
 static uint32_t *vec_begin(void *v) { return *(uint32_t **)((uint8_t *)v + 4); }
 static uint32_t s_vec_buf[8];                                              /* coop's own vector storage (8 floats) */
 static uint32_t s_vec_on[4];                                               /* {0, begin, end, cap}: the stock vector's shape */
@@ -109,6 +117,7 @@ extern "C" int coop_screen_pop(int *id, int *slot, int *pos)
     if (r && *id >= 8 && *id <= 15) {
         int f = focused_stock(*pos);
         if (f) { *id = FOR_FX(coop_slot2_req_type(f - 1)); g_fx2view_pops++; }
+        else if (focused_screen(*pos)) { *id = FOR_FX(5); g_fx2view_pops++; }   /* e9: a plugin's screen on the filter id */
     }
     if (r && *id >= 24 && *id <= 30 && *pos >= 0 && *pos <= 1 && coop_lfo2_focused(*pos)) {   /* u8: the LFO page shows LFO 2's type */
         int on, t = coop_lfo2_kind_type(&on);
@@ -163,6 +172,7 @@ extern "C" int coop_fx_on_read(int i)
 {
     int p = FX_PAGE_POS;
     int f = p >= 0 && p <= 2 ? focused_stock(p == 2 ? 3 : p) : 0;
+    if (!f && p >= 0 && p <= 2) f = focused_screen(p == 2 ? 3 : p);           /* e9: a plugin's screen shows FX 2's state too */
     if (f) { g_fx2view_on++; return !coop_slot2_bypassed(f - 1); }
     return p == 2 ? STOCK_FX_ON_M() : p == 1 ? STOCK_FX_ON_D(i) : STOCK_FX_ON_S(i);
 }
@@ -191,7 +201,11 @@ extern "C" void coop_fx2_post_screen(int pos, int fx2)
 {
     int slot = pos == 1 ? DRUM_KIT : SYNTH_INST;
     int type;
-    if (fx2) { type = coop_slot2_req_type(pos == 3 ? 1 : 0); if (type < 0) return; }
+    if (fx2) {
+        type = coop_slot2_req_type(pos == 3 ? 1 : 0);
+        if (type < 0 && coop_fx2_has_screen(pos == 3 ? 1 : 0)) type = 5;   /* e9: a plugin with a screen: the filter id */
+        if (type < 0) return;
+    }
     else type = pos == 3 ? FX_TYPE_M : (pos == 1 ? FX_TYPE_D(slot) : FX_TYPE_S(slot));
     if (type < 0 || type > 7) return;
     g_fx2view_last_post = (uint32_t)FOR_FX(type);

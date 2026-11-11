@@ -94,6 +94,7 @@ extern "C" void coop_rename_service(void);
 extern "C" int coop_drumpan_knob(int knob, int steps);                 /* coop_drumpan.cc */
 extern "C" void coop_drumpan_draw(void *r);
 extern "C" void coop_fx2_post_screen(int pos, int fx2);                /* coop_fx2view.cc */
+extern "C" int coop_fx_screen_up(void);                                /* engine_screen.cc (e9): an effect plugin's screen is shown */
 
 /* u8: a slot-2 set that may allocate (a new type: the twin object, a delay line, a tank) runs on the MAIN LOOP; the
  * KeyHandler thread only posts the request (the u7 lesson again: heap work off the main loop hung op1emu at the
@@ -533,7 +534,9 @@ extern "C" void coop_ui_frame(void *table)
     focus_sync();
     void *r = op1_raster();
     if (!r) return;
-    if (coop_slot2_req_type(s_pos) < 0) { draw_fx2_page(r); coop_fx_ui_draw(r); return; }   /* a plugin, or nothing: coop's page */
+    if (coop_slot2_req_type(s_pos) < 0 && !coop_fx_screen_up()) { draw_fx2_page(r); coop_fx_ui_draw(r); return; }   /* a plugin
+                                                                          without a screen, or nothing: coop's page */
+    if (coop_slot2_req_type(s_pos) < 0) coop_fx_ui_draw(r);            /* e9: the plugin's own screen is up: its popup only */
     /* a stock type: the stock page shows slot 2 whole, dials, animation and its own "FX OFF" (coop_fx2view.cc); only a
      * pending pick is added */
     int pk, pi;

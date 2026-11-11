@@ -96,7 +96,10 @@ class Packed(unittest.TestCase):
             self.assertTrue(h['flags'] & F.FLAG_SCRATCH, name)
             self.assertEqual(h['scratch'], meta['scratch'], name)
             self.assertTrue(h['flags'] & ~E7_FLAGS, name + ': an e7 loader must refuse the file (unknown flags)')
-            self.assertLessEqual(h['bss_size'], 64, name + ': the state belongs in the position buffer')
+            # e9: a port with a screen keeps the screen's node tables in .bss (GUI state, one screen object for every
+            # position); the effect's own state still belongs in the position buffer
+            limit = 2048 if 'screen' in meta else 64
+            self.assertLessEqual(h['bss_size'], limit, name + ': the state belongs in the position buffer')
 
     def test_flag_without_size_and_size_without_flag(self):
         name, data = next(iter(self.files.items()))

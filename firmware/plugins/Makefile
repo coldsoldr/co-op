@@ -7,7 +7,7 @@ FILES := $(foreach id,$(IDS),$(OUT)/$(id).coop)
 
 all: $(FILES)
 
-$(OUT)/%.coop: %/plugin.json %/*.cc $(wildcard %/*.svg) ../sdk/coop_plugin.h ../sdk/coop_screen.h ../tools/plugin/pack.py ../tools/plugin/reloc.py | $(OUT)
+$(OUT)/%.coop: %/plugin.json %/*.cc $(wildcard %/*.svg) ../sdk/coop_plugin.h ../sdk/coop_screen.h ../sdk/coop_fx_screen.h ../tools/plugin/pack.py ../tools/plugin/reloc.py | $(OUT)
 	python3 -I ../tools/plugin/pack.py $* -o $@ --toolchain $(TOOLCHAIN)
 
 $(OUT):

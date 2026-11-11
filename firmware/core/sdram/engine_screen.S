@@ -15,3 +15,19 @@ _coop_synth_screen_case14:
     UNLINK;
     JUMP (P0);
     .size _coop_synth_screen_case14, .-_coop_synth_screen_case14
+
+/*
+ * coop-fw e9 (docs/plugins.md "e9"): ScreenId::for_fx's case 5 (the filter type, which every plugin effect runs as).
+ * The jump-table word 0x018F7FF8 (stock 0x01A3BF26) points here; same frame convention as case 14 (kennel 3.1 hook.S
+ * fx_screen_case5): R0 = the id (0x0B) from coop_fx_screen_select, which also swaps the shown effect's screen in.
+ */
+    .text
+    .align 2
+    .global _coop_fx_screen_case5
+    .type   _coop_fx_screen_case5, STT_FUNC
+_coop_fx_screen_case5:
+    CALL _coop_fx_screen_select;
+    P0 = [FP + 4];
+    UNLINK;
+    JUMP (P0);
+    .size _coop_fx_screen_case5, .-_coop_fx_screen_case5

@@ -3,5 +3,5 @@
  * stats file. Bump it with every package (docs/device-tests.md names the packages by it). */
 #ifndef COOP_BUILD_H
 #define COOP_BUILD_H
-#define COOP_BUILD_TAG "e8"
+#define COOP_BUILD_TAG "e9"
 #endif

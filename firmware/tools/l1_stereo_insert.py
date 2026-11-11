@@ -166,6 +166,9 @@ INSTRNAME_STOCK = bytes.fromhex('18300b32')
 # E2 (engine_screen.cc): ScreenId::for_synth's jump table, case 14 (iter) -> coop_synth_screen_case14 (kennel
 # make_firmware.py DATA_PATCHES).
 SYNTH_SCREEN_CASE14 = (0x018F8074, 0x01A3BFD0)
+# e9 (engine_screen.cc): ScreenId::for_fx's jump table, case 5 (filter: every plugin effect) -> coop_fx_screen_case5
+# (kennel make_firmware.py DATA_PATCHES 0x018F7FF8: fx_screen_case5, stock 0x01A3BF26).
+FX_SCREEN_CASE5 = (0x018F7FF8, 0x01A3BF26)
 SEAM_SITE = 0xffa0706e                                               # P2.L = 0xef7c; P2.H = 0x1b4 before the seam loop (hook B)
 SEAM_STOCK = bytes.fromhex("0ae17cef" "4ae1b401")
 SEAM_FILL_SITE = 0xffa073b8                                          # P1 = 0x01a54284 (the stock seam fill) -> coop_seam_fill
@@ -470,6 +473,9 @@ def tape_patches(tramps, sdram_tramp_at=SDRAM_TRAMP_AT):
         if thunks_global.get('screen_case14'):
             addr, stock = SYNTH_SCREEN_CASE14
             out.append((addr, struct.pack('<I', stock), struct.pack('<I', thunks_global['screen_case14'])))
+        if thunks_global.get('fx_screen_case5'):              # e9: effect screens
+            addr, stock = FX_SCREEN_CASE5
+            out.append((addr, struct.pack('<I', stock), struct.pack('<I', thunks_global['fx_screen_case5'])))
     if thunks_global.get('keyev'):                             # the Lander combo swallowed (the getter sites stay stock:
         out.append((KEYEV_SITE, call24(KEYEV_SITE, KEY_DISPATCH), call24(KEYEV_SITE, sdram_tramp_at + 112)))   # a stub screen hung the boot in op1emu)
     return out + list(TAPE_BYTE_PATCHES)
@@ -596,6 +602,10 @@ def thunk_addresses(elf):
     if eng:
         try:                                           # E2: engine screens
             eng['screen_case14'] = symbol_address(syms, 'coop_synth_screen_case14')[0]
+        except Exception:
+            pass
+        try:                                           # e9: effect screens
+            eng['fx_screen_case5'] = symbol_address(syms, 'coop_fx_screen_case5')[0]
         except Exception:
             pass
     tanks = {}

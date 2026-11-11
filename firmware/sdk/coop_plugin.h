@@ -21,10 +21,18 @@
 extern "C" {
 #endif
 
+struct coop_fx_screen_t;                               /* e9, below */
+
+/* coop_fx_t.flags (e9). A core before e9 never reads this word, so a file with a flag it does not know plays there as
+ * before (the flag's feature ignored: an effect screen falls back to the stock filter page). An e9 core refuses a flag
+ * it does not know ("effect flags not supported yet"). */
+#define COOP_FX_F_SCREEN    0x1u                       /* e9: `screen` below is present (plugin.json "screen") */
+#define COOP_FX_FLAGS       COOP_FX_F_SCREEN           /* every flag this core knows */
+
 typedef struct coop_fx_t {
     uint32_t magic;                                    /* COOP_FX_MAGIC */
     uint32_t api;                                      /* COOP_PLUGIN_API */
-    uint32_t flags;                                    /* 0 (reserved) */
+    uint32_t flags;                                    /* COOP_FX_F_*, 0 = none (e9) */
     /* when a position selects the plugin, before its first render there; cheap (reset state, bind buffers); 0 =
      * ready, else the plugin is dropped. Slots: 0 synth, 1 drum, 2 master (the stock positions: init runs on the
      * audio thread), 3 the instrument's second slot, 4 the master's second slot (init runs on the main loop). */
@@ -37,6 +45,8 @@ typedef struct coop_fx_t {
      * divides by the range itself; the ABI v2 parameter store (guide/plugin-guidelines.md section 3) will hand over
      * declared ranges instead. */
     void (*render)(int slot, int32_t *l, int32_t *r, const int16_t *params, int n);
+    /* e9: read only when flags has COOP_FX_F_SCREEN (a file before e9 ends at render); the effect's screen, below */
+    const struct coop_fx_screen_t *screen;
 } coop_fx_t;
 
 /* ---- e6: effect controls (docs/plugins.md "Effect controls", guide/plugin-guidelines.md §4) ----
@@ -106,6 +116,49 @@ typedef struct coop_screen_t {
     void (*init)(void *scr);                           /* once, after the SVG is loaded: look the nodes up */
     void (*update)(void *scr, int dt);                 /* every frame while the screen is shown; dt in ms */
 } coop_screen_t;
+
+/* ---- e9: effect screens (docs/plugins.md "e9") ----
+ * An effect with plugin.json "screen": {"svg": ..., "symbol": <its coop_fx_screen_t>} ships its SVG at the front of the
+ * file as an engine does, sets COOP_FX_F_SCREEN in coop_fx_t.flags and points coop_fx_t.screen at the object (pack.py
+ * checks the three agree). Wherever that effect is the one shown on the effect page (FX 1 of the synth, the drum or
+ * the master; FX 2 of the instrument or the master while it is in focus), the core shows this screen instead of the
+ * stock filter page (FX 1) or coop's FX 2 page. A core before e9 ignores the flag and the field: the effect plays and
+ * the old page shows.
+ *
+ * update gets the view below, filled by the core for the position on screen. Everything runs on the GUI thread, never
+ * the audio thread: no float, no libc, no static constructors, no blocking. One screen object serves every position,
+ * so per-position animation state is the plugin's to index by view->slot. */
+typedef struct coop_fx_view_t {
+    int32_t slot;                                      /* the position shown: 0 synth, 1 drum, 2 master FX 1, 3 instrument
+                                                        * FX 2, 4 master FX 2 (render's `slot`) */
+    int16_t knobs[4];                                  /* the four turns, 0..32767, as the stock pages see them: FX 1 with
+                                                        * the LFO's movement included (read_fx_param normalised with the
+                                                        * filter type's ranges: what render's params[0..3] normalise to);
+                                                        * FX 2 the slot's Q15 knobs */
+    int16_t words[3];                                  /* params[5..7] as render gets them (clamped to the controls; 0
+                                                        * without controls) */
+    uint16_t latches;                                  /* params[8]: the latch bits (e6) */
+    int32_t mods;                                      /* held modifiers: bit 0 shift, bit 1 fn (coop_scr_mods) */
+    /* What the DSP publishes for display. A scratch effect (e8) gets its position buffer here, read only, so the screen
+     * reads the words its render published (see "Display data" below); an old-model effect (no "scratch") gets 0. */
+    const volatile void *state;
+    uint32_t state_bytes;                              /* the buffer's size (0 with state 0) */
+    int32_t live;                                      /* 1 once the effect has been initialised at `slot` since it was
+                                                        * selected there (state is then this effect's); 0 before: the
+                                                        * buffer may still hold the previous effect's bytes */
+    int32_t reserved[4];                               /* 0 */
+} coop_fx_view_t;
+
+/* Display data (the e9 path). render publishes what the screen shows (a level, a locked division, which heads play) as
+ * whole aligned 32-bit words in a small struct of its own state, written once a block after the DSP ran (one store
+ * each, never a value half-made); the screen reads them through view->state as volatile, only while view->live, and
+ * clamps what it reads (a word may be from the block before). Never read DSP working state the render changes mid-block
+ * (guide/plugin-guidelines.md §5.3). */
+typedef struct coop_fx_screen_t {
+    void (*init)(void *scr);                           /* once, after the SVG is loaded: look the nodes up */
+    void (*update)(void *scr, int dt, const coop_fx_view_t *view);   /* every frame while shown; dt in ms; draw with
+                                                                         coop_scr_draw (sdk/coop_screen.h) */
+} coop_fx_screen_t;
 
 /* ---- synth engines (P3 / E1, docs/engines.md). The file's kind is 1 (synth); it exports one coop_engine_t. The
  * engine plays in the stock voice loop as the iter engine: six voices, each rendered as mono int16 at the stock

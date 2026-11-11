@@ -409,6 +409,38 @@ def control_lines(meta, kind):
         raise PackError(f'shift_fn_turn on {sorted(clash)[0]} is the fine of that encoder\'s fn_turn: declare one or the other')
     return ('\n'.join(lines) + '\n').encode('ascii') + b'\0'
 
+COOP_FX_MAGIC = 0x58464F43                             # "COFX" (sdk/coop_plugin.h)
+COOP_FX_F_SCREEN = 0x1                                  # e9: coop_fx_t.screen is present
+COOP_FX_FLAGS = COOP_FX_F_SCREEN                        # every coop_fx_t flag the e9 core knows
+FX_SCREEN_FIELD = 20                                    # offsetof(coop_fx_t, screen): magic api flags init render screen
+SVG_FX_MAX = 16384                                      # e9: an effect screen's SVG at most (guidelines §5.3: about 8 KiB of art)
+
+
+def fx_screen_check(img, image_size, entry, entry_size, screen, screen_off, relocs, have_svg):
+    """coop e9: an effect's coop_fx_t.flags must be known, COOP_FX_F_SCREEN set exactly when plugin.json declares
+    "screen", and then coop_fx_t.screen must point at the screen symbol (a core before e9 never reads either: the
+    effect plays there with the stock page). Kennel-layout entry objects (no COFX magic) are left alone."""
+    if entry + 12 > image_size or struct.unpack_from('<I', img, entry)[0] != COOP_FX_MAGIC:
+        if screen:
+            raise PackError('an effect screen needs a coop_fx_t entry object (COFX)')
+        return
+    flags = struct.unpack_from('<I', img, entry + 8)[0]
+    if flags & ~COOP_FX_FLAGS:
+        raise PackError(f'coop_fx_t.flags {flags:#x}: bits this core does not know')
+    if bool(flags & COOP_FX_F_SCREEN) != bool(screen):
+        raise PackError('plugin.json "screen" on an effect and COOP_FX_F_SCREEN in coop_fx_t.flags go together: set both '
+                        '(or neither)')
+    if not screen:
+        return
+    if entry_size < FX_SCREEN_FIELD + 4 or entry + FX_SCREEN_FIELD + 4 > image_size:
+        raise PackError('effect entry object truncated: coop_fx_t.screen missing (rebuild with the e9 sdk)')
+    target = [r for r in relocs if r[0] == entry + FX_SCREEN_FIELD and r[1] == F.R_ABS32]
+    if len(target) != 1 or target[0][2] != F.SYM_LOCAL or target[0][3] != screen_off:
+        raise PackError(f'coop_fx_t.screen must point at the "screen" symbol {screen["symbol"]}')
+    if not have_svg:
+        raise PackError('an effect screen needs its SVG ("screen": {"svg": ...})')
+
+
 def pack(meta, obj_bytes, svg_dir=None):
     """plugin.json dict + `ld -r` output -> (plugin file bytes, info dict for reports and tests)."""
     elf = Elf(obj_bytes)
@@ -527,6 +559,8 @@ def pack(meta, obj_bytes, svg_dir=None):
         if bool(eflags & 1) != (voice_rate == 44100):
             raise PackError(f'voice_rate {voice_rate} but the engine object\'s flags say '
                             f'{"COOP_ENGINE_F_44K" if eflags & 1 else "0 (88.2 kHz)"}: set both')
+    if kind == F.KIND_FX:                               # coop e9: coop_fx_t.flags and the effect screen (sdk/coop_plugin.h)
+        fx_screen_check(img, image_size, entry, entry_symbol['size'], screen, screen_off, relocs, bool(svg) or svg_dir is None)
     bigbuf = meta.get('bigbuf')                         # a declared pool buffer: OP1_BIGBUF(<symbol>, min, max) in .data
     bigbuf_off = None
     if bigbuf is not None:
@@ -558,6 +592,8 @@ def pack(meta, obj_bytes, svg_dir=None):
     pad4 = lambda b: bytes(b) + bytes(-len(b) % 4)
     if b'\0' in svg or (svg and not svg.lstrip().startswith(b'<')):
         raise PackError('screen SVG must be text starting with <')
+    if kind == F.KIND_FX and len(svg) > SVG_FX_MAX:     # e9: every byte is parsed into the stock TE heap once
+        raise PackError(f'effect screen SVG {len(svg)} bytes: at most {SVG_FX_MAX} (guide/plugin-guidelines.md §5.3)')
     long_num = re.search(rb'\d\.\d{5,}', svg)          # R246's SVG parser panics at boot on these (kn_boot.c svg_ok)
     if long_num:
         raise PackError(f'screen SVG number {long_num.group().decode()} has more than 4 decimals; round it')
@@ -606,7 +642,7 @@ def pack(meta, obj_bytes, svg_dir=None):
     data = bytearray(prefix + header + b''.join(parts))
     struct.pack_into('<I', data, len(prefix) + 12, F.crc32(bytes(data), len(prefix) + 12))
     info = {'layout': layout, 'imports': imports, 'elf_reloc_types': types, 'relocs': len(relocs),
-            'entry': entry, 'screen': screen_off, 'scratch': scratch}
+            'entry': entry, 'screen': screen_off, 'scratch': scratch, 'svg': len(svg)}
     return bytes(data), info
 
 
@@ -672,7 +708,8 @@ def main():
           + f'; {info["relocs"]} load-time relocations; ELF relocations '
           + ', '.join(f'{names.get(t, hex(t))} {n}' for t, n in sorted(info['elf_reloc_types'].items()))
           + f'; imports {", ".join(info["imports"]) or "none"}'
-          + (f'; scratch {info["scratch"]} (one relocation, the position buffers)' if info.get('scratch') else ''))
+          + (f'; scratch {info["scratch"]} (one relocation, the position buffers)' if info.get('scratch') else '')
+          + (f'; screen SVG {info["svg"]} bytes' if info.get('svg') else ''))
 
 
 if __name__ == '__main__':
