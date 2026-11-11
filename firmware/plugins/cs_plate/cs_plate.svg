@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" x="0px" y="0px" width="320px" height="160px" viewBox="0 0 320 160">
+<g id="palette" display="none"><line id="palorange" fill="none" stroke="#FF3A5D" stroke-width="1.5" stroke-linecap="square" x1="0" y1="0" x2="1" y2="0"></line></g>
+<line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="square" x1="24" y1="134" x2="288" y2="134"></line><line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="square" x1="24" y1="134" x2="24" y2="102"></line>
+<path id="plate" fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="square" d="M100,36 L220,36 L200,72 L80,72 Z"></path>
+<path id="size" display="none" fill="none" stroke="#698EFF" stroke-width="1.5" stroke-linecap="square" d="M100,36 L220,36 L200,72 L80,72 Z"></path>
+<path id="ring1" fill="none" stroke="#698EFF" stroke-width="1.5" stroke-linecap="square" d="M159,54 C159,55.66 154.97,57 150,57 C145.03,57 141,55.66 141,54 C141,52.34 145.03,51 150,51 C154.97,51 159,52.34 159,54 Z"></path>
+<path id="ring2" fill="none" stroke="#698EFF" stroke-width="1.5" stroke-linecap="square" d="M168,54 C168,57.31 159.94,60 150,60 C140.06,60 132,57.31 132,54 C132,50.69 140.06,48 150,48 C159.94,48 168,50.69 168,54 Z"></path>
+<path id="ring3" fill="none" stroke="#698EFF" stroke-width="1.5" stroke-linecap="square" d="M177,54 C177,58.97 164.91,63 150,63 C135.09,63 123,58.97 123,54 C123,49.03 135.09,45 150,45 C164.91,45 177,49.03 177,54 Z"></path>
+<path id="ring4" display="none" fill="none" stroke="#698EFF" stroke-width="1.5" stroke-linecap="square" d="M186,54 C186,60.63 169.88,66 150,66 C130.12,66 114,60.63 114,54 C114,47.37 130.12,42 150,42 C169.88,42 186,47.37 186,54 Z"></path>
+<line id="predelay" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="square" x1="27" y1="98" x2="35" y2="98"></line>
+<polyline id="decay" fill="none" stroke="#698EFF" stroke-width="1.5" stroke-linecap="square" points="34,134 34,102 46.5,109.08 59,114.59 71.5,118.88 84,122.23 96.5,124.83 109,126.86 121.5,128.44 134,129.67 146.5,130.63 159,131.37 171.5,131.95 184,132.41 196.5,132.76 209,133.03 221.5,133.25 234,133.41 234,134"></polyline>
+<polyline id="damp" fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" points="34,134 34,110 46.5,115.31 59,119.44 71.5,122.66 84,125.17 96.5,127.12 109,128.64 121.5,129.83 134,130.75 146.5,131.47 159,132.03 171.5,132.47 184,132.81 196.5,133.07 209,133.28 221.5,133.44 234,133.56 234,134"></polyline>
+<line id="diff1" display="none" fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" x1="60" y1="134" x2="60" y2="109.2"></line>
+<line id="diff2" display="none" fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" x1="92" y1="134" x2="92" y2="115.6"></line>
+<line id="diff3" display="none" fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" x1="74" y1="134" x2="74" y2="112"></line>
+<line id="diff4" display="none" fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" x1="110" y1="134" x2="110" y2="119.2"></line>
+<line id="diff5" display="none" fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" x1="66" y1="134" x2="66" y2="110.4"></line>
+<line id="diff6" display="none" fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" x1="82" y1="134" x2="82" y2="113.6"></line>
+<line id="diff7" display="none" fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" x1="100" y1="134" x2="100" y2="117.2"></line>
+<line id="diff8" display="none" fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" x1="120" y1="134" x2="120" y2="121.2"></line>
+<polyline id="motionL" display="none" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="square" points="56,38 52,42 60,46 52,50 60,54 52,58 60,62 52,66 56,70"></polyline>
+<polyline id="motionR" display="none" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="square" points="244,38 240,42 248,46 240,50 248,54 240,58 248,62 240,66 244,70"></polyline>
+<rect fill="#38354D" stroke="none" x="232" y="12" width="56" height="4"></rect>
+<rect id="mix" fill="#FF3A5D" stroke="none" x="232" y="12" width="56" height="4"></rect>
+<polyline id="freeze" fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="square" points="112,9 113.44,11.5 116.33,11.5 114.89,14 116.33,16.5 113.44,16.5 112,19 110.56,16.5 107.67,16.5 109.11,14 107.67,11.5 110.56,11.5 112,9"></polyline>
+</svg>

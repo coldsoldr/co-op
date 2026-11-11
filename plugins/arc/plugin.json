@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "arc",
+  "name": "Arc",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "ultralazr",
+  "description": "William Duddell's singing arc from 1899: an arc lamp turned into an oscillator. Each voice goes from a clean sine to a reedy buzz to a screaming relaxation tone as you raise the current. Plasma noise makes the pitch wander. A second lamp can lock to the first, beat against it or go chaotic.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/ultralazr/op1-musica-obscura",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Musica Obscura by ultralazr, from op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

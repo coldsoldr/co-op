@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.endlesslatch",
+  "name": "endless latch",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "1.0.0",
+  "description": "On the endless sequencer's page, tap shift twice and recording stays on as if shift were held, until you press shift again or leave the page. The window for the two taps is a setting (350 ms to start).",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.endlesslatch",
+  "tags": [
+    "playing",
+    "opus"
+  ]
+}

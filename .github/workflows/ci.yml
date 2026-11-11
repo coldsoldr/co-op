@@ -2,8 +2,10 @@ name: ci
 
 on:
   pull_request:
+    paths-ignore: ['firmware/**', '.github/workflows/firmware.yml']
   push:
     branches: [main, dev]
+    paths-ignore: ['firmware/**', '.github/workflows/firmware.yml']
 
 permissions:
   contents: read
@@ -14,7 +16,7 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
@@ -29,7 +31,7 @@ jobs:
   # that mixes them gets a warning.
   pack-scope:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # A pull_request run checks out the PR merged onto its base (refs/pull/N/merge). Its first
       # parent is the base commit GitHub merged onto, so two commits of history are all that is
@@ -56,7 +58,7 @@ jobs:
           fi
 
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup

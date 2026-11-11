@@ -39,6 +39,24 @@ async function put(path: string, content: Uint8Array | string | object): Promise
 
 const drive = knlBytes({ name: 'drive' });
 const shot = pngBytes();
+const ringsKnl = knlBytes({ name: 'rings', kind: 1 });
+const ringsCoop = knlBytes({ name: 'rings', kind: 1, magic: 'COOP' });
+
+/** A plugin with a hundekraft and a coop build. */
+async function ringsPlugin(): Promise<void> {
+  const { firmware: _f, file: _file, version: _v, ...shared } = manifest('rings', { kind: 'synth' });
+  await put('rings/plugin.json', {
+    ...shared,
+    builds: [
+      { firmware: 'op1/hundekraft', file: 'rings.knl', version: '0.1' },
+      { firmware: 'op1/coop', file: 'rings.coop', version: '0.5' },
+    ],
+  });
+  await put('rings/rings.knl', ringsKnl);
+  await put('rings/rings.coop', ringsCoop);
+  await put('rings/manual.md', '# rings\n');
+  await put('rings/screenshot.png', shot);
+}
 
 async function goodPlugin(id = 'drive', bytes = id === 'drive' ? drive : knlBytes({ name: id })): Promise<void> {
   await put(`${id}/plugin.json`, manifest(id));
@@ -97,6 +115,22 @@ describe('loadPlugins', () => {
     const { issues, index } = await loadPlugins(pluginsDir, { now: NOW });
     expect(issues).toEqual([]);
     expect(index.plugins[0]).toMatchObject({ id: 'opus.chorus', file: '10_chorus.opmod', savedName: 'opus.chorus', sha256: sha(opmod) });
+  });
+
+  it('indexes a plugin with a file per firmware', async () => {
+    await ringsPlugin();
+    const { issues, index } = await loadPlugins(pluginsDir, { now: NOW });
+    expect(issues).toEqual([]);
+    expect(index.plugins).toHaveLength(1);
+    expect(index.plugins[0]).toMatchObject({ id: 'rings', firmware: 'op1/hundekraft', file: 'rings.knl', sha256: sha(ringsKnl) });
+    expect(index.plugins[0]?.builds).toEqual([
+      { firmware: 'op1/hundekraft', file: 'rings.knl', version: '0.1', sizeBytes: ringsKnl.length, sha256: sha(ringsKnl), savedName: 'rings' },
+      { firmware: 'op1/coop', file: 'rings.coop', version: '0.5', sizeBytes: ringsCoop.length, sha256: sha(ringsCoop), savedName: 'rings' },
+    ]);
+
+    // Every build's file must be there.
+    await rm(join(pluginsDir, 'rings', 'rings.coop'));
+    expect((await loadPlugins(pluginsDir, { now: NOW })).issues).toEqual([{ plugin: 'rings', file: 'rings.coop', message: 'missing' }]);
   });
 
   it('carries the extension table into the index and warns when it disagrees', async () => {
@@ -219,6 +253,14 @@ describe('buildPlugins', () => {
     expect(index).toEqual((await loadPlugins(pluginsDir, { now: NOW })).index);
   });
 
+  it('copies the file of every build', async () => {
+    await ringsPlugin();
+    const out = join(root, 'dist');
+    expect((await buildPlugins(pluginsDir, out, { now: NOW })).issues).toEqual([]);
+    expect((await readdir(join(out, 'plugins', 'rings'))).sort()).toEqual(['manual.md', 'plugin.json', 'rings.coop', 'rings.knl', 'screenshot.png']);
+    expect(new Uint8Array(await readFile(join(out, 'plugins/rings/rings.coop')))).toEqual(ringsCoop);
+  });
+
   it('writes an empty index when there is no plugins folder', async () => {
     const out = join(root, 'dist');
     const { issues } = await buildPlugins(join(root, 'missing'), out, { now: NOW });
@@ -312,6 +354,12 @@ describe('pluginsMiddleware', () => {
     expect((await request('/co-op/plugins/broken/broken.knl')).status).toBe(404);
     expect((await request('/co-op/plugins/broken/plugin.json')).status).toBe(404);
     expect((await request('/co-op/plugins/drive/Drive.knl')).status).toBe(404);
+  });
+
+  it('serves the file of every build', async () => {
+    await ringsPlugin();
+    expect(new Uint8Array((await request('/co-op/plugins/rings/rings.coop')).body)).toEqual(ringsCoop);
+    expect(new Uint8Array((await request('/co-op/plugins/rings/rings.knl')).body)).toEqual(ringsKnl);
   });
 
   it('passes other requests on', async () => {

@@ -8,6 +8,7 @@ name: pages
 on:
   push:
     branches: [main]
+    paths-ignore: ['firmware/**', '.github/workflows/firmware.yml']
   workflow_run:
     workflows: [ci]
     branches: [dev]

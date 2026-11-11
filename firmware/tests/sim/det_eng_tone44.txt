@@ -1,0 +1,54 @@
+# v1, the 44.1 kHz voice (docs/engines.md "The 44.1 kHz voice"): a NAND with only tone44.coop and tone88.coop
+# (tests/plugins/tone44, tone88: one parabolic sine, rendered at 44.1 kHz and at 88.2 kHz). Select tone44 from the
+# engine list (as det_eng_select.txt; it sorts after string, 9 rows below digital, 72 steps), close the list, c4 for
+# 4 s, c5 for 4 s; then the list again (it opens on tone44), one row on to tone88, the same two notes.
+# Windows for tools/wav_levels / the gate: tone44 c4 36.5-40.5 s, c5 42-46 s; tone88 c4 55-59 s, c5 60.5-64.5 s
+# (guest time; the dump starts at boot). Stats: eng_tone44, eng_tone88, eng_44k.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+press shift
+at 27700
+tap t1 200
+at 28200
+release shift
+at 29500
+turn enc1 cw 72
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36500
+press c4
+at 40500
+release c4
+at 42000
+press c5
+at 46000
+release c5
+at 47500
+press shift
+at 47700
+tap t1 200
+at 48200
+release shift
+at 49500
+turn enc1 cw 8
+at 52000
+tap seq 200
+at 53000
+tap synth 200
+at 55000
+press c4
+at 59000
+release c4
+at 60500
+press c5
+at 64500
+release c5
+wait 72000
+screenshot /root/op1emu-work/tone_page.ppm
+wait 4000
+quit

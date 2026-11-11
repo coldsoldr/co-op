@@ -1,0 +1,52 @@
+# e9: a power cycle on the NAND det_fx_screen.txt left (NAND_KEEP): the sound boots with its effect plugin at synth FX 1
+# and instrument FX 2, and the effect's screen is built again after the boot scan (stats fscr_built) and shown on the
+# synth's effect page (T3), then FX 2's (drop) and FX 1's again (lift). Screenshots every 2 s of wall time from 30 s.
+# Expected: no fault; fscr_built = the screen plugins on the NAND; the plugin's screen on the effect page.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t1 200
+at 29000
+tap t3 200
+at 34000
+press c4
+press e4
+at 35500
+release c4
+release e4
+at 38000
+tap drop 200
+at 42000
+tap lift 200
+wait 26000
+screenshot /root/op1emu-work/e9/shot_00.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_01.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_02.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_03.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_04.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_05.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_06.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_07.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_08.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_09.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_10.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_11.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_12.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_13.ppm
+wait 4000
+quit

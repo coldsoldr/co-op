@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.stockhelp",
+  "name": "stock help",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "1.0.2",
+  "description": "The OP-1's own help screen is back, on FN held alone (300 ms to start, a setting). Any other key or a turn hides it first, so FN's combinations never show it, and shift + FN opens the date and time. Without this plugin the help costs no memory. It shares FN held with the monitor: keep one of the two switched on.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.stockhelp",
+  "tags": [
+    "system",
+    "opus"
+  ]
+}

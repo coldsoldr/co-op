@@ -1,0 +1,481 @@
+#!/usr/bin/env python3
+"""Pack a synth/FX plugin folder (plugin.json + C sources) into a kennel plugin file (docs/plugin-format.md).
+
+    python3 tools/kennel/pack.py synth_sdk/plugins/supersaw -o build/supersaw.knl [--toolchain DIR]
+
+Compiles the sources (same flags as make_firmware.py), links them with libgcc into one relocatable object
+(`bfin-elf-ld -r` with merge.ld: one .text, .rodata, .data, .bss), then lays the sections out from offset 0 and
+resolves every relocation it can. What depends on the load address stays in the file's relocation table:
+absolute words and hi/lo immediates that point into the plugin, and everything that points at a core import.
+Any other relocation type or allocated section is an error.
+Copyright (C) 2026 Hundekraft. GPL-3.0-or-later with the OP-1 firmware permission (see LICENSE and NOTICE).
+"""
+import argparse
+import json
+import os
+import re
+import shutil
+import struct
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import reloc as F
+
+KENNEL = Path(__file__).resolve().parents[2]
+SDK = KENNEL / 'synth_sdk'
+MERGE_LD = Path(__file__).resolve().parent / 'merge.ld'
+CFLAGS = ['-O2', '-mcpu=bf524', '-ffreestanding', '-fno-builtin', '-nostdlib', '-fno-common', '-Wall']
+
+
+def diag_build():
+    """The test build (KN_DIAG=1 in the environment): monitor page 7 and the diagnostic core (ARCHITECTURE.md
+    "Release and test builds"). Unset, empty or 0: the release build. make_firmware.py reads the same variable."""
+    v = os.environ.get('KN_DIAG', '')
+    if v not in ('', '0', '1'):
+        raise PackError(f'KN_DIAG must be 0 or 1, not {v!r}')
+    return v == '1'
+
+
+def diag_cflags():
+    return ['-DKN_DIAG=1'] if diag_build() else []
+
+
+def core_exports(text=None):
+    """kn_exports.c as the build sees it: the KN_DIAG block left out unless this is the test build (the tests read the
+    export table as text: a plugin must not import an export only the test build has)."""
+    text = (SDK / 'kennel' / 'kn_exports.c').read_text() if text is None else text
+    if diag_build():
+        return text
+    return re.sub(r'^#if KN_DIAG\b.*?^#endif[^\n]*\n', '', text, flags=re.S | re.M)
+
+# ELF relocation types (binutils include/elf/bfin.h) the plugins produce
+R_BFIN_PCREL24, R_BFIN_PCREL24_JUMP_L = 0x0a, 0x0d
+R_BFIN_LUIMM16, R_BFIN_HUIMM16, R_BFIN_BYTE4_DATA = 0x06, 0x07, 0x12
+ELF_TO_FILE = {R_BFIN_BYTE4_DATA: F.R_ABS32, R_BFIN_HUIMM16: F.R_HI16, R_BFIN_LUIMM16: F.R_LO16,
+               R_BFIN_PCREL24: F.R_PCREL24, R_BFIN_PCREL24_JUMP_L: F.R_PCREL24}
+SECTIONS = ('.text', '.rodata', '.data', '.bss')
+SHT_NOBITS, SHT_RELA, SHT_REL, SHF_ALLOC = 8, 4, 9, 2
+SHN_UNDEF, SHN_ABS = 0, 0xFFF1
+
+
+class PackError(Exception):
+    pass
+
+
+def svg_turn_backs(svg):
+    """synth_sdk/harness/svg_check.py's turn-back rule (one rule for the harness and the packer)"""
+    sys.path.insert(0, str(SDK / 'harness'))
+    try:
+        import svg_check
+    finally:
+        sys.path.pop(0)
+    return [t for t in svg_check.turn_backs_in(svg) if not t.startswith('not parsed')]   # parse errors: the loader's call
+
+
+def find_toolchain(arg=None):
+    """-> (gcc, ld) paths: --toolchain DIR, $KENNEL_TOOLCHAIN, OP1-Emulator's toolchain/ (the first one walking up
+    from this checkout: ext/kennel or a worktree under it), or PATH."""
+    roots = [arg, os.environ.get('KENNEL_TOOLCHAIN'), *(str(p / 'toolchain') for p in KENNEL.parents)]
+    for r in filter(None, roots):
+        gcc, ld = Path(r) / 'bfin-gcc/bin/bfin-elf-gcc', Path(r) / 'bfin/bin/bfin-elf-ld'
+        if gcc.exists() and ld.exists():
+            return str(gcc), str(ld)
+    gcc, ld = shutil.which('bfin-elf-gcc'), shutil.which('bfin-elf-ld')
+    if gcc and ld:
+        return gcc, ld
+    raise PackError('bfin-elf-gcc / bfin-elf-ld not found (use --toolchain or KENNEL_TOOLCHAIN)')
+
+
+def run(cmd):
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode:
+        raise PackError(f'{" ".join(cmd)}\n{r.stdout}{r.stderr}')
+    return r.stdout
+
+
+def compile_plugin(plugin_dir, outdir, toolchain=None):
+    """Compile plugin.json's sources -> list of object paths."""
+    gcc, _ = find_toolchain(toolchain)
+    meta = json.loads((Path(plugin_dir) / 'plugin.json').read_text())
+    flags = meta.get('cflags', [])
+    allowed = re.compile(r'-(?:D[A-Za-z_][A-Za-z0-9_]*(?:=[A-Za-z0-9_]+)?|O[0123sg]|fno-tree-loop-distribute-patterns)$')
+    source_flags = meta.get('source_cflags', {})
+    if not isinstance(source_flags,dict) or any(k not in meta['sources'] for k in source_flags): raise PackError('Invalid source compiler flags')
+    for group in [flags, *source_flags.values()]:
+        if not isinstance(group,list) or any(not isinstance(x,str) or not allowed.fullmatch(x) for x in group): raise PackError('Unsupported compiler flags')
+    includes = []
+    for rel in meta.get('include_dirs', []):
+        path = (Path(plugin_dir) / rel).resolve()
+        if not path.is_relative_to(Path(plugin_dir).resolve()): raise PackError('Include escapes plugin')
+        includes.append('-I' + str(path))
+    sdk_root = Path(plugin_dir).resolve().parents[1] if Path(plugin_dir).parent.name == 'plugins' else SDK
+    for rel in meta.get('sdk_include_dirs', []):
+        path = (sdk_root / rel).resolve()
+        if not path.is_relative_to(sdk_root.resolve()): raise PackError('Generated include escapes SDK')
+        includes.append('-I' + str(path))
+    objs = []
+    for src in meta['sources']:
+        path = (Path(plugin_dir) / src).resolve()
+        if not (path.is_relative_to(Path(plugin_dir).resolve()) or path.is_relative_to(sdk_root.resolve())):
+            raise PackError('Source escapes plugin and SDK')
+        o = Path(outdir) / (Path(src).stem + '.o')
+        run([gcc, *CFLAGS, *diag_cflags(), *flags, *meta.get('source_cflags', {}).get(src, []), *includes, f'-I{SDK}', '-c', str(Path(plugin_dir) / src), '-o', str(o)])
+        objs.append(str(o))
+    return objs
+
+
+def generated_ready(plugin_dir):
+    """True when the build-time files plugin.json lists under "generated" (relative to the SDK) exist. make_firmware.py
+    writes them; for a test run without a firmware build the Oblique Strategies cards (build/oblique_data.c) are made
+    here from the stock opfont.svg (KENNEL_OPFONT, or a firmware tree next to the repo) when it can be found."""
+    meta = json.loads((Path(plugin_dir) / 'plugin.json').read_text())
+    for rel in meta.get('generated', []):
+        sdk_root = Path(plugin_dir).resolve().parents[1] if Path(plugin_dir).parent.name == 'plugins' else SDK
+        out = sdk_root / rel
+        if out.exists():
+            continue
+        fonts = [os.environ.get('KENNEL_OPFONT', '')] + [str(r / 'op1_246/content/display/opfont.svg')
+                                                         for r in (SDK.parent, SDK.parent.parent.parent / 'firmware')]
+        font = next((f for f in fonts if f and os.path.exists(f)), None)
+        if rel != 'build/oblique_data.c' or not font:
+            return False
+        sys.path.insert(0, str(SDK / 'display'))
+        import gen_oblique
+        out.parent.mkdir(exist_ok=True)
+        gen_oblique.emit(gen_oblique.build(font, str(SDK / 'screens/oblique/cards.txt'))[0], str(out))
+    return True
+
+
+def libgcc(toolchain=None):
+    gcc, _ = find_toolchain(toolchain)
+    return run([gcc, '-mcpu=bf524', '-print-libgcc-file-name']).strip()
+
+
+def link_relocatable(objs, out, toolchain=None):
+    """bfin-elf-ld -r: plugin objects + the libgcc members they need -> one object with four sections."""
+    _, ld = find_toolchain(toolchain)
+    run([ld, '-r', '-T', str(MERGE_LD), *objs, libgcc(toolchain), '-o', str(out)])
+    return out
+
+
+class Elf:
+    """Just enough ELF32-LE: section headers, symbols, RELA sections."""
+
+    def __init__(self, data):
+        if data[:4] != b'\x7fELF' or data[4] != 1 or data[5] != 1:
+            raise PackError('not an ELF32 little-endian file')
+        if struct.unpack_from('<H', data, 16)[0] != 1:
+            raise PackError('not a relocatable object (ET_REL)')
+        self.data = data
+        shoff, = struct.unpack_from('<I', data, 32)
+        shentsize, shnum, shstrndx = struct.unpack_from('<HHH', data, 46)
+        self.sh = [dict(zip(('name', 'type', 'flags', 'addr', 'offset', 'size', 'link', 'info', 'align', 'entsize'),
+                            struct.unpack_from('<10I', data, shoff + i * shentsize))) for i in range(shnum)]
+        names = self.sh[shstrndx]
+        for s in self.sh:
+            s['name'] = self.cstr(names['offset'] + s['name'])
+        symtab = next(s for s in self.sh if s['type'] == 2)
+        strtab = self.sh[symtab['link']]['offset']
+        self.syms = []
+        for i in range(symtab['size'] // 16):
+            name, value, size, info, other, shndx = struct.unpack_from('<IIIBBH', data, symtab['offset'] + i * 16)
+            self.syms.append({'name': self.cstr(strtab + name), 'value': value, 'size': size, 'bind': info >> 4,
+                              'type': info & 15, 'shndx': shndx})
+
+    def cstr(self, off):
+        return self.data[off:self.data.index(b'\0', off)].decode()
+
+    def contents(self, s):
+        return b'' if s['type'] == SHT_NOBITS else self.data[s['offset']:s['offset'] + s['size']]
+
+    def relas(self, s):
+        return [struct.unpack_from('<IIi', self.data, s['offset'] + i * 12) for i in range(s['size'] // 12)]
+
+
+def api_version():
+    m = re.search(r'#define\s+OP1_PLUGIN_API\s+(\d+)', (SDK / 'op1_plugin.h').read_text())
+    return int(m.group(1))
+
+
+def pcrel24(img, off, disp, where):
+    """Write a CALL / JUMP.L displacement; off = ELF r_offset = second halfword of the instruction."""
+    if disp % 2 or not F.PCREL24_MIN <= disp <= F.PCREL24_MAX:
+        raise PackError(f'{where}: PCREL24 displacement {disp} out of range')
+    d = (disp >> 1) & 0xFFFFFF
+    hw, = struct.unpack_from('<H', img, off - 2)
+    struct.pack_into('<HH', img, off - 2, (hw & 0xFF00) | (d >> 16), d & 0xFFFF)
+
+
+def section_layout(elf):
+    """-> (secs {name: section index}, layout {name: (offset, size)}, image alignment): the file's image layout"""
+    secs = {}
+    for i, s in enumerate(elf.sh):
+        if s['flags'] & SHF_ALLOC:
+            if s['name'] not in SECTIONS:
+                raise PackError(f'allocated section {s["name"]} not supported (only {", ".join(SECTIONS)})')
+            secs[s['name']] = i
+        if s['type'] == SHT_REL:
+            raise PackError(f'{s["name"]}: REL relocations not supported (expected RELA)')
+    # layout: text at 0, then rodata, data, bss, each aligned to max(4, its alignment), as base.ld places them
+    layout, cur, align = {}, 0, 4
+    for name in SECTIONS:
+        s = elf.sh[secs[name]] if name in secs else {'align': 4, 'size': 0}
+        a = max(4, s['align'])
+        align = max(align, a)
+        cur = (cur + a - 1) & -a
+        layout[name] = (cur, s['size'])
+        cur += s['size']
+    return secs, layout, align
+
+
+def image_symbols(obj_bytes):
+    """`ld -r` output (pack --keep: <id>.ro) -> [(image offset, size, name)] of its functions and objects, sorted:
+    for turning a relocated address into a symbol (symbolicate.py)"""
+    elf = Elf(obj_bytes)
+    secs, layout, _ = section_layout(elf)
+    base = {i: layout[name][0] for name, i in secs.items()}
+    out = {(base[s['shndx']] + s['value'], s['size'], s['name']) for s in elf.syms
+           if s['shndx'] in base and s['type'] in (1, 2) and s['name']}       # STT_OBJECT, STT_FUNC
+    return sorted(out)
+
+
+def pack(meta, obj_bytes, svg_dir=None):
+    """plugin.json dict + `ld -r` output -> (plugin file bytes, info dict for reports and tests)."""
+    elf = Elf(obj_bytes)
+    secs, layout, align = section_layout(elf)
+    image_size = layout['.data'][0] + layout['.data'][1]
+    img = bytearray(image_size)
+    sec_base = {}
+    for name, i in secs.items():
+        sec_base[i] = layout[name][0]
+        if name != '.bss':
+            off = layout[name][0]
+            img[off:off + elf.sh[i]['size']] = elf.contents(elf.sh[i])
+
+    imports, relocs, types = [], [], {}
+    for rs in elf.sh:
+        if rs['type'] != SHT_RELA or not elf.sh[rs['info']]['flags'] & SHF_ALLOC:
+            continue
+        target = rs['info']
+        for r_offset, r_info, addend in elf.relas(rs):
+            etype, sym = r_info & 0xFF, elf.syms[r_info >> 8]
+            where = f'{elf.sh[target]["name"]}+{r_offset:#x} ({sym["name"] or "section"})'
+            if etype not in ELF_TO_FILE:
+                raise PackError(f'{where}: relocation type {etype:#x} not supported')
+            if target not in sec_base or elf.sh[target]['name'] == '.bss':
+                raise PackError(f'{where}: relocation in an unsupported section')
+            types[etype] = types.get(etype, 0) + 1
+            ftype = ELF_TO_FILE[etype]
+            off = sec_base[target] + r_offset
+            if sym['shndx'] == SHN_UNDEF:
+                if not sym['name']:
+                    raise PackError(f'{where}: undefined symbol without a name')
+                if sym['name'] not in imports:
+                    imports.append(sym['name'])
+                relocs.append((off, ftype, imports.index(sym['name']), addend))
+                continue
+            if sym['shndx'] == SHN_ABS:
+                value, local = sym['value'] + addend, False
+            elif sym['shndx'] in sec_base:
+                value, local = sec_base[sym['shndx']] + sym['value'] + addend, True
+            else:
+                raise PackError(f'{where}: symbol in section {sym["shndx"]} not supported')
+            value &= 0xFFFFFFFF
+            if ftype == F.R_PCREL24:
+                if not local:
+                    raise PackError(f'{where}: PC-relative reference to an absolute address')
+                pcrel24(img, off, value - (off - 2), where)
+                continue
+            if ftype == F.R_ABS32:
+                struct.pack_into('<I', img, off, value)
+            else:
+                struct.pack_into('<H', img, off, value >> 16 if ftype == F.R_HI16 else value & 0xFFFF)
+            if local:
+                relocs.append((off, ftype, F.SYM_LOCAL, value))
+    relocs.sort()
+
+    def symbol(name):
+        for s in elf.syms:
+            if s['name'] == '_' + name and s['shndx'] in sec_base and s['bind'] == 1:
+                return sec_base[s['shndx']] + s['value']
+        raise PackError(f'global symbol {name} not found')
+
+    kind = F.KINDS[meta['kind']]
+    entry = symbol(meta['symbol'])
+    screen = meta.get('screen')
+    screen_off = symbol(screen['symbol']) if screen else F.NONE
+    svg = (Path(svg_dir) / screen['svg']).read_bytes() if screen and svg_dir else b''
+    name = check_id(meta).encode('ascii')                   # the saved name: derived, never written by hand
+    order = meta.get('order', 0)
+    if not 0 <= order <= 31:
+        raise PackError(f'order {order} outside 0..31')
+    defaults = list(meta.get('defaults', [0, 0, 0, 0]))
+    page2 = meta.get('page2_defaults')
+    if 'stereo' in meta and not isinstance(meta['stereo'], bool):
+        raise PackError('stereo must be a boolean')
+    if meta.get('stereo') and kind != F.KIND_FX:
+        raise PackError('stereo flag requires FX kind')
+    if 'input_engine' in meta and not isinstance(meta['input_engine'], bool):
+        raise PackError('input_engine must be a boolean')
+    if meta.get('input_engine') and (kind != F.KIND_SYNTH or meta.get('uses_sample')):
+        raise PackError('input flag requires nonsampler synth')
+    coarse = meta.get('coarse', [])
+    if not isinstance(coarse, list) or any(type(k) is not int or not 0 <= k <= 3 for k in coarse) \
+            or len(set(coarse)) != len(coarse):
+        raise PackError('coarse must be a list of distinct knob numbers 0..3')
+    if coarse and kind != F.KIND_SYNTH:
+        raise PackError('coarse knobs require synth kind')
+    cost = meta.get('cost')                             # declared worst-block cost (harness/slot_budget.py)
+    cost_keys = ('voice', 'start') if kind == F.KIND_SYNTH else ('call', 'init')
+    if cost is not None:
+        if kind not in (F.KIND_SYNTH, F.KIND_FX) or not isinstance(cost, dict) or set(cost) - set(cost_keys) \
+                or any(type(v) is not int or not 0 <= v < 1 << 22 for v in cost.values()):
+            raise PackError(f'cost must be {{{cost_keys[0]!r}, {cost_keys[1]!r}}}: bcore packets 0..4194303 (synth or FX)')
+    entry_symbol = next(s for s in elf.syms if s['name'] == '_' + meta['symbol'] and s['bind'] == 1)
+    if meta.get('stereo') and (entry_symbol['size'] < 16 or entry + 16 > image_size):
+        raise PackError('stereo entry object truncated')
+    if meta.get('input_engine') and (entry_symbol['size'] < 32 or entry + 32 > image_size):
+        raise PackError('input entry object truncated')
+    bigbuf = meta.get('bigbuf')                         # a declared pool buffer: OP1_BIGBUF(<symbol>, min, max) in .data
+    bigbuf_off = None
+    if bigbuf is not None:
+        if not isinstance(bigbuf, str):
+            raise PackError('bigbuf must be the name of an OP1_BIGBUF symbol')
+        bigbuf_off = symbol(bigbuf)
+        if bigbuf_off % 4 or not layout['.data'][0] <= bigbuf_off <= layout['.data'][0] + layout['.data'][1] - F.BIGBUF.size:
+            raise PackError('bigbuf symbol must be an initialised op1_bigbuf_t in .data')
+        magic, version, mn, mx, ptr, size = F.BIGBUF.unpack_from(img, bigbuf_off)
+        if (magic, version) != (F.BIGBUF_MAGIC, F.BIGBUF_VERSION) or mn > mx or not mx or mn > F.BIGBUF_MAX or ptr or size:
+            raise PackError(f'bigbuf {bigbuf}: not a valid OP1_BIGBUF (min <= max, min <= {F.BIGBUF_MAX}, max > 0)')
+    flags = ((F.FLAG_BIGBUF if bigbuf is not None else 0) | (F.FLAG_USES_SAMPLE if meta.get('uses_sample') else 0) |
+             (F.FLAG_PAGE2 if page2 else 0) | (F.FLAG_STEREO if meta.get('stereo') else 0) | (F.FLAG_INPUT if meta.get('input_engine') else 0) |
+             sum(1 << (F.FLAG_COARSE_SHIFT + k) for k in coarse))
+    if len(defaults) != 4 or (page2 and len(page2) != 3):
+        raise PackError('defaults needs 4 values, page2_defaults 3')
+
+    strings = bytearray(b'\0')
+    def string(s):
+        off = len(strings)
+        strings.extend(s.encode('ascii') + b'\0')
+        return off
+    import_names = [string(n) for n in imports]
+
+    pad4 = lambda b: bytes(b) + bytes(-len(b) % 4)
+    if b'\0' in svg or (svg and not svg.lstrip().startswith(b'<')):
+        raise PackError('screen SVG must be text starting with <')
+    long_num = re.search(rb'\d\.\d{5,}', svg)          # R246's SVG parser panics at boot on these (kn_boot.c svg_ok)
+    if long_num:
+        raise PackError(f'screen SVG number {long_num.group().decode()} has more than 4 decimals; round it')
+    bad_cmd = re.search(rb'\sd="[^"]*?([A-BD-GI-KN-RT-UW-Yabd-gi-kn-rt-uw-y])', svg)   # Parser.cpp:525 (kn_boot.c svg_err)
+    if bad_cmd:
+        raise PackError(f'screen SVG path command {bad_cmd.group(1).decode()} is not in R246\'s parser (only M L H V C S Z); '
+                        'write it as C curves')
+    turns = svg_turn_backs(svg) if svg else []           # R246's stroke join draws these as a spike to the screen edge
+    if turns:
+        raise PackError(f'screen SVG: {turns[0]} (R246 draws a spike there; drop the point)'
+                        + (f', and {len(turns) - 1} more' if len(turns) > 1 else ''))
+    prefix = pad4(svg + b'\0') if svg else b''          # the stock screen loader reads the file as the SVG
+    parts, off = [], len(prefix) + F.HEADER_SIZE
+    def place(blob):
+        nonlocal off
+        start = off
+        parts.append(pad4(blob))
+        off += len(parts[-1])
+        return start
+    image_file_offset = place(img)
+    reloc_offset = place(b''.join(F.RELOC.pack(o, t, 0, s, a) for o, t, s, a in relocs))
+    import_offset = place(b''.join(F.IMPORT.pack(n) for n in import_names))
+    strings_offset = place(strings)
+    ext = b''                                            # extension table: claims, author, version (tag, len, bytes)
+    for tag, val in ((F.EXT_CLAIMS, b''.join(c.encode('ascii') + b'\0' for c in meta.get('claims', [])) + b'\0'),
+                     (F.EXT_AUTHOR, meta.get('author', '').encode('ascii') + b'\0'),
+                     (F.EXT_VERSION, str(meta.get('version', '')).encode('ascii') + b'\0')):
+        if len(val) > 1:
+            ext += struct.pack('<HH', tag, len(val)) + val + bytes(-len(val) % 4)
+    if bigbuf_off is not None:
+        ext += struct.pack('<HHI', F.EXT_BIGBUF, 4, bigbuf_off)
+    if cost:
+        ext += struct.pack('<HHII', F.EXT_COST, 8, cost.get(cost_keys[0], 0), cost.get(cost_keys[1], 0))
+    ext_offset = place(ext + struct.pack('<HH', 0, 0)) if ext else 0
+    header = F.HEADER.pack(
+        F.MAGIC, F.FORMAT_VERSION, F.HEADER_SIZE, off, 0, api_version(), kind, order, name, flags,
+        *defaults, *(list(page2) + [0] if page2 else [0, 0, 0, 0]),
+        layout['.text'][1], *layout['.rodata'], *layout['.data'], *layout['.bss'], image_size, align,
+        entry, screen_off, image_file_offset, reloc_offset, len(relocs), import_offset, len(imports),
+        strings_offset, len(strings), 0, len(svg) + 1 if svg else 0, F.NONE, ext_offset)
+    data = bytearray(prefix + header + b''.join(parts))
+    struct.pack_into('<I', data, len(prefix) + 12, F.crc32(bytes(data), len(prefix) + 12))
+    info = {'layout': layout, 'imports': imports, 'elf_reloc_types': types, 'relocs': len(relocs),
+            'entry': entry, 'screen': screen_off}
+    return bytes(data), info
+
+
+# Names (docs/plugin-format.md "Names"): a plugin's id is its folder, file (<id>.knl), plugin.json "name", kennel.off
+# entry, inventory name and feature name; the saved name (the header's type name: what the OP-1 shows and saved sounds
+# store) is derived from it. SAVED_NAMES is frozen: names already in users' saved files that break the rule.
+ID = re.compile(r'[a-z0-9_-]{1,15}')
+SAVED_NAMES = {'drumplus': 'drum+'}                  # drum patch JSON "engine": "drum+", the drum_types row
+
+
+def check_id(meta, folder=None):
+    """refuse a plugin.json whose id breaks the rule (or differs from its folder); -> its saved name"""
+    pid = meta.get('name', '')
+    if not ID.fullmatch(pid):
+        raise PackError(f'plugin id {pid!r}: only a-z 0-9 _ -, 1..15 characters (docs/plugin-format.md "Names")')
+    if folder is not None and folder != pid:
+        raise PackError(f'plugin folder {folder!r} differs from its id (plugin.json "name") {pid!r}')
+    if 'saved_name' in meta and SAVED_NAMES.get(pid) != meta['saved_name']:
+        raise PackError(f'{pid}: "saved_name" only for the frozen exceptions {SAVED_NAMES}')
+    return SAVED_NAMES[pid] if 'saved_name' in meta else pid.replace('_', ' ')
+
+
+FILE_NAME = re.compile(r'[A-Za-z0-9_.-]{1,35}\.(knl|op1p)')
+
+
+def file_name_ok(name):
+    """a plugin file name the SysEx update can send, list and delete (devupd du_path_ok: [A-Za-z0-9_.-]) and the loader
+    lists (under 40 characters)"""
+    return bool(FILE_NAME.fullmatch(name)) and '..' not in name
+
+
+def pack_dir(plugin_dir, out, toolchain=None, keep=None):
+    """Compile, link and pack one plugin folder; keep = directory to leave the objects in."""
+    plugin_dir = Path(plugin_dir)
+    meta = json.loads((plugin_dir / 'plugin.json').read_text())
+    check_id(meta, plugin_dir.name)
+    if Path(out).name != meta['name'] + '.knl':
+        raise PackError(f'plugin file name {Path(out).name!r}: must be <id>.knl ({meta["name"]}.knl)')
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(keep or tmp)
+        work.mkdir(parents=True, exist_ok=True)
+        objs = compile_plugin(plugin_dir, work, toolchain)
+        ro = link_relocatable(objs, work / (meta['name'] + '.ro'), toolchain)
+        data, info = pack(meta, Path(ro).read_bytes(), plugin_dir)
+    Path(out).write_bytes(data)
+    return data, info
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+    ap.add_argument('plugin_dir')
+    ap.add_argument('-o', '--output', required=True)
+    ap.add_argument('--toolchain', help='OP1-Emulator toolchain/ (bfin-gcc/bin, bfin/bin)')
+    ap.add_argument('--keep', help='keep objects and the ld -r output in this directory')
+    a = ap.parse_args()
+    try:
+        data, info = pack_dir(a.plugin_dir, a.output, a.toolchain, a.keep)
+    except PackError as e:
+        sys.exit(f'error: {e}')
+    names = {v: k for k, v in globals().items() if k.startswith('R_BFIN_')}
+    print(f'{a.output}: {len(data)} bytes, sections '
+          + ', '.join(f'{k} {v[1]}' for k, v in info['layout'].items())
+          + f'; {info["relocs"]} load-time relocations; ELF relocations '
+          + ', '.join(f'{names.get(t, hex(t))} {n}' for t, n in sorted(info['elf_reloc_types'].items()))
+          + f'; imports {", ".join(info["imports"]) or "none"}')
+
+
+if __name__ == '__main__':
+    main()

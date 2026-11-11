@@ -1,0 +1,21 @@
+{
+  "name": "tone44",
+  "kind": "synth",
+  "symbol": "ENGINE_tone44",
+  "sources": [
+    "tone44.cc"
+  ],
+  "sdk_include_dirs": [
+    "plugins/tone_common"
+  ],
+  "voice_rate": 44100,
+  "defaults": [
+    16384,
+    16384,
+    16384,
+    16384
+  ],
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "v1 test engine (docs/engines.md \"The 44.1 kHz voice\"): a parabolic sine rendered at 44.1 kHz. Not a real plugin."
+}

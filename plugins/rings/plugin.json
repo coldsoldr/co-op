@@ -2,17 +2,28 @@
   "format": 1,
   "id": "rings",
   "name": "rings",
-  "firmware": "op1/hundekraft",
   "kind": "synth",
   "author": "coldsoldr",
-  "version": "0.1",
-  "description": "Mutable Instruments Rings as a synth engine: a physical-modelling resonator with six models (modal, sympathetic strings, inharmonic string, FM voice, quantized sympathetic strings, string and reverb) and up to six voices.",
+  "description": "Mutable Instruments Rings as a synth engine: a physical-modelling resonator with six models (modal, sympathetic strings, inharmonic string, FM voice, quantized sympathetic strings, string and reverb) and a polyphony of 1, 2, 4 or all six voices.",
   "license": "GPL-3.0-or-later",
-  "file": "rings.knl",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/coldsoldr/te-op1-cfw",
-  "requires": "hundekraft 3.0.3",
   "credits": "Port of Mutable Instruments Rings by Émilie Gillet (MIT)",
-  "tags": ["synth", "mutable-instruments", "physical-modelling"]
+  "tags": ["synth", "mutable-instruments", "physical-modelling"],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "file": "rings.knl",
+      "version": "0.1",
+      "requires": "hundekraft 3.0.3",
+      "source": "https://github.com/coldsoldr/te-op1-cfw"
+    },
+    {
+      "firmware": "op1/coop",
+      "file": "rings.coop",
+      "version": "0.5",
+      "requires": "coop e5",
+      "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/rings"
+    }
+  ]
 }

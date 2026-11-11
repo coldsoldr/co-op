@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "c64arp",
+  "name": "C64 arpeggiator",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "Choose C64arp in the sequencer browser: hold Shift and press SEQ, turn blue to c64arp, then press SEQ to load it. With seq on, hold a note to set the root of its repeating table of relative pitches. Turn orange right to hold the notes after you let go, like the stock arpeggio, and left to release them. A step can last several base steps, so a short table can produce uneven rhythms.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "sequencer",
+    "hundekraft"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "vox",
+  "name": "VOX",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "Sing or talk into the OP-1, hold a chord, and VOX puts your words on those notes. The keys play a synth sound and your voice shapes it, so the chord you hold talks or sings. VOX takes your voice from the OP-1's input, like Amp: the mic, line, radio or USB. It splits your voice into up to 24 bands, and each band opens the same band of the synth. Chord mode, scale mode, the sequencers and MIDI all play the keys as usual.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

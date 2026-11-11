@@ -1,0 +1,37 @@
+# u5: the overwrite save. Synth; hold S1 for 6 s: the stock save clock runs and makes a NEW user preset (a date
+# stamp name, folder snapshot); release. Blue ten detents (the knob changes). Hold synth + S1 for 6 s: coop's
+# overwrite: the sound now "is" that snapshot preset (its name matched a user preset), so the row is UPDATEd instead
+# of a second INSERT: synth_user should hold ONE row, with the turned knob. Release. A late chord keeps the guest
+# running past the second save (the run otherwise stops early). The NAND is kept: op1.db and coop_stats.txt are read.
+accel 64 -64 512
+wait-frames 1 300000
+at 24000
+tap synth 300
+at 25500
+press s1
+at 31500
+release s1
+at 32000
+turn enc1 cw 20
+at 33000
+press synth
+at 33300
+press s1
+at 39300
+release s1
+at 39600
+release synth
+at 42000
+press c4
+press e4
+press g4
+at 43000
+release c4
+release e4
+release g4
+at 56000
+press c4
+at 57000
+release c4
+wait 220000
+quit

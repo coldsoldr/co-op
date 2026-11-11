@@ -1,0 +1,30 @@
+# Does recording work from the TAPE page (no tracker)? Tape mode; hold REC, tap PLAY (the tape records the
+# instrument), a chord, release REC, STOP, STOP (to the start), PLAY: the chord again in the WAV if it recorded.
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap tape 300
+at 32000
+press rec
+at 32200
+tap play 300
+at 32600
+release rec
+at 33000
+press c4
+press e4
+press g4
+at 34000
+release c4
+release e4
+release g4
+at 36000
+tap stop 300
+at 37000
+tap stop 300
+at 38000
+tap play 300
+at 43000
+tap stop 300
+wait 45000
+quit

@@ -1,0 +1,25 @@
+# E3, rings' fn layer on screen: on the NAND det_eng_rings.txt leaves (the slot saved on rings, model verb, poly 4),
+# boot, the synth page, a chord, then Help held on a guest-timed event (a held key queued after the last `at` lands in
+# the past), held from 31 s to 100 s of guest time so the wall-timed screenshot (guest runs ~1.3x wall here) lands
+# inside the hold. Expected: the MODEL / POLY brackets and white labels, the rings and rays dimmed (det_eng_rings.txt
+# has the page without fn). Also proves the sound reloads as rings (eng_rings renders).
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 28000
+press c4
+press e4
+press g4
+at 30000
+release c4
+release e4
+release g4
+at 31000
+press help
+at 100000
+release help
+wait 30000
+screenshot /root/op1emu-work/rings_fn.ppm
+wait 1000
+quit

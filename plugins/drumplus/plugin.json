@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "drumplus",
+  "name": "Drum+",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "drum+ is a second drum instrument on top of a sampled drum kit. It adds per-pad sound design: pitch envelope, retrigger, drive, choke groups, an envelope and a filter for every pad. Pads you haven't touched sound like stock.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

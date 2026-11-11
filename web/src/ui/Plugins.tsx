@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { PLUGIN_FIRMWARE, PLUGIN_KINDS, type PluginIndex, type PluginIndexEntry } from '@co-op/shared/plugins';
+import {
+  PLUGIN_FIRMWARE,
+  PLUGIN_KINDS,
+  isHosted,
+  isInstallable,
+  pluginBuilds,
+  pluginFor,
+  type HostedPluginEntry,
+  type PluginIndex,
+  type PluginIndexEntry,
+} from '@co-op/shared/plugins';
 import {
   fetchManual,
   fetchPluginBytes,
@@ -29,15 +39,35 @@ interface PluginsProps {
    * More actions for a plugin, shown beside Download on its card and manual: "Install over USB"
    * for hundekraft and "Copy to mods/" for opus.
    */
-  renderActions?: (plugin: PluginIndexEntry) => ReactNode;
+  /** Install actions, for a build with a file co-op hosts; a listed build links out instead. */
+  renderActions?: (plugin: HostedPluginEntry) => ReactNode;
+  /** The firmware chosen in Settings (a profile id): the list starts filtered to its plugins. */
+  firmwareId?: string;
+  /** Shown above the list: the plugins on the connected OP-1, for a firmware co-op manages them on (coop). */
+  deviceSection?: ReactNode;
+  /** Opens the Settings tab, from the note that says which firmware the list follows. */
+  onOpenSettings?: () => void;
 }
 
+const isPluginFirmware = (id: string | undefined): id is (typeof PLUGIN_FIRMWARE)[number] =>
+  id !== undefined && (PLUGIN_FIRMWARE as readonly string[]).includes(id);
+
 /** The plugin library published with the app: browse plugins, read their manuals and download them. */
-export function Plugins({ active, renderActions }: PluginsProps) {
+export function Plugins({ active, renderActions, firmwareId, deviceSection, onOpenSettings }: PluginsProps) {
   const [index, setIndex] = useState<PluginIndex | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const requested = useRef(false);
-  const [filter, setFilter] = useState<PluginFilter>({});
+  const [filter, setFilter] = useState<PluginFilter>(() => (isPluginFirmware(firmwareId) ? { firmware: firmwareId } : {}));
+  // A new choice in Settings filters the list to that firmware again; "any" stays available in the menu. Adjusted
+  // while rendering, when the prop changes (react.dev "Adjusting some state when a prop changes").
+  const [seenFirmware, setSeenFirmware] = useState(firmwareId);
+  if (seenFirmware !== firmwareId) {
+    setSeenFirmware(firmwareId);
+    const next = { ...filter };
+    if (isPluginFirmware(firmwareId)) next.firmware = firmwareId;
+    else delete next.firmware;
+    setFilter(next);
+  }
   const [openId, setOpenId] = useState<string | null>(null);
   /** The plugin whose manual button takes focus when returning to the list. */
   const [returnTo, setReturnTo] = useState<string | null>(null);
@@ -62,7 +92,18 @@ export function Plugins({ active, renderActions }: PluginsProps) {
     load();
   }, [active, load]);
 
-  const open = index?.plugins.find((p) => p.id === openId) ?? null;
+  // A plugin with a file per firmware is shown as the build for the firmware in the Firmware menu,
+  // or else the one chosen in Settings: its file, version and needs, and its install action.
+  const prefer = filter.firmware ?? (isPluginFirmware(firmwareId) ? firmwareId : undefined);
+  const view = useCallback(
+    (plugin: PluginIndexEntry): PluginIndexEntry => (prefer === undefined ? null : pluginFor(plugin, prefer)) ?? plugin,
+    [prefer],
+  );
+  // Kept the same object between renders: the manual loads again when its plugin changes.
+  const open = useMemo(() => {
+    const found = index?.plugins.find((p) => p.id === openId);
+    return found ? view(found) : null;
+  }, [index, openId, view]);
 
   return (
     <section aria-labelledby="plugins-heading">
@@ -76,6 +117,7 @@ export function Plugins({ active, renderActions }: PluginsProps) {
       </div>
       {submitting && (
         <PluginSubmit
+          firmwareId={firmwareId}
           onBack={() => {
             setSubmitting(false);
             requestAnimationFrame(() => submitButton.current?.focus());
@@ -102,6 +144,19 @@ export function Plugins({ active, renderActions }: PluginsProps) {
           }}
         />
       )}
+      {!submitting && !open && firmwareId !== undefined && (
+        <p className="muted">
+          {isPluginFirmware(firmwareId)
+            ? `Showing plugins for ${firmwareLabel(firmwareId)}, the firmware chosen in Settings.`
+            : `${firmwareLabel(firmwareId)} runs no plugins. Choose your firmware in Settings, or pick one in the Firmware menu to browse.`}{' '}
+          {onOpenSettings && (
+            <button type="button" className="link" onClick={onOpenSettings}>
+              Settings
+            </button>
+          )}
+        </p>
+      )}
+      {!submitting && !open && deviceSection}
       {!submitting && index && !open && (
         <PluginList
           index={index}
@@ -118,6 +173,7 @@ export function Plugins({ active, renderActions }: PluginsProps) {
           onOpen={setOpenId}
           returnTo={returnTo}
           renderActions={renderActions}
+          view={view}
         />
       )}
     </section>
@@ -133,15 +189,19 @@ interface PluginListProps {
   onOpen: (id: string) => void;
   returnTo: string | null;
   renderActions: PluginsProps['renderActions'];
+  /** A plugin as it is shown: the build for the firmware the list follows. */
+  view: (plugin: PluginIndexEntry) => PluginIndexEntry;
 }
 
-function PluginList({ index, filter, onFilter, toggled, onToggle, onOpen, returnTo, renderActions }: PluginListProps) {
-  const shown = filterPlugins(index, filter);
+function PluginList({ index, filter, onFilter, toggled, onToggle, onOpen, returnTo, renderActions, view }: PluginListProps) {
+  const shown = filterPlugins(index, filter).map(view);
   const groups = groupByAuthor(shown);
   // A search or filter shows what it found. Otherwise several authors start closed, and a lone
-  // author starts open, as a closed group would be all there is to see.
-  const filtering = Object.keys(filter).length > 0;
-  const startsOpen = groupByAuthor(index.plugins).length === 1;
+  // author in the list as shown starts open, as a closed group would be all there is to see. The
+  // firmware is not a search: it is set from Settings for most visitors, and counting it kept every
+  // group open with its toggle disabled.
+  const filtering = filter.text !== undefined || filter.kind !== undefined || filter.tag !== undefined;
+  const startsOpen = groups.length === 1;
   const tags = useMemo(() => [...new Set(index.plugins.flatMap((p) => p.tags))].sort(), [index]);
   /** Sets one criterion; the empty string clears it. */
   function set<K extends keyof PluginFilter>(key: K, value: string): void {
@@ -243,12 +303,18 @@ function PluginFacts({ plugin }: { plugin: PluginIndexEntry }) {
   return (
     <>
       <p className="muted">
-        by {plugin.author} · version {plugin.version}
+        by {plugin.author}
+        {plugin.version !== undefined && ` · version ${plugin.version}`}
       </p>
       <p className="badges">
         <span className="badge">{plugin.kind}</span>
-        <span className="badge licence">{plugin.license}</span>
-        <span className="badge firmware">{firmwareLabel(plugin.firmware)}</span>
+        {plugin.license !== undefined && <span className="badge licence">{plugin.license}</span>}
+        {/* The build shown first, then any other firmware the plugin has a file for. */}
+        {[plugin.firmware, ...pluginBuilds(plugin).map((b) => b.firmware).filter((f) => f !== plugin.firmware)].map((id) => (
+          <span key={id} className="badge firmware">
+            {firmwareLabel(id)}
+          </span>
+        ))}
       </p>
       {plugin.requires && <p>Needs {plugin.requires}.</p>}
       <p>{plugin.description}</p>
@@ -302,10 +368,66 @@ function PluginCard({ plugin, onOpen, focus, renderActions }: PluginCardProps) {
 }
 
 /**
+ * Where to get a plugin: a link out for a listed build, else Download and the install actions.
+ */
+function PluginDownload({ plugin, renderActions }: { plugin: PluginIndexEntry; renderActions: PluginsProps['renderActions'] }) {
+  return isHosted(plugin) ? (
+    <HostedDownload plugin={plugin} renderActions={renderActions} />
+  ) : (
+    <ListedLink plugin={plugin} renderActions={renderActions} />
+  );
+}
+
+/** The host name of a link, for its label; the link itself if it does not parse. */
+function hostOf(link: string): string {
+  try {
+    return new URL(link).hostname;
+  } catch {
+    return link;
+  }
+}
+
+/**
+ * A listed build: co-op hosts no file for it, so the card links to where its author offers it. A
+ * hundekraft build that names its .knl (fileUrl) also gets the install actions: the page fetches the
+ * file from the author, checks it against the index and sends it to the OP-1.
+ */
+function ListedLink({ plugin, renderActions }: { plugin: PluginIndexEntry; renderActions: PluginsProps['renderActions'] }) {
+  const noteId = useId();
+  if (plugin.link === undefined) return null;
+  const installable = isInstallable(plugin) && plugin.firmware === 'op1/hundekraft';
+  return (
+    <div className="plugin-actions">
+      <div className="plugin-buttons">
+        <a
+          className="button primary"
+          href={plugin.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-describedby={installable ? noteId : undefined}
+        >
+          Get it from {hostOf(plugin.link)}
+          <span className="visually-hidden"> ({plugin.name}, opens a new tab)</span>
+        </a>
+        {installable && renderActions?.(plugin)}
+      </div>
+      {installable ? (
+        <p className="notice" id={noteId}>
+          co-op hosts no copy: Install over USB fetches {plugin.file} from its author's repo, checks it, and sends it to the
+          OP-1. A plugin runs as firmware code there, so remove an older copy of it before installing a new one.
+        </p>
+      ) : (
+        <p className="muted">Listed here for reference: co-op links to its author's page and hosts no copy.</p>
+      )}
+    </div>
+  );
+}
+
+/**
  * Download (the file checked against the index first) and the actions later phases add, with the
  * safety note for hundekraft plugins beside them.
  */
-function PluginDownload({ plugin, renderActions }: { plugin: PluginIndexEntry; renderActions: PluginsProps['renderActions'] }) {
+function HostedDownload({ plugin, renderActions }: { plugin: HostedPluginEntry; renderActions: PluginsProps['renderActions'] }) {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const noteId = useId();

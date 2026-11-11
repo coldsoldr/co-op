@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.orbit3d",
+  "name": "orbit3d",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "0.2.6",
+  "description": "A 3D line-drawing library for plugin pages, drawn like an OP-1 plate. It does nothing on its own: SIM and chorus draw with it, so keep it in mods beside them.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.orbit3d",
+  "tags": [
+    "system",
+    "opus"
+  ]
+}

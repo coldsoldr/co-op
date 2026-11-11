@@ -1,0 +1,17 @@
+# DSynth chord, long enough for a stats window: synth page, slot 5, chord held 6 s, then idle for the write
+accel 64 -64 512
+wait-frames 1 300000
+wait 26000
+tap synth 200
+wait 1500
+tap s5 200
+wait 3000
+press c4
+press e4
+press g4
+wait 6000
+release c4
+release e4
+release g4
+wait 9000
+quit

@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "euclid",
+  "name": "Euclid",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "Euclid and Dots come from the op1r project. Pick one with Shift + seq. Synth and drums each have their own sequencer, and both follow the OP-1's tempo and play the current synth or drum kit. The keys they share are in the next section.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

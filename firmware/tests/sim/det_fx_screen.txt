@@ -1,0 +1,174 @@
+# e9: an effect plugin's own screen (docs/plugins.md "e9") at FX 1 and FX 2, through position switches. One plugin on
+# the NAND whose row is the FIRST of the stock FX list (bitcrusher, cs_hall, cs_plate: before cwo; the same plugin is the
+# first plugin of coop's FX 2 list, after the eight stock types). Guest-timed events; the screenshots are wall-timed
+# (`wait` is wall time) and land roughly in the gaps between the event groups: read each against the stats.
+#  1 synth FX 1: the stock list's first row, FX 1 on, a chord                       -> scr_a: the plugin's screen
+#  2 fn held (Help) with one fn + blue detent (no help tap)                         -> scr_b: the fn layer drawn
+#  3 drop: FX 2 picks the plugin (shift + blue 3 detents, blue push), T3 on, chord  -> scr_c: the plugin's screen (slot 3)
+#  4 lift                                                                           -> scr_d: FX 1's again (slot 0)
+#  5 drum, T1, T3: the drum's FX 1 (a stock type)                                   -> scr_e: the stock page
+#  6 synth, T1, T3                                                                  -> scr_f: the plugin's screen again
+#  7 mixer, T3: the master FX 1 (stock)                                             -> scr_g: the stock page
+# Expected: no fault; fscr_built 1; fscr_swaps >= 4; fscr_updates > 0; fxctl p0 and p3 rendering.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 ccw 96
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36000
+tap t3 200
+at 37000
+tap t3 200
+at 38500
+press c4
+press e4
+press g4
+at 40500
+release c4
+release e4
+release g4
+at 48000
+press help
+at 48400
+turn enc1 cw 4
+at 52000
+release help
+at 58000
+tap drop 200
+at 59500
+press shift
+at 59700
+turn enc1 cw 6
+at 60300
+release shift
+at 61000
+tap enc1 200
+at 62500
+tap t3 200
+at 63500
+press c4
+press g4
+at 65000
+release c4
+release g4
+at 72000
+tap lift 200
+at 82000
+tap drum 200
+at 83000
+tap t1 200
+at 84000
+tap t3 200
+at 92000
+tap synth 200
+at 93000
+tap t1 200
+at 94000
+tap t3 200
+at 102000
+tap mixer 200
+at 103500
+tap t3 200
+wait 30000
+screenshot /root/op1emu-work/e9/shot_00.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_01.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_02.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_03.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_04.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_05.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_06.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_07.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_08.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_09.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_10.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_11.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_12.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_13.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_14.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_15.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_16.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_17.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_18.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_19.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_20.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_21.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_22.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_23.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_24.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_25.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_26.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_27.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_28.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_29.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_30.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_31.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_32.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_33.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_34.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_35.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_36.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_37.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_38.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_39.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_40.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_41.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_42.ppm
+wait 2000
+screenshot /root/op1emu-work/e9/shot_43.ppm
+wait 2000
+quit

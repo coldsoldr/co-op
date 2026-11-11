@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "samplerplus",
+  "name": "Sampler+",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "Choose sampler+ in the synth type browser (Shift + T1). A sampler slot keeps its recording; from another engine it becomes a sampler with whatever sample that slot holds. It stays a normal sampler sound, with sampler+'s settings saved alongside. Without sampler+ in your build the recording plays through the stock sampler; its extras come back when you install it again.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

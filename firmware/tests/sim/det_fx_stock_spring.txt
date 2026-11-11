@@ -1,0 +1,32 @@
+# The STOCK spring effect (row 7 of the FX list: cwo delay grid nitro phone punch spring; the stock list has no
+# filter row) at the synth position (clean-up after S2: own tank per stereo object). Guest-timed.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 48
+at 33000
+tap seq 200
+at 34000
+tap synth 200
+at 40000
+press c4
+press e4
+press g4
+at 42000
+release c4
+release e4
+release g4
+wait 39000
+screenshot /root/op1emu-work/sf_spring.ppm
+wait 8000
+quit

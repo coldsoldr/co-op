@@ -1,0 +1,31 @@
+# E1: select the plugin engine "saw" from the stock engine list (synth page, shift + key 1; alphabetical, the list
+# opens on digital, saw is 8 rows down at 8 encoder steps a row), close the list as det_fx_select.txt closes the FX
+# list (seq, then synth), play a chord. Screenshots are wall-timed: after the events.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+press shift
+at 27700
+tap t1 200
+at 28200
+release shift
+at 29500
+turn enc1 cw 64
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36500
+press c4
+press e4
+press g4
+at 38500
+release c4
+release e4
+release g4
+wait 40000
+screenshot /root/op1emu-work/e1_page.ppm
+wait 4000
+quit

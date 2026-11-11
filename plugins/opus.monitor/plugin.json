@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.monitor",
+  "name": "monitor",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "0.1.4",
+  "description": "Hold FN on any page to see what the OP-1 and every plugin cost: the CPU, the audio's load, its worst block and the blocks that came late, frames a second, memory, the OS's threads and the last crash. Fullscreen dims the page as the OP-1's help does; popup puts the main figures in a small box in a corner. It takes no key or turn, so everything plays on underneath, and a plugin shows red only while it goes over its CPU budget or is switched off. For the curious and for plugin authors.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.monitor",
+  "tags": [
+    "system",
+    "opus"
+  ]
+}

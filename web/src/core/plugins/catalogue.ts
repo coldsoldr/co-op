@@ -5,6 +5,8 @@ import {
   PLUGIN_FIRMWARE,
   PLUGIN_INDEX_FORMAT,
   PLUGIN_KINDS,
+  pluginFor,
+  type HostedPluginEntry,
   type PluginFirmware,
   type PluginIndex,
   type PluginIndexEntry,
@@ -22,6 +24,8 @@ const SHA256 = /^[0-9a-f]{64}$/i;
 /** A file name inside a plugin folder: no separators, never `.` or `..`. */
 const FILE_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 const HTTPS = /^https:\/\/\S+$/;
+/** Where a listed build's .knl may be fetched from: its author's repo, pinned to a commit (shared/src/plugins.ts). */
+const REMOTE_FILE = /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\/\S+$/;
 
 /** True when `path` is `<id>/<name>` for a plain file name: the plugin's own folder and nothing else. */
 const inFolder = (id: string, path: unknown): boolean =>
@@ -33,14 +37,45 @@ const inFolder = (id: string, path: unknown): boolean =>
  */
 function isIndexEntry(value: unknown): value is PluginIndexEntry {
   if (!isRecord(value)) return false;
-  const strings = ['id', 'name', 'author', 'version', 'description', 'license', 'file'].every((k) => typeof value[k] === 'string');
-  if (!strings || !oneOf(PLUGIN_FIRMWARE, value.firmware) || !oneOf(PLUGIN_KINDS, value.kind)) return false;
+  const strings = ['id', 'name', 'author', 'description'].every((k) => typeof value[k] === 'string');
+  if (value.license !== undefined && typeof value.license !== 'string') return false;
+  if (!strings || !oneOf(PLUGIN_KINDS, value.kind)) return false;
   const id = value.id as string;
-  if (!(value.firmware === 'op1/hundekraft' ? HUNDEKRAFT_ID : OPUS_ID).test(id)) return false;
-  if (!FILE_NAME.test(value.file as string) || !inFolder(id, value.screenshot) || !inFolder(id, value.manual)) return false;
-  if (typeof value.sizeBytes !== 'number' || typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)) return false;
+  if (!inFolder(id, value.screenshot) || !inFolder(id, value.manual)) return false;
   if (!isStringList(value.tags)) return false;
-  const optional = ['requires', 'credits', 'video', 'savedName', 'headerAuthor', 'headerVersion'];
+  if (!['credits', 'video'].every((k) => value[k] === undefined || typeof value[k] === 'string')) return false;
+  // The top-level build fields, and every build of a plugin with a file per firmware.
+  if (!isBuild(value, id)) return false;
+  if (value.builds === undefined) return true;
+  const builds = value.builds;
+  if (!Array.isArray(builds) || builds.length === 0) return false;
+  const firmware = new Set(builds.map((b: unknown) => (isRecord(b) ? b.firmware : undefined)));
+  return firmware.size === builds.length && builds.every((b: unknown) => isRecord(b) && isBuild(b, id));
+}
+
+/**
+ * The fields of one build: a firmware for which the id is valid, and either a plain file name with
+ * its version, size and hash, or (a listed build) an https link to where the plugin is got.
+ */
+function isBuild(value: Record<string, unknown>, id: string): boolean {
+  if (!oneOf(PLUGIN_FIRMWARE, value.firmware)) return false;
+  if (!(value.firmware === 'op1/hundekraft' ? HUNDEKRAFT_ID : OPUS_ID).test(id)) return false;
+  if (value.link !== undefined) {
+    if (typeof value.link !== 'string' || !HTTPS.test(value.link)) return false;
+    if (value.fileUrl === undefined) {
+      if (value.file !== undefined) return false;
+    } else {
+      // A listed hundekraft build the page fetches from its author and installs: checked by hash like a hosted one.
+      if (value.firmware !== 'op1/hundekraft' || typeof value.fileUrl !== 'string' || !REMOTE_FILE.test(value.fileUrl)) return false;
+      if (typeof value.version !== 'string' || typeof value.file !== 'string' || !FILE_NAME.test(value.file)) return false;
+      if (!value.fileUrl.endsWith(`/${value.file}`)) return false;
+      if (typeof value.sizeBytes !== 'number' || typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)) return false;
+    }
+  } else {
+    if (typeof value.version !== 'string' || typeof value.file !== 'string' || !FILE_NAME.test(value.file)) return false;
+    if (typeof value.sizeBytes !== 'number' || typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)) return false;
+  }
+  const optional = ['version', 'requires', 'savedName', 'headerAuthor', 'headerVersion'];
   if (!optional.every((k) => value[k] === undefined || typeof value[k] === 'string')) return false;
   return value.source === undefined || (typeof value.source === 'string' && HTTPS.test(value.source));
 }
@@ -91,12 +126,15 @@ export function groupByAuthor(plugins: readonly PluginIndexEntry[]): AuthorGroup
     .sort((a, b) => a.author.localeCompare(b.author, 'en', { sensitivity: 'base' }));
 }
 
-/** The plugins that match every given criterion, in index order. */
+/**
+ * The plugins that match every given criterion, in index order. A plugin with a file per firmware
+ * matches the firmware of any of its builds, and comes once.
+ */
 export function filterPlugins(index: PluginIndex, filter: PluginFilter): PluginIndexEntry[] {
   const words = (filter.text ?? '').toLowerCase().split(/\s+/).filter(Boolean);
   return index.plugins.filter((plugin) => {
     if (filter.kind !== undefined && plugin.kind !== filter.kind) return false;
-    if (filter.firmware !== undefined && plugin.firmware !== filter.firmware) return false;
+    if (filter.firmware !== undefined && pluginFor(plugin, filter.firmware) === null) return false;
     if (filter.tag !== undefined && !plugin.tags.includes(filter.tag)) return false;
     if (words.length === 0) return true;
     const haystack = [plugin.name, plugin.id, plugin.author, plugin.description, ...plugin.tags, plugin.credits ?? '']
@@ -123,13 +161,14 @@ export function pluginFolderUrl(baseUrl: string, id: string): string {
  */
 export async function fetchPluginBytes(
   baseUrl: string,
-  plugin: PluginIndexEntry,
+  plugin: HostedPluginEntry,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Uint8Array> {
   const label = `${plugin.id}/${plugin.file}`;
   if (!FILE_NAME.test(plugin.file)) throw new CatalogueError(`${JSON.stringify(plugin.file)} is not a plugin file name`);
   if (!SHA256.test(plugin.sha256)) throw new CatalogueError(`${label} has no valid SHA-256 in the plugin index`);
-  const url = pluginFileUrl(baseUrl, label);
+  // A listed build's file comes from its author; a hosted one from co-op's plugins folder. Both are checked below.
+  const url = plugin.fileUrl ?? pluginFileUrl(baseUrl, label);
   for (const init of [undefined, { cache: 'no-cache' } as RequestInit]) {
     const buffer = await (await fetchOk(url, `download ${label}`, fetchImpl, init)).arrayBuffer();
     if (buffer.byteLength === plugin.sizeBytes && (await sha256Hex(buffer)) === plugin.sha256.toLowerCase()) {

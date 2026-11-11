@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "in_a_room",
+  "name": "In a room",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "ultralazr",
+  "description": "After Alvin Lucier's \"I am sitting in a room\" (1969). You record a phrase, and on every pass the loop plays through a model of a room and is recorded again. The room's resonances pile up, and after enough passes speech melts into a chord. The counter shows the generation. Choose one of four rooms with Shape. Push blue to set Loop to a free length or one of six tempo-synced lengths.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/ultralazr/op1-musica-obscura",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Musica Obscura by ultralazr, after Alvin Lucier; from op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

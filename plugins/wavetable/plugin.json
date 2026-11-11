@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "wavetable",
+  "name": "Wavetable",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "Two slightly detuned oscillators read eight single-cycle waves and morph between them. The sound then goes through a four-pole ladder low-pass filter that can scream when you push it. Think classic analog pads and acid lines, with some vocal and digital colours on top.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

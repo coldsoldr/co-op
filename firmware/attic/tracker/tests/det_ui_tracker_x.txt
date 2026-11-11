@@ -1,0 +1,68 @@
+# F2: three of coop's own engines beside the live synth. Tape, Shift + tape (the tracker). Channel 1 (the live
+# synth): c4 at row 0. Stop; Shift + right: channel 2, green two detents (fm), e4 at row 0; stop; Shift + right:
+# channel 3, green three detents (str), g4 at row 0; stop; Shift + right: channel 4, green five detents (dsy), c5 at
+# row 0; stop; play ~8 s: four engines on row 0 of every pass (the stock synth + fm + string + dsynth). The stats:
+# xv_sounding 3, xv_max = the three extra voices' cost in one block. T2 on channel 4 shows "dsy". Screenshots: at
+# the end.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tape 200
+at 27500
+press shift
+at 27700
+tap tape 200
+at 28200
+release shift
+at 29500
+tap c4 150
+at 30200
+tap stop 150
+at 30600
+press shift
+at 30800
+tap right 120
+at 31100
+release shift
+at 31500
+turn enc2 cw 4
+at 32300
+tap e4 150
+at 32900
+tap stop 150
+at 33300
+press shift
+at 33500
+tap right 120
+at 33800
+release shift
+at 34200
+turn enc2 cw 6
+at 35000
+tap g4 150
+at 35600
+tap stop 150
+at 36000
+press shift
+at 36200
+tap right 120
+at 36500
+release shift
+at 36900
+turn enc2 cw 10
+at 37700
+tap c5 150
+at 38300
+tap stop 150
+at 39000
+tap play 150
+at 47500
+tap t2 150
+at 50000
+tap stop 150
+wait 46000
+screenshot /root/op1emu-work/trkx_a.ppm
+wait 2500
+screenshot /root/op1emu-work/trkx_b.ppm
+wait 5000
+quit

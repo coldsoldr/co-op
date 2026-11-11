@@ -25,6 +25,7 @@ describe('soundTraits', () => {
       fxSelector: null,
       hasGin: false,
       hasOpus: false,
+      hasCoop: false,
       opusPlugin: null,
       opusEffects: [],
     });

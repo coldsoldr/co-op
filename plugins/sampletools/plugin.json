@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "sampletools",
+  "name": "Sampler tools",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "Three tools on the stock sampler screens, for a synth sampler sound and a sampled drum kit. They're there whenever the stock sampler screen shows; while op1r's sample editor is open, they step aside.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Rebuilt by hundekraft from how Maiko Pruett's #249 and #250 work; none of Maiko's code is used",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

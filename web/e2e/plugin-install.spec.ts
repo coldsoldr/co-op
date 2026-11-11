@@ -1,7 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { crc32 } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { stubOp1 } from './op1-stub';
+import { serveHostedOnly } from './plugin-index';
+
+test.beforeEach(async ({ page }) => {
+  await serveHostedOnly(page);
+});
 
 const ensemble = readFileSync(fileURLToPath(new URL('../../plugins/ensemble/ensemble.knl', import.meta.url)));
 
@@ -175,4 +182,87 @@ test('offers USB install on hundekraft plugin cards and manuals', async ({ page 
   await expect(page.getByRole('button', { name: /over USB$/ })).toHaveCount(11);
   await page.getByRole('button', { name: 'Read the manual of rings' }).click();
   await expect(page.getByRole('button', { name: 'Install rings.knl over USB' })).toBeVisible();
+});
+
+/** ensemble.knl renamed to a synth called erdtree (saved name, kind and CRC-32), a stand-in for the author's file. */
+function standInErdtree(): Buffer {
+  const bytes = Buffer.from(ensemble);
+  const h = bytes.indexOf('KNPL');
+  bytes.fill(0, h + 20, h + 36);
+  bytes.write('erdtree', h + 20, 'latin1');
+  bytes[h + 18] = 1;
+  bytes.writeUInt32LE(0, h + 12);
+  bytes.writeUInt32LE(crc32(bytes), h + 12);
+  return bytes;
+}
+const erdtreeKnl = standInErdtree();
+
+test('installs a listed plugin from its author: fetched from its fileUrl, checked, then sent like a hosted one', async ({ page }) => {
+  // The real index, with erdtree's hundekraft build pointed at a stand-in file so the test needs no network.
+  const fileUrl = 'https://raw.githubusercontent.com/someone/erdtree/0123456789abcdef0123456789abcdef01234567/build/erdtree.knl';
+  const sha256 = createHash('sha256').update(erdtreeKnl).digest('hex');
+  await page.unroute('**/plugins/index.json');
+  await page.route('**/plugins/index.json', async (route) => {
+    const response = await route.fetch();
+    const index = (await response.json()) as { plugins: Array<Record<string, unknown> & { builds?: Array<Record<string, unknown>> }> };
+    const erdtree = index.plugins.find((p) => p.id === 'erdtree');
+    const hundekraft = erdtree?.builds?.find((b) => b.firmware === 'op1/hundekraft');
+    if (!erdtree || !hundekraft) throw new Error('erdtree and its hundekraft build are in the index');
+    for (const entry of [erdtree, hundekraft]) Object.assign(entry, { fileUrl, sha256, sizeBytes: erdtreeKnl.length });
+    await route.fulfill({ response, json: index });
+  });
+  let fetched = 0;
+  await page.route(fileUrl, async (route) => {
+    fetched += 1;
+    await route.fulfill({ body: erdtreeKnl, headers: { 'access-control-allow-origin': '*' } });
+  });
+  const ERDTREE = ['synth', 'erdtree', 'knl', 'plugins/erdtree.knl', '0.5.0', 'Sammi', String(erdtreeKnl.length), '0badf00d', 'loaded', '', ''].join('\t');
+  await stubOp1(page, { inventory: inventoryOf(DELAY), inventoryAfterRestart: inventoryOf(DELAY, ERDTREE) });
+
+  await page.goto('./');
+  await page.getByRole('tab', { name: 'Plugins' }).click();
+  await page.getByRole('button', { name: /^SammiBabe666/ }).click();
+  const card = page.getByRole('article', { name: 'erdtree', exact: true });
+  await expect(card.getByRole('link', { name: /Get it from github\.com/ })).toBeVisible();
+  await expect(card).toContainText("fetches erdtree.knl from its author's repo");
+  await expect(card.getByRole('button', { name: /^Download/ })).toHaveCount(0);
+  // A listed plugin with no fileUrl still only links out.
+  await page.getByRole('button', { name: /^fungiboletus/ }).click();
+  await expect(page.getByRole('article', { name: 'Moai', exact: true }).getByRole('button', { name: /over USB$/ })).toHaveCount(0);
+
+  await card.getByRole('button', { name: 'Install erdtree.knl over USB' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Install erdtree over USB' });
+  await dialog.getByRole('button', { name: 'Install erdtree.knl' }).click();
+  await expect(dialog.getByRole('status')).toContainText('Press T1 on the OP-1 to install and restart');
+  await page.evaluate(() => window.op1Stub.press('T1'));
+  await expect(dialog.locator('[data-state="loaded"]')).toHaveText('erdtree is installed and loaded.');
+  expect(fetched).toBeGreaterThan(0);
+  const installed = await page.evaluate(() => window.op1Stub.installed);
+  expect(installed.map((f) => f.path)).toEqual(['plugins/erdtree.knl']);
+  expect(Buffer.from(installed[0]?.bytes ?? []).equals(erdtreeKnl)).toBe(true);
+});
+
+test('refuses a listed plugin whose fetched file does not match the index', async ({ page }) => {
+  const fileUrl = 'https://raw.githubusercontent.com/someone/erdtree/0123456789abcdef0123456789abcdef01234567/build/erdtree.knl';
+  await page.unroute('**/plugins/index.json');
+  await page.route('**/plugins/index.json', async (route) => {
+    const response = await route.fetch();
+    const index = (await response.json()) as { plugins: Array<Record<string, unknown> & { builds?: Array<Record<string, unknown>> }> };
+    const erdtree = index.plugins.find((p) => p.id === 'erdtree');
+    const hundekraft = erdtree?.builds?.find((b) => b.firmware === 'op1/hundekraft');
+    if (!erdtree || !hundekraft) throw new Error('erdtree and its hundekraft build are in the index');
+    for (const entry of [erdtree, hundekraft]) Object.assign(entry, { fileUrl, sha256: 'ab'.repeat(32), sizeBytes: ensemble.length });
+    await route.fulfill({ response, json: index });
+  });
+  await page.route(fileUrl, (route) => route.fulfill({ body: ensemble, headers: { 'access-control-allow-origin': '*' } }));
+  await stubOp1(page, { inventory: inventoryOf(DELAY) });
+
+  await page.goto('./');
+  await page.getByRole('tab', { name: 'Plugins' }).click();
+  await page.getByRole('button', { name: /^SammiBabe666/ }).click();
+  await page.getByRole('article', { name: 'erdtree', exact: true }).getByRole('button', { name: 'Install erdtree.knl over USB' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Install erdtree over USB' });
+  await dialog.getByRole('button', { name: 'Install erdtree.knl' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('does not match the plugin index');
+  expect(await writesOf(page)).toEqual([]);
 });

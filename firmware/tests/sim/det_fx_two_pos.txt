@@ -1,0 +1,93 @@
+# e8: one scratch effect at three positions at once, in three position buffers (docs/plugins.md "e8"). One plugin on
+# the NAND whose row is the LAST of the stock FX list (tape_echo: named after spring); for a plugin on the FIRST row
+# (cs_hall, cs_plate) use det_fx_two_pos_first.txt (the same with `ccw 96`). Guest-timed, steps as det_fx_controls.txt:
+#  p0 synth FX 1 (stock list, last row, FX 1 switched on with a second T3)
+#  p3 instrument FX 2 (drop, shift + blue 3 detents to the plugin, blue push, T3 on, lift)
+#  p4 master FX 2 (mixer, T3: the master FX page, drop, shift + blue 3 detents, push, T3 on, lift) [I: in op1emu (e8
+#     gate) this lands on a stock type of the master FX 2 list, not the plugin: s2_master runs, fxctl p4 stays 0]
+# then a synth chord through p0 -> p3 -> (mix) -> p4 and drum keys. Expected: no fault; plugins loaded 1; fxctl p0 and p3
+# each with blocks and inits >= 1 (p4: see above); the cost lines fx1_plugin and s2_instr rendering; plugmem
+# scratch_files 1, fxbuf = the plugin's declared bytes rounded to 32, fxbuf_mem = 5 x that + 32 with its header.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 96
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36000
+tap t3 200
+at 37000
+tap t3 200
+at 38500
+tap drop 200
+at 40000
+press shift
+at 40200
+turn enc1 cw 6
+at 40800
+release shift
+at 41500
+tap enc1 200
+at 43000
+tap t3 200
+at 44500
+tap lift 200
+at 46000
+tap mixer 200
+at 47000
+tap t3 200
+at 48300
+tap drop 200
+at 49000
+press shift
+at 49200
+turn enc1 cw 6
+at 49800
+release shift
+at 50500
+tap enc1 200
+at 52000
+tap t3 200
+at 53500
+tap lift 200
+at 55000
+tap synth 200
+at 56500
+press c4
+press e4
+press g4
+at 58500
+release c4
+release e4
+release g4
+at 62000
+press c4
+press g4
+at 63000
+release c4
+release g4
+at 64500
+tap drum 200
+at 65500
+press c4
+at 66000
+release c4
+press d4
+at 66500
+release d4
+wait 90000
+screenshot /root/op1emu-work/two_pos_end.ppm
+wait 3000
+quit

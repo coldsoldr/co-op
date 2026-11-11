@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "id": "opus.bridge",
+  "name": "bridge",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "0.10.0",
+  "description": "Runs op1r's synth engines, effects and sequencers (.op1p) and Hundekraft's (.knl) on Opus as they are, with their own screens and pages, and sounds saved with them play. An alpha, a download of its own beside the starter pack.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "credits": "Loads op1r's .op1p files by popcorp and Hundekraft's .knl files; every bridged plugin stays its author's work",
+  "savedName": "opus.bridge",
+  "tags": [
+    "system",
+    "opus"
+  ]
+}

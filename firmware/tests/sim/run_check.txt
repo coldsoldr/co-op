@@ -1,0 +1,35 @@
+# Test runner check (p5b, docs/test-runner.md): one scenario, played once by op1emu's own key input and once by the
+# coop runner from user/coop_autorun.crun (tests/sim/run_emu.sh). Voltage (slot 2) chord with a knob turn, then Phase
+# (slot 7). Guest-timed; the #@ lines are the runner's directives (op1emu skips comments).
+#@name run_check
+#@tail 4000
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+#@mark voltage
+tap s2 200
+at 29000
+press c4
+press e4
+press g4
+at 30000
+turn enc1 cw 24
+at 32000
+release c4
+release e4
+release g4
+at 34000
+#@mark phase
+tap s7 200
+at 35500
+press c4
+press e4
+press g4
+at 38000
+release c4
+release e4
+release g4
+wait 60000
+quit

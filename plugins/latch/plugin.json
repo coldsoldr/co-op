@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "latch",
+  "name": "Latch",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "Latch is for drones. On the synth's envelope page (T2), push orange to turn it on or off. To choose between LATCH and HOLD, hold Shift on the same page and push green. The choice shows in green at the bottom of that page, above MODE, and the OP-1 remembers it. While latch is on, a slim keyboard strip shows at the top of the synth screens, left of centre: 24 thin lines, one per key on the OP-1 keyboard, with the black keys shorter. Free keys are dim blue and latched keys are pink.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

@@ -1,0 +1,5 @@
+# The idle side of a runner scenario (tests/sim/run_emu.sh), as idle_200s.txt: 340 s of wall time (run_m1_mode*.txt).
+accel 64 -64 512
+wait-frames 1 300000
+wait 340000
+quit

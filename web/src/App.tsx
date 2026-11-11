@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import type { PluginIndexEntry } from '@co-op/shared/plugins';
+import type { HostedPluginEntry } from '@co-op/shared/plugins';
 import { Changelog } from './ui/Changelog';
 import { Feedback } from './ui/Feedback';
 import { CopyToMods } from './ui/CopyToMods';
+import { CoopDevice, CoopInstall } from './ui/CoopPlugins';
 import { useSiteDevice } from './ui/device-choice';
 import { DeviceMenu } from './ui/DeviceMenu';
-import { Inspector } from './ui/Inspector';
+import { BuildFirmware } from './ui/BuildFirmware';
 import { Library } from './ui/Library';
 import { Op1FunTab } from './ui/Op1Fun';
 import { OpXy } from './ui/OpXy';
@@ -13,6 +14,7 @@ import { Packs } from './ui/Packs';
 import { PatchesTab } from './ui/PatchesTab';
 import { InstallOverUsb, TryOnOp1 } from './ui/PluginInstall';
 import { Plugins } from './ui/Plugins';
+import { Settings } from './ui/Settings';
 import { useDevice } from './ui/useDevice';
 import { useAudition } from './ui/useAudition';
 import { useLocalLibrary } from './ui/useLocalLibrary';
@@ -25,7 +27,8 @@ const TABS = [
   { id: 'patches', label: 'Patches' },
   { id: 'plugins', label: 'Plugins' },
   { id: 'op1fun', label: 'op1.fun' },
-  { id: 'inspector', label: 'Inspector' },
+  { id: 'firmware', label: 'Build firmware' },
+  { id: 'settings', label: 'Settings' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -52,17 +55,22 @@ export function App() {
   // The op1.fun account, shared by the op1.fun tab and the Library's upload action.
   const op1fun = useOp1Fun();
 
-  // hundekraft plugins install over USB MIDI; the inventory the OP-1 reports afterwards is shared.
+  // hundekraft and coop plugins install over USB MIDI; the inventory the OP-1 reports afterwards is shared.
   // opus plugins are copied into mods/ on the open drive.
-  const pluginActions = (plugin: PluginIndexEntry) =>
+  const pluginActions = (plugin: HostedPluginEntry) =>
     plugin.firmware === 'op1/hundekraft' ? (
       <>
         <TryOnOp1 plugin={plugin} onInstalled={device.setInstalledPlugins} />
         <InstallOverUsb plugin={plugin} onInstalled={device.setInstalledPlugins} />
       </>
+    ) : plugin.firmware === 'op1/coop' ? (
+      <CoopInstall plugin={plugin} onInventory={device.setInstalledPlugins} />
     ) : (
       <CopyToMods plugin={plugin} device={device} />
     );
+  // A coop OP-1's plugins are managed from the Plugins tab (firmware/docs/sysex.md, e3).
+  const pluginDevice =
+    device.profile.id === 'op1/coop' ? <CoopDevice inventory={device.installedPlugins} onInventory={device.setInstalledPlugins} /> : null;
   const buttons = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
 
   function openLibrary(): void {
@@ -157,13 +165,22 @@ export function App() {
           <PatchesTab local={local} audition={audition} active={op1 && tab === 'patches'} />
         </div>
         <div role="tabpanel" id="panel-plugins" aria-labelledby="tab-plugins" hidden={tab !== 'plugins'}>
-          <Plugins active={tab === 'plugins'} renderActions={pluginActions} />
+          <Plugins
+            active={tab === 'plugins'}
+            renderActions={pluginActions}
+            firmwareId={device.profile.id}
+            deviceSection={pluginDevice}
+            onOpenSettings={() => setTab('settings')}
+          />
         </div>
         <div role="tabpanel" id="panel-op1fun" aria-labelledby="tab-op1fun" hidden={tab !== 'op1fun'}>
           <Op1FunTab op1fun={op1fun} device={device} active={tab === 'op1fun'} onOpenLibrary={openLibrary} />
         </div>
-        <div role="tabpanel" id="panel-inspector" aria-labelledby="tab-inspector" hidden={tab !== 'inspector'}>
-          <Inspector active={tab === 'inspector'} device={device} />
+        <div role="tabpanel" id="panel-firmware" aria-labelledby="tab-firmware" hidden={tab !== 'firmware'}>
+          <BuildFirmware />
+        </div>
+        <div role="tabpanel" id="panel-settings" aria-labelledby="tab-settings" hidden={tab !== 'settings'}>
+          <Settings device={device} />
         </div>
       </main>
       <footer>

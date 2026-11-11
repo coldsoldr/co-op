@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "stutter",
+  "name": "STUTTER",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "STUTTER cuts time into slices on the OP-1's beat. At each slice it rolls a dice: the slice plays through, or its first part is repeated until the slice ends. Repeats always land on the grid. It follows the OP-1's tempo, MIDI clock and the tape's speed, and runs at 120 BPM when there's no clock. The four rings show Rate, Mode, Shape and Chance. Push blue and the Rate ring shows Parts; push again to return to Rate.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

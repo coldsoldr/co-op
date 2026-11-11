@@ -1,0 +1,21 @@
+# Deterministic drum scenario: drum page, a few drum keys including two at once; guest-timed (op1emu `at`).
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap drum 300
+at 32000
+press c4
+at 32400
+release c4
+at 33000
+press d4
+press f4
+at 33500
+release d4
+release f4
+at 34000
+press a4
+at 34300
+release a4
+wait 45000
+quit

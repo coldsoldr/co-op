@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.plate",
+  "name": "plate",
+  "firmware": "op1/opus",
+  "kind": "fx",
+  "author": "LizardMan",
+  "version": "2.0.10",
+  "description": "A plate reverb in the effect list, with its own page and a shift layer. It rests once its tail is over, so a plate on silence costs next to nothing, and a size or pre-delay moved by an LFO glides instead of clicking.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.plate",
+  "tags": [
+    "effect",
+    "opus"
+  ]
+}

@@ -1,0 +1,60 @@
+# p6c: the settings menu's "code prio" row (VOICES, row 5) switches the hot page's LRUPRIO on, then off. Open the menu
+# (the four mode keys), right (VOICES), blue four detents (CODE PRIO), green right (on), left, left (close); synth, a
+# chord (the audio path runs with the switch on); the menu again, right, blue four detents, green left (stock), close.
+# op1emu has no cache priority: the gate is "no fault, the stats codeprio_sets 2, the sound plays"; the screenshot
+# at the end shows VOICES with CODE PRIO = stock after the second toggle (taken with the menu open).
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+press synth
+at 30200
+press drum
+at 30400
+press tape
+at 30600
+press mixer
+at 31600
+release mixer
+release tape
+release drum
+release synth
+at 32500
+tap right 200
+at 33000
+turn enc1 cw 8
+at 34000
+turn enc2 cw 2
+at 35000
+tap left 200
+at 35500
+tap left 200
+at 36500
+tap synth 300
+at 37500
+press c4
+press e4
+press g4
+at 40500
+release c4
+release e4
+release g4
+at 42000
+press synth
+press drum
+press tape
+press mixer
+at 43000
+release synth
+release drum
+release tape
+release mixer
+at 43500
+tap right 200
+at 44000
+turn enc1 cw 8
+at 45000
+turn enc2 ccw 2
+wait 60000
+screenshot /root/op1emu-work/cpr_a.ppm
+wait 2000
+quit

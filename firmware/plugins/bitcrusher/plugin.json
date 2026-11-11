@@ -1,0 +1,17 @@
+{
+  "name": "bitcrusher",
+  "kind": "fx",
+  "symbol": "FX_bitcrusher",
+  "sources": ["bitcrusher.cc", "bitcrusher_screen.cc", "op1/support.cc"],
+  "include_dirs": ["."],
+  "defaults": [24767, 24767, 0, 32767],
+  "scratch": 32,
+  "screen": {"svg": "bitcrusher.svg", "symbol": "SCREEN_bitcrusher"},
+  "controls": [
+    {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
+     "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}
+  ],
+  "author": "coldsoldr",
+  "version": "0.2",
+  "description": "Sample-rate and bit-depth reduction in stereo: te-op1-cfw's kennel bitcrusher (coldsoldr, ports/knl/bitcrusher at 5aa314b; its DSP ports/fx/src/crush), GPL-3.0-or-later. Blue rate (44.1 kHz down to 500 Hz), green bits (16 down to 2), white jitter, orange mix; fn + blue the input gain into the crusher (-6..+6 dB, shift + fn + blue fine)."
+}

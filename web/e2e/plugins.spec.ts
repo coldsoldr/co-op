@@ -1,21 +1,37 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { hostedOnly, serveHostedOnly } from './plugin-index';
+
+test.beforeEach(async ({ page }) => {
+  await serveHostedOnly(page);
+});
 
 const seed = fileURLToPath(new URL('../../plugins/', import.meta.url));
 const SEED_IDS = ['audition', 'bitcrusher', 'drive', 'ensemble', 'freq_shift', 'grids', 'marbles', 'rings', 'tape_drive', 'tape_echo', 'wavefolder'];
 const seedNames = SEED_IDS.map((id) => (JSON.parse(readFileSync(`${seed}${id}/plugin.json`, 'utf8')) as { name: string }).name);
 
-test('explains how to submit a plugin and copies the prompt', async ({ page, context }) => {
+test('explains how to submit a plugin, per firmware, and copies the prompt', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
   await page.getByRole('button', { name: 'Submit a plugin' }).click();
-  await expect(page.getByRole('heading', { name: 'What your plugin needs' })).toBeVisible();
   await expect(page.locator('#panel-plugins article')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Read the full guide' })).toHaveAttribute('href', /contributing-plugins\.md$/);
 
-  await page.getByRole('button', { name: 'Copy the prompt' }).click();
+  // hundekraft first: list it from your repo with /add-plugin, the .knl gets Install over USB.
+  const firmware = page.getByRole('tablist', { name: 'Firmware' });
+  await expect(firmware.getByRole('tab', { name: 'hundekraft' })).toHaveAttribute('aria-selected', 'true');
+  const panel = page.getByRole('tabpanel', { name: 'hundekraft' });
+  await expect(panel.getByRole('heading', { name: 'What your repo needs' })).toBeVisible();
+  await expect(panel).toContainText('/add-plugin https://github.com/you/your-plugin');
+  await expect(panel).toContainText('Install over USB');
+  await expect(panel.getByRole('link', { name: 'Offer your plugin in an issue' })).toHaveAttribute('href', /template=plugin-request\.yml&firmware=hundekraft$/);
+
+  // The older way, the folder hosted by co-op, is still there with its prompt.
+  await panel.getByText('Or send the plugin folder itself, for co-op to host').click();
+  await expect(panel.getByRole('heading', { name: 'What your plugin needs' })).toBeVisible();
+  await panel.getByRole('button', { name: 'Copy the prompt' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Copied' })).toBeVisible();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toContain('## plugin.json');
@@ -23,15 +39,31 @@ test('explains how to submit a plugin and copies the prompt', async ({ page, con
   expect(copied).toContain('## manual.md');
   expect(copied).not.toContain('````');
 
+  // opus: the same repo listing, with the .opmod and no install yet; arrow keys move between tabs.
+  await firmware.getByRole('tab', { name: 'hundekraft' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(firmware.getByRole('tab', { name: 'opus' })).toBeFocused();
+  const opus = page.getByRole('tabpanel', { name: 'opus' });
+  await expect(opus).toContainText('<name>.opmod');
+  await expect(opus).toContainText('/add-plugin');
+  await expect(opus).not.toContainText('Or send the plugin folder itself');
+
+  // coop: built in co-op's firmware folder and hosted here.
+  await firmware.getByRole('tab', { name: 'coop' }).click();
+  const coop = page.getByRole('tabpanel', { name: 'coop' });
+  await expect(coop).toContainText('<id>.coop');
+  await expect(coop).toContainText('/port <plugin>');
+  await expect(coop).not.toContainText('/add-plugin');
+
   await page.getByRole('button', { name: 'Back to plugins' }).click();
-  await expect(page.locator('#panel-plugins article')).toHaveCount(11);
+  await expect(page.locator('#panel-plugins article')).toHaveCount(12);
   await expect(page.getByRole('button', { name: 'Submit a plugin' })).toBeFocused();
 });
 
 test('groups plugins by author, closed with several authors and open for a search', async ({ page }) => {
   await page.route('**/plugins/index.json', async (route) => {
     const response = await route.fetch();
-    const index = (await response.json()) as { plugins: Array<{ id: string; author: string }> };
+    const index = hostedOnly((await response.json()) as { plugins: Array<{ id: string; author: string }> });
     for (const plugin of index.plugins) if (plugin.id === 'rings') plugin.author = 'someone else';
     await route.fulfill({ response, json: index });
   });
@@ -39,7 +71,7 @@ test('groups plugins by author, closed with several authors and open for a searc
   await page.getByRole('tab', { name: 'Plugins' }).click();
 
   const someone = page.getByRole('button', { name: /^someone else/ });
-  await expect(page.getByRole('button', { name: /^coldsoldr/ })).toContainText('10 plugins');
+  await expect(page.getByRole('button', { name: /^coldsoldr/ })).toContainText('11 plugins');
   await expect(someone).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('#panel-plugins article')).toHaveCount(0);
 
@@ -281,8 +313,8 @@ test('auditions a synth patch on the OP-1 and puts the sound back', async ({ pag
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '11 plugins' })).toBeVisible();
-  await expect(page.locator('#panel-plugins article')).toHaveCount(11);
+  await expect(page.getByRole('status').filter({ hasText: '12 plugins' })).toBeVisible();
+  await expect(page.locator('#panel-plugins article')).toHaveCount(12);
   for (const name of seedNames) await expect(page.getByRole('article', { name, exact: true })).toBeVisible();
 
   const rings = page.getByRole('article', { name: 'rings', exact: true });
@@ -300,9 +332,9 @@ test('lists the seed plugins and filters them', async ({ page }) => {
   await expect(rings.getByRole('button', { name: 'Download rings.knl' })).toHaveAccessibleDescription(/runs as firmware code/);
 
   await page.getByLabel('Kind').selectOption('synth');
-  await expect(page.locator('#panel-plugins article')).toHaveCount(1);
+  await expect(page.locator('#panel-plugins article')).toHaveCount(2);
   await expect(rings).toBeVisible();
-  await expect(page.getByRole('status').filter({ hasText: '1 of 11 plugins' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '2 of 12 plugins' })).toBeVisible();
   await page.getByLabel('Kind').selectOption('feature');
   await expect(page.locator('#panel-plugins article')).toHaveCount(3);
   await page.getByLabel('Kind').selectOption('fx');
@@ -321,7 +353,8 @@ test('opens a manual with its table and screenshot', async ({ page }) => {
 
   const manual = page.getByRole('region', { name: 'Manual of rings' });
   await expect(manual.getByRole('heading', { name: 'Controls' })).toBeVisible();
-  const table = manual.getByRole('table');
+  await expect(manual.getByRole('table')).toHaveCount(2);           // the encoders (both builds), then coop's fn layer
+  const table = manual.getByRole('table').first();
   await expect(table).toBeVisible();
   await expect(table.getByRole('columnheader', { name: 'Encoder' })).toBeVisible();
   await expect(table.getByRole('row')).toHaveCount(5);
@@ -357,4 +390,26 @@ test('a download that fails its check says so', async ({ page }) => {
   const rings = page.getByRole('article', { name: 'rings', exact: true });
   await rings.getByRole('button', { name: 'Download rings.knl' }).click();
   await expect(rings.getByRole('alert')).toContainText('does not match the plugin index');
+});
+
+test('lists other creators\' plugins under their names, linking out with no copy here', async ({ page }) => {
+  await page.unroute('**/plugins/index.json');
+  await page.goto('./');
+  await page.getByRole('tab', { name: 'Plugins' }).click();
+
+  // Several authors: every group starts closed, each under its own name.
+  for (const author of ['coldsoldr', 'fungiboletus', 'hundekraft', 'LizardMan', 'pcppcp']) {
+    await expect(page.getByRole('button', { name: new RegExp(`^${author}`) })).toHaveAttribute('aria-expanded', 'false');
+  }
+  await page.getByRole('button', { name: /^fungiboletus/ }).click();
+  const moai = page.getByRole('article', { name: 'Moai', exact: true });
+  await expect(moai).toContainText('by fungiboletus');
+  const get = moai.getByRole('link', { name: /Get it from hundekraft\.github\.io/ });
+  await expect(get).toHaveAttribute('href', 'https://hundekraft.github.io/op1-workshop/');
+  await expect(moai.getByRole('button', { name: /^Download/ })).toHaveCount(0);
+  await expect(moai.getByRole('link', { name: /Source code/ })).toHaveAttribute('href', 'https://github.com/fungiboletus/op-moai');
+
+  await moai.getByRole('button', { name: 'Read the manual of Moai' }).click();
+  await expect(page.getByRole('heading', { name: 'Who made it' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Manual of Moai' }).getByRole('link', { name: 'op-moai' })).toBeVisible();
 });

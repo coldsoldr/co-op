@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "id": "saw",
+  "name": "saw",
+  "firmware": "op1/coop",
+  "kind": "synth",
+  "author": "coldsoldr",
+  "version": "0.2",
+  "description": "The reference coop synth engine: two detuned oscillators (saw, square or triangle), a square one or two octaves down and a low-pass filter, with its own screen.",
+  "license": "GPL-3.0-or-later",
+  "file": "saw.coop",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/saw",
+  "requires": "coop e4b",
+  "tags": [
+    "synth",
+    "engine",
+    "saw"
+  ]
+}

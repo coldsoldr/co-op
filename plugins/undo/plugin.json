@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "undo",
+  "name": "Tape undo / redo",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "Every recording can be undone, up to seven steps back: takes, punch-ins, overdubs, loop takes, lift, drop, slide (Shift + blue), split, join and the tape edits below. It works with the tape stopped or playing. Sliding a clip takes two undo steps: the first undoes the drop, the second restores the lift.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Rebuilt by hundekraft from how Maiko Pruett's #249 and #250 work; none of Maiko's code is used",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

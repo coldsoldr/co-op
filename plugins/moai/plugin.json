@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "moai",
+  "name": "Moai",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "fungiboletus",
+  "description": "Moai by fungiboletus is modelled on the Minimoog Model D: fat basses, singing leads and brassy stabs, with 121 sounds to start from. Every voice has three oscillators and noise, a four-pole ladder filter with emphasis, drive and saturation, and a contour that sweeps the filter. Loudness comes from the OP-1's own envelope on T2, as on the other synths.",
+  "license": "GPL-3.0-or-later",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/fungiboletus/op-moai",
+  "requires": "hundekraft 3.2.6",
+  "credits": "fungiboletus's op-moai, brought into kennel by Hundekraft",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "midiseq",
+  "name": "MIDI sequencer",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "A sequencer for notes and MIDI CCs on four tracks that play along with the tape. Start recording with the first note or a count-in, then quantize the timing if needed. Each track takes notes from the keyboard, from the OP-1's sequencers or from a USB MIDI channel, and plays them to the synth, into a sequencer or out over USB MIDI.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

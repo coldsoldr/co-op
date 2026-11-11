@@ -1,0 +1,51 @@
+# F2: the str engine alone on channel 2 beside the live synth (the fm scenario with green 6 half-detents).
+# g4 at row 2. Stop (cursor to row 0); Shift + right (channel 2); green two detents: the cell's instrument "fm"
+# (coop's own FM voice, outside the core); e4 at row 0, right, right, c5 at row 3... (the keyboard moves the
+# cursor a row each: e4 row 0 -> 1, right -> 2, c5 row 2 -> 3). Stop; play ~8 s: the WAV carries the stock synth
+# AND the FM voice together; the stats say xv_notes and the per-block cost xv_max. Screenshots: at the end.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tape 200
+at 27500
+press shift
+at 27700
+tap tape 200
+at 28200
+release shift
+at 29500
+tap c4 150
+at 30000
+tap right 120
+at 30300
+tap g4 150
+at 31000
+tap stop 150
+at 31500
+press shift
+at 31700
+tap right 120
+at 32000
+release shift
+at 32500
+turn enc2 cw 6
+at 33800
+tap e4 150
+at 34300
+tap right 120
+at 34600
+tap c5 150
+at 35300
+tap stop 150
+at 36000
+tap play 150
+at 44500
+tap t2 150
+at 47000
+tap stop 150
+wait 43000
+screenshot /root/op1emu-work/trkf_a.ppm
+wait 2500
+screenshot /root/op1emu-work/trkf_b.ppm
+wait 5000
+quit

@@ -1,0 +1,19 @@
+{
+  "name": "test_fx",
+  "kind": "fx",
+  "symbol": "FX_test_fx",
+  "sources": ["test_fx.cc"],
+  "defaults": [16384, 16384, 16384, 16384],
+  "controls": [
+    {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
+     "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false},
+    {"id": "polarity", "name": "polarity", "action": "click", "encoder": "green", "word": 6, "kind": "steps",
+     "steps": ["normal", "invert"], "default": 0},
+    {"id": "depth", "name": "depth", "action": "fn_turn", "encoder": "white", "word": 7, "kind": "continuous",
+     "default": 8192},
+    {"id": "mute", "name": "mute", "action": "click", "encoder": "orange", "kind": "latch", "bit": 0}
+  ],
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "e6 test effect (not a real plugin): the effect controls at every position. fn + blue gain (Q15 16384 = unity; 1365 a detent, shift + fn + blue 273: the ports' 0.5 / 0.1 dB steps), green click polarity (steps, saved), fn + white depth (unused, shown), orange click mute (a latch, not saved). Randomise draws polarity and depth, never gain (\"random\": false) nor the latch. The audio says which arrived."
+}

@@ -1,0 +1,35 @@
+# e6: power cycle after det_fx_controls.txt (the same NAND, NAND_KEEP). Boot, a synth chord, the mixer, drum keys: every
+# position renders again from what was saved. Expected (stats fxctl): the words det_fx_controls left, every latch 0:
+#   p0 11197/(drawn)/(drawn)/0 (the synth sound's fx_params), p1 17749/1/8192/0 (the kit's), p2 15019/0/8192/0 (op1.db's
+#   master row), p3 19114/(drawn)/(drawn)/0 and p4 16384/0/8848/0 (coop_slot2.bin).
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+press c4
+press e4
+press g4
+at 30000
+release c4
+release e4
+release g4
+at 31000
+tap mixer 200
+at 33000
+tap drum 200
+at 34500
+press c4
+at 35000
+release c4
+press d4
+at 35500
+release d4
+at 36500
+tap synth 200
+at 37500
+press c4
+at 39500
+release c4
+wait 70000
+quit

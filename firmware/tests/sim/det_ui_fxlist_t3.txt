@@ -1,0 +1,33 @@
+# u3 question: does T3 closing the stock FX browser (opened from the FX page) also toggle FX 1 off, as the key-down
+# path reads (screen-interface: key 8 on page 2 toggles FX active)? Synth, T3, shift + T3, blue four rows (phone),
+# T3 (close, green untouched), a chord; the screen at the end is the phone page: "FX OFF" shows if it toggled.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 32
+at 33000
+tap t3 200
+at 35000
+press c4
+press e4
+press g4
+at 37000
+release c4
+release e4
+release g4
+wait 36000
+screenshot /root/op1emu-work/fxt_a.ppm
+wait 3000
+screenshot /root/op1emu-work/fxt_b.ppm
+wait 4000
+quit

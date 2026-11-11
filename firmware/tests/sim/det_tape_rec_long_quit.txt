@@ -1,0 +1,27 @@
+# Power-cycle test with a long take (NAND_KEEP): record a chord held 4 s (tape 0.8-4.8 s, across six chunk
+# boundaries at multiples of 0.743 s), stop, return to the start, let the main loop write the take back, quit.
+# Run 2: det_tape_play_start.txt plays it back from the file (every chunk loaded by the split I/O step).
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap synth 300
+at 32000
+press rec
+at 32200
+tap play 300
+at 32600
+release rec
+at 33000
+press c4
+press e4
+press g4
+at 37000
+release c4
+release e4
+release g4
+at 39000
+tap stop 300
+at 40000
+tap stop 300
+wait 60000
+quit

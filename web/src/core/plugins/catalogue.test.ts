@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import type { PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
+import type { HostedPluginEntry, PluginBuild, PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
 import { CatalogueError } from '../catalogue/catalogue';
 import { fetchManual, fetchPluginBytes, fetchPluginIndex, filterPlugins, groupByAuthor, pluginFileUrl, pluginFolderUrl } from './catalogue';
 
 const knl = new Uint8Array([0x4b, 0x4e, 0x4c, 0x00, 1, 2, 3, 4]);
 const sha = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
-const plugin = (overrides: Partial<PluginIndexEntry> = {}): PluginIndexEntry => ({
+const plugin = (overrides: Partial<HostedPluginEntry> = {}): HostedPluginEntry => ({
   id: 'rings',
   name: 'rings',
   firmware: 'op1/hundekraft',
@@ -28,6 +28,23 @@ const plugin = (overrides: Partial<PluginIndexEntry> = {}): PluginIndexEntry => 
   savedName: 'rings',
   ...overrides,
 });
+
+const coopBuild = {
+  firmware: 'op1/coop' as const,
+  file: 'rings.coop',
+  version: '0.5',
+  requires: 'coop e5',
+  sizeBytes: 4,
+  sha256: 'b'.repeat(64),
+  savedName: 'rings',
+};
+
+/** rings with a hundekraft and a coop build, the hundekraft one at the top. */
+const ringsBoth = (): PluginIndexEntry => {
+  const top = plugin();
+  const { firmware, file, version, requires, source, sizeBytes, sha256, savedName } = top;
+  return { ...top, builds: [{ firmware, file, version, requires, source, sizeBytes, sha256, savedName } as PluginBuild, coopBuild] };
+};
 
 const index = (plugins: PluginIndexEntry[] = [plugin()]): PluginIndex => ({
   format: 1,
@@ -106,11 +123,24 @@ describe('fetchPluginIndex', () => {
       { ...plugin(), id: '../x' },
       // A source link must be https.
       { ...plugin(), source: 'javascript:alert(1)' },
+      // Builds: a list of complete builds, one per firmware, each with a bare file name.
+      { ...plugin(), builds: [] },
+      { ...plugin(), builds: 'x' },
+      { ...plugin(), builds: [coopBuild, coopBuild] },
+      { ...plugin(), builds: [{ ...coopBuild, file: '../rings.coop' }] },
+      { ...plugin(), builds: [{ ...coopBuild, sha256: 'abc' }] },
+      { ...plugin(), builds: [{ ...coopBuild, firmware: 'op1/stock' }] },
+      { ...plugin(), builds: [{ ...coopBuild, source: 'http://x.org' }] },
     ];
     for (const entry of bad) {
       const { impl } = fakeFetch({ [INDEX_URL]: JSON.stringify({ ...index(), plugins: [entry] }) });
       await expect(fetchPluginIndex('/co-op/', impl), JSON.stringify(entry)).rejects.toThrow(/plugin index entry 1 is malformed/);
     }
+  });
+
+  it('accepts a plugin with a file per firmware', async () => {
+    const { impl } = fakeFetch({ [INDEX_URL]: JSON.stringify(index([ringsBoth()])) });
+    expect((await fetchPluginIndex('/co-op/', impl)).plugins[0]?.builds).toHaveLength(2);
   });
 
   it('throws CatalogueError', async () => {
@@ -150,6 +180,14 @@ describe('filterPlugins', () => {
     expect(ids({ firmware: 'op1/opus' })).toEqual(['chorus.x']);
     expect(ids({ tag: 'delay' })).toEqual(['tape_echo']);
     expect(ids({ kind: 'fx', firmware: 'op1/hundekraft' })).toEqual(['tape_echo']);
+  });
+
+  it('lists a plugin with a file per firmware once under either firmware', () => {
+    const both = index([ringsBoth(), echo]);
+    expect(filterPlugins(both, { firmware: 'op1/coop' }).map((p) => p.id)).toEqual(['rings']);
+    expect(filterPlugins(both, { firmware: 'op1/hundekraft' }).map((p) => p.id)).toEqual(['rings', 'tape_echo']);
+    expect(filterPlugins(both, { firmware: 'op1/opus' })).toEqual([]);
+    expect(filterPlugins(both, {}).map((p) => p.id)).toEqual(['rings', 'tape_echo']);
   });
 
   it('matches every word of the text, ignoring case, in name, id, author, description, tags and credits', () => {

@@ -1,0 +1,592 @@
+# m1 (docs/request-rings-collateral.md): written by tests/sim/gen_run_m1.py, do not edit.
+# pfmode 2; docs/device-tests.md "m1" says what to install and what to send back.
+#@name m1_mode2
+#@tail 3000
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+#@pfmode 2
+at 27500
+tap synth 200
+at 29000
+#@mark idle
+at 39000
+#@mark -
+at 40500
+press shift
+at 40700
+tap t1 200
+at 41200
+release shift
+at 42400
+turn enc1 ccw 160
+at 45800
+turn enc1 cw 120
+at 49400
+tap seq 200
+at 50400
+tap synth 200
+at 51400
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 52200
+#@mark voltage
+at 62200
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+#@mark -
+at 63700
+press shift
+at 63900
+tap t1 200
+at 64400
+release shift
+at 65600
+turn enc1 ccw 32
+at 67440
+tap seq 200
+at 68440
+tap synth 200
+at 69640
+press help
+at 69940
+turn enc1 ccw 40
+at 71240
+release help
+at 72240
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 73040
+#@mark rings_modal
+at 83040
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 84240
+press help
+at 84540
+turn enc1 ccw 40
+at 85840
+release help
+at 87040
+press help
+at 87340
+turn enc1 cw 4
+at 87920
+release help
+at 88920
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 89720
+#@mark rings_symp
+at 99720
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+#@mark -
+at 101220
+press shift
+at 101420
+tap t1 200
+at 101920
+release shift
+at 103120
+turn enc1 ccw 32
+at 104960
+tap seq 200
+at 105960
+tap synth 200
+at 106960
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 107760
+#@mark alu
+at 117760
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+#@mark -
+at 119260
+press shift
+at 119460
+tap t1 200
+at 119960
+release shift
+at 121160
+turn enc1 cw 8
+at 122520
+tap seq 200
+at 123520
+tap synth 200
+at 124720
+press help
+at 125020
+turn enc1 ccw 24
+at 126000
+release help
+at 127000
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 127800
+#@mark code4k
+at 137800
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 139000
+press help
+at 139300
+turn enc1 ccw 24
+at 140280
+release help
+at 141480
+press help
+at 141780
+turn enc1 cw 2
+at 142320
+release help
+at 143320
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 144120
+#@mark code8k
+at 154120
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 155320
+press help
+at 155620
+turn enc1 ccw 24
+at 156600
+release help
+at 157800
+press help
+at 158100
+turn enc1 cw 4
+at 158680
+release help
+at 159680
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 160480
+#@mark code12k
+at 170480
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+#@mark -
+at 171980
+press shift
+at 172180
+tap t1 200
+at 172680
+release shift
+at 173880
+turn enc1 cw 8
+at 175240
+tap seq 200
+at 176240
+tap synth 200
+at 177440
+press help
+at 177740
+turn enc1 ccw 24
+at 178720
+release help
+at 179720
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 180520
+#@mark sdram_r16k
+at 190520
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 191720
+press help
+at 192020
+turn enc1 ccw 24
+at 193000
+release help
+at 194200
+press help
+at 194500
+turn enc1 cw 2
+at 195040
+release help
+at 196040
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 196840
+#@mark sdram_r64k
+at 206840
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 208040
+press help
+at 208340
+turn enc1 ccw 24
+at 209320
+release help
+at 210520
+press help
+at 210820
+turn enc1 cw 4
+at 211400
+release help
+at 212400
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 213200
+#@mark sdram_r128k
+at 223200
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 224400
+press help
+at 224700
+turn enc1 ccw 24
+at 225680
+release help
+at 226880
+press help
+at 227180
+turn enc1 cw 6
+at 227800
+release help
+at 228800
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 229600
+#@mark sdram_w16k
+at 239600
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 240800
+press help
+at 241100
+turn enc1 ccw 24
+at 242080
+release help
+at 243280
+press help
+at 243580
+turn enc1 cw 8
+at 244240
+release help
+at 245240
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 246040
+#@mark sdram_w64k
+at 256040
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 257240
+press help
+at 257540
+turn enc1 ccw 24
+at 258520
+release help
+at 259720
+press help
+at 260020
+turn enc1 cw 10
+at 260720
+release help
+at 261720
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 262520
+#@mark sdram_w128k
+at 272520
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 273720
+press help
+at 274020
+turn enc1 ccw 24
+at 275000
+release help
+at 276200
+press help
+at 276500
+turn enc1 cw 12
+at 277240
+release help
+at 278240
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 279040
+#@mark sdram_rs128k
+at 289040
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 290240
+press help
+at 290540
+turn enc1 ccw 24
+at 291520
+release help
+at 292720
+press help
+at 293020
+turn enc1 cw 14
+at 293800
+release help
+at 294800
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 295600
+#@mark sdram_ws128k
+at 305600
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+#@mark -
+at 307100
+press shift
+at 307300
+tap t1 200
+at 307800
+release shift
+at 309000
+turn enc1 cw 16
+at 310520
+tap seq 200
+at 311520
+tap synth 200
+at 312720
+press help
+at 313020
+turn enc1 ccw 40
+at 314320
+release help
+at 315320
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 316120
+#@mark rings_knobs
+at 316370
+turn enc1 cw 6
+at 316620
+turn enc2 cw 6
+at 316870
+turn enc3 cw 6
+at 317120
+turn enc4 cw 6
+at 317370
+turn enc1 ccw 6
+at 317620
+turn enc2 ccw 6
+at 317870
+turn enc3 ccw 6
+at 318120
+turn enc4 ccw 6
+at 318370
+turn enc1 cw 6
+at 318620
+turn enc2 cw 6
+at 318870
+turn enc3 cw 6
+at 319120
+turn enc4 cw 6
+at 319370
+turn enc1 ccw 6
+at 319620
+turn enc2 ccw 6
+at 319870
+turn enc3 ccw 6
+at 320120
+turn enc4 ccw 6
+at 320370
+turn enc1 cw 6
+at 320620
+turn enc2 cw 6
+at 320870
+turn enc3 cw 6
+at 321120
+turn enc4 cw 6
+at 321370
+turn enc1 ccw 6
+at 321620
+turn enc2 ccw 6
+at 321870
+turn enc3 ccw 6
+at 322120
+turn enc4 ccw 6
+at 322370
+turn enc1 cw 6
+at 322620
+turn enc2 cw 6
+at 322870
+turn enc3 cw 6
+at 323120
+turn enc4 cw 6
+at 323370
+turn enc1 ccw 6
+at 323620
+turn enc2 ccw 6
+at 323870
+turn enc3 ccw 6
+at 324120
+turn enc4 ccw 6
+at 324370
+turn enc1 cw 6
+at 324620
+turn enc2 cw 6
+at 324870
+turn enc3 cw 6
+at 325120
+turn enc4 cw 6
+at 325370
+turn enc1 ccw 6
+at 325620
+turn enc2 ccw 6
+at 325870
+turn enc3 ccw 6
+at 326120
+turn enc4 ccw 6
+at 326320
+#@mark -
+release c4
+release d4
+release e4
+release f4
+release g4
+release a4
+at 328320
+wait 334320
+quit

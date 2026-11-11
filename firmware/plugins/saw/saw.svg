@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" x="0px" y="0px" width="320px" height="160px" viewBox="0 0 320 160">
+<line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="square" x1="40" y1="64" x2="280" y2="64"></line>
+<line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="square" x1="40" y1="120" x2="280" y2="120"></line>
+<g id="saw2"><g id="saw2s0"><polyline fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" points="40,94 100,34 100,94 160,34 160,94 220,34 220,94 280,34 280,94"></polyline></g><g id="saw2s1"><polyline fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" points="40,94 40,34 70,34 70,94 100,94 100,34 130,34 130,94 160,94 160,34 190,34 190,94 220,94 220,34 250,34 250,94 280,94"></polyline></g><g id="saw2s2"><polyline fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" points="40,94 70,34 100,94 130,34 160,94 190,34 220,94 250,34 280,94"></polyline></g></g>
+<g id="saw1"><g id="saw1s0"><polyline fill="none" stroke="#698EFF" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" points="40,94 100,34 100,94 160,34 160,94 220,34 220,94 280,34 280,94"></polyline></g><g id="saw1s1"><polyline fill="none" stroke="#698EFF" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" points="40,94 40,34 70,34 70,94 100,94 100,34 130,34 130,94 160,94 160,34 190,34 190,94 220,94 220,34 250,34 250,94 280,94"></polyline></g><g id="saw1s2"><polyline fill="none" stroke="#698EFF" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" points="40,94 70,34 100,94 130,34 160,94 190,34 220,94 250,34 280,94"></polyline></g></g>
+<g id="sub"><polyline fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" points="40,128 40,112 100,112 100,128 160,128 160,112 220,112 220,128 280,128 280,112"></polyline></g>
+<g id="drift"><circle fill="#FF3A5D" stroke="none" cx="160" cy="18" r="2.5"></circle></g>
+<polyline id="ic0" fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" points="236,22 252,10 252,22"></polyline>
+<polyline id="ic1" fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" points="260,22 260,10 270,10 270,22 280,22"></polyline>
+<polyline id="ic2" fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" points="288,22 296,10 304,22"></polyline>
+<circle id="oct1" fill="#6A2030" stroke="none" cx="292" cy="140" r="2.5"></circle>
+<g id="oct2g"><circle id="oct2" fill="#6A2030" stroke="none" cx="302" cy="140" r="2.5"></circle></g>
+</svg>

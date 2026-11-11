@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "sister",
+  "name": "SISTER",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "SISTER is Father's sister: a long stereo hall with three voices in its tail. Turn green toward the choir and the tail sings back what you played, on slowly drifting vowels (aah, ooh, eeh), like a choir far down the nave. At the other end it rings on organ pipes tuned to a root, its fifth and its octave, so drums and noise come back as a chord. White turns the tail around: each sound swells up backwards out of its own echo before it lands. Nothing switches modes.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

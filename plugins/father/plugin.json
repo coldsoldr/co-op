@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "father",
+  "name": "Father",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "Father blends short, stereo-spread early reflections with a denser, gently moving stereo tail. Distance adds up to 30 ms of predelay; Gate starts off so the tail can decay naturally. Turn Distance up to move the sound farther away and lengthen the decay. The head with glasses drifts back as Distance rises. The small green person moves with Gate, and gate posts close around it when the tail is gated.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Concept and visual reference by xylograph; an original kennel reverb",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.chorus",
+  "name": "chorus",
+  "firmware": "op1/opus",
+  "kind": "fx",
+  "author": "LizardMan",
+  "version": "2.3.0",
+  "description": "Rate, depth, delay (short like a flanger, long like a doubled part) and mix; voices and feedback under shift. Its page draws each voice as a stack of moving waves in its encoder's colour and shows the four values at the top right. It draws with orbit3d, so keep that in mods beside it.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.chorus",
+  "tags": [
+    "effect",
+    "opus"
+  ]
+}

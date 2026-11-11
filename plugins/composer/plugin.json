@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "composer",
+  "name": "Composer",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "Pick a style and hold a key: Composer writes a whole song, with verse, chorus and bridge and proper chord changes. There are 32 styles, from deep house and drum & bass to bossa nova and film noir, and each brings its own chords, grooves and song form. A song is built from 8-bar sections: A is the verse, B the chorus (the drop in club styles), C the bridge (the break in club styles, funk and nu-disco). Pop runs A A B A B C B B, lo-fi just A A B A.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "sequencer",
+    "hundekraft"
+  ]
+}

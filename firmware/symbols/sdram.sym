@@ -1,0 +1,98 @@
+# coop-fw SDRAM symbol map: the plain (unencrypted) OP-1 R246 functions the L1 audio callback drives.
+#
+# Format: <hex addr> <name> <C|I> <note>. Reverse-engineering annotation; no TE code stored here.
+# Identified this session by disassembling the plain SDRAM from the stock image and by the functions
+# each one calls (op1fw.h names, fw_* helpers, KeyHandler). The audio callback (symbols/l1.sym
+# l1_audio_callback) calls these in block order; see docs/audio-graph.md.
+
+# --- audio output / USB ---
+0x019e1a88  l1v_push_interleaved    C  silent/muted-block push to USB (kennel L1_IMM_PATCHES)
+0x019e1b3c  l1v_push_lr             C  push master L/R (+ tracks) to USB (kennel L1_IMM_PATCHES); the master audio leaves here
+0x019e2f24  fw_midi_out_drain       C  calls fw_midi_send (0x019e0d18) + fw_usb_configured: drains queued MIDI to USB
+
+# --- the FX stage (the hook for two FX slots per position) ---
+0x01a88028  set_indicator           C  RETRACTED earlier "fx_render_position": this sets a 0..5 level indicator (state byte 0x18c23b0); the 3 callsites are if/elseif/else on level word 0xff80108a, gated ~every 20 blocks, NOT FX positions
+# --- real FX render: object/vtable dispatch inside 0xffa00e50 (L1), confirmed ---
+0xffa00e50  l1_fx_render            C  the FX render driver (synth/drum mono, master stereo); master render call at 0xffa017e6
+0x1aaad68   d_master_fx_instance    C  master FX instance ptr; vtable=*instance, render=*(vtable+0x14), state=instance+*(u16*)(vtable+0x10)
+0x1aaad30   d_fx_instance_table     C  type -> instance registry (table[type]); init via vtable+0x24 (0x1967308), param via vtable+0x1c
+0x1aaac40   d_master_fx_enable      C  master FX enable byte (render gated on it)
+0xff800d34  d_master_bus_L          C  master bus L, 64 x int16
+0xff800db4  d_master_bus_R          C  master bus R, 64 x int16 (0x80 after L)
+0xff801734  d_synth_fx_type         C  synth FX type array [+slot*4] (read 0xffa029ec)
+0xff801754  d_drum_fx_type          C  drum FX type array [+inst*4] (read 0xffa01c68)
+0x018dd7d4  d_fx_name_table         C  stock effect name strings: delay/grid/punch/phone/spring/nitro
+0x01a8e340  tape_cache_io           C  calls fw_yaffs_pread (0x01a99ca8) + fw_yaffs_close: tape chunk streaming from the tape file
+
+# --- input: key/encoder scan and queue (runs at the END of the audio ISR, not audio DSP) ---
+0x019ae7cc  key_bank_scan           I  reads key banks 0x23..0x26 (lfo-interface/screen docs); input, not audio
+0x019c2f24  KeyHandler_PushKey      C  queues a key event into s_key_queue (te-op1-cfw screen docs)
+0x019c2f04  fw_post_keyhandler      C  wakes the KeyHandler thread (op1fw.h)
+0x019c3044  KeyHandler_AddKnob      C  adds an encoder delta to s_knob_acc[4] (te-op1-cfw screen docs)
+
+# --- early-block stages (not yet pinned; call alloc/USB helpers) ---
+0x0193ee7c  cb_stage_input          I  first callback stage; calls TLSF free (0x1a5e310) + 0x1aa2b14/324a
+0x019e193c  cb_stage_usb            I  calls fw_usb_configured (0x1a69360) + 0x1a0dc7c/0x1aa494a
+
+# --- shared helpers (named in te-op1-cfw docs / op1fw.h) ---
+0x01919aa8  fw_assert_handler       C  assert/panic handler (lfo-interface.md)
+0x019e0d18  fw_midi_send            C  USB MIDI out (op1fw.h)
+0x01a69360  fw_usb_configured       C  USB-configured check (op1fw.h)
+0x01a99ca8  fw_yaffs_pread          C  yaffs pread (op1fw.h)
+0x01a99908  fw_yaffs_close          C  yaffs close (op1fw.h)
+0x01a5e310  fw_tlsf_free            C  TLSF pool free wrapper (memory-map.md)
+
+# --- voice bus / mix path, confirmed dynamically with the op1emu write tracer (docs/stereo-bus.md, 2026-11-01) ---
+0x019674f8  dc_block_voice_bus      C  CORRECTED 2026-11-02 (was "decimate_voice_bus_end"): a 64-sample first-order DC blocker, not a decimator. Reads the decimated 64 at 0xff801e50 (I0), y = sat(sat(y - Xprev) + X) - c*Yq, c = live word 0x01bab53c, state 3 words at 0x01aaac14; writes 64 int16 over 0xff800bb4..0xff800c32 (stores 0x01967586/0x0196759a/0x019675d2/0x0196760e), RTS 0x01967612. coop replica: coop_dc_block
+0x01a66b80  drum_sdram_sample_wr    C  drum engine sample path: one W[I0++] = R3.H store per call into the voice bus (32x16 fractional interpolation before it)
+0x019de5a8  postmix_mono_add        C  LSETUP(0x019de5ac,0x019de5e8): adds one mono term (A0/A1 generator) to d34 (0x019de5d4) and db4 (0x019de5cc) in place after the mix loops; term was zero in play (metronome/click?) [I]
+
+# --- master output path (2026-11-01, write tracer) ---
+0x019d90e8  master_level_getter     C  `R0 = 0xff80187c; RTS`: called via CALL (P1) at 0xffa017ac right before the stock level stage; the coop master stage (coop_master_apply) replaces THIS and returns the same value
+0x019d90f2  master_level_sdram_copy I  an SDRAM copy of the 0xffa04280 level stage (same prologue on 0xff801880); not in the live path
+
+# --- voice path inputs, confirmed with the write tracer 2026-11-02 (docs/stereo-bus.md) ---
+0x01a52040  synth_engine_default    C  the default patch's synth render (sine wavetable 0x0101e5e8): scratch to 0xff801e50 (0x01a520c6), output to R1 = 0xff80113c (0x01a52136..0x01a521d2)
+0x01912252  adsr_fill_env           C  SDRAM ADSR: writes the 128-entry per-voice envelope 0xff801d50 before each synth render (also 0x01912300, 0x01912478 paths)
+0x01b4ef6e  d_voice_sum_gain        C  int16 gain word read by the synth sum (W[P4]), the drum sum (W[P5]) and mix loop B (R0.L): 0x6000 at run time (written once as 0x60000000 at 0x01b4ef6c by 0x01a552c2)
+0x0106a6f0  d_hb_coefs              C  32 x int16 even-phase taps of the L1 half-band decimator (zero in the LDR image: filled at run time; coop reads them live)
+0x01bab53c  d_dc_coef               C  int32 coefficient of the SDRAM DC blocker (run-time value; coop reads it live)
+0x01aaac14  d_dc_state              C  3 state words of the SDRAM DC blocker (X prev, Yq prev, y prev)
+0x018b621d  d_output_mode           C  byte: 0 = speaker (SPORT conversion sums e34+f34 to mono, 0xffa01698), nonzero = headphones/line out (stereo paths 0xffa0142a/0xffa015f0). Set 1 by the event case at 0x019ac964 [I: jack detection]; op1emu leaves it 0
+
+# --- tape path (write tracer, record + play, 2026-11-02; docs/tape-stereo.md) ---
+0x01b5ef84  d_tape_play_L           C  600 x int16 L play buffer: 4-track pan mix (L1 0xffa07164) -> resampler (0xffa06194) -> d34
+0x01b5f434  d_tape_play_R           C  600 x int16 R play buffer (0xffa0716c) -> db4
+0x01b5f8f4  d_tape_rec_buf          C  600 x int16 mono record buffer: 0xffa06248 writes it (store 0xffa062f6) every block while recording; the overdub loop reads it
+0x02040000  d_big_array_02040000    C  7.94 MB array: NOT the tape cache (0 stores during record + play); role open
+0x01b4ef34  tape_c                  C  tape cache object (L1 P5 base): +0/+4 loop in/out, +8 list head 0x01b4ef3c, +0xc tail, +0x10 fd, +0x14 chunk directory (int32[485]), +0x3a W gain, +0x40 running, +0x44 level ramp, +0x48 4 seam staging buffer pointers
+0x01a54168  tape_cache_init         C  builds 24 nodes (28 B each, 0x1a5e3b0) with 256 KiB data blocks (malloc 0x1a9f348, heap 0), the 1940 B chunk directory and the 4 x 0x4a4 seam buffers (0x01a54124)
+0x01a54d5c  tape_cache_lookup       C  (pos, &dir): chunk = pos >> 15, directory then list search on W[node+6], move-to-front, prefetch chunk-1..chunk+1 via 0x01a54cd4; returns the node (0 = not loaded)
+0x01a54bb4  tape_rec_node_lookup    C  record-side chunk lookup used by l1_tape_record (loop-aware, 0xff8029ec flag); result kept at 0x018c17ec
+0x0107d034  d_tape_cache_nodes      C  24 cache nodes, stride 0x28: B+0 valid, B+2 flush req, W+4 dirty mask (bit/track), W+6 chunk, +0xc start sample, +0x10 data (track t at +t*0x10000), +0x14 next, +0x18 prev
+0x018c17d8  d_tape_rec_state        C  +0 recording byte, +4 record resampler phase, +0x14 record node, +0x18 W seam mask, +0x1c B seam valid
+0x018c1810  d_tape_track_base       C  int32[4] file offsets of the track data in tape_c.raw (filled at mount; kennel TRACK_BASE)
+0x01a54710  tape_cache_io_step      C  per node: load (4 x yaffs_read of 0x10000 at TRACK_BASE[t] + chunk<<16 into data + t*0x10000; count R4 = 4 at 0x1a5476a) or flush (dirty bits t = 0..3, R1 = 4 at 0x1a547e8, yaffs_write at 0x1a54842); T2 patches the counts to 8 and the base table
+0x01a53f7c  tape_record_extent      C  (start, end, lane_mask): marks W[0x018c17f2] |= mask when the recorded range touches a loop seam zone (+-297) and clears W[0x018c17f0] bits (seam stale); called at the end of each record pass
+0x01996f38  tape_image_mount_and_index  C  (no args; callers 0x199758e, 0x19f0354 ignore the result): indexes the six stock files by name (0x1997c58: tracks 0x18d9eac+0x18*t -> 0x018c1810[t], side_a -> 0xff9002c0, side_b -> 0xff9002c4), recreates the image when one is missing; replaced by coop_tape_mount_and_index (T2)
+0x019971b0  tape_image_open_at_boot     C  builds the image/marker paths (snprintf 0x1a4ccd8 into 0x1aabce4 / 0x1aac934), opens the image (0x1a997f4), tape_set_file_handle 0x1a5404c, marker check 0x19987f8, presize check, fat_disk_bind 0x19761d8, f_mount 0x1998e74
+0x01997c58  tape_image_file_offset      C  (name) -> data offset of a file in the image (the stock index step)
+0x0191b560  audio_clipboard_service C  main loop (0x019F0A2A): pops 32-byte commands from the queue 0x01aa7130 (16 entries, consumer 0x01aa7330, producer 0x01aa7334; jump table 0x018c3ce8, 9 commands; 2 = lift with start/stop in frames), state record 0x01aa7100 (channel, length, has-clip), pool header 0x02040000 (4 slot pointers) + data 0x02040010, capacity 0x3c8fe8 samples
+0x0191bbd0  clipboard_queue_push    C  (entry words) from the tape controller (0x1a5775c, 0x1a57e80, 0x1a58b04)
+0x01a5485c  tape_clips_lift         C  (ch, start, stop, hdr on the stack): per chunk lseek/read of mono samples at TRACK_BASE[ch] + chunk<<16 + off*2 into hdr[ch] + copied*2, zeroes the range from s_zeroes 0x01b4ef8c (64 KiB), then tape_cache_invalidate_clean_range(start, stop); replaced by coop_lift (T3b)
+0x01a54984  tape_clips_lift_all     C  (start, stop, hdr): lift for ch 0..3
+0x01a549b8  tape_clips_drop         C  (src slot, dst ch, pos, len, hdr on the stack): writes len samples from hdr[src] at TRACK_BASE[dst] + pos*2, invalidates (pos, pos+len); replaced by coop_drop
+0x01a54acc  tape_clips_drop_all     C  (pos, len, hdr): drop ch -> ch for 0..3
+0x01a54b08  fast_tape_erase         C  (): invalidate all, 485 x 4 x 64 KiB zero writes (pwrite 0x1a99f9c, progress 0x018c17c8), then 0x1a54020(0xf); replaced by coop_erase
+0x0191c9fc  clipboard_slot_init     C  (slot, &cap): [slot] = 0x02040010, [cap] = 0x3c8fe8
+0x01a29a74  readinterface_track_flag C  (ch): asserts ReadInterface.cpp:471 ch >= 0 && ch < kTapeNumTracks, returns B[0xff8010a0 + ch] == 0; called by the tape screen draw (0x1a5c984) with the current track
+0x019d9b94  master_db_save          C  (): writes op1.db master (volumes, pans, eq, master_params, fx_type, fx_active, fx_params, trick_1/2) from the live words with "UPDATE master SET volumes=..." (string 0x018e320c, its only user); a MasterController virtual (vtable word 0x01910aa8); ignores R0. e6 calls it from the main loop after a master control change (plugin_host.cc)
+
+# --- the tempo (2026-11-11, the export coop_tempo_bpm_q16; te-op1-cfw docs/sequencer-interface.md section 4) ---
+0x01a5e9a4  SetTempo_f32            C  (float bpm): asserts 40.0 <= bpm <= 220.0 (logs via 0x1919aa8 otherwise, then goes on), stores the float at 0x018c1878 (0x01a5e9e8), then [0x01b60524] = 2646000/(96 bpm) x 2^18 and [0x01aadad4] = (uint)(bpm x 1662149.125f) (0x19de4ec); callers 0x1a5ebe4, 0x1a5ee8a, 0x1a5f00e, 0x1a5f14c (tenths of a BPM / 10.0)
+0x01a5e7e4  SetTempo_again          C  (no args): the same derivation from the stored float (5 callers)
+0x01a5e7a0  GetTempo_f32            C  returns the float at 0x018c1878; 13 callers (the tape controller 0x1a56..0x1a59 among them)
+0x018c1878  d_tempo_bpm_f32         C  the tempo in BPM, IEEE single; 120.0f (0x42f00000) in the image, so valid from boot; coop_tempo_bpm_q16 reads it (fw_addrs.h FW_TEMPO_BPM_F32)
+0x01aadad4  d_tempo_lfo_inc         C  the LFOs' tempo-synced phase increment, (uint)(bpm x 1662149.125f) (the single rounds it to a multiple of 16: 199457888 at 120); .bss, 0 before the first SetTempo; kennel's TempoIncrement read it
+0x01aadad8  d_tempo_beat_q14        C  2646000 / bpm x 16384 (samples a beat at 44.1 kHz, Q14), written by 0x19de8f0 from SetTempo
+0x01b60524  d_seq_tick_period       C  the sequencer's tick period, 2646000/(96 bpm) x 2^18

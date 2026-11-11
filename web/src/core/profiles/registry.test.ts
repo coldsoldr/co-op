@@ -24,8 +24,8 @@ const fixed = (id: string, confidence: number) =>
   fakeProfile(id, async () => ({ confidence, reason: `fixed ${confidence}` }));
 
 describe('profile registry', () => {
-  it('lists stock first, then hundekraft, then opus', () => {
-    expect(profiles.map((p) => p.id)).toEqual(['op1/stock', 'op1/hundekraft', 'op1/opus']);
+  it('lists stock first, then hundekraft, opus and coop', () => {
+    expect(profiles.map((p) => p.id)).toEqual(['op1/stock', 'op1/hundekraft', 'op1/opus', 'op1/coop']);
   });
 
   it('looks a profile up by id', () => {
@@ -36,8 +36,8 @@ describe('profile registry', () => {
   it('ranks profiles by detection confidence', async () => {
     const root = new MemoryListing({ drum: {}, synth: {}, tape: {} });
     const ranked = await detectProfiles(root);
-    expect(ranked.map((r) => r.profile.id)).toEqual(['op1/stock', 'op1/hundekraft', 'op1/opus']);
-    expect(ranked.map((r) => r.result.confidence)).toEqual([0.9, 0.85, 0.5]);
+    expect(ranked.map((r) => r.profile.id)).toEqual(['op1/stock', 'op1/hundekraft', 'op1/coop', 'op1/opus']);
+    expect(ranked.map((r) => r.result.confidence)).toEqual([0.9, 0.85, 0.8, 0.5]);
   });
 
   it('returns an empty ranking when nothing matches', async () => {

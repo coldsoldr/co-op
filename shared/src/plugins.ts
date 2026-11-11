@@ -27,7 +27,7 @@ export const PLUGIN_LICENSES = [
 export type PluginLicense = (typeof PLUGIN_LICENSES)[number];
 
 /** The profile ids a plugin can be for. */
-export const PLUGIN_FIRMWARE = ['op1/hundekraft', 'op1/opus'] as const;
+export const PLUGIN_FIRMWARE = ['op1/hundekraft', 'op1/opus', 'op1/coop'] as const;
 export type PluginFirmware = (typeof PLUGIN_FIRMWARE)[number];
 
 export const PLUGIN_KINDS = ['synth', 'fx', 'feature'] as const;
@@ -45,6 +45,8 @@ export const MAX_TAGS = 8;
 
 /** The kennel loader's limit for a .knl file. */
 export const MAX_KNL_BYTES = 512 * 1024;
+/** The coop loader's staging block (firmware/core/sdram/plugin_host.cc FILE_MAX). */
+export const MAX_COOP_BYTES = 1024 * 1024;
 /** The op1r limit for the binary inside an .op1p. */
 export const MAX_OP1P_BINARY_BYTES = 512 * 1024;
 /** A whole .op1p (SVG, binary and trailer); our own limit, with room for the SVG. */
@@ -67,48 +69,164 @@ const OPUS_SAVED_NAME = /^opus\.[a-z0-9_.-]{1,40}$/;
 const OPMOD_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,57}\.opmod$/;
 const SCREENSHOT_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,59}\.png$/;
 const HTTPS_LINK = /^https:\/\/[^\s/?#]+\.[^\s/?#]+([/?#]\S*)?$/;
+/**
+ * A .knl in its author's GitHub repo, pinned to a commit so its bytes (and so its SHA-256) never change:
+ * raw.githubusercontent.com, which browsers may fetch from any page.
+ */
+const REMOTE_KNL = /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\/(?:[^\s?#/]+\/)*([^\s?#/]+\.knl)$/;
+const SHA256_HEX = /^[0-9a-f]{64}$/;
 
-export interface PluginManifest {
-  format: 1;
-  /** Equals the folder name; for hundekraft also the file name and the saved name with spaces as `_`. */
-  id: string;
-  name: string;
+/**
+ * The fields of one firmware's build of a plugin: at the top of a single-firmware plugin.json, or
+ * in each entry of `builds` for a plugin with a file per firmware.
+ */
+export interface PluginBuildManifest {
   firmware: PluginFirmware;
-  kind: PluginKind;
-  author: string;
-  version: string;
-  description: string;
-  license: PluginLicense;
-  /** `<id>.knl` or `<id>.op1p` for hundekraft, `<name>.opmod` for opus. */
-  file: string;
-  /** A .png file name in the plugin folder. */
-  screenshot: string;
-  manual: typeof MANUAL_FILE;
-  /** An https:// link to the source. */
-  source?: string;
+  /**
+   * `<id>.knl` or `<id>.op1p` for hundekraft, `<name>.opmod` for opus, `<id>.coop` for coop. Absent
+   * for a listed build (see link).
+   */
+  file?: string;
+  /**
+   * A listed build: an https:// link to the page where the plugin is got (its author's workshop or
+   * releases). co-op lists the plugin there and hosts no file, so a listed build has no `file` and
+   * nothing to install or download here.
+   */
+  link?: string;
+  /**
+   * A listed hundekraft build only: the plugin's .knl where its author publishes it (REMOTE_KNL), with
+   * its sha256 and sizeBytes. co-op still hosts no copy: the page fetches the file from there, checks
+   * it against both, and installs it over USB.
+   */
+  fileUrl?: string;
+  /** With fileUrl: the file's lower-case hex SHA-256. */
+  sha256?: string;
+  /** With fileUrl: the file's size in bytes. */
+  sizeBytes?: number;
+  /** Required for a build with a file or a fileUrl; optional for a listed one. */
+  version?: string;
   /** Free text such as "hundekraft 3.0.3". */
   requires?: string;
-  credits?: string;
-  /** An https:// link to an .mp4 of the plugin with its real sound. */
-  video?: string;
-  tags: string[];
+  /** An https:// link to the source. */
+  source?: string;
   /** opus only: the `opus.<id>` plugin id that sounds made with it store. */
   savedName?: string;
 }
 
-export interface PluginIndexEntry extends Omit<PluginManifest, 'format' | 'savedName' | 'screenshot' | 'manual'> {
+export interface PluginManifest extends PluginBuildManifest {
+  format: 1;
+  /** Equals the folder name; for hundekraft also the file name and the saved name with spaces as `_`. */
+  id: string;
+  name: string;
+  kind: PluginKind;
+  author: string;
+  description: string;
+  /** Required unless every build is listed (has a link and no file). */
+  license?: PluginLicense;
+  /** A .png file name in the plugin folder. */
+  screenshot: string;
+  manual: typeof MANUAL_FILE;
+  credits?: string;
+  /** An https:// link to an .mp4 of the plugin with its real sound. */
+  video?: string;
+  tags: string[];
+  /**
+   * One build per firmware, for a plugin with a file for each; a build without a source of its
+   * own has the top-level one filled in. The top-level build fields are then the first build's.
+   * Absent for a single-firmware plugin. manifestBuilds lists the builds either way.
+   */
+  builds?: PluginBuildManifest[];
+}
+
+/** One firmware's build in the index: its file, with the size and hash, and what differs per firmware. */
+export interface PluginBuild extends Omit<PluginBuildManifest, 'savedName'> {
+  /** The plugin file's size; absent for a listed build. */
+  sizeBytes?: number;
+  /** Lower-case hex SHA-256 of the plugin file; absent for a listed build. */
+  sha256?: string;
+  /** The name sounds store: from the file header for hundekraft and coop, from plugin.json for opus. */
+  savedName?: string;
+  /** Author and version from a .knl or .coop extension table, when it has them. */
+  headerAuthor?: string;
+  headerVersion?: string;
+}
+
+/** The index entry fields that belong to one build. */
+const BUILD_KEYS = [
+  'firmware', 'file', 'link', 'fileUrl', 'version', 'requires', 'source', 'savedName', 'sizeBytes', 'sha256', 'headerAuthor', 'headerVersion',
+] as const satisfies readonly (keyof PluginBuild)[];
+
+export interface PluginIndexEntry
+  extends PluginBuild,
+    Omit<PluginManifest, 'format' | 'screenshot' | 'manual' | 'builds' | keyof PluginBuildManifest> {
   /** `<id>/<screenshot>`, relative to the plugins folder. */
   screenshot: string;
   /** `<id>/manual.md`, relative to the plugins folder. The plugin file is at `<id>/<file>`. */
   manual: string;
-  sizeBytes: number;
-  /** Lower-case hex SHA-256 of the plugin file. */
-  sha256: string;
-  /** The name sounds store: from the file header for hundekraft, from plugin.json for opus. */
-  savedName?: string;
-  /** Author and version from a .knl extension table, when it has them. */
-  headerAuthor?: string;
-  headerVersion?: string;
+  /**
+   * Every build, for a plugin with a file per firmware. The top-level build fields are the first
+   * build's, so a reader that knows nothing of builds still sees a complete entry. Absent for a
+   * single-firmware plugin. Read it through pluginBuilds and pluginFor.
+   */
+  builds?: PluginBuild[];
+}
+
+/** The build fields of an index entry, without the absent ones. */
+function buildOf(entry: PluginIndexEntry): PluginBuild {
+  const build: Record<string, unknown> = {};
+  for (const key of BUILD_KEYS) if (entry[key] !== undefined) build[key] = entry[key];
+  return build as unknown as PluginBuild;
+}
+
+/** An index entry (as pluginFor gives it) whose build has a file co-op hosts, to download or install. */
+export type HostedPluginEntry = PluginIndexEntry & { file: string; version: string; sizeBytes: number; sha256: string };
+
+/** True when the entry's build is a file co-op hosts; false for a listed build, which only links out. */
+export function isHosted(entry: PluginIndexEntry): entry is HostedPluginEntry {
+  return entry.link === undefined && entry.file !== undefined && entry.sizeBytes !== undefined && entry.sha256 !== undefined;
+}
+
+/**
+ * True when the page can fetch the entry's plugin file and check it: a file co-op hosts, or a listed
+ * build's fileUrl. Its `file` is the name the OP-1 stores it under either way.
+ */
+export function isInstallable(entry: PluginIndexEntry): entry is HostedPluginEntry {
+  if (isHosted(entry)) return true;
+  return (
+    entry.fileUrl !== undefined &&
+    entry.file !== undefined &&
+    entry.version !== undefined &&
+    entry.sizeBytes !== undefined &&
+    entry.sha256 !== undefined
+  );
+}
+
+/** Every build of a plugin in the index: its `builds`, or the one build at the top of the entry. */
+export function pluginBuilds(entry: PluginIndexEntry): PluginBuild[] {
+  return entry.builds ?? [buildOf(entry)];
+}
+
+/**
+ * The entry as it is for `firmware` (a profile id): with that build's file, version, requires and
+ * the rest at the top, so code that installs or downloads one file can take it as it is. Null when
+ * the plugin has no build for that firmware.
+ */
+export function pluginFor(entry: PluginIndexEntry, firmware: string): PluginIndexEntry | null {
+  const build = pluginBuilds(entry).find((b) => b.firmware === firmware);
+  if (!build) return null;
+  if (!entry.builds) return entry;
+  const shared: Record<string, unknown> = { ...entry };
+  for (const key of BUILD_KEYS) delete shared[key];
+  return { ...(shared as unknown as PluginIndexEntry), ...build };
+}
+
+/** Every build of a manifest as a single-firmware manifest of its own, in order. */
+export function manifestBuilds(manifest: PluginManifest): PluginManifest[] {
+  const { builds, ...rest } = manifest;
+  if (!builds) return [manifest];
+  const shared: Record<string, unknown> = { ...rest };
+  for (const key of MANIFEST_BUILD_FIELDS) delete shared[key];
+  return builds.map((build) => ({ ...(shared as unknown as PluginManifest), ...build }));
 }
 
 export interface PluginIndex {
@@ -127,9 +245,11 @@ export interface PluginIssue {
   message: string;
 }
 
-const MANIFEST_FIELDS = new Set([
-  'format', 'id', 'name', 'firmware', 'kind', 'author', 'version', 'description', 'license',
-  'file', 'screenshot', 'manual', 'source', 'requires', 'credits', 'video', 'tags', 'savedName',
+/** The plugin.json fields of one build; with `builds`, all but source go in each build only. */
+const MANIFEST_BUILD_FIELDS = ['firmware', 'file', 'link', 'fileUrl', 'sha256', 'sizeBytes', 'version', 'requires', 'source', 'savedName'] as const;
+const MANIFEST_FIELDS = new Set<string>([
+  'format', 'id', 'name', 'kind', 'author', 'description', 'license',
+  'screenshot', 'manual', 'credits', 'video', 'tags', 'builds', ...MANIFEST_BUILD_FIELDS,
 ]);
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -146,7 +266,8 @@ const oneOf = <T extends string>(list: readonly T[], value: unknown): value is T
 export function parsePluginManifest(json: unknown, folderName: string): { manifest: PluginManifest | null; issues: PluginIssue[] } {
   const issues: PluginIssue[] = [];
   const fail = (message: string): void => {
-    issues.push({ plugin: folderName, file: MANIFEST_FILE, message });
+    // Two builds can find the same fault (an id one rule refuses); it is reported once.
+    if (!issues.some((i) => i.message === message)) issues.push({ plugin: folderName, file: MANIFEST_FILE, message });
   };
   if (!isObject(json)) {
     fail('plugin.json must be a JSON object');
@@ -159,21 +280,24 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
     fail(`format must be ${PLUGIN_FORMAT} (${found})`);
   }
 
-  const text = (field: string, max: number): string => {
-    const value = json[field];
+  const textIn = (record: Record<string, unknown>, where: string, field: string, max: number): string => {
+    const value = record[field];
     if (typeof value !== 'string') {
-      fail(`${field} must be a string`);
+      fail(`${where}${field} must be a string`);
       return '';
     }
-    if (value.trim() === '' || value.length > max) fail(`${field} must be 1 to ${max} characters`);
+    if (value.trim() === '' || value.length > max) fail(`${where}${field} must be 1 to ${max} characters`);
     return value;
   };
+  const text = (field: string, max: number): string => textIn(json, '', field, max);
   const optionalText = (field: string, max: number): string | undefined =>
     json[field] === undefined ? undefined : text(field, max);
+  const checkSource = (source: unknown, where: string): void => {
+    if (source === undefined) return;
+    if (typeof source !== 'string' || !HTTPS_LINK.test(source)) fail(`${where}source must be an https:// link`);
+    else if (source.length > MAX_SOURCE) fail(`${where}source must be at most ${MAX_SOURCE} characters`);
+  };
 
-  const firmware = json.firmware;
-  if (!oneOf(PLUGIN_FIRMWARE, firmware)) fail(`firmware ${JSON.stringify(firmware)} must be one of ${PLUGIN_FIRMWARE.join(', ')}`);
-  const opus = firmware === 'op1/opus';
   const kind = json.kind;
   if (!oneOf(PLUGIN_KINDS, kind)) fail(`kind ${JSON.stringify(kind)} must be one of ${PLUGIN_KINDS.join(', ')}`);
 
@@ -182,28 +306,137 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
     fail('id must be a string');
   } else {
     if (id.startsWith('.')) fail(`id "${id}" must not start with a dot`);
-    else if (opus && !OPUS_ID.test(id)) fail(`id "${id}" must be 1 to 40 lower-case letters, digits, _, . or -`);
-    else if (!opus && !HUNDEKRAFT_ID.test(id)) fail(`id "${id}" must be 1 to 15 lower-case letters, digits, _ or -`);
     if (isWindowsReservedName(id)) fail(`id "${id}" is reserved by Windows`);
     if (id !== folderName) fail(`id "${id}" must equal the folder name "${folderName}"`);
   }
 
+  /** The build fields of `record` (plugin.json itself, or one of its builds), checked against the firmware's rules. */
+  const parseBuild = (record: Record<string, unknown>, where: string): PluginBuildManifest => {
+    const firmware = record.firmware;
+    if (!oneOf(PLUGIN_FIRMWARE, firmware)) {
+      fail(`${where}firmware ${JSON.stringify(firmware)} must be one of ${PLUGIN_FIRMWARE.join(', ')}`);
+    }
+    const opus = firmware === 'op1/opus';
+    if (typeof id === 'string' && !id.startsWith('.')) {
+      if (opus && !OPUS_ID.test(id)) fail(`id "${id}" must be 1 to 40 lower-case letters, digits, _, . or -`);
+      else if (firmware === 'op1/coop' && !/^[a-z0-9_]{1,15}$/.test(id)) fail(`id "${id}" must be 1 to 15 lower-case letters, digits or _`);
+      else if (!opus && !HUNDEKRAFT_ID.test(id)) fail(`id "${id}" must be 1 to 15 lower-case letters, digits, _ or -`);
+    }
+    const link = record.link;
+    const listed = link !== undefined;
+    if (listed) {
+      if (typeof link !== 'string' || !HTTPS_LINK.test(link)) fail(`${where}link must be an https:// link`);
+      else if (link.length > MAX_SOURCE) fail(`${where}link must be at most ${MAX_SOURCE} characters`);
+    }
+    const fileUrl = record.fileUrl;
+    const remote = fileUrl !== undefined || record.sha256 !== undefined || record.sizeBytes !== undefined;
+    const version = listed && !remote && record.version === undefined ? undefined : textIn(record, where, 'version', MAX_VERSION);
+    if (remote) {
+      if (!listed) fail(`${where}fileUrl, sha256 and sizeBytes are for a listed build (with a link); a hosted build's file is in the folder`);
+      else if (firmware !== 'op1/hundekraft') fail(`${where}fileUrl is only for op1/hundekraft builds for now`);
+      const match = typeof fileUrl === 'string' ? REMOTE_KNL.exec(fileUrl) : null;
+      if (!match || (fileUrl as string).length > MAX_SOURCE) {
+        fail(
+          `${where}fileUrl must be a link of at most ${MAX_SOURCE} characters to the .knl, pinned to a commit: ` +
+            'https://raw.githubusercontent.com/<owner>/<repo>/<40-hex commit>/<path>/<id>.knl',
+        );
+      } else if (typeof id === 'string' && match[1] !== `${id}.knl`) {
+        fail(`${where}fileUrl must end in /${id}.knl, the name the OP-1 stores it under`);
+      }
+      if (typeof record.sha256 !== 'string' || !SHA256_HEX.test(record.sha256)) {
+        fail(`${where}sha256 must be the file's SHA-256: 64 lower-case hex digits`);
+      }
+      const size = record.sizeBytes;
+      if (typeof size !== 'number' || !Number.isInteger(size) || size < 1 || size > MAX_KNL_BYTES) {
+        fail(`${where}sizeBytes must be the file's size in bytes, 1 to ${MAX_KNL_BYTES}`);
+      }
+    }
+
+    const file = record.file;
+    if (listed) {
+      if (file !== undefined) fail(`${where}a listed build (with a link) has no file; co-op hosts nothing for it`);
+    } else if (typeof file !== 'string') {
+      fail(`${where}file must be a string, or link must give where the plugin is got`);
+    } else if (firmware === 'op1/hundekraft' && typeof id === 'string') {
+      if (file !== `${id}.knl` && file !== `${id}.op1p`) fail(`${where}file must be "${id}.knl" or "${id}.op1p"`);
+      else if (file.endsWith('.op1p') && kind === 'feature') fail('an .op1p plugin is a synth or an fx, not a feature');
+    } else if (firmware === 'op1/coop' && typeof id === 'string') {
+      if (file !== `${id}.coop`) fail(`${where}file must be "${id}.coop"`);
+      else if (kind === 'feature') fail('a coop plugin is a synth or an fx; coop has no feature plugins yet');
+    } else if (opus && (!OPMOD_NAME.test(file) || isWindowsReservedName(file))) {
+      fail(`${where}file must be a name ending in .opmod: letters, digits, _, . or -, at most 64 characters`);
+    }
+
+    checkSource(record.source, where);
+    const requires = record.requires === undefined ? undefined : textIn(record, where, 'requires', MAX_REQUIRES);
+    const savedName = record.savedName;
+    if (savedName !== undefined) {
+      if (!opus) fail(`${where}savedName is only for op1/opus plugins; hundekraft and coop take it from the plugin file`);
+      else if (typeof savedName !== 'string' || !OPUS_SAVED_NAME.test(savedName)) {
+        fail(`${where}savedName ${JSON.stringify(savedName)} must be opus.<id>: "opus." and 1 to 40 lower-case letters, digits, _, . or -`);
+      }
+    }
+    return {
+      firmware: firmware as PluginFirmware,
+      ...(listed ? { link: link as string } : { file: file as string }),
+      ...(remote
+        ? { fileUrl: fileUrl as string, sha256: record.sha256 as string, sizeBytes: record.sizeBytes as number }
+        : {}),
+      ...(version === undefined ? {} : { version }),
+      ...(requires === undefined ? {} : { requires }),
+      ...(record.source === undefined ? {} : { source: record.source as string }),
+      ...(savedName === undefined ? {} : { savedName: savedName as string }),
+    };
+  };
+
+  let builds: PluginBuildManifest[] | undefined;
+  let primary: PluginBuildManifest;
+  if (json.builds === undefined) {
+    primary = parseBuild(json, '');
+  } else {
+    // A file per firmware: the build fields go in each build; a top-level source is the default.
+    for (const key of MANIFEST_BUILD_FIELDS) {
+      if (key !== 'source' && json[key] !== undefined) fail(`${key} goes in each of builds when plugin.json has builds`);
+    }
+    checkSource(json.source, '');
+    const list = json.builds;
+    if (!Array.isArray(list) || list.length === 0 || list.length > PLUGIN_FIRMWARE.length) {
+      fail(`builds must be a list of 1 to ${PLUGIN_FIRMWARE.length} builds, one per firmware`);
+      builds = [];
+    } else {
+      builds = [];
+      const firmwareSeen = new Set<unknown>();
+      const filesSeen = new Set<unknown>();
+      list.forEach((raw: unknown, i: number) => {
+        const where = `builds[${i + 1}]: `;
+        if (!isObject(raw)) {
+          fail(`${where}a build must be a JSON object`);
+          return;
+        }
+        for (const key of Object.keys(raw)) {
+          if (!(MANIFEST_BUILD_FIELDS as readonly string[]).includes(key)) fail(`${where}unknown field "${key}"`);
+        }
+        const build = parseBuild(raw, where);
+        if (firmwareSeen.has(build.firmware)) fail(`${where}a second build for ${build.firmware}; give one per firmware`);
+        if (build.file !== undefined && filesSeen.has(build.file)) fail(`${where}the file ${build.file} is already another build's`);
+        firmwareSeen.add(build.firmware);
+        filesSeen.add(build.file);
+        builds?.push(build.source === undefined && json.source !== undefined ? { ...build, source: json.source as string } : build);
+      });
+    }
+    primary = builds[0] as PluginBuildManifest;
+  }
+
   const name = text('name', MAX_NAME);
   const author = text('author', MAX_AUTHOR);
-  const version = text('version', MAX_VERSION);
   const description = text('description', MAX_DESCRIPTION);
 
   const license = json.license;
-  if (!oneOf(PLUGIN_LICENSES, license)) fail(`license ${JSON.stringify(license)} must be one of ${PLUGIN_LICENSES.join(', ')}`);
-
-  const file = json.file;
-  if (typeof file !== 'string') {
-    fail('file must be a string');
-  } else if (firmware === 'op1/hundekraft' && typeof id === 'string') {
-    if (file !== `${id}.knl` && file !== `${id}.op1p`) fail(`file must be "${id}.knl" or "${id}.op1p"`);
-    else if (file.endsWith('.op1p') && kind === 'feature') fail('an .op1p plugin is a synth or an fx, not a feature');
-  } else if (opus && (!OPMOD_NAME.test(file) || isWindowsReservedName(file))) {
-    fail('file must be a name ending in .opmod: letters, digits, _, . or -, at most 64 characters');
+  const allListed = (builds ?? [primary]).every((b) => b.link !== undefined);
+  if (license === undefined && allListed) {
+    // A plugin co-op only lists says no licence of its own; its source link and manual tell.
+  } else if (!oneOf(PLUGIN_LICENSES, license)) {
+    fail(`license ${JSON.stringify(license)} must be one of ${PLUGIN_LICENSES.join(', ')}`);
   }
 
   const screenshot = json.screenshot;
@@ -212,12 +445,6 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
   }
   if (json.manual !== MANUAL_FILE) fail(`manual must be "${MANUAL_FILE}"`);
 
-  const source = json.source;
-  if (source !== undefined) {
-    if (typeof source !== 'string' || !HTTPS_LINK.test(source)) fail('source must be an https:// link');
-    else if (source.length > MAX_SOURCE) fail(`source must be at most ${MAX_SOURCE} characters`);
-  }
-  const requires = optionalText('requires', MAX_REQUIRES);
   const credits = optionalText('credits', MAX_CREDITS);
   const video = optionalText('video', MAX_VIDEO_URL);
   if (video !== undefined && !/^https:\/\/\S+\.mp4$/.test(video)) fail('video must be an https:// link to an .mp4 file');
@@ -241,35 +468,31 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
     }
   }
 
-  const savedName = json.savedName;
-  if (savedName !== undefined) {
-    if (!opus) fail('savedName is only for op1/opus plugins; hundekraft takes it from the plugin file');
-    else if (typeof savedName !== 'string' || !OPUS_SAVED_NAME.test(savedName)) {
-      fail(`savedName ${JSON.stringify(savedName)} must be opus.<id>: "opus." and 1 to 40 lower-case letters, digits, _, . or -`);
-    }
-  }
-
   if (issues.length > 0) return { manifest: null, issues };
+  const { requires, source, savedName, link, file, version, fileUrl, sha256, sizeBytes } = primary;
   return {
     manifest: {
       format: PLUGIN_FORMAT,
       id: id as string,
       name,
-      firmware: firmware as PluginFirmware,
+      firmware: primary.firmware,
       kind: kind as PluginKind,
       author,
-      version,
+      ...(version === undefined ? {} : { version }),
       description,
-      license: license as PluginLicense,
-      file: file as string,
+      ...(license === undefined ? {} : { license: license as PluginLicense }),
+      ...(file === undefined ? {} : { file }),
+      ...(link === undefined ? {} : { link }),
+      ...(fileUrl === undefined ? {} : { fileUrl, sha256, sizeBytes }),
       screenshot: screenshot as string,
       manual: MANUAL_FILE,
-      ...(source === undefined ? {} : { source: source as string }),
+      ...(source === undefined ? {} : { source }),
       ...(requires === undefined ? {} : { requires }),
       ...(credits === undefined ? {} : { credits }),
       ...(video === undefined ? {} : { video }),
       tags: tags as string[],
-      ...(savedName === undefined ? {} : { savedName: savedName as string }),
+      ...(savedName === undefined ? {} : { savedName }),
+      ...(builds === undefined ? {} : { builds }),
     },
     issues,
   };
@@ -338,6 +561,28 @@ const EXT_CLAIMS = 1;
  * are returned. Every offset read from the file is checked against its length first.
  */
 export function checkKnl(bytes: Uint8Array): PluginFileCheck {
+  return checkKennelFormat(bytes, KNL_FORMAT);
+}
+
+interface KennelFormat {
+  magic: string;
+  maxBytes: number;
+  kinds: Record<number, PluginKind>;
+  /** What the file is called in messages. */
+  what: string;
+}
+const KNL_FORMAT: KennelFormat = { magic: 'KNPL', maxBytes: MAX_KNL_BYTES, kinds: KNL_KINDS, what: 'a kennel plugin' };
+const COOP_FORMAT: KennelFormat = { magic: 'COOP', maxBytes: MAX_COOP_BYTES, kinds: { 1: 'synth', 2: 'fx' }, what: 'a coop plugin' };
+
+/**
+ * Checks a coop plugin (.coop): kennel's format with the magic COOP, at most 1 MiB, kind 1 (synth
+ * engine) or 2 (effect) (firmware/docs/plugins.md, firmware/core/sdram/plugin_load.cc).
+ */
+export function checkCoop(bytes: Uint8Array): PluginFileCheck {
+  return checkKennelFormat(bytes, COOP_FORMAT);
+}
+
+function checkKennelFormat(bytes: Uint8Array, format: KennelFormat): PluginFileCheck {
   const problems: string[] = [];
   const done = (info: PluginFileInfo | null = null): PluginFileCheck => ({ problems, info: problems.length > 0 ? null : info });
   const length = bytes.length;
@@ -356,19 +601,19 @@ export function checkKnl(bytes: Uint8Array): PluginFileCheck {
     const hazard = svgHazard(latin1(bytes.subarray(0, nul)));
     if (hazard) problems.push(hazard);
   }
-  if (length > MAX_KNL_BYTES) problems.push(`is ${overLimit(length, MAX_KNL_BYTES)}`);
+  if (length > format.maxBytes) problems.push(`is ${overLimit(length, format.maxBytes)}`);
   if (length % 4 !== 0) problems.push(`${length} bytes is not a multiple of 4`);
   if (length < h + KNL_HEADER) {
     problems.push(`${length} bytes is too short for the ${KNL_HEADER}-byte header`);
     return done();
   }
-  if (latin1(bytes.subarray(h, h + 4)) !== 'KNPL') {
-    problems.push('no KNPL header (not a kennel plugin)');
+  if (latin1(bytes.subarray(h, h + 4)) !== format.magic) {
+    problems.push(`no ${format.magic} header (not ${format.what})`);
     return done();
   }
 
-  const format = u16(bytes, h + 4);
-  if (format !== 1) problems.push(`format ${format} is not 1`);
+  const version = u16(bytes, h + 4);
+  if (version !== 1) problems.push(`format ${version} is not 1`);
   const headerSize = u16(bytes, h + 6);
   if (headerSize < KNL_HEADER) problems.push(`header size ${headerSize} is under ${KNL_HEADER} bytes`);
   else if (h + headerSize > length) problems.push(`header size ${headerSize} runs past the end of the file`);
@@ -384,8 +629,11 @@ export function checkKnl(bytes: Uint8Array): PluginFileCheck {
   const api = u16(bytes, h + 16);
   if (api !== 1) problems.push(`plugin API ${api} is not 1`);
   const kindByte = bytes[h + 18] as number;
-  const kind = KNL_KINDS[kindByte];
-  if (!kind) problems.push(`kind ${kindByte} is not 1 (synth), 2 (fx) or 3 (feature)`);
+  const kind = format.kinds[kindByte];
+  if (!kind) {
+    const allowed = Object.entries(format.kinds).map(([n, k]) => `${n} (${k})`);
+    problems.push(`kind ${kindByte} is not ${allowed.slice(0, -1).join(', ')} or ${allowed.at(-1)}`);
+  }
   const order = bytes[h + 19] as number;
   if (order > 31) problems.push(`legacy order ${order} is over 31`);
   const saved = savedNameAt(bytes, h + 20, /^[\x20-\x7e]+$/, 'printable ASCII');
@@ -576,14 +824,16 @@ export function idFromSavedName(savedName: string): string {
 }
 
 /** The size limit for one of a plugin's files. */
-function limitFor(manifest: PluginManifest, path: string): number {
-  if (path !== manifest.file) return path === manifest.screenshot ? MAX_SCREENSHOT_BYTES : MAX_TEXT_BYTES;
+function limitFor(manifest: PluginManifest, builds: readonly PluginManifest[], path: string): number {
+  if (!builds.some((b) => b.file === path)) return path === manifest.screenshot ? MAX_SCREENSHOT_BYTES : MAX_TEXT_BYTES;
   if (path.endsWith('.knl')) return MAX_KNL_BYTES;
+  if (path.endsWith('.coop')) return MAX_COOP_BYTES;
   return path.endsWith('.op1p') ? MAX_OP1P_BYTES : MAX_OPMOD_BYTES;
 }
 
 function checkPluginFile(file: string, bytes: Uint8Array): PluginFileCheck {
   if (file.endsWith('.knl')) return checkKnl(bytes);
+  if (file.endsWith('.coop')) return checkCoop(bytes);
   if (file.endsWith('.op1p')) return checkOp1p(bytes);
   const problems = checkOpmod(bytes);
   return { problems, info: problems.length > 0 ? null : {} };
@@ -592,17 +842,18 @@ function checkPluginFile(file: string, bytes: Uint8Array): PluginFileCheck {
 /**
  * Checks the files in a plugin folder against its (already valid) manifest. `files` lists every
  * file in the folder with its size, by path relative to the folder; `read` returns one file's
- * bytes. The folder must hold plugin.json, the plugin file, manual.md and the screenshot, spelled
- * exactly, and nothing else but ignored clutter (isIgnoredFile). Sizes are checked before a file
- * is read. For hundekraft the file's saved name must give the id and its kind must match
- * plugin.json; an author or version in the file that differs from plugin.json is a warning.
- * `info` is what the plugin file says, or null when there are issues.
+ * bytes. The folder must hold plugin.json, the plugin file of every build, manual.md and the
+ * screenshot, spelled exactly, and nothing else but ignored clutter (isIgnoredFile). Sizes are
+ * checked before a file is read. For hundekraft and coop the file's saved name must give the id
+ * and its kind must match plugin.json; an author or version in the file that differs from its
+ * build's is a warning. `infos` is what each build's plugin file says, in build order, and `info`
+ * the first build's; both are null when there are issues.
  */
 export async function validatePluginFiles(
   manifest: PluginManifest,
   files: readonly { path: string; size: number }[],
   read: (path: string) => Promise<Uint8Array>,
-): Promise<{ issues: PluginIssue[]; warnings: PluginIssue[]; info: PluginFileInfo | null }> {
+): Promise<{ issues: PluginIssue[]; warnings: PluginIssue[]; info: PluginFileInfo | null; infos: PluginFileInfo[] | null }> {
   const issues: PluginIssue[] = [];
   const warnings: PluginIssue[] = [];
   const fail = (message: string, file: string): void => {
@@ -610,9 +861,12 @@ export async function validatePluginFiles(
   };
   files = files.filter((f) => !isIgnoredFile(f.path));
   const sizes = new Map(files.map((f) => [f.path, f.size]));
-  const expected = [MANIFEST_FILE, manifest.file, manifest.manual, manifest.screenshot];
+  const builds = manifestBuilds(manifest);
+  const hostedFiles = builds.flatMap((b) => (b.file === undefined ? [] : [b.file]));
+  const expected = [MANIFEST_FILE, ...hostedFiles, manifest.manual, manifest.screenshot];
 
-  let info: PluginFileInfo | null = null;
+  // A listed build has no file, so nothing to say about one: its info is empty.
+  const infos: (PluginFileInfo | null)[] = builds.map((b) => (b.file === undefined ? {} : null));
   for (const path of expected) {
     const size = sizes.get(path);
     if (size === undefined) {
@@ -620,7 +874,7 @@ export async function validatePluginFiles(
       fail(near ? `missing; the folder has ${near.path}, which differs only in case` : 'missing', path);
       continue;
     }
-    const limit = limitFor(manifest, path);
+    const limit = limitFor(manifest, builds, path);
     if (size > limit) {
       fail(`is ${overLimit(size, limit)}`, path);
       continue;
@@ -637,11 +891,13 @@ export async function validatePluginFiles(
       continue;
     }
 
+    const at = builds.findIndex((b) => b.file === path);
+    const build = builds[at] as PluginManifest;
     const check = checkPluginFile(path, bytes);
     for (const problem of check.problems) fail(problem, path);
     if (!check.info) continue;
-    info = check.info;
-    if (manifest.firmware !== 'op1/hundekraft') continue;
+    infos[at] = check.info;
+    if (build.firmware !== 'op1/hundekraft' && build.firmware !== 'op1/coop') continue;
     const savedName = check.info.savedName as string;
     const id = idFromSavedName(savedName);
     if (!HUNDEKRAFT_ID.test(id)) {
@@ -652,8 +908,8 @@ export async function validatePluginFiles(
     if (check.info.kind !== manifest.kind) fail(`the file's kind is ${check.info.kind} but plugin.json says ${manifest.kind}`, path);
     const warn = (field: 'author' | 'version'): void => {
       const value = check.info?.[field];
-      if (value !== undefined && value !== manifest[field]) {
-        warnings.push({ plugin: manifest.id, file: path, message: `the file says ${field} "${value}" but plugin.json says "${manifest[field]}"` });
+      if (value !== undefined && build[field] !== undefined && value !== build[field]) {
+        warnings.push({ plugin: manifest.id, file: path, message: `the file says ${field} "${value}" but plugin.json says "${build[field]}"` });
       }
     };
     warn('author');
@@ -668,25 +924,53 @@ export async function validatePluginFiles(
     if (variantOf && !sizes.has(variantOf)) continue;
     fail(`not part of a plugin folder; it holds ${listed} only`, path);
   }
-  return { issues, warnings, info: issues.length > 0 ? null : info };
+  const ok = issues.length === 0 && infos.every((i) => i !== null);
+  return { issues, warnings, info: ok ? (infos[0] ?? null) : null, infos: ok ? (infos as PluginFileInfo[]) : null };
 }
 
-/** The index entry of a valid plugin, given its plugin file's size and hash and what the file says. */
+/**
+ * The index entry of a valid single-firmware plugin, or of one build from manifestBuilds, given
+ * its plugin file's size and hash and what the file says. A listed build has no file: null.
+ */
 export function pluginIndexEntry(
   manifest: PluginManifest,
-  file: { sizeBytes: number; sha256: string },
+  file: { sizeBytes: number; sha256: string } | null,
   info: PluginFileInfo,
 ): PluginIndexEntry {
-  const { format: _format, savedName: ownSavedName, ...fields } = manifest;
-  const savedName = manifest.firmware === 'op1/hundekraft' ? info.savedName : ownSavedName;
+  const { format: _format, savedName: ownSavedName, builds: _builds, ...fields } = manifest;
+  // A fetched .knl is checked by its hash, not read here: its saved name is the id (REMOTE_KNL ends in <id>.knl).
+  const remoteName = manifest.fileUrl === undefined ? undefined : manifest.fileUrl.slice(manifest.fileUrl.lastIndexOf('/') + 1);
+  const savedName =
+    manifest.firmware === 'op1/hundekraft' || manifest.firmware === 'op1/coop'
+      ? (info.savedName ?? (remoteName === undefined ? undefined : manifest.id))
+      : ownSavedName;
   return {
     ...fields,
+    ...(remoteName === undefined ? {} : { file: remoteName }),
     screenshot: `${manifest.id}/${manifest.screenshot}`,
     manual: `${manifest.id}/${manifest.manual}`,
-    sizeBytes: file.sizeBytes,
-    sha256: file.sha256,
+    ...(file === null ? {} : { sizeBytes: file.sizeBytes, sha256: file.sha256 }),
     ...(savedName === undefined ? {} : { savedName }),
     ...(info.author === undefined ? {} : { headerAuthor: info.author }),
     ...(info.version === undefined ? {} : { headerVersion: info.version }),
   };
+}
+
+/**
+ * The index entry of any valid plugin, given each build's file facts and what its file says, in
+ * build order (one for a single-firmware plugin; null for a listed build, which has no file). A
+ * plugin with builds lists them all in `builds` and has the first one's fields at the top.
+ */
+export function pluginIndexEntryOfBuilds(
+  manifest: PluginManifest,
+  files: readonly ({ sizeBytes: number; sha256: string; info: PluginFileInfo } | null)[],
+): PluginIndexEntry {
+  const entries = manifestBuilds(manifest).map((build, i) => {
+    const file = files[i];
+    if (build.link !== undefined) return pluginIndexEntry(build, null, {});
+    if (!file) throw new Error(`no file facts for build ${i + 1} of ${manifest.id}`);
+    return pluginIndexEntry(build, file, file.info);
+  });
+  const first = entries[0] as PluginIndexEntry;
+  return manifest.builds ? { ...first, builds: entries.map(buildOf) } : first;
 }

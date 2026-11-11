@@ -12,9 +12,12 @@ import {
   MANIFEST_FILE,
   MAX_TEXT_BYTES,
   PLUGIN_INDEX_FORMAT,
+  manifestBuilds,
   parsePluginManifest,
-  pluginIndexEntry,
+  pluginBuilds,
+  pluginIndexEntryOfBuilds,
   validatePluginFiles,
+  type PluginFileInfo,
   type PluginIndex,
   type PluginIndexEntry,
   type PluginIssue,
@@ -74,15 +77,15 @@ async function loadPlugin(pluginsDir: string, folder: string): Promise<Loaded> {
     read.set(path, bytes);
     return bytes;
   });
-  if (result.issues.length > 0 || !result.info) return { issues: result.issues, warnings: result.warnings, entry: null };
+  const { infos } = result;
+  if (result.issues.length > 0 || !infos) return { issues: result.issues, warnings: result.warnings, entry: null };
 
-  const bytes = read.get(manifest.file) as Uint8Array;
-  const entry = pluginIndexEntry(
-    manifest,
-    { sizeBytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') },
-    result.info,
-  );
-  return { issues: [], warnings: result.warnings, entry };
+  const facts = manifestBuilds(manifest).map((build, i) => {
+    if (build.file === undefined) return null;
+    const bytes = read.get(build.file) as Uint8Array;
+    return { sizeBytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), info: infos[i] as PluginFileInfo };
+  });
+  return { issues: [], warnings: result.warnings, entry: pluginIndexEntryOfBuilds(manifest, facts) };
 }
 
 /** Validates every plugin in `pluginsDir` and builds the index of the valid ones. */
@@ -116,14 +119,20 @@ export function formatIssues(issues: readonly PluginIssue[], noun = 'issue'): st
   return lines.join('\n');
 }
 
-/** The published files of a valid plugin, relative to the plugins folder: plugin.json, the plugin file, manual and screenshot. */
+/**
+ * The published files of a valid plugin, relative to the plugins folder: plugin.json, the plugin
+ * file of each build, manual and screenshot.
+ */
 function publishedPaths(plugin: PluginIndexEntry): string[] {
-  return [`${plugin.id}/${MANIFEST_FILE}`, `${plugin.id}/${plugin.file}`, plugin.manual, plugin.screenshot];
+  // A listed build hosts nothing: with a fileUrl, the page fetches its file from the author instead.
+  const files = pluginBuilds(plugin).flatMap((b) => (b.file === undefined || b.fileUrl !== undefined ? [] : [`${plugin.id}/${b.file}`]));
+  return [`${plugin.id}/${MANIFEST_FILE}`, ...files, plugin.manual, plugin.screenshot];
 }
 
 /**
- * Validates every plugin and, only if none has an issue, replaces `<outDir>/plugins` with the four
- * files of each plugin plus the generated index.json. Without a plugins folder the index is empty.
+ * Validates every plugin and, only if none has an issue, replaces `<outDir>/plugins` with the
+ * files of each plugin (publishedPaths) plus the generated index.json. Without a plugins folder
+ * the index is empty.
  */
 export async function buildPlugins(pluginsDir: string, outDir: string, options: LoadOptions = {}): Promise<PluginsResult> {
   const result = await loadPlugins(pluginsDir, options);
@@ -164,8 +173,8 @@ const contentType = (file: string): string =>
 /**
  * A connect-style handler for the Vite dev server. `<base>plugins/index.json` is built on the fly
  * (valid plugins only; issues and warnings go to `warn`). `<base>plugins/<id>/<file>` is served
- * only when the freshly built index has that plugin and `<file>` is one of its four published
- * files, spelled exactly, and only when the real path still lies inside the plugin folder.
+ * only when the freshly built index has that plugin and `<file>` is one of its published files,
+ * spelled exactly, and only when the real path still lies inside the plugin folder.
  * Anything else under `<base>plugins/` is a 404; other URLs are passed on.
  */
 export function pluginsMiddleware(pluginsDir: string, options: MiddlewareOptions) {

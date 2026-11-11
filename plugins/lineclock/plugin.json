@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "lineclock",
+  "name": "Line clock",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "Line clock lets a drum machine or a modular set the OP-1's tempo through a cable in the line-in jack. It reads clock pulses on the input and turns them into MIDI clock. Set the tempo screen's sync to follow MIDI, hold Shift and push blue to pick the RATE your clock sends, and plug the clock into line in.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Port of Pulse Sync by Volker Junginger (ESC_CODE), GPL-3.0, used with the author's permission",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

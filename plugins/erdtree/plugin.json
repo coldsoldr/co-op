@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "id": "erdtree",
+  "name": "erdtree",
+  "kind": "synth",
+  "author": "SammiBabe666",
+  "description": "erdtree by SammiBabe666 is an Elden Ring tribute that plays like a small orchestra under the Erdtree. Each encoder brings in one section: blue a choir of spectral voices, green detuned violins and celli, orange Brassophone's horn, and white the distance between them. Each section also animates its own part of the screen: falling leaves, the crown, shafts of light and stars.",
+  "license": "GPL-3.0-or-later",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "video": "https://raw.githubusercontent.com/SammiBabe666/Project_Erdtree/main/platforms/opus/assets/erdtree_opus_demo.mp4",
+  "credits": "The brass voice is Brassophone's, by nick (nvmsocool)",
+  "tags": ["synth", "orchestral", "choir", "strings", "brass"],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://github.com/SammiBabe666/Project_Erdtree/tree/main/platforms/hundekraft",
+      "fileUrl": "https://raw.githubusercontent.com/SammiBabe666/Project_Erdtree/5f6b506c6614993349fd70bb10e09754e935c3d4/platforms/hundekraft/build/erdtree.knl",
+      "sha256": "f06807a527f5f54560604f42a8574e67ae32cb9626443c4dce1fedfad4e11bcb",
+      "sizeBytes": 51992,
+      "version": "0.5",
+      "requires": "hundekraft workshop 3.0",
+      "source": "https://github.com/SammiBabe666/Project_Erdtree/tree/main/platforms/hundekraft"
+    },
+    {
+      "firmware": "op1/opus",
+      "link": "https://github.com/SammiBabe666/Project_Erdtree/tree/main/platforms/opus",
+      "version": "0.6.1",
+      "requires": "opus core 2.8",
+      "source": "https://github.com/SammiBabe666/Project_Erdtree/tree/main/platforms/opus"
+    }
+  ]
+}

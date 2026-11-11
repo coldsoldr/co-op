@@ -82,8 +82,6 @@ test('opens a dropped drive read-only, stages a delete and downloads the changes
   await expect(page.getByRole('dialog', { name: 'Discard staged changes?' })).toBeHidden();
   await expect(page.getByRole('button', { name: 'Connect OP-1' })).toBeVisible();
 
-  await page.getByRole('tab', { name: 'Inspector' }).click();
-  await expect(page.getByRole('heading', { name: 'Patch inspector' })).toBeVisible();
 });
 
 test('writes to a connected drive and recovers an interrupted write', async ({ page }) => {

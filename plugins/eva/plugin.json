@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "eva",
+  "name": "EVA",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "A warm, sung pad with the sound of early-80s film scores. Two slightly detuned oscillators, a saw and a soft pulse, go through a lowpass with a gentle vowel colour on top, then through a wide ensemble chorus. Each voice has a slow vibrato and drifts a little on its own, so held chords slowly shift. The helmet radio sits on Com: low settings just warm the sound up, high settings bring in hiss, dropouts and the radio's beeps.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

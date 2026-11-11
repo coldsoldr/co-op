@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "crush",
+  "name": "Crush",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "Crush reduces the signal's bit depth and sample rate, then adds drive. Low bit depth makes a waveform's steps audible; a low sample rate adds aliasing. The artwork is Maiko's, used with permission. It runs on synth, drum and master FX; the master keeps the two channels separate.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Reconstructs Maiko Pruett's #250 algorithm and artwork, used with permission",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

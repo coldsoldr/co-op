@@ -1,0 +1,16 @@
+# Deterministic chord scenario: every key event is scheduled in GUEST time (op1emu `at`), so two runs
+# of two images produce frame-aligned audio (tools/wav_compare.py without --align).
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap synth 300
+at 33000
+press c4
+press e4
+press g4
+at 34000
+release c4
+release e4
+release g4
+wait 45000
+quit

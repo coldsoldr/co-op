@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "punch",
+  "name": "Punch in",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "Punch-in uses tape markers. Hold tape and press REC to arm it: the markers turn red. Play the tape. Recording starts at the next marker and stops at the one after. Press STOP to stop, or tape + REC again to disarm.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

@@ -1,0 +1,89 @@
+/*
+ * coop-fw Phase 2, milestone 1: identity wrap + measure of the audio callback.
+ *
+ * The stock firmware stores the audio DMA callback pointer (0xFFA04804) at 0xff80036c, built by the
+ * imm pair at 0x0191AB52 (R1.L=0x4804 at +2, R1.H=0xFFA0 at +6; confirmed in the stock disassembly).
+ * This payload, linked into free SDRAM region A, repoints that imm pair to CoopAudioCb, which calls
+ * the stock callback unchanged and times it with the CYCLES counter. No audible change: it is the
+ * seam for Phase 2, proven transparent before any stage is replaced.
+ *
+ * Measurements (CoopAudioCb's cycle cost per block) are kept in region-A .bss (g_last/g_max/g_blocks)
+ * for a later on-screen readout. Verification for this milestone is that the device still boots and
+ * runs normally with our callback in the audio path.
+ *
+ * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission (see LICENSE, NOTICE).
+ */
+#include <stdint.h>
+
+typedef int (*audio_cb_fn)(int r0, int r1);
+#define FW_AUDIO_CB 0xFFA04804u
+
+struct patch { uint32_t address, kind, stock; const void *value; };
+struct header {
+    uint32_t magic, version;
+    void *render, *note_on, *note_off;
+    const struct patch *patches;
+    uint32_t num_patches, reserved;
+};
+enum { HEADER_MAGIC = 0x5831504fu };
+enum { PATCH_IMM16_LO = 1, PATCH_IMM16_HI = 2 };
+
+/* measurements, in region-A .bss */
+volatile uint32_t g_last, g_max, g_blocks;
+volatile uint32_t g_max_win, g_blocks_win;        /* window peaks for the stats file (coop_stats.cc) */
+volatile uint32_t g_cb_sum_win, g_cb_over_win;    /* window sum (average load) and blocks over half the budget */
+#define COOP_CB_OVER 290249u                        /* half of the 580,499-cycle block (docs/performance.md) */
+
+static inline uint32_t cycles(void)
+{
+    uint32_t v;
+    __asm__ __volatile__("%0 = CYCLES;" : "=d"(v));
+    return v;
+}
+
+#ifdef COOP_COMBINED
+extern "C" void coop_stereo_block_start(void);   /* stereo bus: per-block reset (core/sdram/stereo_bus.cc) */
+#include "coop_cost.h"                             /* the slow-block profiler marks */
+extern "C" void coop_slow_keep(uint32_t dt);       /* coop_stats.cc */
+extern "C" volatile uint32_t g_coop_slow_th, g_coop_gap_prof;
+extern "C" void coop_gap_block(void);              /* coop_stats.cc, the p5g gap profile */
+#endif
+
+/* The replacement audio callback: time the stock callback and forward its result. */
+extern "C" int CoopAudioCb(int r0, int r1)
+{
+    uint32_t t0 = cycles();
+#ifdef COOP_COMBINED
+    g_mk_n = 0;
+    coop_mark_at(0x01, t0);
+    coop_stereo_block_start();
+    coop_mark(0x02);
+#endif
+    int ret = ((audio_cb_fn)(uintptr_t)FW_AUDIO_CB)(r0, r1);
+    uint32_t dt = cycles() - t0;
+#ifdef COOP_COMBINED
+    coop_mark(0x03);
+    if (dt > g_coop_slow_th) coop_slow_keep(dt);
+    if (g_coop_gap_prof) coop_gap_block();
+#endif
+    g_last = dt;
+    if (dt > g_max) g_max = dt;
+    if (dt > g_max_win) g_max_win = dt;
+    g_cb_sum_win += dt;
+    if (dt > COOP_CB_OVER) g_cb_over_win++;
+    g_blocks++;
+    g_blocks_win++;
+    return ret;
+}
+
+/* Repoint the audio-callback imm pair (0x0191AB52) to CoopAudioCb. inject_app checks the stock
+ * imm halves (0x4804 / 0xFFA0) before writing. */
+extern "C" const struct patch g_patches[] = {
+    { 0x0191AB54u, PATCH_IMM16_LO, 0x4804u, (const void *)&CoopAudioCb },
+    { 0x0191AB58u, PATCH_IMM16_HI, 0xFFA0u, (const void *)&CoopAudioCb },
+};
+
+extern "C" __attribute__((section(".op1header"), used))
+const struct header op1_header = {
+    HEADER_MAGIC, 1u, 0, 0, 0, g_patches, sizeof g_patches / sizeof g_patches[0], 0u,
+};

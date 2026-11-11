@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "id": "opus.filter",
+  "name": "filter",
+  "firmware": "op1/opus",
+  "kind": "fx",
+  "author": "LizardMan",
+  "version": "1.0.0",
+  "description": "The OP-1's own hidden filter effect, made selectable.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "credits": "The OS's hidden filter, which wavi showed in 2016",
+  "savedName": "opus.filter",
+  "tags": [
+    "effect",
+    "opus"
+  ]
+}

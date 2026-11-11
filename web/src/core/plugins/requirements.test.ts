@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
+import type { HostedPluginEntry, PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
 import { soundTraits, type SoundTraits } from '../codec/sound-traits';
 import type { Op1Meta } from '../codec/op1-meta';
 import { parseInventory } from '../usbmidi/inventory';
 import { installedNames, pluginContext, requiredPlugins } from './requirements';
 import { SYNTH_META, DRUM_META } from '../../../test/fixtures/meta';
 
-const entry = (id: string, firmware: PluginIndexEntry['firmware'], savedName?: string): PluginIndexEntry => ({
+const entry = (id: string, firmware: PluginIndexEntry['firmware'], savedName?: string): HostedPluginEntry => ({
   id,
   name: id,
   firmware,
@@ -61,6 +61,21 @@ describe('requiredPlugins', () => {
   it('finds the opus plugin and effects an opus sound names', () => {
     const traits = synth({ type: 'iter', knobs: [0, 0, 0, 0, 0x100, 0, 0, 0], opus: { plugin: 'opus.dx', fx_type: 'opus.chorus2' } });
     expect(ids(requiredPlugins(traits, INDEX, 'op1/opus'))).toEqual(['dx', 'chorus2']);
+  });
+
+  it('gives a plugin with a file per firmware as its build for that firmware', () => {
+    const knl = entry('rings', 'op1/hundekraft', 'rings');
+    const coop = { firmware: 'op1/coop' as const, file: 'rings.coop', version: '0.5', sizeBytes: 2, sha256: '1'.repeat(64), savedName: 'rings' };
+    const { firmware, file, version, sizeBytes, sha256 } = knl;
+    const both: PluginIndex = {
+      ...INDEX,
+      plugins: [{ ...knl, builds: [{ firmware, file, version, sizeBytes, sha256, savedName: 'rings' }, coop] }],
+    };
+    const traits = synth({ type: 'rings' });
+    expect(requiredPlugins(traits, both, 'op1/coop')).toEqual([expect.objectContaining({ id: 'rings', firmware: 'op1/coop', file: 'rings.coop' })]);
+    expect(requiredPlugins(traits, both, 'op1/hundekraft')).toEqual([expect.objectContaining({ id: 'rings', file: 'rings.knl' })]);
+    expect(pluginContext(both, 'op1/coop', null)?.library).toEqual(new Map([['rings', 'rings']]));
+    expect(pluginContext(both, 'op1/opus', null)?.library.size).toBe(0);
   });
 });
 

@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "file",
+  "name": "File / storage",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "Hold Shift and press COM. The COM screen opens. On the OP-1 tab (T1), hold Shift and press COM again. FILE opens. The same keys switch back. In CTRL, DISK or OPT, Shift + COM does what it always did; press T1 first to reach FILE.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Rebuilt by hundekraft from how Maiko Pruett's #249 and #250 work; none of Maiko's code is used",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

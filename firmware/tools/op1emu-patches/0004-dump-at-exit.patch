@@ -1,0 +1,68 @@
+--- a/gui/main.cpp	2026-11-11 12:59:12.334751631 +0200
++++ b/gui/main.cpp	2026-11-11 12:59:12.340197835 +0200
+@@ -11,6 +11,8 @@
+ #include "audio_output_wav.h"
+ #include "usbipd.h"
+ #include "build_info.h"
++#include "bcore/include/cpu_state.h"
++#include <cstdio>
+ #ifdef ENABLE_PROFILING
+ #include "profiling/profiler.h"
+ #endif
+@@ -137,6 +139,7 @@
+     std::string watchOut;
+     long long watchLog = 0;
+     double watchFrom = 0;
++    std::vector<std::string> dumpAtExit;  // coop-fw: LO+LEN:PATH, guest memory written to PATH at exit
+     const std::pair<const char*, std::string*> valueOptions[] = {
+         {"--profile-marks", &profileMarks}, {"--profile-trace", &profileTrace},
+         {"--profile-census", &profileCensus}, {"--perf-ctl-fifo", &perfFifo},
+@@ -261,6 +264,10 @@
+             if (++i == argc || !*argv[i]) throw std::runtime_error("--watch-writes requires a range");
+             writeWatch.Add(WriteWatch::ParseRange(argv[i]));
+         }
++        else if (options && arg == "--dump-at-exit") {
++            if (++i == argc || !*argv[i]) throw std::runtime_error("--dump-at-exit requires LO+LEN:PATH");
++            dumpAtExit.push_back(argv[i]);
++        }
+         else if (options && arg == "--watch-log") {
+             if (++i == argc || !*argv[i]) throw std::runtime_error("--watch-log requires a count");
+             try { watchLog = std::stoll(argv[i]); } catch (const std::exception&) { watchLog = -1; }
+@@ -296,6 +303,8 @@
+                      "                        hex): each new writer as it appears, a table at exit;\n"
+                      "                        repeatable. Any build; no probe hit cap\n"
+                      "  --watch-out PATH      Also write that table to PATH (TSV)\n"
++                     "  --dump-at-exit LO+LEN:PATH  Write guest memory (hex LO, LEN) to PATH at exit and\n"
++                     "                        log the PC, SP, FP, RETS (repeatable)\n"
+                      "  --watch-log N         Also print the first N single stores into those ranges\n"
+                      "  --watch-from SECONDS  ... at or after this guest time (default 0)\n"
+                      "  --deterministic       Run as fast as the host allows, not at the device's\n"
+@@ -587,6 +596,28 @@
+     cpuShouldStop.store(true);
+     cpuThread.join();
+     if (!writeWatch.Empty()) writeWatch.Report(watchOut);
++    if (!dumpAtExit.empty()) {
++        const auto& st = cpu.State();
++        LogInfo("Exit state: pc %08x sp %08x fp %08x rets %08x reti %08x usp %08x seqstat %08x", st.pc, st.dpregs[14], st.dpregs[15],
++                st.rets, st.reti, st.usp, st.seqstat);
++        for (const auto& spec : dumpAtExit) {
++            const size_t plus = spec.find('+'), colon = spec.find(':');
++            if (plus == std::string::npos || colon == std::string::npos || colon < plus) { LogError("bad --dump-at-exit %s", spec.c_str()); continue; }
++            uint32_t lo = static_cast<uint32_t>(std::stoul(spec.substr(0, plus), nullptr, 16));
++            uint32_t len = static_cast<uint32_t>(std::stoul(spec.substr(plus + 1, colon - plus - 1), nullptr, 16));
++            std::string path = spec.substr(colon + 1);
++            FILE* f = fopen(path.c_str(), "wb");
++            if (!f) { LogError("cannot write %s", path.c_str()); continue; }
++            std::vector<uint8_t> buf(65536);
++            for (uint32_t off = 0; off < len; off += 65536) {
++                uint32_t n = std::min<uint32_t>(65536, len - off);
++                cpu.GetEmulator().MemoryRead(lo + off, buf.data(), static_cast<int>(n));
++                fwrite(buf.data(), 1, n, f);
++            }
++            fclose(f);
++            LogInfo("Dumped %08x+%x to %s", lo, len, path.c_str());
++        }
++    }
+     if (cpu.Failed()) {
+         LogError("Emulation stopped: CPU execution failed");
+         result = 1;

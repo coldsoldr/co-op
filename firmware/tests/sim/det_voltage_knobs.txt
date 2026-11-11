@@ -1,0 +1,69 @@
+# Performance A/B: Voltage (factory sound slot 2) with its four engine knobs turned during a six-note chord and in its
+# tail, then notes played on and off (g_coop_fast_voltage). Guest-timed.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap s2 200
+at 30000
+press c4
+press d4
+press e4
+press f4
+press g4
+press a4
+at 31000
+turn enc1 cw 24
+at 32000
+turn enc2 ccw 24
+at 33000
+turn enc3 cw 24
+at 34000
+turn enc4 ccw 24
+at 35000
+turn enc1 ccw 40
+at 36000
+turn enc2 cw 40
+at 37000
+turn enc3 ccw 40
+at 38000
+turn enc4 cw 40
+at 39000
+release c4
+release e4
+release f4
+at 39500
+turn enc1 cw 30
+at 40000
+release d4
+release g4
+release a4
+at 40500
+turn enc3 cw 20
+at 41000
+press c4
+press g4
+at 42000
+release c4
+press e4
+at 43000
+turn enc2 ccw 20
+press b4
+at 44000
+release g4
+release e4
+at 45000
+release b4
+at 45200
+turn enc4 ccw 30
+at 46000
+press d4
+press f4
+press a4
+at 48000
+release d4
+release f4
+release a4
+wait 60000
+quit

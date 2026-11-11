@@ -1,4 +1,4 @@
-import type { PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
+import { isInstallable, pluginFor, type HostedPluginEntry, type PluginIndex } from '@co-op/shared/plugins';
 import type { SoundTraits } from '../codec/sound-traits';
 import { getProfile } from '../profiles/registry';
 import type { PluginContext } from '../profiles/types';
@@ -26,9 +26,20 @@ function pluginNames(traits: SoundTraits, firmwareId: string): Set<string> {
  * saved name is the sound's engine (synth sounds), effect, or opus plugin or effects. Names the
  * firmware has built in need nothing. In index order.
  */
-export function requiredPlugins(traits: SoundTraits, index: PluginIndex, firmwareId: string): PluginIndexEntry[] {
+export function requiredPlugins(traits: SoundTraits, index: PluginIndex, firmwareId: string): HostedPluginEntry[] {
   const names = pluginNames(traits, firmwareId);
-  return index.plugins.filter((p) => p.firmware === firmwareId && p.savedName !== undefined && names.has(p.savedName));
+  return pluginsFor(index, firmwareId).filter((p) => p.savedName !== undefined && names.has(p.savedName));
+}
+
+/**
+ * The library plugins with a file co-op hosts for `firmwareId`, each as that build (pluginFor), in
+ * index order. A listed build (a link to its author's page) is left out unless it names a file the page can fetch.
+ */
+function pluginsFor(index: PluginIndex, firmwareId: string): HostedPluginEntry[] {
+  return index.plugins.flatMap((p) => {
+    const build = pluginFor(p, firmwareId);
+    return build && isInstallable(build) ? [build] : [];
+  });
 }
 
 /** The saved names of the plugins an inventory reports loaded; empty without an inventory. */
@@ -43,6 +54,6 @@ export function installedNames(inventory: Inventory | null): Set<string> {
 export function pluginContext(index: PluginIndex | null, firmwareId: string, inventory: Inventory | null): PluginContext | null {
   if (!index) return null;
   const library = new Map<string, string>();
-  for (const p of index.plugins) if (p.firmware === firmwareId && p.savedName !== undefined) library.set(p.savedName, p.id);
+  for (const p of pluginsFor(index, firmwareId)) if (p.savedName !== undefined) library.set(p.savedName, p.id);
   return { library, loaded: installedNames(inventory) };
 }

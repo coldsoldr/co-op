@@ -1,0 +1,88 @@
+{
+  "name": "rings",
+  "kind": "synth",
+  "voice_rate": 44100,
+  "symbol": "ENGINE_rings",
+  "sources": [
+    "rings.cc",
+    "rings_screen.cc",
+    "op1/support.cc",
+    "src/op1_voice.cc",
+    "src/string_voice.cc",
+    "src/string_fixed.cc",
+    "src/reverb_fixed.cc",
+    "src/fm_voice_fixed.cc",
+    "src/modal_resonator.cc",
+    "src/fixed_tables.cc",
+    "src/mode_bank_bfin.S",
+    "src/string_kernel_bfin.S",
+    "src/limiter_bfin.S",
+    "src/reverb_bfin.S",
+    "src/halfband_bfin.S"
+  ],
+  "include_dirs": [
+    "."
+  ],
+  "cflags": [
+    "-DOP1_COOP",
+    "-DOP1RINGS_SAMPLE_RATE=22050",
+    "-DOP1RINGS_CONTROL_BLOCK_SIZE=32",
+    "-DOP1RINGS_UPSAMPLE=4",
+    "-DOP1RINGS_CONTROL_HALVED=1",
+    "-DOP1RINGS_CONTROL_BATCHED=1",
+    "-DOP1RINGS_COOP_POLY4=1",
+    "-DOP1RINGS_COOP_POLY_ALL=1",
+    "-DOP1RINGS_VOICE_44K=1",
+    "-fno-tree-loop-distribute-patterns"
+  ],
+  "defaults": [
+    8192,
+    19660,
+    22937,
+    9830
+  ],
+  "controls": [
+    {
+      "id": "model",
+      "name": "model",
+      "action": "fn_turn",
+      "encoder": "blue",
+      "word": 5,
+      "kind": "steps",
+      "steps": [
+        "modal",
+        "symp",
+        "string",
+        "fm",
+        "quant",
+        "verb"
+      ],
+      "default": 0,
+      "detents": 2,
+      "wrap": true
+    },
+    {
+      "id": "poly",
+      "name": "poly",
+      "action": "fn_turn",
+      "encoder": "green",
+      "word": 6,
+      "kind": "steps",
+      "steps": [
+        "1",
+        "2",
+        "4",
+        "all"
+      ],
+      "default": 2,
+      "wrap": true
+    }
+  ],
+  "screen": {
+    "svg": "rings.svg",
+    "symbol": "SCREEN_rings"
+  },
+  "author": "coldsoldr",
+  "version": "0.5",
+  "description": "Mutable Instruments Rings (Emilie Gillet, MIT) as a coop synth engine: te-op1-cfw's fixed-point port (the hundekraft kennel build, ports/knl/rings at 5aa314b), 22.05 kHz upsampled 2x to a 44.1 kHz voice. Blue structure, green brightness, white damping, orange position; fn + blue the model (modal, sympathetic strings, string, FM, quantized sympathetic strings, string and reverb), fn + green the polyphony (1, 2, 4, all); both wrap around."
+}

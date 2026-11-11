@@ -8,9 +8,13 @@
  */
 
 export type InventoryKind = 'synth' | 'fx' | 'feature';
-export type InventorySource = 'builtin' | 'knl' | 'op1p';
-/** `skipped`: the last boot did not reach the UI, so this boot started without plugin files. */
-export type InventoryState = 'loaded' | 'failed' | 'skipped' | 'off';
+/** `coop`: a .coop file on a coop OP-1 (coop.ts), not from kennel's LIST. */
+export type InventorySource = 'builtin' | 'knl' | 'op1p' | 'coop';
+/**
+ * `skipped`: the last boot did not reach the UI, so this boot started without plugin files. `pending` (coop): the
+ * file arrived after the boot; the next boot loads it.
+ */
+export type InventoryState = 'loaded' | 'failed' | 'skipped' | 'off' | 'pending';
 export type ClaimState = 'held' | 'lost' | 'not held';
 
 export interface InventoryClaim {
@@ -39,6 +43,8 @@ export interface InventoryRecord {
   claims: InventoryClaim[];
   /** Why it failed or is off, or a note such as "replaces the built-in"; empty otherwise. */
   reason: string;
+  /** coop only: whether the next boot loads the file (the settings file's list). */
+  enabled?: boolean;
 }
 
 export interface Inventory {

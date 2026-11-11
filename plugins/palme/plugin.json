@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "palme",
+  "name": "Palme",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "ultralazr",
+  "description": "The palm-shaped string loudspeaker of the Ondes Martenot. Twelve strings, tuned chromatically from a root, ring in sympathy with what you play. Page 2 morphs the soundboard into a gong.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/ultralazr/op1-musica-obscura",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Musica Obscura by ultralazr, from op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

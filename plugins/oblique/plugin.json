@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "oblique",
+  "name": "Oblique strategies",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "Shift + help shows the clock or a random card from Brian Eno and Peter Schmidt's Oblique Strategies, whichever you looked at last. Press Shift + help again to switch between them. A new card turns up each time you switch to it.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Cards by Brian Eno and Peter Schmidt; idea and card screen from ultralazr's op1-oblique-strategies",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "id": "opus.bitcrush",
+  "name": "bitcrush",
+  "firmware": "op1/opus",
+  "kind": "fx",
+  "author": "LizardMan",
+  "version": "2.0.3",
+  "description": "A bit and sample-rate crusher in the OP-1's own effect list, with its own page.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/LizardMan245/opus/tree/main/plugin-kit/examples/opus.bitcrush",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.bitcrush",
+  "tags": [
+    "effect",
+    "opus"
+  ]
+}

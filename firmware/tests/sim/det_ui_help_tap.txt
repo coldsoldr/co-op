@@ -1,0 +1,32 @@
+# u4 isolation: Help as fn. Tape; a chord (A); Help tapped alone (coop defers it: the stock sees press + release on
+# the release, help mode opens); tape (back); the chord (B: must sound as A). Screenshot at the end: the tape page.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tape 300
+at 28000
+press c4
+press e4
+press g4
+at 30000
+release c4
+release e4
+release g4
+at 32000
+tap help 200
+at 34000
+screenshot /root/op1emu-work/hlp_a.ppm
+at 35000
+tap tape 300
+at 37000
+press c4
+press e4
+press g4
+at 39000
+release c4
+release e4
+release g4
+wait 40000
+screenshot /root/op1emu-work/hlp_b.ppm
+wait 2000
+quit

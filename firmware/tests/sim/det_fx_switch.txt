@@ -1,0 +1,132 @@
+# e8: switching effects at one position restarts the effect (docs/plugins.md "e8": the position buffer is shared, so
+# init runs at every selection and the state starts again). NAND: cs_hall and tape_echo (two scratch effects: cs hall is
+# the FIRST row of the stock FX list, tape echo the LAST). Guest-timed, steps as det_fx_controls.txt.
+#  synth FX 1: cs hall (ccw 96), FX 1 on, a chord (a long tail); then tape echo (cw 96), a chord; then cs hall again
+#  (ccw 96), a chord. Each selection is an init at p0 (fxctl p0 inits >= 3; the stock adds its own on a sound change),
+#  and each restart passes the dry signal for the clear (~30 ms cs_hall, ~25 ms tape_echo) before the effect plays.
+#  instrument FX 2: the first plugin of coop's FX 2 list (shift + blue 3 detents), then the next (1 detent more), then
+#  back (1 detent less): fxctl p3 inits 3 [I: the FX 2 list order follows the plugin numbers, so which of the two comes
+#  first depends on the load order; the test is the count].
+# Expected: no fault; plugins loaded 2; plugmem scratch_files 2, fxbuf = tape_echo's 134784 (the larger declaration).
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 ccw 96
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36000
+tap t3 200
+at 37000
+tap t3 200
+at 38500
+press c4
+press e4
+press g4
+at 40000
+release c4
+release e4
+release g4
+at 44000
+tap t3 200
+at 45000
+press shift
+at 45200
+tap t3 200
+at 45700
+release shift
+at 47000
+turn enc1 cw 96
+at 50000
+tap seq 200
+at 51000
+tap synth 200
+at 52500
+press c4
+press e4
+press g4
+at 54000
+release c4
+release e4
+release g4
+at 58000
+tap t3 200
+at 59000
+press shift
+at 59200
+tap t3 200
+at 59700
+release shift
+at 61000
+turn enc1 ccw 96
+at 64000
+tap seq 200
+at 65000
+tap synth 200
+at 66500
+press c4
+press e4
+press g4
+at 68000
+release c4
+release e4
+release g4
+at 71000
+tap drop 200
+at 72500
+press shift
+at 72700
+turn enc1 cw 6
+at 73300
+release shift
+at 74000
+tap enc1 200
+at 75500
+tap t3 200
+at 76500
+press c4
+at 77500
+release c4
+at 78500
+press shift
+at 78700
+turn enc1 cw 2
+at 79100
+release shift
+at 79800
+tap enc1 200
+at 81000
+press c4
+at 82000
+release c4
+at 83000
+press shift
+at 83200
+turn enc1 ccw 2
+at 83600
+release shift
+at 84300
+tap enc1 200
+at 85500
+press c4
+press g4
+at 87000
+release c4
+release g4
+at 88000
+tap lift 200
+wait 100000
+screenshot /root/op1emu-work/fx_switch_end.ppm
+wait 3000
+quit

@@ -1,0 +1,34 @@
+# The STOCK cwo effect (row 1 of the FX list: cwo delay grid nitro phone punch spring; the stock list has no
+# filter row) at the synth position: one row down and back up, so the list takes the selection. Guest-timed.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 8
+at 32000
+turn enc1 ccw 8
+at 33000
+tap seq 200
+at 34000
+tap synth 200
+at 40000
+press c4
+press e4
+press g4
+at 42000
+release c4
+release e4
+release g4
+wait 39000
+screenshot /root/op1emu-work/sf_cwo.ppm
+wait 8000
+quit

@@ -1,0 +1,17 @@
+# u9: the stock "FX OFF" overlay follows FX 2 (coop_fx_on_read). Synth; T3 (the FX page); T3 (FX 1 on); drop: FX 2 =
+# FX 1's type, switched OFF. End state: FX 2's page with the stock's big FX OFF while FX 1 is on.
+# det_ui_fx2offlift adds lift (FX 1's page, on: no overlay); det_ui_fx2on1off is FX 1 off with FX 2 on (no overlay).
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+tap t3 200
+at 30500
+tap drop 200
+wait 120000
+screenshot /root/op1emu-work/fo2_a.ppm
+wait 2000
+quit

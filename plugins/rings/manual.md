@@ -9,7 +9,8 @@ six models, up to six voices.
 
 **Mutable Instruments Rings**, the Eurorack resonator, as a synth engine. A
 key strikes or bows a resonator and the resonator sings. There are six
-models, chosen on the blue knob's second page:
+models, chosen with the blue knob (its second page on hundekraft, fn and
+blue on coop):
 
 1. **modal**: a bank of band-pass resonators struck by the key, like a bar
    or a plate. Structure spaces them from harmonic to inharmonic.
@@ -22,9 +23,18 @@ models, chosen on the blue knob's second page:
 
 ## Before you start
 
+There are two builds, one per firmware: `rings.knl` for hundekraft and
+`rings.coop` for coop. The Plugins tab offers the one for the firmware chosen
+in Settings. The sound and the four knobs are the same on both; the second
+pages differ (see On coop, below).
+
 - **An original OP-1** (the 2011 model). It does not run on the OP-1 field
   or the OP-Z.
-- **hundekraft 3.0.3** on it, from the
+- **On coop: coop e5** or later. An older coop core plays it, but the model
+  and polyphony controls stop at the ends instead of wrapping round; a coop
+  core older than m1c refuses it. Install it from co-op's Plugins tab over
+  USB.
+- **On hundekraft: hundekraft 3.0.3** on it, from the
   [hundekraft workshop](https://hundekraft.github.io/op1-workshop/).
 - Install it from co-op's Plugins tab over USB, or drop `rings.knl` onto
   **Your plugins** in the hundekraft workshop. Either way the OP-1 asks you
@@ -36,14 +46,14 @@ models, chosen on the blue knob's second page:
 
 ## Controls
 
-| Encoder | Main page | Press, then turn |
+| Encoder | Main page | Press, then turn (hundekraft) |
 |---|---|---|
 | blue | **structure**: the spacing of the modes or the coupling of the strings | **model**, one of the six per click |
 | green | **brightness**: how bright the excitation is and how many modes sound | **polyphony**: all (six voices), 1, 2 or 4 |
 | white | **damping**: decay time, clockwise = longer | |
 | orange | **position**: where the string or plate is struck | |
 
-## Second pages and Shift
+## Second pages and Shift (hundekraft)
 
 - Pick it as any synth: hold Shift and press T1, turn blue to **rings**,
   press to load.
@@ -52,6 +62,24 @@ models, chosen on the blue knob's second page:
   page closes.
 - On the main page the OP-1's own Shift fine-adjust applies as it does to
   the stock engines.
+
+## On coop
+
+The four knobs are as on hundekraft: blue **structure**, green
+**brightness**, white **damping**, orange **position**. The model and the
+polyphony are on fn instead of a second page:
+
+| Hold fn and turn | Sets | Steps |
+|---|---|---|
+| blue | **model** | modal, symp, string, fm, quant, verb |
+| green | **polyphony** | 1, 2, 4, all |
+
+- Both wrap around: past the last step comes the first again, and back
+  from the first comes the last.
+- **all** plays six voices and costs the most CPU. With effects on, or
+  while recording to tape, **4** is the safe choice.
+- Needs coop e5. On an older coop core the two controls stop at the ends
+  instead of wrapping; a core older than m1c does not load the plugin.
 
 ## On screen
 
@@ -81,7 +109,9 @@ the stock knobs are.
 
 - Ported from Mutable Instruments Rings by Émilie Gillet (MIT), bit-exact
   where the hardware allowed and credited in each source file.
-- The OP-1 glue and the screen are coldsoldr's own work, built on
-  hundekraft's kennel plugin SDK.
+- The OP-1 glue and the screen are coldsoldr's own work: the hundekraft
+  build on hundekraft's kennel plugin SDK, the coop build on coop's plugin
+  interface.
 - Licence: GPL-3.0-or-later, with the OP-1 firmware permission of the SDK.
-  Source: https://github.com/coldsoldr/te-op1-cfw
+  Source: hundekraft build https://github.com/coldsoldr/te-op1-cfw, coop
+  build https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/rings

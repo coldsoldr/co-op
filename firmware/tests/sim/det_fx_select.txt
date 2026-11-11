@@ -1,0 +1,34 @@
+# P2: select the plugin FX at the synth position through the stock FX list (synth page, key 3 = FX page,
+# shift + 3 = the FX list, alphabetical, the plugin last; 8 encoder steps per item), then a chord. Guest-timed.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 96
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36500
+press c4
+press e4
+press g4
+at 38500
+release c4
+release e4
+release g4
+wait 33500
+screenshot /root/op1emu-work/fx2.ppm
+wait 2500
+screenshot /root/op1emu-work/fx3.ppm
+wait 8000
+quit

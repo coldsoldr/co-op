@@ -5,14 +5,22 @@ import {
   MAX_OPMOD_BYTES,
   MAX_SCREENSHOT_BYTES,
   PLUGIN_LICENSES,
+  checkCoop,
   checkKnl,
   checkManual,
   checkOp1p,
   checkOpmod,
   checkScreenshot,
+  isHosted,
+  isInstallable,
+  manifestBuilds,
   parsePluginManifest,
+  pluginBuilds,
+  pluginFor,
   pluginIndexEntry,
+  pluginIndexEntryOfBuilds,
   validatePluginFiles,
+  type PluginIndexEntry,
   type PluginIssue,
   type PluginManifest,
 } from './plugins';
@@ -538,7 +546,8 @@ describe('validatePluginFiles', () => {
 
   it('accepts a complete hundekraft plugin and returns what its file says', async () => {
     const result = await check(manifest(), good());
-    expect(result).toEqual({ issues: [], warnings: [], info: { kind: 'fx', savedName: 'tape drive' } });
+    const info = { kind: 'fx', savedName: 'tape drive' };
+    expect(result).toEqual({ issues: [], warnings: [], info, infos: [info] });
   });
 
   it('ignores OS clutter', async () => {
@@ -638,7 +647,7 @@ describe('validatePluginFiles', () => {
   it('checks an opus plugin', async () => {
     const { manifest: m } = parsePluginManifest(opusValid(), 'opus.chorus-2');
     const files = { 'plugin.json': ascii('{}'), '10_chorus.opmod': ascii('OPMD1234'), 'manual.md': ascii('x'), 'screen.png': png(64, 64) };
-    expect(await check(m as PluginManifest, files)).toEqual({ issues: [], warnings: [], info: {} });
+    expect(await check(m as PluginManifest, files)).toEqual({ issues: [], warnings: [], info: {}, infos: [{}] });
     const bad = await check(m as PluginManifest, { ...files, '10_chorus.opmod': ascii('MZ') });
     expect(messages(bad.issues)).toBe('does not start with OPMD (not an opus plugin)');
   });
@@ -669,5 +678,284 @@ describe('pluginIndexEntry', () => {
     const { savedName: _drop, ...noSavedName } = manifest as PluginManifest;
     const without = pluginIndexEntry(noSavedName, { sizeBytes: 8, sha256: 'cd' }, {});
     expect(Object.keys(without)).not.toContain('savedName');
+  });
+});
+
+describe('coop plugins', () => {
+  /** A valid .coop: kennel's layout with the magic COOP (firmware/docs/plugins.md). */
+  const coop = (options: KnlOptions = {}): Uint8Array =>
+    knlWith((b, h) => b.set(ascii('COOP'), h), { kind: 1, name: 'saw', ...options });
+
+  it('reads a coop synth engine and a coop effect', () => {
+    expect(checkCoop(coop())).toEqual({ problems: [], info: { kind: 'synth', savedName: 'saw' } });
+    expect(checkCoop(coop({ kind: 2, name: 'stereo delay' })).info).toEqual({ kind: 'fx', savedName: 'stereo delay' });
+  });
+
+  it('refuses a kennel file, and a coop feature (coop has none)', () => {
+    expect(checkCoop(knl()).problems).toEqual(['no COOP header (not a coop plugin)']);
+    expect(checkCoop(coop({ kind: 3 })).problems).toEqual(['kind 3 is not 1 (synth) or 2 (fx)']);
+  });
+
+  it('accepts a coop manifest whose file is <id>.coop', () => {
+    const { issues } = parse({ firmware: 'op1/coop', id: 'saw', file: 'saw.coop', kind: 'synth', requires: 'coop e2' }, 'saw');
+    expect(issues).toEqual([]);
+  });
+
+  it('refuses a coop manifest with another file name or a feature kind', () => {
+    rejects({ firmware: 'op1/coop', id: 'saw', file: 'saw.knl', kind: 'synth' }, /file must be "saw.coop"/, 'saw');
+    rejects({ firmware: 'op1/coop', id: 'saw', file: 'saw.coop', kind: 'feature' }, /synth or an fx/, 'saw');
+    rejects({ firmware: 'op1/coop', id: 'my-saw', file: 'my-saw.coop', kind: 'synth' }, /lower-case letters, digits or _/, 'my-saw');
+  });
+});
+
+describe('plugins with a file per firmware', () => {
+  const coopFile = (options: KnlOptions = {}): Uint8Array =>
+    knlWith((b, h) => b.set(ascii('COOP'), h), { kind: 1, name: 'rings', ...options });
+  /** A rings manifest with a hundekraft and a coop build. */
+  const ringsJson = (overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+    const json: Record<string, unknown> = {
+      ...valid(),
+      id: 'rings',
+      name: 'rings',
+      kind: 'synth',
+      builds: [
+        { firmware: 'op1/hundekraft', file: 'rings.knl', version: '0.1', requires: 'hundekraft 3.0.3' },
+        { firmware: 'op1/coop', file: 'rings.coop', version: '0.5', requires: 'coop e5', source: 'https://example.com/coop' },
+      ],
+      ...overrides,
+    };
+    for (const key of ['firmware', 'file', 'version', 'requires']) if (!(key in overrides)) delete json[key];
+    return json;
+  };
+  const parseRings = (overrides: Record<string, unknown> = {}) => parsePluginManifest(ringsJson(overrides), 'rings');
+
+  it('parses the builds, with the shared source filled in, and the first at the top', () => {
+    const { manifest, issues } = parseRings();
+    expect(issues).toEqual([]);
+    const source = 'https://github.com/coldsoldr/te-op1-cfw';
+    expect(manifest?.builds).toEqual([
+      { firmware: 'op1/hundekraft', file: 'rings.knl', version: '0.1', requires: 'hundekraft 3.0.3', source },
+      { firmware: 'op1/coop', file: 'rings.coop', version: '0.5', requires: 'coop e5', source: 'https://example.com/coop' },
+    ]);
+    expect(manifest).toMatchObject({ firmware: 'op1/hundekraft', file: 'rings.knl', version: '0.1', requires: 'hundekraft 3.0.3' });
+    const [, coop] = manifestBuilds(manifest as PluginManifest);
+    expect(coop).toMatchObject({ id: 'rings', firmware: 'op1/coop', file: 'rings.coop', version: '0.5', requires: 'coop e5' });
+    expect(coop).not.toHaveProperty('builds');
+  });
+
+  it('refuses build fields at the top beside builds', () => {
+    const { issues } = parseRings({ firmware: 'op1/coop', version: '1' });
+    expect(messages(issues)).toMatch(/firmware goes in each of builds/);
+    expect(messages(issues)).toMatch(/version goes in each of builds/);
+  });
+
+  it('checks each build against its firmware', () => {
+    const bad = (builds: unknown, pattern: RegExp): void => {
+      const { manifest, issues } = parseRings({ builds });
+      expect(manifest).toBeNull();
+      expect(messages(issues)).toMatch(pattern);
+    };
+    bad([], /builds must be a list of 1 to 3/);
+    bad('x', /builds must be a list/);
+    bad([{ firmware: 'op1/coop', file: 'rings.knl', version: '1' }], /builds\[1\]: file must be "rings.coop"/);
+    bad([{ firmware: 'op1/coop', file: 'rings.coop' }], /builds\[1\]: version must be a string/);
+    bad([{ firmware: 'op1/coop', file: 'rings.coop', version: '1', extra: 1 }], /builds\[1\]: unknown field "extra"/);
+    bad(
+      [{ firmware: 'op1/coop', file: 'rings.coop', version: '1' }, { firmware: 'op1/coop', file: 'rings.coop', version: '2' }],
+      /builds\[2\]: a second build for op1\/coop/,
+    );
+    bad([{ firmware: 'op1/coop', file: 'rings.coop', version: '1', savedName: 'opus.x' }], /builds\[1\]: savedName is only for op1\/opus/);
+    bad(['x'], /builds\[1\]: a build must be a JSON object/);
+  });
+
+  it('checks every build file and indexes them all', async () => {
+    const { manifest } = parseRings();
+    const m = manifest as PluginManifest;
+    const files: Record<string, Uint8Array> = {
+      'plugin.json': ascii('{}'),
+      'rings.knl': knl({ kind: 1, name: 'rings' }),
+      'rings.coop': coopFile({ ext: [[3, '0.4']] }),
+      'manual.md': ascii('# rings\n'),
+      'screenshot.png': png(320, 240),
+    };
+    const listing = Object.entries(files).map(([path, bytes]) => ({ path, size: bytes.length }));
+    const read = async (path: string): Promise<Uint8Array> => files[path] as Uint8Array;
+    const result = await validatePluginFiles(m, listing, read);
+    expect(result.issues).toEqual([]);
+    expect(result.warnings).toEqual([
+      { plugin: 'rings', file: 'rings.coop', message: 'the file says version "0.4" but plugin.json says "0.5"' },
+    ]);
+    expect(result.infos).toEqual([
+      { kind: 'synth', savedName: 'rings' },
+      { kind: 'synth', savedName: 'rings', version: '0.4' },
+    ]);
+
+    const missing = await validatePluginFiles(m, listing.filter((f) => f.path !== 'rings.coop'), read);
+    expect(missing.issues).toEqual([{ plugin: 'rings', file: 'rings.coop', message: 'missing' }]);
+    expect(missing.infos).toBeNull();
+
+    const entry = pluginIndexEntryOfBuilds(m, [
+      { sizeBytes: 10, sha256: 'aa', info: { kind: 'synth', savedName: 'rings' } },
+      { sizeBytes: 20, sha256: 'bb', info: { kind: 'synth', savedName: 'rings', version: '0.4' } },
+    ]);
+    expect(entry).toMatchObject({ id: 'rings', firmware: 'op1/hundekraft', file: 'rings.knl', sizeBytes: 10, savedName: 'rings' });
+    expect(entry.builds).toEqual([
+      { firmware: 'op1/hundekraft', file: 'rings.knl', version: '0.1', requires: 'hundekraft 3.0.3', source: 'https://github.com/coldsoldr/te-op1-cfw', sizeBytes: 10, sha256: 'aa', savedName: 'rings' },
+      { firmware: 'op1/coop', file: 'rings.coop', version: '0.5', requires: 'coop e5', source: 'https://example.com/coop', sizeBytes: 20, sha256: 'bb', savedName: 'rings', headerVersion: '0.4' },
+    ]);
+
+    expect(pluginBuilds(entry).map((b) => b.firmware)).toEqual(['op1/hundekraft', 'op1/coop']);
+    expect(pluginFor(entry, 'op1/hundekraft')).toMatchObject({ file: 'rings.knl', version: '0.1' });
+    const coop = pluginFor(entry, 'op1/coop');
+    expect(coop).toMatchObject({ id: 'rings', name: 'rings', file: 'rings.coop', version: '0.5', requires: 'coop e5', sizeBytes: 20, sha256: 'bb', headerVersion: '0.4' });
+    expect(coop?.builds).toEqual(entry.builds);
+    expect(pluginFor(entry, 'op1/opus')).toBeNull();
+  });
+
+  it('leaves a single-firmware entry as it is', () => {
+    const { manifest } = parsePluginManifest(valid(), 'tape_drive');
+    const entry = pluginIndexEntryOfBuilds(manifest as PluginManifest, [{ sizeBytes: 1, sha256: 'ab', info: { kind: 'fx', savedName: 'tape drive' } }]);
+    expect(entry).not.toHaveProperty('builds');
+    expect(pluginFor(entry, 'op1/hundekraft')).toBe(entry);
+    expect(pluginFor(entry, 'op1/coop')).toBeNull();
+    expect(pluginBuilds(entry)).toEqual([
+      { firmware: 'op1/hundekraft', file: 'tape_drive.knl', version: '1.0', requires: 'hundekraft 3.0.3', source: 'https://github.com/coldsoldr/te-op1-cfw', sizeBytes: 1, sha256: 'ab', savedName: 'tape drive' },
+    ]);
+  });
+});
+
+describe('listed plugins (a link, no file)', () => {
+  const listed = (overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+    const m: Record<string, unknown> = {
+      ...valid(),
+      id: 'moai',
+      name: 'Moai',
+      kind: 'synth',
+      author: 'fungiboletus',
+      link: 'https://hundekraft.github.io/op1-workshop/',
+      ...overrides,
+    };
+    delete m.file;
+    delete m.version;
+    delete m.license;
+    for (const [k, v] of Object.entries(overrides)) m[k] = v;
+    for (const k of Object.keys(m)) if (m[k] === undefined) delete m[k];
+    return m;
+  };
+
+  it('accepts a link in place of a file, with no version or licence', () => {
+    const { manifest, issues } = parsePluginManifest(listed(), 'moai');
+    expect(issues).toEqual([]);
+    expect(manifest).toMatchObject({ id: 'moai', link: 'https://hundekraft.github.io/op1-workshop/' });
+    expect(manifest).not.toHaveProperty('file');
+    expect(manifest).not.toHaveProperty('license');
+    expect(manifest).not.toHaveProperty('version');
+  });
+
+  it('keeps a licence and version when given', () => {
+    const { manifest } = parsePluginManifest(listed({ license: 'GPL-3.0-or-later', version: '0.2' }), 'moai');
+    expect(manifest).toMatchObject({ license: 'GPL-3.0-or-later', version: '0.2' });
+  });
+
+  it('refuses a link with a file, or a link that is not https', () => {
+    expect(messages(parsePluginManifest(listed({ file: 'moai.knl' }), 'moai').issues)).toMatch(/listed build \(with a link\) has no file/);
+    expect(messages(parsePluginManifest(listed({ link: 'http://example.com/' }), 'moai').issues)).toMatch(/link must be an https:\/\/ link/);
+  });
+
+  it('still needs a licence while any build hosts a file', () => {
+    const m = listed({ link: undefined, builds: [
+      { firmware: 'op1/hundekraft', link: 'https://hundekraft.github.io/op1-workshop/' },
+      { firmware: 'op1/coop', file: 'moai.coop', version: '0.1' },
+    ] });
+    delete m.firmware;
+    delete m.requires;
+    delete m.link;
+    expect(messages(parsePluginManifest(m, 'moai').issues)).toMatch(/license undefined must be one of/);
+  });
+
+  it('needs only plugin.json, the manual and the screenshot in its folder', async () => {
+    const { manifest } = parsePluginManifest(listed(), 'moai');
+    const files: Record<string, Uint8Array> = {
+      'plugin.json': ascii('{}'),
+      'manual.md': ascii('# Moai\n'),
+      'screenshot.png': png(320, 240),
+    };
+    const listing = Object.entries(files).map(([path, bytes]) => ({ path, size: bytes.length }));
+    const result = await validatePluginFiles(manifest as PluginManifest, listing, async (path) => files[path] as Uint8Array);
+    expect(result).toEqual({ issues: [], warnings: [], info: {}, infos: [{}] });
+
+    const extra = [...listing, { path: 'moai.knl', size: 4 }];
+    const refused = await validatePluginFiles(manifest as PluginManifest, extra, async (path) => files[path] ?? new Uint8Array(4));
+    expect(messages(refused.issues)).toMatch(/not part of a plugin folder/);
+  });
+
+  it('indexes it with the link and no size or hash, and is not hosted', () => {
+    const { manifest } = parsePluginManifest(listed(), 'moai');
+    const entry = pluginIndexEntryOfBuilds(manifest as PluginManifest, [null]);
+    expect(entry).toMatchObject({ id: 'moai', link: 'https://hundekraft.github.io/op1-workshop/', manual: 'moai/manual.md' });
+    expect(entry).not.toHaveProperty('sizeBytes');
+    expect(entry).not.toHaveProperty('sha256');
+    expect(isHosted(entry)).toBe(false);
+  });
+});
+
+describe('listed plugins with a fileUrl (installed from the author over USB)', () => {
+  const commit = '0123456789abcdef0123456789abcdef01234567';
+  const url = `https://raw.githubusercontent.com/someone/Project_X/${commit}/build/moai.knl`;
+  const hash = 'ab'.repeat(32);
+  const remote = (overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+    const m: Record<string, unknown> = {
+      ...valid(),
+      id: 'moai',
+      name: 'Moai',
+      kind: 'synth',
+      author: 'someone',
+      link: 'https://github.com/someone/Project_X',
+      fileUrl: url,
+      sha256: hash,
+      sizeBytes: 51992,
+      version: '0.5',
+    };
+    delete m.file;
+    for (const [k, v] of Object.entries(overrides)) m[k] = v;
+    for (const k of Object.keys(m)) if (m[k] === undefined) delete m[k];
+    return m;
+  };
+
+  it('accepts a commit-pinned .knl with its hash and size, and indexes it as installable but not hosted', () => {
+    const { manifest, issues } = parsePluginManifest(remote(), 'moai');
+    expect(issues).toEqual([]);
+    const entry = pluginIndexEntryOfBuilds(manifest as PluginManifest, [null]);
+    expect(entry).toMatchObject({ fileUrl: url, file: 'moai.knl', sha256: hash, sizeBytes: 51992, savedName: 'moai', version: '0.5' });
+    expect(isHosted(entry)).toBe(false);
+    expect(isInstallable(entry)).toBe(true);
+  });
+
+  it('keeps a fileUrl per build, and only the hundekraft build is installable', () => {
+    const m = remote({ builds: [
+      { firmware: 'op1/hundekraft', link: 'https://github.com/someone/Project_X', fileUrl: url, sha256: hash, sizeBytes: 100, version: '0.5' },
+      { firmware: 'op1/opus', link: 'https://github.com/someone/Project_X' },
+    ] });
+    for (const k of ['firmware', 'link', 'fileUrl', 'sha256', 'sizeBytes', 'version', 'requires']) delete m[k];
+    const { manifest, issues } = parsePluginManifest(m, 'moai');
+    expect(issues).toEqual([]);
+    const entry = pluginIndexEntryOfBuilds(manifest as PluginManifest, [null, null]);
+    expect(isInstallable(pluginFor(entry, 'op1/hundekraft') as PluginIndexEntry)).toBe(true);
+    expect(isInstallable(pluginFor(entry, 'op1/opus') as PluginIndexEntry)).toBe(false);
+  });
+
+  it('refuses a branch link, another host, another name, or a missing hash or size', () => {
+    const issue = (o: Record<string, unknown>): string => messages(parsePluginManifest(remote(o), 'moai').issues);
+    expect(issue({ fileUrl: 'https://raw.githubusercontent.com/someone/Project_X/main/build/moai.knl' })).toMatch(/pinned to a commit/);
+    expect(issue({ fileUrl: `https://example.com/${commit}/moai.knl` })).toMatch(/pinned to a commit/);
+    expect(issue({ fileUrl: url.replace('moai.knl', 'other.knl') })).toMatch(/must end in \/moai\.knl/);
+    expect(issue({ sha256: undefined })).toMatch(/sha256 must be/);
+    expect(issue({ sizeBytes: 0 })).toMatch(/sizeBytes must be/);
+    expect(issue({ version: undefined })).toMatch(/version must be a string/);
+  });
+
+  it('refuses a fileUrl on a hosted build or on a non-hundekraft build', () => {
+    expect(messages(parsePluginManifest(remote({ link: undefined, file: 'moai.knl' }), 'moai').issues)).toMatch(/are for a listed build/);
+    expect(messages(parsePluginManifest(remote({ firmware: 'op1/opus' }), 'moai').issues)).toMatch(/only for op1\/hundekraft/);
   });
 });

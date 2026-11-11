@@ -1,0 +1,16 @@
+# u9: FX 1 off, FX 2 on: no FX OFF overlay on FX 2's page. Synth; T3 (the FX page, FX 1 stays off); drop (FX 2 = FX 1's
+# type, off); T3 (FX 2 on). End state: FX 2's page, dials lit, no overlay.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+tap drop 200
+at 30500
+tap t3 200
+wait 120000
+screenshot /root/op1emu-work/fo2_c.ppm
+wait 2000
+quit

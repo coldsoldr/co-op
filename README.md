@@ -5,6 +5,11 @@ Engineering OP series: OP-1 first, then OP-1 Field and OP-XY.
 
 Live app: https://coldsoldr.github.io/co-op/
 
+The repository also holds **coop**, a custom firmware for the original OP-1
+(R246), in `firmware/`. The app and the firmware are one product: the
+firmware's USB contract (`firmware/docs/sysex.md`) is what the app's coop
+profile speaks, and both change together. See `firmware/README.md`.
+
 ## What exists today
 
 All eight phases are complete. The app is a working librarian for an OP-1 in
@@ -67,8 +72,12 @@ disk mode (shift + COM, then DISK):
   loaded, read only. The profile you choose by hand, or from the check, is
   remembered for the next drive; a drive whose `mods/` folder proves opus
   still opens as opus.
-- **Inspector tab.** Drop a single `.aif` to see how co-op reads it and
-  how the open drive's profile (or one you pick) judges it.
+- **Build firmware tab.** Give it your own stock `op1_246.op1` and it builds
+  coop, the custom OP-1 firmware in `firmware/`, in the browser: it checks the
+  file is TE's R246, patches in coop's `OP1_vdk.ldr` from a delta of coop's own
+  bytes (`firmware/tools/make_web_delta.py`), packs it without `te-boot.ldr`
+  and checks the result as `verify_bootloader.py` does. co-op holds no TE
+  firmware. The coop manual (`docs/coop-manual.md`) is on the same tab.
 - **Feedback.** The Feedback button in the header sends a bug report, idea,
   pack request or anything else, with a short list of attached context
   (app version, profile, store type, browser) shown before sending. Once the
@@ -167,6 +176,7 @@ shared/   pack and feedback schemas and validation, shared by the app, CLI and W
 packs/    community patch packs, one folder each
 plugins/  community firmware plugins, one folder each
 docs/     design spec, implementation plans, pack, plugin and Worker guides
+firmware/ the coop OP-1 firmware (C/C++ for the Blackfin, Python tools); GPL-3.0-or-later
 vendor/   gitignored clones of third-party firmware repos, see vendor/README.md
 ```
 
@@ -186,12 +196,18 @@ see the README there for provenance.
 
 Conventional commit subjects (`feat(codec): ...`, `fix(profiles): ...`,
 `docs: ...`) keep the history readable. Keep `pnpm lint && pnpm typecheck && pnpm test`
-green. To share patches, follow the pack guide in
+green. Firmware changes use the same subjects with a `fw` scope
+(`feat(fw): ...`) and keep `firmware/`'s own checks green (`firmware/CLAUDE.md`).
+To share patches, follow the pack guide in
 [docs/contributing-packs.md](docs/contributing-packs.md); to share a
 plugin, the plugin guide in
 [docs/contributing-plugins.md](docs/contributing-plugins.md).
 
 ## Licence
 
-MIT, see `LICENSE`. Packs and plugins carry their own licences, given in
+MIT, see `LICENSE`, for everything outside `firmware/`. `firmware/` is
+GPL-3.0-or-later with an additional permission for combining it with the
+OP-1 firmware; see `firmware/LICENSE` and `firmware/NOTICE`. It contains no
+Teenage Engineering firmware: building it needs your own copy of the
+official image. Packs and plugins carry their own licences, given in
 each `pack.json` and `plugin.json`.

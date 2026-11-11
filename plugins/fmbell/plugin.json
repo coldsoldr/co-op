@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "fmbell",
+  "name": "FM Bell",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "pcppcp",
+  "description": "Two-operator FM for bells, e-pianos and metal. The clapper swings with the envelope and the rings beside the bell follow the modulation. Turn blue to choose the frequency ratio. The dial follows your choice.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "synth",
+    "hundekraft",
+    "op1r"
+  ]
+}

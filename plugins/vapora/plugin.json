@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "vapora",
+  "name": "VAPORA",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "AiAAAA",
+  "description": "VAPORA by AiAAAA (from op1r) is a pad synth. Every voice plays two slowly drifting, detuned wave heads from fourteen Characters, from soft choirs to glassy bells. The screen is a sky: waves for the sound, a star field for the second head, and a sun that rises with the brightness.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "By AiAAAA and the VAPORA contributors; from op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

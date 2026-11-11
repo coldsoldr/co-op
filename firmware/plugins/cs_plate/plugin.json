@@ -1,0 +1,30 @@
+{
+  "name": "cs_plate",
+  "kind": "fx",
+  "symbol": "FX_cs_plate",
+  "sources": [
+    "cs_plate.cc",
+    "cs_plate_screen.cc",
+    "plate.cc",
+    "halfband.cc",
+    "plate_bfin.S",
+    "halfband_bfin.S"
+  ],
+  "include_dirs": ["."],
+  "cflags": ["-fno-tree-loop-distribute-patterns"],
+  "scratch": 77664,
+  "screen": {"svg": "cs_plate.svg", "symbol": "SCREEN_cs_plate"},
+  "defaults": [16384, 9830, 3277, 11469],
+  "controls": [
+    {"id": "size", "name": "size", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "steps",
+     "steps": ["1", "2", "3", "4", "5", "6", "7", "8"], "default": 4, "detents": 4, "wrap": false},
+    {"id": "diffusion", "name": "diffuse", "action": "fn_turn", "encoder": "green", "word": 6, "kind": "continuous",
+     "default": 22938, "fine": true},
+    {"id": "motion", "name": "motion", "action": "fn_turn", "encoder": "white", "word": 7, "kind": "continuous",
+     "default": 9830, "fine": true},
+    {"id": "freeze", "name": "freeze", "action": "click", "encoder": "orange", "kind": "latch", "bit": 0}
+  ],
+  "author": "coldsoldr",
+  "version": "0.2",
+  "description": "coldsoldr's plate reverb (Dattorro's figure-of-eight plate in fixed point, te-op1-cfw ports/fx/src/plate at 9ced415, GPL-3.0-or-later with the OP-1 firmware permission; the half-rate path from te-op1-cfw's Clouds port, MIT, Emilie Gillet) as a coop stereo effect, ported from its unreleased kennel build (ports/knl/cs_plate). Blue decay, green damp, white pre-delay, orange mix; fn + blue size (8 steps), fn + green diffusion, fn + white motion (shift + fn for fine); orange click freezes the tail."
+}

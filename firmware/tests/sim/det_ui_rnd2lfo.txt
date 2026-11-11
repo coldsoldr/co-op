@@ -1,0 +1,23 @@
+# u10: randomise acts on LFO 2 when it is in focus. Synth; T4 (the LFO page); drop (LFO 2, off); T4 (LFO 2 on); hold
+# synth + right (LFO 2 randomised). End state: LFO 2's page with parameters away from the middles (det_ui_lfo2 shows
+# the middles after two small turns: speed dial centred, amount 04).
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t4 200
+at 29000
+tap drop 200
+at 30500
+tap t4 200
+at 32500
+press synth
+at 32900
+tap right 200
+at 33500
+release synth
+wait 120000
+screenshot /root/op1emu-work/rn2_c.ppm
+wait 2000
+quit

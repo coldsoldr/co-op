@@ -1,0 +1,33 @@
+{
+  "name": "tape_drive",
+  "kind": "fx",
+  "symbol": "FX_tape_drive",
+  "sources": [
+    "tape_drive.cc",
+    "tape_drive_screen.cc",
+    "src/tape.cc",
+    "src/tape_bfin.S",
+    "op1/support.cc"
+  ],
+  "include_dirs": [
+    "."
+  ],
+  "cflags": [
+    "-fno-tree-loop-distribute-patterns"
+  ],
+  "scratch": 3392,
+  "screen": {"svg": "tape_drive.svg", "symbol": "SCREEN_tape_drive"},
+  "defaults": [
+    13107,
+    8192,
+    22937,
+    32767
+  ],
+  "controls": [
+    {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
+     "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}
+  ],
+  "author": "coldsoldr",
+  "version": "0.5",
+  "description": "Tape saturation, wobble (wow and flutter) and age, in stereo at every position: te-op1-cfw's kennel effect tape_drive 0.3 (coldsoldr, GPL-3.0-or-later; the wobble after Mutable Instruments Beads' WowAndFlutter, MIT, rewritten in fixed point; hiir's halfband design, WTFPL). Blue saturate, green wobble, white age (clockwise = newer tape), orange mix; fn + blue the input gain into the saturation (-6..+6 dB), shift + fn + blue its fine."
+}

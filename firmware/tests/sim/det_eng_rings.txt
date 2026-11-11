@@ -1,0 +1,145 @@
+# E3, the rings port (plugins/rings): select "rings" from the stock engine list (as det_eng_select.txt; rings sorts
+# after pulse and before sampler, one row above where saw sits), close the list (seq, then synth), then:
+# a chord in the modal model (polyphony all); fn + blue one step at a time through the other five models (2 detents
+# a step: `turn N` is N Gray transitions, two a detent, so 4), a chord in each; fn + green to polyphony 1 (1 detent a
+# step: turn 2) and fast notes (steals and fades); fn + green two steps on (turn 4: from 0.3 the steps are 4, 1, 2,
+# so it stops at 2), a chord.
+# Expected at the end: words 5, 6 = 5, 2 (op1.db; 5, 3 with 0.1 / 0.2), every model rendered.
+# Screenshots (wall-timed, after every event: `at` does not block): the page at the end, and with fn held. Stats: engines eng_rings, ctl_turns.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+press shift
+at 27700
+tap t1 200
+at 28200
+release shift
+at 29500
+turn enc1 cw 56
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36500
+press c4
+press e4
+press g4
+at 39000
+release c4
+release e4
+release g4
+at 40500
+press help
+at 40800
+turn enc1 cw 4
+at 41600
+release help
+at 42000
+press c4
+press e4
+press g4
+at 44500
+release c4
+release e4
+release g4
+at 46000
+press help
+at 46300
+turn enc1 cw 4
+at 47100
+release help
+at 47500
+press c4
+press e4
+press g4
+at 50000
+release c4
+release e4
+release g4
+at 51500
+press help
+at 51800
+turn enc1 cw 4
+at 52600
+release help
+at 53000
+press c4
+press e4
+press g4
+at 55500
+release c4
+release e4
+release g4
+at 57000
+press help
+at 57300
+turn enc1 cw 4
+at 58100
+release help
+at 58500
+press c4
+press e4
+press g4
+at 61000
+release c4
+release e4
+release g4
+at 62500
+press help
+at 62800
+turn enc1 cw 4
+at 63600
+release help
+at 64000
+press c4
+press e4
+press g4
+at 67000
+release c4
+release e4
+release g4
+at 69000
+press help
+at 69300
+turn enc2 cw 2
+at 70100
+release help
+at 70500
+tap c4 150
+at 70700
+tap e4 150
+at 70900
+tap g4 150
+at 71100
+tap c5 150
+at 71300
+tap g4 150
+at 71500
+tap e4 150
+at 73000
+press help
+at 73300
+turn enc2 cw 4
+at 74100
+release help
+at 74500
+press c4
+press e4
+press g4
+press c5
+at 77000
+release c4
+release e4
+release g4
+release c5
+wait 84000
+screenshot /root/op1emu-work/rings_page.ppm
+wait 2000
+press help
+wait 1500
+screenshot /root/op1emu-work/rings_fn.ppm
+release help
+wait 6000
+quit

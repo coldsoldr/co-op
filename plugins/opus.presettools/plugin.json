@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.presettools",
+  "name": "preset tools",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "1.0.1",
+  "description": "Overwrite save, rename and delete for the presets you saved, in one plugin. It replaces Opus 1's rename and overwrite save: an OP-1 with their old files loads preset tools, deletes the two and says \"replaced\".",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.presettools",
+  "tags": [
+    "presets",
+    "opus"
+  ]
+}
