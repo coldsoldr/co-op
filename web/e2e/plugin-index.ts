@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 interface Entry {
   link?: string;
   builds?: { link?: string }[];
+  [key: string]: unknown;
 }
 
 /** True for a listed plugin: every build links to its author's page and co-op hosts no file. */
