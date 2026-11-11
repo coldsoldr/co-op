@@ -117,6 +117,7 @@ export function Plugins({ active, renderActions, firmwareId, deviceSection, onOp
       </div>
       {submitting && (
         <PluginSubmit
+          firmwareId={firmwareId}
           onBack={() => {
             setSubmitting(false);
             requestAnimationFrame(() => submitButton.current?.focus());

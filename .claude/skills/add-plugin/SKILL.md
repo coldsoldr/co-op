@@ -6,7 +6,10 @@ description: Add a plugin to co-op's plugin list from a GitHub repo, under its r
 # /add-plugin: list a plugin from its GitHub repo
 
 Argument: a GitHub repo (`owner/repo` or its URL), optionally a sub-folder or release. The result is one new folder
-`plugins/<id>/` at the repository root, validated, committed on `dev` and not pushed unless the user asks.
+`plugins/<id>/` at the repository root, validated and committed (step 4 says where), and not pushed unless the user asks.
+
+Needs: `gh` signed in (`gh auth status`), the workspace installed (`pnpm install`), and Python with Pillow
+(`pip install pillow`) for the screenshot. If one is missing, say so and how to get it before going on.
 
 Read first: `docs/contributing-plugins.md` (the manifest, "A listed plugin"), and two listed examples to copy the
 voice from: `plugins/moai/` (a port of someone else's synth) and `plugins/opus.dice/`. The rules live in
@@ -109,8 +112,11 @@ since it checks for named groups, not their count.
 
 ## 4. Commit
 
-Other Claude sessions commit on this same working tree and `dev` branch. Stage and commit in one command with the
-paths named, so nothing of theirs comes along and nothing of yours is left staged:
+First see whose clone this is: `git remote get-url origin`.
+
+**The co-op owner's clone** (origin is `coldsoldr/co-op`). Other Claude sessions commit on this same working tree
+and `dev` branch. Stage and commit in one command with the paths named, so nothing of theirs comes along and nothing
+of yours is left staged:
 
 ```
 git add plugins/<id> && git commit -m "feat(plugins): list <Name> by <author>" -- plugins/<id>
@@ -118,6 +124,18 @@ git add plugins/<id> && git commit -m "feat(plugins): list <Name> by <author>" -
 
 Commits are by coldsoldr only: no Co-Authored-By or Claude-Session lines. Push only when the user asks
 (`git push origin dev`); the dev site at `/co-op/dev/` updates after CI passes, in about 20 minutes.
+
+**A contributor's fork** (any other origin). They are submitting their plugin from the site's Submit a plugin page.
+Work on a branch of its own, commit as them, and offer the pull request:
+
+```
+git switch -c plugin/<id>
+git add plugins/<id> && git commit -m "feat(plugins): list <Name> by <author>" -- plugins/<id>
+```
+
+Ask before pushing. Then `git push -u origin plugin/<id>` and
+`gh pr create --repo coldsoldr/co-op --title "Plugin: <Name> by <author>" --body "<what it is, its repo, and that /add-plugin wrote the listing>"`.
+The pull request's check runs the validator again.
 
 ## Report
 

@@ -111,6 +111,10 @@ install. `author` is whoever made the plugin, so it shows under their name: a po
 porter's, with the original in `credits`. The manual says what it does and links to its source
 and its full manual.
 
+To list a hundekraft or opus plugin from its GitHub repo, open Claude Code in a clone of co-op
+(your fork, for a pull request) and run `/add-plugin <repo>`: it reads the repo and writes the
+folder, under the plugin's author.
+
 A listed hundekraft build whose `.knl` its author publishes on GitHub can also be installed over
 USB from its card, still without co-op hosting a copy. Add `fileUrl`, the file's
 `raw.githubusercontent.com` link pinned to a commit (so its bytes never change), with its

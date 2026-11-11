@@ -11,22 +11,49 @@ const seed = fileURLToPath(new URL('../../plugins/', import.meta.url));
 const SEED_IDS = ['audition', 'bitcrusher', 'drive', 'ensemble', 'freq_shift', 'grids', 'marbles', 'rings', 'tape_drive', 'tape_echo', 'wavefolder'];
 const seedNames = SEED_IDS.map((id) => (JSON.parse(readFileSync(`${seed}${id}/plugin.json`, 'utf8')) as { name: string }).name);
 
-test('explains how to submit a plugin and copies the prompt', async ({ page, context }) => {
+test('explains how to submit a plugin, per firmware, and copies the prompt', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
   await page.getByRole('button', { name: 'Submit a plugin' }).click();
-  await expect(page.getByRole('heading', { name: 'What your plugin needs' })).toBeVisible();
   await expect(page.locator('#panel-plugins article')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Read the full guide' })).toHaveAttribute('href', /contributing-plugins\.md$/);
 
-  await page.getByRole('button', { name: 'Copy the prompt' }).click();
+  // hundekraft first: list it from your repo with /add-plugin, the .knl gets Install over USB.
+  const firmware = page.getByRole('tablist', { name: 'Firmware' });
+  await expect(firmware.getByRole('tab', { name: 'hundekraft' })).toHaveAttribute('aria-selected', 'true');
+  const panel = page.getByRole('tabpanel', { name: 'hundekraft' });
+  await expect(panel.getByRole('heading', { name: 'What your repo needs' })).toBeVisible();
+  await expect(panel).toContainText('/add-plugin https://github.com/you/your-plugin');
+  await expect(panel).toContainText('Install over USB');
+  await expect(panel.getByRole('link', { name: 'Offer your plugin in an issue' })).toHaveAttribute('href', /template=plugin-request\.yml&firmware=hundekraft$/);
+
+  // The older way, the folder hosted by co-op, is still there with its prompt.
+  await panel.getByText('Or send the plugin folder itself, for co-op to host').click();
+  await expect(panel.getByRole('heading', { name: 'What your plugin needs' })).toBeVisible();
+  await panel.getByRole('button', { name: 'Copy the prompt' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Copied' })).toBeVisible();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toContain('## plugin.json');
   expect(copied).toContain('## screenshot.png');
   expect(copied).toContain('## manual.md');
   expect(copied).not.toContain('````');
+
+  // opus: the same repo listing, with the .opmod and no install yet; arrow keys move between tabs.
+  await firmware.getByRole('tab', { name: 'hundekraft' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(firmware.getByRole('tab', { name: 'opus' })).toBeFocused();
+  const opus = page.getByRole('tabpanel', { name: 'opus' });
+  await expect(opus).toContainText('<name>.opmod');
+  await expect(opus).toContainText('/add-plugin');
+  await expect(opus).not.toContainText('Or send the plugin folder itself');
+
+  // coop: built in co-op's firmware folder and hosted here.
+  await firmware.getByRole('tab', { name: 'coop' }).click();
+  const coop = page.getByRole('tabpanel', { name: 'coop' });
+  await expect(coop).toContainText('<id>.coop');
+  await expect(coop).toContainText('/port <plugin>');
+  await expect(coop).not.toContainText('/add-plugin');
 
   await page.getByRole('button', { name: 'Back to plugins' }).click();
   await expect(page.locator('#panel-plugins article')).toHaveCount(12);

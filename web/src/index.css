@@ -1256,6 +1256,17 @@ table.library tbody tr.live-row.on-op1 {
 .plugin-submit h3 {
   margin-top: 32px;
 }
+.submit-tabs {
+  width: fit-content;
+  margin-block: 16px 8px;
+}
+.submit-hosted {
+  margin-top: 32px;
+}
+.submit-hosted summary {
+  cursor: pointer;
+  font-weight: 500;
+}
 .plugin-screenshot,
 .markdown img {
   display: block;
