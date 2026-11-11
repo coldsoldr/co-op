@@ -20,7 +20,8 @@ SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin
 HOST_FLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 $(WARN) -DOP1_HOST_SIM
 SIM_FLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns $(WARN) \
              -DOP1_HOST_SIM -DOP1FX_NO_ASM -DOP1CLOUDS_NO_ASM
-COOP_SRC := $(COOP)/cs_plate.cc $(COOP)/plate.cc $(COOP)/halfband.cc ../fx_scratch_host.cc
+COOP_SRC := $(COOP)/cs_plate.cc $(COOP)/cs_plate_screen.cc $(COOP)/plate.cc $(COOP)/halfband.cc ../fx_scratch_host.cc \
+            ../screen_host.cc
 COOP_ASM := $(COOP)/plate_bfin.S $(COOP)/halfband_bfin.S
 REF_SRC := $(TE)/fx/src/plate/plate.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clouds/src/core/clouds_tables.cc \
            $(TE)/rings/src/fixed_tables.cc
@@ -34,11 +35,11 @@ host: $(BUILD)/cs_plate_compare
 sim: $(BUILD)/cs_plate_compare.elf
 	$(BFIN)/bfin-elf-run $(BUILD)/cs_plate_compare.elf $(SIM_SEGMENTS)
 
-$(BUILD)/cs_plate_compare: cs_plate_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h)
+$(BUILD)/cs_plate_compare: cs_plate_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h) ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(HOST_FLAGS) $(INC) cs_plate_compare.cc $(COOP_SRC) $(REF_SRC) -o $@
 
-$(BUILD)/cs_plate_compare.elf: cs_plate_compare.cc $(COOP_SRC) $(COOP_ASM) $(wildcard $(COOP)/*.h)
+$(BUILD)/cs_plate_compare.elf: cs_plate_compare.cc $(COOP_SRC) $(COOP_ASM) $(wildcard $(COOP)/*.h) ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIM_FLAGS) $(INC) cs_plate_compare.cc $(COOP_SRC) $(COOP_ASM) $(REF_SRC) -o $@
 

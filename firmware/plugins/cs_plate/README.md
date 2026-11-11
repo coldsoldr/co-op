@@ -85,7 +85,7 @@ so it is kept as it is: **a §2.2 exception, accepted by the owner (2026-11-11)*
 | `HalfRate::Begin` restarts after a 5 ms pause, timed by `op1::Cycles()` | kennel had no init on resume | gone: coop calls `init` whenever a position starts the effect again |
 | the soft-limit table built at the first `Begin` (`static inline` member, from Rings' `kSoftLimitQ30`) | work on the audio thread | a literal table (`halfband.cc`), checked against the upstream's builder |
 | `PlateReverb::Init` clears 76 KB at once (kennel's init) | slow init on the audio thread (§2.3) | `init` only arms a clear; renders clear 8 KB a block (below) |
-| the screen (`op1_find_node`, `op1_fx_knobs_live`, page-2 state) | firmware screen nodes and globals | not ported: no effect screen hook yet (below) |
+| the screen (`op1_find_node`, `op1_fx_knobs_live`, page-2 state) | firmware screen nodes and globals | e9: the coop effect-screen calls and `coop_fx_view_t` ("Screen" below) |
 
 No libc, no static constructors (the state objects have trivial constructors and live in `.bss`), no division in a
 per-sample loop (four divides a block for the turns). The C reference kernels are compiled for the host only. The
@@ -93,6 +93,10 @@ Blackfin always runs the assembly (`plate_bfin.S`, `halfband_bfin.S`, unchanged 
 `tools/asm_lint.py`: 0 packets flagged). `PlateTankRunMonoAsm` stays in `plate_bfin.S` unused.
 
 ## Init and memory (guidelines §2.3)
+- **e9 (2026-11-11, 0.2, the screen):** file 19,332 bytes (SVG 4,507), `.text` 9,576, `.rodata` 2,562, `.bss` 164
+  (the screen's node and style tables); load 12,304 bytes once (+2,236 over e8's 10,068, which counts the new
+  `coop_fx_t.screen` word). The render is unchanged and publishes nothing (kennel's screen read no DSP state): the
+  state and `"scratch": 77664` are unchanged.
 - **e8 (2026-11-11):** the plate and the half-rate path are in the slot's position buffer (plugin.json `"scratch": 77664`, `coop_fx_scratch`; the clear counter and block buffers beside them in a `Slot`), as kennel's `knl::Instance` had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 10,940 bytes, load 10,064 once.
 
 - `init(slot)` only sets a counter (a few cycles). The renders that follow zero the state 2048 words (8 KB) a block,
@@ -134,21 +138,53 @@ Blackfin always runs the assembly (`plate_bfin.S`, `halfband_bfin.S`, unchanged 
   - prefetch the tank's read streams (upstream never tried it).
   Each needs a bit-exactness check against this version.
 
-## Screen (guidelines §5)
+## Screen (e9, 0.2)
 
-The stock filter page shows for now: coop has no effect screen hook, so the core shows each control's name and value
-top left for ~1.2 s when it moves. Upstream's `plate.svg` (te-op1-cfw `ports/fx/op1/plate.svg`) is not carried
-across. Its kennel build hid category dots and toggled a page-2 view on knob presses, which coop's held layers don't
-have. Brief for when effect screens exist (to mock in `tools/playground/coop-playground.html` first):
-- a plate seen side-on whose rings grow with decay (1-4 rings; all four and the outline in the damp colour while
-  frozen);
-- a pre-delay gap before the plate that scales with pre-delay;
-- a dark band over the tail that scales with damp;
-- the mix as the stock's mix bar;
-- while fn is held: the size as the plate's scale (8 steps, the step number), diffusion as 1-8 dots at the input,
-  motion as two small bars at the plate's edges.
-- State tells the truth (§5.4): freeze shows only while the latch is on. A latch cleared by a synth <-> drum switch
-  must show as off.
+Kennel's screen (`te-op1-cfw/ports/knl/cs_plate`: `plate.svg`, the firmware build's art with its category dots
+removed, and `plate_knl.cc` ScreenInit / ScreenUpdate) on the e9 effect-screen path (`docs/plugins.md` "e9"):
+`cs_plate.svg` (from `gen_cs_plate_svg.py`) and `cs_plate_screen.cc`. It shows wherever cs_plate is the effect on the
+page: FX 1 of the synth, the drum or the master, FX 2 in focus. Kennel kept no generator for `plate.svg`, so
+`gen_cs_plate_svg.py` rebuilds it from the file's structure: every coordinate is kennel's (the two envelopes are its
+formula, y = 134 - h e^(-i/4) at x = 34 + 12.5 i, h 32 for decay and 24 for damp, which reproduces kennel's points to
+the last decimal; the rest are its literal points).
+
+| Part | Encoder | What moves it |
+|---|---|---|
+| the rings in the plate (1-4) | blue (decay) | count by decay; all four while frozen |
+| the decay envelope | blue (decay) | stretched from its start by decay (full length while frozen) |
+| the damp envelope | green (damp) | the decay stretch shortened by damp |
+| the pre-delay mark, and where the envelopes start | white (pre-delay) | scaled from x 27; the envelopes and diffusion bars move right with it |
+| the mix bar (top right) | orange (mix) | kennel's mix bar (`SetMixBar`) |
+| the freeze star (top) | orange click (freeze) | body tone, orange while the latch is on |
+| the size outline (fn held) | blue with fn (size) | the plate scaled 0.6 .. 1.06 about its centre by the step, 8 poses |
+| the diffusion bars (fn held) | green with fn (diffusion) | 1 + round(7 x diffusion) bars |
+| the motion zigzags (fn held) | white with fn (motion) | scaled by motion at the plate's two edges |
+
+What changed from kennel's screen:
+- **Inputs**: the four turns from `view->knobs` (kennel's `op1_fx_knobs_live`, with the LFO); size, diffusion and motion
+  from `view->words[0..2]` (kennel's `ScreenWord(5..7)`). **Size is the step index** 0..7 there (clamped), so the
+  outline's scale is `614 + 67 x step` directly; kennel took `Steps(word, 7)` of a Q15 word. Freeze from
+  `view->latches` bit 0 (kennel's `Pressed(pos, 3)`). Kennel's screen read nothing from the DSP, so the render
+  publishes nothing (no display words; the state is unchanged).
+- **Kennel's page 2 is fn held** (`view->mods` bit 1; kennel: `AnyPage2(pos, 0x7)`, any of blue / green / white
+  pressed). Kennel swapped page 1 for page 2 and drew a dim copy of the decay curve ("tail"). Coop keeps the drawing
+  and dims in place what the plain blue, green and white turns own (rings, both envelopes, the pre-delay mark) to the
+  body tone, shows the fn layer's marks (size outline, diffusion bars, motion zigzags) and hides the plate's dim
+  outline behind the size outline, as kennel's page 2 did. Orange has no fn layer, so the mix bar and the freeze star
+  are the same under fn (kennel replaced the mix bar with the low-cut mark on page 2).
+- **Freeze is the orange click's latch**: the star is orange while it is on (kennel drew it in the damp green), body
+  tone when off. A latch cleared by a synth / drum switch reads as off, since the screen reads the latch word itself.
+- **Dropped art**: the page dots (`page1ind`, `page2ind`: coop has no pages), the low-cut mark and its track (the low
+  cut is fixed at 3277 and no encoder moves it; a bright means an encoder), the page-2 tail (the decay curve dims
+  instead), the group wrappers round each ring and bar (the ids sit on the shapes). Kennel's SVG had no readout
+  glyphs, so there were none to drop.
+- **Shapes**: kennel's polygons are closed paths (`M L Z`) and its ellipses four-curve paths (`M C Z`, k = 0.5523):
+  the manifesto's subset (§5.3) has no polygon or ellipse (R246's parser has both; the subset is the rule).
+- **Colours** are coop's brights (blue 698EFF, green 00ED95, white FFFFFF, orange FF3A5D) and one body tone 38354D
+  (kennel used 514959 and 38354D). The pre-delay mark and the motion zigzags are white, being white's turn and fn
+  layer (kennel drew them in pencil). The orange for the frozen star comes from a hidden palette line (`palorange`).
+- SVG 4,507 bytes (kennel's 4,861), checked by the generator and by `tools/plugin/pack.py`.
+- Nothing animates, so the screen keeps no per-position state.
 
 ## Tests
 
@@ -163,6 +199,10 @@ have. Brief for when effect screens exist (to mock in `tools/playground/coop-pla
 - **GNU simulator** (`make -C tests/host/cs_plate sim`): the same test built for the Blackfin, the plugin's assembly
   against upstream's C. **Bit-identical**: 6 segments, 11,358 blocks, 59 size changes, 22 freeze toggles. It prints
   the cycle figures above.
+- **e9 (0.2)**: both builds link the screen (`cs_plate_screen.cc` with `tests/host/screen_host.cc`, the core's screen
+  calls as no-ops). Host, 40 segments: 69,532 blocks, 400 clear blocks, 351 size changes, 100 freeze toggles,
+  bit-identical; scratch check 0 differ. Simulator, 6 segments: 11,358 blocks, bit-identical; render avg 17,876, max
+  19,792 cycles.
 - **op1emu gate**: not run in this port (gate runs go one at a time). The plan:
   1. `make -C plugins`, then a NAND with `build/plugins/cs_plate.coop` alone in `/yaffs2/plugins`
      (`tools/make_nand.py ... --overlay`, `docs/plugins.md` "Building and testing"). The stock FX list is
@@ -187,4 +227,5 @@ have. Brief for when effect screens exist (to mock in `tools/playground/coop-pla
 ## Files
 
 `cs_plate.cc` (the glue), `plate.h` / `plate.cc` / `plate_layout.h` / `plate_bfin.S` (the plate), `halfband.h` /
-`halfband.cc` / `halfband_bfin.S` / `half_rate.h` (the half-rate path), `LICENSE-MIT` (the Clouds-derived parts).
+`halfband.cc` / `halfband_bfin.S` / `half_rate.h` (the half-rate path), `LICENSE-MIT` (the Clouds-derived parts),
+`cs_plate_screen.cc` / `cs_plate.svg` / `gen_cs_plate_svg.py` (the screen, e9).

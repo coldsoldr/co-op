@@ -15,6 +15,7 @@
  * buffer pointers. init only arms a clear: the next renders zero the state 8 KB a block (10 blocks, ~15 ms, dry passed
  * through), then reset it and run (guide/plugin-guidelines.md §2.3: no 76 KB clear on the audio thread in one go).
  * The buffer holds whatever the effect before left, so every selection restarts it this way.
+ * Screen (e9): cs_plate_screen.cc, cs_plate.svg; kennel's screen read no DSP state, so the render publishes nothing.
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission. The half-rate kernels and tables
  * come from te-op1-cfw's Clouds port (MIT, LICENSE-MIT). */
@@ -22,6 +23,8 @@
 #include "coop_plugin.h"
 #include "half_rate.h"
 #include "plate.h"
+
+extern "C" const coop_fx_screen_t SCREEN_cs_plate;   /* cs_plate_screen.cc (e9) */
 
 namespace {
 
@@ -117,4 +120,4 @@ void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
 
 }  // namespace
 
-extern "C" const coop_fx_t FX_cs_plate = { COOP_FX_MAGIC, COOP_PLUGIN_API, 0, init, render };
+extern "C" const coop_fx_t FX_cs_plate = { COOP_FX_MAGIC, COOP_PLUGIN_API, COOP_FX_F_SCREEN, init, render, &SCREEN_cs_plate };
