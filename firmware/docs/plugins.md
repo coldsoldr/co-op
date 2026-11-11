@@ -260,3 +260,24 @@ now passes straight to the stock filter (`plugin_host.cc st_twin`).
 depth on fn + white, mute latch on the orange click; it multiplies by the gain, inverts, mutes).
 `tests/sim/det_fx_controls.txt` walks the five positions; `tests/sim/det_fx_reload.txt` power-cycles the NAND it
 leaves. Packer checks: `tests/tools/test_pack_controls.py`.
+
+## tape_drive (2026-11-11): the kennel tape saturation, stereo at every position
+
+te-op1-cfw's kennel effect tape_drive 0.3, ported as `plugins/tape_drive` 0.4. `plugins/tape_drive/README.md` has
+the contract, the cost plan and the gate plan.
+- **Controls.** The turns are saturate, wobble, age (mirrored) and mix. fn + blue is the input gain (word 5,
+  `"fine": true`, not randomised), with its fine on shift + fn + blue.
+- **The DSP** (`src/`: te-op1-cfw `ports/fx/src/tape` with its assembly kernels) is copied unchanged, except for
+  the include paths and one default member initialiser (it would have given the static instance a constructor).
+
+Notes for other ports:
+- **No `"stereo": true`.** A `coop_fx_t` is stereo by ABI, and the loader reads that kennel flag as kennel's
+  `op1_fx_stereo_t` layout.
+- **int16 DSP on the int32 bus.** The DSP runs on the bus's high halves, and the output keeps the input's low halves
+  (`wet16 << 16 | in & 0xffff`). So the high half is bit-identical to upstream, and at mix 0 the output is the int32
+  input exactly.
+- **Knob ranges.** `op1_fx_param_q15` becomes the SDK's constant ranges with kennel's formula: four divisions a
+  block.
+- **Status.** Host test `tests/host/tape_drive`: bit-identical, on the host and in the simulator. Simulator cost:
+  9,061 cycles a block (upstream: 7,026 stereo, 4,128 mono). The op1emu gate and the device test are pending
+  (`docs/device-tests.md` "tape_drive 0.4").

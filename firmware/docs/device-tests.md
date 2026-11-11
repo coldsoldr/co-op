@@ -1892,3 +1892,38 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
   the popup's look over the filter page (counted, not seen: op1emu screenshots are wall-timed).
 
 Result: (pending)
+
+## tape_drive 0.4: the kennel tape_drive ported to coop — device test (pending, 2026-11-11)
+
+**What:** `build/plugins/tape_drive.coop` (`make -C plugins`).
+- The file is 11,064 bytes; its load size is 13,912 bytes, x 5 relocations.
+- It needs a core with e6: the file has controls, so a core before e6 refuses it.
+- Port notes: `plugins/tape_drive/README.md`.
+- Host test (`make -C tests/host/tape_drive`): bit-identical to te-op1-cfw's DSP as kennel drove it, both on the
+  host (C kernels) and in the simulator (assembly kernels). Simulator cost: avg 9,061, peak 9,286 cycles a block.
+- op1emu gate: pending (the README's gate plan).
+
+**Do:**
+1. Install `tape_drive.coop` over SysEx, then power-cycle.
+2. Put `tape drive` on FX 1 of a synth sound and play a chord.
+   - Blue is saturate.
+   - Green is wobble: wow, then flutter past half.
+   - White is age: clockwise is newer and brighter.
+   - Orange is mix: fully left is the dry sound, unchanged.
+3. fn + blue is the gain (`GAIN` top left in blue), -6..+6 dB into the saturation only.
+   - At mix 0 nothing changes.
+   - With saturate up you get more or less grit, and the level stays about the same.
+   - shift + fn + blue moves the same control in fine steps.
+4. Repeat at the drum, the master, FX 2 of the instrument and FX 2 of the master. The instrument positions now hear
+   the effect in stereo (kennel ran them mono): the voice spread should survive.
+5. Save the sound, power-cycle and reload: the gain should be kept.
+6. Listen for clicks on knob moves and in silence: no hiss and no DC, so silence in should give silence out.
+7. Copy these lines from `/yaffs2/user/coop_stats.txt`:
+   - the `cost` line (`fx1_plugin=`, `s2_instr=`, `s2_master=`);
+   - the `plugins` and `fxctl` lines.
+   - Expected: about 10-13 k a block at one position [I]. Over 30 k is a finding.
+
+**If something is wrong:** power off, then delete the plugin file (the position plays the filter until the file
+returns), or recover as for e6.
+
+Result: (pending)
