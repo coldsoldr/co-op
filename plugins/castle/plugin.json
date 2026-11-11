@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "id": "castle",
+  "name": "Castle",
+  "firmware": "op1/opus",
+  "kind": "synth",
+  "author": "displayname808",
+  "description": "Castle by displayname808 is a four-operator FM synth with a small world on its screen: a castle you explore while you play, whose villagers comment on every turn of a knob. It has eight algorithms and twenty ratio sets, a sine sub an octave down, saturation, noise, ring modulation and sample-rate reduction, and a drone mode. Turn orange up and the castle catches fire.",
+  "link": "https://displayname808hub.github.io/web/castle/",
+  "version": "1.0",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus core 2.29",
+  "tags": ["synth", "fm", "drone"]
+}
