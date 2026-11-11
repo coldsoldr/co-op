@@ -1,6 +1,7 @@
 # Request: the project tempo as a core export (from the tape_echo port, 2026-11-11)
 
-**Status:** open; for the firmware work, not built. The port ships without it (`plugins/tape_echo/README.md`).
+**Status:** open; for the firmware work, not built. The port ships its sync control at 120 BPM without it
+(`plugins/tape_echo/README.md`, fn + green).
 
 ## What the plugin needs
 
@@ -15,10 +16,11 @@ Asked for:
   BPM, Q16, safe to call from render (a word read, no lock), 120 << 16 when unknown;
 - later, a beat phase for effects that sync to the bar (not needed by tape_echo).
 
-The tape echo would read it once a block. Other ports that sync (any delay or LFO-style effect) would share it.
+The tape echo would read it once a block, in place of its `TempoIncrement()` (`plugins/tape_echo/tape_echo.cc`, now
+a constant 120 BPM). Other ports that sync (any delay or LFO-style effect) would share it.
 
-## Also open (a control decision, the owner's)
+## The control (decided, the owner, 2026-11-11)
 
-Where the tempo lock sits now that shift + turn is the core's fine step: see `plugins/tape_echo/README.md` "Open
-question for the owner". The export is useful whatever is decided there; the lock can't be built without one or the
-other being settled, and runs at 120 BPM until the export lands.
+The tempo lock is a saved `steps` control, fn + green "sync" (word 6): `off`, then kennel's 11 divisions 1/16T .. 1/2.
+When set, the time follows the division at the tempo; `off` gives the blue turn the time back. Built in tape_echo 0.1
+at 120 BPM.

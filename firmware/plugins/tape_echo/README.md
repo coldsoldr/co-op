@@ -19,9 +19,9 @@ flutter (Beads) and the half-rate output stage (Clouds) follow Mutable Instrumen
 | Click | — | hold (latch) | heads (3, 2+3, 1+2+3, 1+3) | — |
 | Shift + turn | time fine | feedback fine | age fine | mix fine |
 | Shift + click | — | — | — | — |
-| fn + turn | gain (-6 .. +6 dB) | — | — | — |
+| fn + turn | gain (-6 .. +6 dB, 0.5 dB a detent) | sync (off, 1/16T .. 1/2) | — | — |
 | fn + click | — | — | — | — |
-| Shift + fn + turn | gain fine | — | — | — |
+| Shift + fn + turn | gain fine (0.1 dB a detent) | — | — | — |
 | Shift + fn + click | — | — | — | — |
 
 - **Turns** (`params[0..3]`, kennel's four knobs unchanged): time is head 3's delay, 30 ms x 50^x (exponential);
@@ -31,21 +31,34 @@ flutter (Beads) and the half-rate output stage (Clouds) follow Mutable Instrumen
   to 0..32767 once a block as kennel's `op1_fx_param_q15` did. Shift + turn is the stock fine step on each.
 - **gain** (fn + blue, word 5, continuous, default 16384 = 0 dB, saved, not randomised): what reaches the record head;
   the dry side of the mix doesn't see it. **Blue's shift + fn layer is gain fine** (the owner's decision,
-  `docs/ui-features.md` §14): `"fine": true`, 1/16 of the coarse step. The coarse step is 328 Q15 a detent, about
-  0.12 dB (kennel's page click was 1536, 0.56 dB); the fine one 20.5, about 0.0075 dB (kennel's fine was 0.1 dB).
+  `docs/ui-features.md` §14): `"fine": true`. Steps (the owner, 2026-11-11, dev 50e7dbd): `"step": 1365` (0.5 dB a
+  detent, 2730.7 Q15 a dB over the +-6 dB range; kennel's page click was 1536, 0.56 dB) and `"fine_step": 273`
+  (0.1 dB, kennel's `knl::Fine` tenth of a dB).
+- **sync** (fn + green, word 6, steps, saved, no wrap, randomised, default `off`): kennel's tempo lock. `off`: the
+  blue turn sets the time. `1/16t`, `1/16`, `1/8t`, `1/16.`, `1/8`, `1/4t`, `1/8.`, `1/4`, `1/2t`, `1/4.`, `1/2`
+  (shortest first): the time follows that division at the tempo, and the blue turn does nothing to the time until sync
+  is back on `off` (its value is kept). The time glides to a new division like any time change. **The tempo is 120
+  BPM** (a 16th 125 ms, a half note 1 s) until the core exports the project tempo
+  (`docs/request-tempo-export-tape-echo.md`): kennel's own fallback, guidelines §2.3. At a tempo where a division is
+  over 1.5 s (1/2 below 80 BPM, 1/4. below 60, 1/2t below 54) the time falls back to the turn, as kennel skipped such
+  divisions. Arithmetic as kennel's (`DivisionWord`, `TapeEchoTimeWord`): the division's delay as a time word.
 - **hold** (green click, latch bit 0 of `params[8]`, not saved, never randomised): the input off, the loop gain exactly
   1, a quarter of the tape loss and a 10 Hz low cut: the tape loops what it holds, slowly fading. **Latches clear
   when the stock switches between synth and drum** (the stock starts the instrument effect again; accepted by the
   owner, `docs/ui-features.md` §14), and whenever the effect is selected or the sound changes.
-- **heads** (white click, word 7, steps, saved, wraps, default `3`): the head pattern, one click a pattern: head 3
-  alone; heads 2 and 3; all three; heads 1 and 3. A change ramps the head weights over 8 calls (11.6 ms).
+- **heads** (white click, word 7, steps, saved, wraps, randomised, default `3`): the head pattern, one click a
+  pattern: head 3 alone; heads 2 and 3; all three; heads 1 and 3. A change ramps the head weights over 8 calls
+  (11.6 ms).
 
 `plugin.json` "controls":
 
 ```json
 {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
- "default": 16384, "fine": true, "random": false},
+ "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false},
 {"id": "hold", "name": "hold", "action": "click", "encoder": "green", "kind": "latch", "bit": 0},
+{"id": "sync", "name": "sync", "action": "fn_turn", "encoder": "green", "word": 6, "kind": "steps",
+ "steps": ["off", "1/16t", "1/16", "1/8t", "1/16.", "1/8", "1/4t", "1/8.", "1/4", "1/2t", "1/4.", "1/2"],
+ "default": 0},
 {"id": "heads", "name": "heads", "action": "click", "encoder": "white", "word": 7, "kind": "steps",
  "steps": ["3", "2+3", "1+2+3", "1+3"], "default": 0, "wrap": true}
 ```
@@ -58,22 +71,16 @@ No `"stereo"` flag: a `coop_fx_t` is stereo by its ABI, and coop's loader reads 
 | Kennel | coop | Why |
 |---|---|---|
 | knobs blue time, green feedback, white age, orange mix | the same four turns | the owner kept them |
-| blue press: page 2, blue turns the input gain (word 5); shift + blue a tenth of a dB (`knl::Fine`, reading the shift byte at 0x01DD7F78 and rewriting the stored word) | fn + blue, shift + fn + blue its fine (`"fine": true`) | every layer is held (guidelines §4); the core does the fine step |
+| blue press: page 2, blue turns the input gain (word 5); shift + blue a tenth of a dB (`knl::Fine`, reading the shift byte at 0x01DD7F78 and rewriting the stored word) | fn + blue (0.5 dB), shift + fn + blue its fine (0.1 dB) | every layer is held (guidelines §4); the core does the fine step |
 | green press: hold, `OP1_PRESS_LATCH` (`op1_fx_page[pos][1]`) | green click, latch bit 0 | guidelines §7.1 |
 | white press: page 2, white clicks the head pattern (word 7, `ClickMode(word, 4)`: 1536 a click) | white click, steps, word 7 holds the step index | enumerations are steps (§3.1); a sound saved by kennel decodes clamped (word 7 >= 3 plays as `1+3`) |
-| shift + blue on page 1: the time locks to tempo divisions (1/16T .. 1/2), read from the tempo at 0x01AADAD4; a free turn unlocks | **not ported** | coop's shift + turn is the core's fine step and the plugin can't see shift; coop has no tempo export. An open question for the owner (below) |
+| shift + blue on page 1: a shifted click walked the time through the tempo divisions (1/16T .. 1/2; the tempo read at 0x01AADAD4); a free turn unlocked it; not saved | fn + green sync, steps (`off` + the 11 divisions), word 6, saved; 120 BPM until a tempo export | the owner, 2026-11-11: shift + turn is the core's fine step and the plugin never sees shift; a sync setting belongs to the sound |
 | `op1_fx_param_q15` (the stock range table at 0x01DE5C50) | the SDK's constant filter ranges, once a block | no firmware addresses in a plugin (§2.1) |
 | the instance in the position's scratch buffer (`op1_fx_scratch`) | `.bss` (one instance per relocation, i.e. per position) | §2.3 |
 | `TapeEcho::Init` clears the 133 KB tape on every (re)start, in the audio interrupt | the clear is spread over the first 17 blocks (2,048 pairs a block, 25 ms), the dry passing through | a slow init doesn't ship (§2.3) |
 | the screen (`tape_echo.svg`, design B "Schematic") | the stock filter page; coop shows the control's name and value top left | effect screens are not built in coop (`docs/plugins.md` "Effect controls"); brief below |
 
-**Open question for the owner: the tempo lock.** Kennel had it on shift + blue (a shifted click walked the
-divisions 1/16T, 1/16, 1/8T, 1/16., 1/8, 1/4T, 1/8., 1/4, 1/2T, 1/4., 1/2, the ones over 1.5 s skipped; a plain turn
-freed the time; not saved). It can't stay there: shift + blue turn is the stock fine step of time and the plugin never
-sees shift. Where should it go, if anywhere? One option: a `steps` control on a free slot (word 6 is free; fn + green
-and every shift + click are free), e.g. fn + green "sync" = off, 1/16T .. 1/2, saved, overriding the time knob while
-not off. It would run at 120 BPM until the core exports the tempo (`docs/request-tempo-export-tape-echo.md`). Time
-already has a fine step (shift + blue), so no separate delay-time fine control is needed.
+Time already has a fine step (shift + blue), so there is no separate delay-time fine control.
 
 ## Screen
 
@@ -90,8 +97,8 @@ the tape drawn as a wave whose amplitude follows age (white) and breathes with t
   pairs, every head read serving both channels, so stereo costs about 1.56x the mono path rather than 2x (te-op1-cfw
   simulator: 9.2 MHz stereo, 5.9 MHz mono, whole effect). coop runs it at every position (synth, drum, master and both
   FX 2 slots): the instrument positions now hear the echo in stereo, and each position is a full stereo instance.
-- **Memory:** file 10,252 bytes; `.text` 5,628, `.rodata` 3,008, `.data` 0, `.bss` 134,764 (the tape 132,868, the
-  core's state, the half-rate filters, the dry buffers). Load size 143,400 bytes; five relocations: **717,000 bytes of
+- **Memory:** file 10,664 bytes; `.text` 5,836, `.rodata` 3,052, `.data` 0, `.bss` 134,764 (the tape 132,868, the
+  core's state, the half-rate filters, the dry buffers). Load size 143,652 bytes; five relocations: **718,260 bytes of
   heap 0** (heap_largest was ~9 MB after the plugin scan in e4). No imports.
 - **L1:** none (effects have no L1 lease yet, [proposed]). The hot data per sample is the kernel block (88 bytes), the
   six head reads and one write across the 133 KB tape, the soft-limit table (1 KB) and the saturation table.
@@ -100,7 +107,7 @@ the tape drawn as a wave whose amplitude follows age (white) and breathes with t
   | | per block (64 samples) |
   |---|---|
   | kennel stereo, te-op1-cfw simulator (9.2 MHz / 689 blocks a second) | 13,350 |
-  | coop, GNU simulator, `make -C tests/host/tape_echo sim` (compute only, the scenario's 3,000 blocks) | 15,718 avg / 16,407 max |
+  | coop, GNU simulator, `make -C tests/host/tape_echo sim` (compute only, the scenario's 3,000 blocks) | 15,880 avg / 16,637 max |
   | coop, op1emu (`fx1_plugin=`, `s2_instr=`, `s2_master=`) | gate pending |
   | **coop, device** | **pending** |
 
@@ -118,8 +125,11 @@ the tape drawn as a wave whose amplitude follows age (white) and breathes with t
 ## Tests
 
 - `make -C tests/host/tape_echo`: the plugin against te-op1-cfw's own DSP and the kennel glue, 20,000 random
-  blocks (noise, saws, impulses, silence, L != R; knobs walking and jumping; feedback over 1; gain, heads and hold
-  changing; restarts by pause and by re-init), on the host: **bit-identical** (15,870 blocks changed by the effect).
+  blocks (noise, saws, impulses, silence, L != R; knobs walking and jumping; feedback over 1; gain, sync, heads and
+  hold changing; restarts by pause and by re-init), on the host: **bit-identical** (11,521 blocks changed by the
+  effect, 9,194 with sync on). The reference takes sync from kennel's own lock (`TimeLock::Word`, `DivisionWord`,
+  `kDivision96ths`) at its 120 BPM fallback, and both builds print the 11 division time words at 120 BPM
+  (8543 11940 14362 15350 17746 20156 21142 23565 25961 26948 29358), which must agree.
 - `make -C tests/host/tape_echo sim`: the same in the Blackfin simulator, the plugin's assembly kernels against the
   original's C: **bit-identical** over 3,000 blocks, plus the cycle figures above.
 - `make -C tests/host/tape_echo tables`: regenerates `src/tape_echo_tables.h` from the original's constexpr tables.
@@ -138,9 +148,9 @@ python3 -I tools/make_nand.py --provision ~/op1emu-work/provision_nand.py --firm
    `plugins seen 1 loaded 1 failed 0`, no fault, the `cost` line's `fx1_plugin=` figure; the WAV has echoes.
 2. `tests/sim/det_fx_tape_echo.txt` (new: `det_fx_controls.txt`'s walk with tape_echo's controls): the plugin at p0
    synth FX 1, p3 instrument FX 2, p2 master FX 1, p4 master FX 2, p1 drum FX 1; expected `fxctl` per position in the
-   file's header (p0 15092/0/1/0 at the end, p1 16712/0/1/0, p2 16056/0/0/1, p3 17040/0/1/0, p4 16384/0/2/0; turns 8,
-   fine 1, clicks 5, latches 4, ignored 2, cancelled 1), no fault, `s2_instr=` / `s2_master=` cost figures.
-3. `tests/sim/det_fx_reload.txt` on the same NAND: gain and heads kept at every position, hold off everywhere.
+   file's header (p0 11197/0/1/0 at the end, p1 17749/0/1/0, p2 15019/0/0/1, p3 19114/0/1/0, p4 16384/3/2/0 with sync
+   on `1/8t`; turns 11, fine 1, clicks 5, latches 4, ignored 2, cancelled 1), no fault, `s2_instr=` / `s2_master=`.
+3. `tests/sim/det_fx_reload.txt` on the same NAND: gain, sync and heads kept at every position, hold off everywhere.
 4. A pristine-NAND `det_chord.txt` unchanged against e6.
 
 Read the stats cost line as an emulator figure (the device is 10-35 % higher, more with SDRAM traffic).

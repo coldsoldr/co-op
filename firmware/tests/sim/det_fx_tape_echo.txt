@@ -1,20 +1,22 @@
 # tape_echo (plugins/tape_echo, alone on the NAND): its declared controls at every position, and a chord and drum
-# keys through it. det_fx_controls.txt's walk (same timing, same list rows: the plugin is the last row) with the
-# actions changed for tape_echo's controls (fn + blue gain, word 5, fine on shift + fn + blue; green click hold, latch
-# bit 0; white click heads, steps, word 7). Guest-timed; op1emu `turn ENC cw 2` = one detent (1024).
+# keys through it. det_fx_controls.txt's walk as it was at 40884de (same timing, same list rows: the plugin is the
+# last row; no randomise) with the actions changed for tape_echo's controls: fn + blue gain (word 5, "step" 1365,
+# "fine_step" 273 on shift + fn + blue), fn + green sync (word 6, steps), green click hold (latch bit 0), white click
+# heads (word 7, steps). Guest-timed; op1emu `turn ENC cw 2` = one detent (1024).
 # Expected (stats line fxctl, pN=blocks i inits : w5/w6/w7/latch) [I, not run yet]:
-#  p0 synth FX 1: fn + blue 4 down (15072), shift + fn + blue 1 fine up (15092), green click (hold on), white click
-#     (heads 1), shift + fn + white (undeclared: ignored), orange click (undeclared: ignored)
-#                                                                       -> 15092/0/1/1 while there; the latch reads 0
+#  p0 synth FX 1: fn + blue 4 down (16384 - 4 x 1365 = 10924), shift + fn + blue 1 fine up (+ 273 = 11197), green
+#     click (hold on), white click (heads 1), shift + fn + white (undeclared: ignored), orange click (undeclared:
+#     ignored)                                                          -> 11197/0/1/1 while there; the latch reads 0
 #     at the end (the stock starts the instrument effect again on the synth / drum switch).
-#  p3 instrument FX 2: fn + blue 2 up (17040), green twice (hold on, off), white click (heads 1), a blue push with
-#     shift pressed before its release (cancelled)                      -> 17040/0/1/0
-#  p2 master FX 1: fn + blue 1 down (16056, master_saves 1), green click (hold on)
-#                                                                       -> 16056/0/0/1
-#  p4 master FX 2: white click twice (heads 2)                          -> 16384/0/2/0
-#  p1 drum FX 1: fn + blue 1 up (16712), white click (heads 1)          -> 16712/0/1/0
-# Stats: fxctl turns 8 (one a detent, as e6 counted 11 for det_fx_controls), fine 1, clicks 5, latches 4, ignored 2,
-# cancelled 1; plugins: tape_echo loaded, rendering at p0-p4, no fault; cost fx1_plugin / s2_instr / s2_master.
+#  p3 instrument FX 2: fn + blue 2 up (19114), green twice (hold on, off), white click (heads 1), a blue push with
+#     shift pressed before its release (cancelled)                      -> 19114/0/1/0
+#  p2 master FX 1: fn + blue 1 down (15019, master_saves 1), green click (hold on)
+#                                                                       -> 15019/0/0/1
+#  p4 master FX 2: white click twice (heads 2), fn + green 3 up (sync 3 = 1/8t: the time follows an eighth triplet
+#     at 120 BPM, 333 ms)                                               -> 16384/3/2/0
+#  p1 drum FX 1: fn + blue 1 up (17749), white click (heads 1)          -> 17749/0/1/0
+# Stats: fxctl turns 11 (one a detent), fine 1, clicks 5, latches 4, ignored 2, cancelled 1; plugins: tape_echo
+# loaded, rendering at p0-p4, no fault; cost fx1_plugin / s2_instr / s2_master.
 accel 64 -64 512
 wait-frames 1 300000
 at 26000
@@ -147,6 +149,12 @@ at 79000
 tap enc3 200
 at 79800
 tap enc3 200
+at 80000
+press help
+at 80100
+turn enc2 cw 6
+at 80400
+release help
 at 80500
 tap lift 200
 at 81500

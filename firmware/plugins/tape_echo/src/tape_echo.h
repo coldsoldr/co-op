@@ -51,6 +51,10 @@ const int32_t kTapeEchoNumPatterns = 4;
 extern const uint8_t kTapeEchoPatternHeads[kTapeEchoNumPatterns];
 const int32_t kTapeEchoMaxBlock = 64;
 
+// TIME's inverse, for the sync divisions: the word (0..32767) whose delay (head 3) is samples_q4 (Q4 samples at
+// 22050 Hz), -1 if the delay is outside 30 ms .. 1.5 s. Per block at most (it divides).
+int32_t TapeEchoTimeWord(int32_t samples_q4);
+
 // The run kernel's block (tape_echo_layout.h's TEK_ offsets).
 struct TapeEchoKernel {
   int32_t pos[3];      // head delays, Q15 samples

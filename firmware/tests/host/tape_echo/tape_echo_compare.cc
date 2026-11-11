@@ -34,6 +34,7 @@ uint32_t measured_cycles;   // fx_host.h
 static uint32_t& clock_now = op1::host_cycles;
 #else
 #include "coop_plugin.h"
+#include "src/tape_echo.h"   // TapeEchoTimeWord, for the division table printout
 extern "C" const coop_fx_t FX_tape_echo;
 uint32_t g_tape_echo_host_cycles;
 static uint32_t& clock_now = g_tape_echo_host_cycles;
@@ -76,6 +77,19 @@ int32_t GainQ14(int32_t word) {   // knl::GainQ14
   return kTable[i] + (((kTable[i + 1] - kTable[i]) * frac) / 32767);
 }
 
+// Kennel's tempo lock (tape_echo_knl.cc TimeLock::Word, DivisionWord, NinetySixthQ4) with the division the scenario
+// picks (coop's sync step - 1) and knl::TempoIncrement's 120 BPM fallback (the stock address isn't there to read).
+const int64_t kNinetySixthNum = 1466015528250LL;
+const uint32_t kTempo120 = 199457895u;
+const int32_t kNumDivisions = 11;
+const int32_t kDivision96ths[kNumDivisions] = { 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48 };
+int32_t LockWord(int32_t div, int32_t knob_word) {
+  if (div < 0) return knob_word;
+  const int32_t s96 = static_cast<int32_t>(kNinetySixthNum / kTempo120);
+  const int32_t word = op1fx::TapeEchoTimeWord(s96 * kDivision96ths[div]);
+  return word < 0 ? knob_word : word;
+}
+
 int skip = 0;   // blocks still passed through after a restart (coop's tape clear)
 
 void RefInit() {
@@ -101,7 +115,7 @@ void RefProcess(int16_t* l, int16_t* r, const int16_t* p, int32_t pattern, bool 
   int32_t v[4];
   for (int k = 0; k < 4; ++k) v[k] = ParamQ15(p, k);
   op1fx::TapeEchoParams q;
-  q.time = v[0];
+  q.time = LockWord(p[6] - 1, v[0]);   // coop's sync step 0 = free, 1..11 = kennel's division 0..10
   q.feedback = v[1];
   q.age = v[2];
   q.heads = pattern;
@@ -155,7 +169,7 @@ int main(int argc, char** argv) {
   // The knob words, in the filter ranges; words 5..7; the latch word.
   int16_t params[16] = { 0 };
   int32_t knob_q15[4] = { 16384, 14746, 9830, 13107 };   // plugin.json defaults
-  int32_t gain = 16384, pattern = 0;
+  int32_t gain = 16384, pattern = 0, sync = 0;
   bool hold = false;
   uint32_t phase_l = 0, phase_r = 0, inc_l = 40000000, inc_r = 61000000;
   int source = 1;
@@ -170,6 +184,7 @@ int main(int argc, char** argv) {
 #endif
 #endif
   int wet_blocks = 0;   // blocks whose output differs from the input: the test is not of a pass-through
+  int sync_blocks = 0;  // blocks with sync on
 
   for (int b = 0; b < blocks; ++b) {
     // ---- the scenario ----
@@ -184,13 +199,15 @@ int main(int argc, char** argv) {
     if (b % 3000 < 600) knob_q15[1] = 30500 + (b % 7) * 300;   // stretches of feedback over 1 (self-oscillation)
     if (Rand() % 300 == 0) gain = RandRange(0, 32767);
     if (Rand() % 500 == 0) pattern = (pattern + 1) % 4;
+    if (Rand() % 450 == 0) sync = Rand() % 3 == 0 ? 0 : RandRange(1, 11);   // sync: off, or a division
     if (Rand() % 700 == 0) hold = !hold;
     for (int k = 0; k < 4; ++k) {   // the core's knob_map: Q15 into the filter range
       params[k] = static_cast<int16_t>(kRangeLo[k] + (knob_q15[k] * (kRangeHi[k] - kRangeLo[k])) / 32767);
     }
     params[4] = 0x5300;
     params[5] = static_cast<int16_t>(gain);
-    params[6] = 0;
+    params[6] = static_cast<int16_t>(sync);
+    if (sync) ++sync_blocks;
     params[7] = static_cast<int16_t>(pattern);
     params[8] = hold ? 1 : 0;
 
@@ -263,7 +280,14 @@ int main(int argc, char** argv) {
     std::fwrite(pair, sizeof(pair), 1, out);
   }
   std::fclose(out);
-  std::printf("%d of %d blocks changed by the effect\n", wet_blocks, blocks);
+  std::printf("%d of %d blocks changed by the effect, %d with sync on\n", wet_blocks, blocks, sync_blocks);
+  // The sync divisions' time words at 120 BPM (a 96th = 7350 Q4 samples at 22050 Hz), from each build's own
+  // TapeEchoTimeWord: the Makefile compares the two printouts (and kennel's table is the reference's).
+  std::printf("sync words at 120 BPM:");
+  static const int32_t k96ths[11] = { 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48 };   // kennel's kDivision96ths
+  const int32_t s96 = static_cast<int32_t>(1466015528250LL / 199457895u);
+  for (int d = 0; d < 11; ++d) std::printf(" %d", static_cast<int>(op1fx::TapeEchoTimeWord(s96 * k96ths[d])));
+  std::printf("\n");
 #if defined(__bfin__) && !defined(TE_REF)
   std::printf("tape_echo render, simulator compute: avg %lu, max %lu cycles a block over %lu blocks\n",
               static_cast<unsigned long>(cyc_sum / (cyc_n ? cyc_n : 1)), static_cast<unsigned long>(cyc_max),

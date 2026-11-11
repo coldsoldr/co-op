@@ -4,8 +4,8 @@
 // From te-op1-cfw ports/fx/src/tape_echo/tape_echo.cc (5aa314b). What changed for coop, nothing else:
 // - the compile-time floating-point tables are integer literals (src/tape_echo_tables.h, generated from the original
 //   by tests/host/tape_echo/gen_tables.cc): fixed point only, even at compile time (guidelines §2.1);
-// - the mono kernels and paths, TIME's inverse (TapeEchoTimeWord, for kennel's tempo lock) and the test accessors
-//   are gone; the C reference kernel is built only off the Blackfin (or with COOP_TAPE_ECHO_C);
+// - the mono kernels and paths, TapeEchoTimeSamplesQ4 (for kennel's screen) and the test accessors are gone; the C
+//   reference kernel is built only off the Blackfin (or with COOP_TAPE_ECHO_C);
 // - Init leaves the tape alone; ClearTape zeroes it in slices.
 // The stereo arithmetic is the original's, instruction for instruction (tests/host/tape_echo checks it bit for bit).
 //
@@ -130,6 +130,16 @@ inline int32_t ReadIndex(const TapeEchoKernel* k, int32_t h, int32_t p, int32_t 
 }
 
 }  // namespace
+
+int32_t TapeEchoTimeWord(int32_t samples_q4) {
+  const int32_t* t = tables::kTime;
+  if (samples_q4 < t[0] || samples_q4 > t[32]) return -1;
+  int32_t i = 0;
+  while (i < 31 && samples_q4 >= t[i + 1]) ++i;
+  const int32_t lo = t[i], hi = t[i + 1];
+  const int32_t word = (i << 10) + ((samples_q4 - lo) * 1024 + (hi - lo) / 2) / (hi - lo);
+  return Clamp(word, 0, 32767);
+}
 
 const uint8_t kTapeEchoPatternHeads[kTapeEchoNumPatterns] = { 4, 6, 7, 5 };
 // The table the assembly reads by its (mangled) name.

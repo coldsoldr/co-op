@@ -21,8 +21,9 @@ SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree
 
 .PHONY: all sim tables clean
 all: $(BUILD)/tape_echo_ref $(BUILD)/tape_echo_coop
-	$(BUILD)/tape_echo_ref $(BUILD)/ref.raw $(BLOCKS)
-	$(BUILD)/tape_echo_coop $(BUILD)/coop.raw $(BLOCKS)
+	$(BUILD)/tape_echo_ref $(BUILD)/ref.raw $(BLOCKS) | tee $(BUILD)/ref.txt
+	$(BUILD)/tape_echo_coop $(BUILD)/coop.raw $(BLOCKS) | tee $(BUILD)/coop.txt
+	cmp $(BUILD)/ref.txt $(BUILD)/coop.txt && echo "tape_echo: the sync divisions' time words agree"
 	cmp $(BUILD)/ref.raw $(BUILD)/coop.raw && echo "tape_echo: coop == te-op1-cfw, bit-identical ($(BLOCKS) blocks, host)"
 
 $(BUILD)/tape_echo_ref: tape_echo_compare.cc

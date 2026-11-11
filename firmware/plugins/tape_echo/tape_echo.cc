@@ -12,6 +12,9 @@
  *   params[0..3]  time, feedback, age, mix: the four turns, in the filter type's range units; normalised to 0..32767
  *                 as kennel's op1_fx_param_q15 did (the same ranges, the same rounding).
  *   params[5]     gain (fn + blue, shift + fn + blue its fine): Q15, -6 dB at 0, 0 dB at 16384, +6 dB at 32767.
+ *   params[6]     sync (fn + green): step 0 off (the blue turn sets the time), 1..11 a tempo division (1/16T .. 1/2,
+ *                 kennel's tempo lock): the time follows the division at the tempo, 120 BPM until the core exports it
+ *                 (docs/request-tempo-export-tape-echo.md). A division over 1.5 s at the tempo falls back to the turn.
  *   params[7]     the head pattern (white click): step 0..3.
  *   params[8]     bit 0: hold (green click, a latch).
  *
@@ -50,6 +53,26 @@ const int32_t kClearPairs = 2048;                      /* tape pairs zeroed a bl
 /* The filter type's knob ranges (sdk/coop_plugin.h): what kennel's op1_fx_param_q15 read from the stock table. */
 const int16_t kRangeLo[4] = { 64, 0, 0, 8192 };
 const int16_t kRangeHi[4] = { 14528, 24576, 22528, 32767 };
+
+/* Sync: kennel's tempo divisions (tape_echo_knl.cc), shortest first. A 96th note in Q4 samples at 22050 Hz from the
+ * tempo increment (the stock LFO's tempo-synced phase increment, bpm x 1662149.125): 16 x 22050 x 60 / 24 x
+ * 1662149.125 / inc. */
+const int64_t kNinetySixthNum = 1466015528250LL;
+const uint32_t kTempo120 = 199457895u;                 /* 120 x 1662149.125 */
+const int32_t kNumDivisions = 11;                      /* 1/16T 1/16 1/8T 1/16. 1/8 1/4T 1/8. 1/4 1/2T 1/4. 1/2 */
+const int32_t kDivision96ths[kNumDivisions] = { 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48 };
+
+/* The tempo increment. coop has no tempo export yet: 120 BPM, as kennel's fallback (guidelines §2.3). */
+inline uint32_t TempoIncrement() { return kTempo120; }
+
+/* The time word sync gives (step 1..11), or the turn's word when off or when the division is out of range. */
+inline int32_t SyncedTime(int32_t sync, int32_t knob_word)
+{
+    if (sync < 1 || sync > kNumDivisions) return knob_word;
+    const int32_t s96 = static_cast<int32_t>(kNinetySixthNum / TempoIncrement());   /* folds while the tempo is 120 */
+    const int32_t word = op1fx::TapeEchoTimeWord(s96 * kDivision96ths[sync - 1]);
+    return word < 0 ? knob_word : word;
+}
 
 struct Instance {
     op1fx::TapeEcho echo;
@@ -106,7 +129,7 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
     }
 
     op1fx::TapeEchoParams q;
-    q.time = Knob(params, 0);
+    q.time = SyncedTime(params[6], Knob(params, 0));
     q.feedback = Knob(params, 1);
     q.age = Knob(params, 2);
     const int32_t mix = Knob(params, 3);
