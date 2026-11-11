@@ -1655,3 +1655,29 @@ button.link {
 .coop-plugins td button {
   margin: 2px 0;
 }
+
+.build-firmware {
+  max-width: 76ch;
+}
+.build-steps li[data-state='done']::marker {
+  content: '✓  ';
+}
+.build-steps li[data-state='working'] {
+  font-weight: 600;
+}
+.build-steps li[data-state='failed'] {
+  color: var(--bad);
+}
+.build-steps li[data-state='waiting'] {
+  opacity: 0.55;
+}
+.build-firmware progress {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+.build-manual {
+  margin-top: 48px;
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+}

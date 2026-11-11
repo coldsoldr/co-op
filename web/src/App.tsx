@@ -6,7 +6,7 @@ import { CopyToMods } from './ui/CopyToMods';
 import { CoopDevice, CoopInstall } from './ui/CoopPlugins';
 import { useSiteDevice } from './ui/device-choice';
 import { DeviceMenu } from './ui/DeviceMenu';
-import { Inspector } from './ui/Inspector';
+import { BuildFirmware } from './ui/BuildFirmware';
 import { Library } from './ui/Library';
 import { Op1FunTab } from './ui/Op1Fun';
 import { OpXy } from './ui/OpXy';
@@ -27,7 +27,7 @@ const TABS = [
   { id: 'patches', label: 'Patches' },
   { id: 'plugins', label: 'Plugins' },
   { id: 'op1fun', label: 'op1.fun' },
-  { id: 'inspector', label: 'Inspector' },
+  { id: 'firmware', label: 'Build firmware' },
   { id: 'settings', label: 'Settings' },
 ] as const;
 
@@ -176,8 +176,8 @@ export function App() {
         <div role="tabpanel" id="panel-op1fun" aria-labelledby="tab-op1fun" hidden={tab !== 'op1fun'}>
           <Op1FunTab op1fun={op1fun} device={device} active={tab === 'op1fun'} onOpenLibrary={openLibrary} />
         </div>
-        <div role="tabpanel" id="panel-inspector" aria-labelledby="tab-inspector" hidden={tab !== 'inspector'}>
-          <Inspector active={tab === 'inspector'} device={device} />
+        <div role="tabpanel" id="panel-firmware" aria-labelledby="tab-firmware" hidden={tab !== 'firmware'}>
+          <BuildFirmware />
         </div>
         <div role="tabpanel" id="panel-settings" aria-labelledby="tab-settings" hidden={tab !== 'settings'}>
           <Settings device={device} />

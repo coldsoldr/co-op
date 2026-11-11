@@ -72,8 +72,12 @@ disk mode (shift + COM, then DISK):
   loaded, read only. The profile you choose by hand, or from the check, is
   remembered for the next drive; a drive whose `mods/` folder proves opus
   still opens as opus.
-- **Inspector tab.** Drop a single `.aif` to see how co-op reads it and
-  how the open drive's profile (or one you pick) judges it.
+- **Build firmware tab.** Give it your own stock `op1_246.op1` and it builds
+  coop, the custom OP-1 firmware in `firmware/`, in the browser: it checks the
+  file is TE's R246, patches in coop's `OP1_vdk.ldr` from a delta of coop's own
+  bytes (`firmware/tools/make_web_delta.py`), packs it without `te-boot.ldr`
+  and checks the result as `verify_bootloader.py` does. co-op holds no TE
+  firmware. The coop manual (`docs/coop-manual.md`) is on the same tab.
 - **Feedback.** The Feedback button in the header sends a bug report, idea,
   pack request or anything else, with a short list of attached context
   (app version, profile, store type, browser) shown before sending. Once the
