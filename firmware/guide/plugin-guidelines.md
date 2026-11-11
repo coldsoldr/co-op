@@ -129,6 +129,14 @@ Every plugin ships a **contract**:
 
 A picture of an action doesn't implement it. An action that isn't built yet is marked *proposed*.
 
+**[now] The subset that is built** (e4 engines, e6 effects): `plugin.json` "controls", up to eight controls beyond
+the four turns, with the field names below (`id`, `name`, `action`, `encoder`, `kind`, `default`, `steps`, `random`,
+plus `word` 5..7 for a saved control, `detents`, `wrap`, `fine` and, for an effect's latch, `bit`). Saved controls live
+in the sound's words 5..7 (three at most) and reach the render as `params[5..7]`; an effect's latches arrive as bits of
+`params[8]`. Schema, numbers and worked examples: `docs/engines.md` "Controls" (engines), `docs/plugins.md` "Effect
+controls" (effects), `sdk/coop_plugin.h`. The table below is the v2 goal; the subset reads the same fields so v2 can
+take the declarations over.
+
 ### 3.1 The parameter table [proposed, ABI v2]
 
 The core owns every parameter's value (the core-owned store, P2 onward). The plugin declares its parameters and
@@ -183,8 +191,11 @@ rings port: `docs/ui-features.md` §13). **The colour follows the encoder throug
 eight.
 
 On a **synth engine's** page the core dispatches every layer but turn and shift + turn to the engine's declared
-controls (`plugin.json` "controls", `docs/engines.md` "Controls") [now, e4]. Effects get the same layers with the v2
-parameter store [proposed].
+controls (`plugin.json` "controls", `docs/engines.md` "Controls") [now, e4]. **Effects** get the same layers on the
+effect page, at every position (FX 1 of synth, drum and master; FX 2 of instrument and master) [now, e6; op1emu,
+device test pending]: saved `steps` and `continuous` controls in words 5..7, `latch` clicks (not saved) as bits of
+`params[8]`, and a continuous fn + turn may take its encoder's shift + fn + turn as its fine adjustment (`"fine"`,
+4.1). `docs/plugins.md` "Effect controls". The full v2 parameter store (formats, CC map, smoothing) stays [proposed].
 
 | Action | What goes here | Rule |
 |---|---|---|
@@ -240,12 +251,19 @@ a second bank (chorus, plate, outatime, amp). coop settles it per encoder:
     a plugin may declare more.
   - While shift is held, the screen shows the second row's names and values.
 - **Steps parameters** never get fine adjustment.
+- **The fn layer pairs the same way** (the owner, 2026-11-10/11, e6): a continuous fn + turn control declared with
+  `"fine": true` takes shift + fn + turn on its encoder as its fine adjustment (1/16 of its step: the same ratio as
+  shift + turn on the turn). Nothing else may then sit on that encoder's shift + fn + turn (`pack.py` refuses it).
+  Without `"fine"`, shift + fn + turn is a slot of its own, as before. Effects' input gain and the reverbs' second
+  row use the pair; engines may.
 - **Semitone controls** (pitch, key): turn moves semitones and shift + turn moves cents. This is the kennel
   `PAGE_SEMI` convention, and it counts as fine.
 
 ### 4.2 Resolution
 - One detent is a core delta of 1024 [C on kennel hardware; coop P3a].
-- Continuous parameters default to 1 % of the range per detent on turn, and 1/16 of that on fine.
+- Continuous parameters default to 1 % of the range per detent on turn, and 1/16 of that on fine. For the declared
+  controls (e4 / e6) that is 328 Q15 a detent on fn + turn and 20.5 (20 and 21 alternately) on its `"fine"` shift +
+  fn + turn [C op1emu, e6].
 - `steps` parameters move one step per detent.
   - A selector with many steps may declare `detents` per step (`plugin.json` "controls", e4; Nostromo used 2).
   - A selector whose steps form a cycle (models, voice counts) may declare `"wrap": true` (e5): a turn past the last

@@ -36,6 +36,9 @@
 extern "C" int coop_engine_ui_key(int code, int pressed);                 /* engine_ui.cc (e4) */
 extern "C" int coop_engine_ui_knob(int knob, int steps);
 extern "C" void coop_engine_ui_draw(void *r);
+extern "C" int coop_fx_ui_key(int code, int pressed);                     /* engine_ui.cc (e6): an effect plugin's controls */
+extern "C" int coop_fx_ui_knob(int knob, int steps);
+extern "C" void coop_fx_ui_draw(void *r);
 #define CUR_SCREEN     (*(volatile int *)0x018B65C8u)                  /* the screen id shown (kennel CUR_SCREEN) */
 #define CUR_MODE       (*(volatile int *)0xFF907D58u)
 #define FX_POS         (*(volatile uint8_t *)0x01DF4E3Cu)               /* effect position: 0 synth, 1 drum, 3 master */
@@ -125,7 +128,6 @@ static volatile uint8_t s_focus2[2];                                   /* per po
 static int s_pos;                                                      /* the position the focus state below was loaded for */
 static int s_loaded;                                                   /* s_kind / s_id / s_knob / s_pick hold slot s_pos */
 static int s_kind, s_id;                                               /* the applied effect */
-static int s_pick;                                                     /* the list index Shift + blue points at */
 static uint16_t s_knob[4];
 static int s_dirty;                                                    /* a change not yet saved */
 static uint64_t s_swallow;                                             /* presses taken: their releases too */
@@ -134,6 +136,7 @@ static int on_fx_page(void) { int s = CUR_SCREEN; return s >= 8 && s <= 15; }
 static int pos_now(void) { return FX_POS == 3 ? 1 : 0; }
 static int toggle_key(void) { return KEY_T3; }                         /* the page's own key (mixer page 2 too): the stock on / off of FX 1 */
 extern "C" int coop_fx2_focused(int pos2) { return s_focus2[pos2 & 1]; }
+static int s_pick;                                                     /* the list index Shift + blue points at */
 
 /* the effect list: the stock types 0..7, then the loaded plugins (u8: no "none"; FX 2 is off instead, T3) */
 static int list_len(void) { int n = FX_TYPES; for (int p = 1; p < PLUG_MAX; p++) if (coop_plugin_name(p)) n++; return n; }
@@ -166,6 +169,15 @@ static void focus_sync(void)                                           /* the po
     if (!s_loaded || pos != s_pos) load_slot(pos);
 }
 static int focused_here(void) { return on_fx_page() && s_focus2[pos_now()]; }
+/* e6 (engine_ui.cc): FX 2 in focus has another effect picked (Shift + blue): a blue push applies it, it is no click */
+extern "C" int coop_fx2_pick_pending(void)
+{
+    if (!focused_here()) return 0;
+    focus_sync();
+    int kind, id;
+    list_entry(s_pick, &kind, &id);
+    return kind != s_kind || id != s_id;
+}
 
 /* ---- u8: LFO 2 on the stock LFO page (screens 24..30), as FX 2 on the effect page. The sound's LFO 2 (type, on,
  * eight params) lives in its JSON (coop_sound.cc); drop focuses it, lift LFO 1, T4 switches it off / on, the four
@@ -325,6 +337,7 @@ extern "C" int coop_ui_key(int code, int pressed)
     if (coop_random_key(code, pressed)) return 1;                       /* synth / drum held + arrows: randomise / back */
     if (coop_fn_key(code, pressed)) return 1;                           /* Help: a tap on release, a hold is fn */
     if (coop_engine_ui_key(code, pressed)) return 1;                    /* e4: a plugin engine's declared clicks (engine_ui.cc) */
+    if (coop_fx_ui_key(code, pressed)) return 1;                        /* e6: an effect plugin's declared clicks (engine_ui.cc) */
     if (coop_tape_key(code, pressed)) return 1;                         /* tape / mixer: solo, markers */
     if (coop_bend_key(code, pressed)) return 1;                         /* shift + arrows on the synth: the bend */
     if (coop_rename_key(code, pressed)) return 1;                       /* the preset browser: naming */
@@ -387,6 +400,7 @@ extern "C" void coop_ui_knob(int knob, int16_t *delta)
     if (coop_drumpan_knob(knob, steps)) return;                        /* shifted blue on the drum's T2 */
     if (coop_rename_knob(knob, steps)) return;                         /* naming: every turn */
     if (coop_engine_ui_knob(knob, steps)) return;                      /* e4: fn + turn on a plugin engine's page */
+    if (coop_fx_ui_knob(knob, steps)) return;                          /* e6: fn + turn on an effect page with a plugin in focus */
     {
         int bk = br_sync();
         if (bk) {
@@ -512,11 +526,14 @@ extern "C" void coop_ui_frame(void *table)
         if (bk) { void *rb = op1_raster(); if (rb) draw_col2(rb, bk); return; }
     }
     if (on_lfo_page() && s_lfo2_focus[lfo_pos()]) return;              /* u8: the stock LFO page shows LFO 2 whole, its own "LFO OFF" included (coop_fx2view.cc) */
-    if (!focused_here()) return;                                       /* FX 1 in focus: the stock page alone */
+    if (!focused_here()) {                                             /* FX 1 in focus: the stock page alone */
+        if (on_fx_page()) { void *rf = op1_raster(); if (rf) coop_fx_ui_draw(rf); }   /* e6: a declared control's name and value */
+        return;
+    }
     focus_sync();
     void *r = op1_raster();
     if (!r) return;
-    if (coop_slot2_req_type(s_pos) < 0) { draw_fx2_page(r); return; }   /* a plugin, or nothing: coop's page */
+    if (coop_slot2_req_type(s_pos) < 0) { draw_fx2_page(r); coop_fx_ui_draw(r); return; }   /* a plugin, or nothing: coop's page */
     /* a stock type: the stock page shows slot 2 whole, dials, animation and its own "FX OFF" (coop_fx2view.cc); only a
      * pending pick is added */
     int pk, pi;

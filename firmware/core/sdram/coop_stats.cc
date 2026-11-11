@@ -52,6 +52,8 @@ extern const char *volatile g_plugins_last_error;
 extern volatile uint32_t g_set_plugin_pushes, g_set_plugin_bounces, g_set_plugin_turns, g_fn_shift_kept, g_set_dropped, g_set_listed;   /* coop_settings.cc, coop_tape_ui.cc (e4c) */
 extern volatile uint32_t g_engines_loaded, g_heap_largest, g_code_syncs, g_rows_dropped;   /* plugin_host.cc (E1, e4) */
 extern volatile uint32_t g_ctl_turns, g_ctl_clicks, g_ctl_ignored, g_ctl_cancelled, g_ctl_engines, g_ctl_popup_frames;   /* engine_ui.cc (e4) */                                 /* plugin_host.cc (E1) */
+extern volatile uint32_t g_ctl_fx, g_fxc_turns, g_fxc_fine, g_fxc_clicks, g_fxc_latches, g_fxc_ignored, g_fxc_cancelled, g_fxc_popup_frames;   /* engine_ui.cc (e6) */
+extern volatile uint32_t g_fxc_blocks[5], g_fxc_inits[5], g_fxc_from_params, g_master_saves; extern volatile int16_t g_fxc_seen[5][4];   /* plugin_host.cc (e6) */
 extern volatile uint32_t g_eng_44k_renders;   /* voice_rate.cc (v1) */
 extern volatile uint32_t g_eng_renders, g_eng_noteons, g_eng_iter_renders, g_eng_switches, g_eng_foreign, g_eng_cycles_max;   /* engine_host.cc */
 extern "C" void coop_eng_render(void *, int16_t *, const int16_t *);
@@ -613,6 +615,10 @@ static void write_file(void)
     for (int k = 0; k < 8; k++) { const volatile int16_t *rg = (const volatile int16_t *)(0x01DE5890u + 14u * 64u + (uint32_t)k * 8u);
         put(" ["); for (int j = 0; j < 4; j++) { if (j) put(","); int v = rg[j]; if (v < 0) { put("-"); v = -v; } putn((uint32_t)v); } put("]"); }
     put("\n");
+    put("filter_ranges");                                                 /* e6 probe: FX type 5's row {min, max, default} x 8 */
+    for (int k = 0; k < 8; k++) { const volatile int16_t *rg = (const volatile int16_t *)(0x01DE5C50u + 5u * 0x30u + (uint32_t)k * 6u);
+        put(" ["); for (int j = 0; j < 3; j++) { if (j) put(","); int v = rg[j]; if (v < 0) { put("-"); v = -v; } putn((uint32_t)v); } put("]"); }
+    put("\n");
 #endif
     put("plugins"); kv("seen", g_plugins_seen); kv("loaded", g_plugins_loaded); kv("failed", g_plugins_failed); kv("disabled", g_plugins_disabled);
     kv("mono_calls", g_fx_dispatch_mono); kv("st_calls", g_fx_dispatch_st); kv("plugin_blocks", g_fx_plugin_blocks); kv("stock_st_blocks", g_fx_stock_stereo_blocks); kv("stock_st_made", g_fx_stock_ctor); kv("s2_instr", g_s2_blocks[0]); kv("s2_master", g_s2_blocks[1]); kv("s2_changes", g_s2_changes); kv("tanks", g_tank_bound); kv("tank_short", g_tank_short); kv("ui_opens", g_ui_opens); kv("ui_applies", g_ui_applies); kv("ui_toggles", g_ui_toggles); kv("ui_knobs2", g_ui_knobs2); kv("ui_col2_sets", g_ui_col2_sets); kv("rnd", g_rnd_count); kv("rnd_back", g_rnd_backs); kv("rnd_refused", g_rnd_refused); kv("rnd_slot2", g_rnd_slot2); kv("solo", g_solo_sets); kv("markers", g_marker_sets); kv("jumps", g_marker_jumps); kv("help_taps", g_fn_taps); kv("mode_taps", g_mode_key_taps); kv("mode_holds", g_mode_key_holds); kv("keeps", g_sound_keeps); kv("kept", g_sound_kept); kv("sound_writes", g_sound_writes); kv("bend", g_bend_presses); kv("bend_knobs", g_bend_knobs); kv("bend_ramps", g_bend_ramps); kv("overwrites", g_over_saves); kv("over_armed", g_over_armed); kv("saves", g_over_stock); kv("renames", g_rename_saves); kv("rename_starts", g_rename_starts); kv("rename_refused", g_rename_refused); kv("drumpan", g_drumpan_knobs); kv("rename_pushes", g_rename_pushes); kv("fx2view", g_fx2view_params); kv("fx2view_disp", g_fx2view_disp); kv("fx2view_pops", g_fx2view_pops); kv("fx2view_empty", g_fx2view_empty); kv("fx2view_size", g_fx2view_size); kv("fx2view_ids", g_fx2view_ids); kv("lfo2view", g_lfo2view_params); kv("lfo2view_pops", g_lfo2view_pops); kv("fx2view_on", g_fx2view_on); kv("lfo2view_on", g_lfo2view_on); kv("fx2view_post", g_fx2view_last_post); kv("fx2view_cur", g_fx2view_cur); kv("set_opens", g_set_opens); kv("set_plugin_pushes", g_set_plugin_pushes); kv("set_plugin_bounces", g_set_plugin_bounces); kv("set_plugin_turns", g_set_plugin_turns); kv("set_listed", g_set_listed); kv("set_dropped", g_set_dropped); kv("fn_shift_kept", g_fn_shift_kept); kv("set_saves", g_set_saves); kv("st0_builds", g_st0_builds); kv("st0_dry", g_st0_dry_blocks);
@@ -621,6 +627,13 @@ static void write_file(void)
     kv("eng_switches", g_eng_switches); kv("eng_foreign", g_eng_foreign); kv("eng_max", g_eng_cycles_max);
     kv("scr_built", g_escr_built); kv("scr_failed", g_escr_failed); kv("scr_swaps", g_escr_swaps); kv("scr_resets", g_escr_resets); kv("scr_updates", g_escr_updates);
     if (g_plugins_last_error) { put(" last "); put(g_plugins_last_name); put(": "); put(g_plugins_last_error); }
+    put("\n");
+    put("fxctl"); kv("fx", g_ctl_fx); kv("turns", g_fxc_turns); kv("fine", g_fxc_fine); kv("clicks", g_fxc_clicks); kv("latches", g_fxc_latches);   /* e6 */
+    kv("ignored", g_fxc_ignored); kv("cancelled", g_fxc_cancelled); kv("popup_frames", g_fxc_popup_frames); kv("from_params", g_fxc_from_params); kv("master_saves", g_master_saves);
+    for (int p = 0; p < 5; p++) {                                       /* per position: blocks rendered with the block, words 5/6/7/latch last passed */
+        char k[4] = { ' ', 'p', (char)('0' + p), 0 }; put(k); put("="); putn(g_fxc_blocks[p]); put("i"); putn(g_fxc_inits[p]);
+        for (int w = 0; w < 4; w++) { put(w ? "/" : ":"); putn((uint32_t)(uint16_t)g_fxc_seen[p][w]); }
+    }
     put("\n");
     put("tape"); kv("rec_calls", g_tape_rec_calls); kv("rec_side_blocks", g_tape_rec_side_blocks);
     kv("mismatch", g_tape_state_mismatch); kv("mismatch2", g_tape_state_mismatch2); kv("mismatch_word", g_tape_mismatch_word);

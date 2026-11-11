@@ -86,3 +86,4 @@
 0x01a54b08  fast_tape_erase         C  (): invalidate all, 485 x 4 x 64 KiB zero writes (pwrite 0x1a99f9c, progress 0x018c17c8), then 0x1a54020(0xf); replaced by coop_erase
 0x0191c9fc  clipboard_slot_init     C  (slot, &cap): [slot] = 0x02040010, [cap] = 0x3c8fe8
 0x01a29a74  readinterface_track_flag C  (ch): asserts ReadInterface.cpp:471 ch >= 0 && ch < kTapeNumTracks, returns B[0xff8010a0 + ch] == 0; called by the tape screen draw (0x1a5c984) with the current track
+0x019d9b94  master_db_save          C  (): writes op1.db master (volumes, pans, eq, master_params, fx_type, fx_active, fx_params, trick_1/2) from the live words with "UPDATE master SET volumes=..." (string 0x018e320c, its only user); a MasterController virtual (vtable word 0x01910aa8); ignores R0. e6 calls it from the main loop after a master control change (plugin_host.cc)

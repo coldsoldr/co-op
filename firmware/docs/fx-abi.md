@@ -54,6 +54,11 @@ When porting a kennel (.knl) or opus plugin to a coop FX, the port MUST satisfy:
 5. Fixed-point only, no float, no libc, hot loop under the I-cache budget (docs/performance.md); state
    and scratch from the declared buffers (region B), not static arrays.
 
+6. **Controls beyond the four turns** (e6, `docs/plugins.md` "Effect controls"): declare them in `plugin.json`
+   "controls" (saved words 5..7, latches as bits of `params[8]`); read `params[5..8]` once per block, clamp them, and
+   never keep a latch across `init`. One render serves both channels, so a dual-mono port applies the same control
+   values to both instances in that block.
+
 (These will be enforced/annotated per-plugin in the Phase 4 porting guide. The coop FX we ship now —
 `core/include/coop_fx.h`'s stereo delay — already satisfies rules 1–5 as a stereo-native effect.)
 

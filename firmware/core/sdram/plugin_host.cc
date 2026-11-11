@@ -69,6 +69,8 @@ extern "C" const char *coop_engine_add(int n, const coop_engine_t *e);
 extern "C" void coop_engine_screen_file(int n, const char *file);         /* engine_screen.cc (E2) */
 extern "C" const char *coop_engine_set_controls(int n, const char *text); /* engine_ui.cc (e4) */
 extern "C" int coop_engine_control_default(int n, int word);
+extern "C" const char *coop_fx_set_controls(int n, const char *text);     /* engine_ui.cc (e6): an effect's controls */
+extern "C" int coop_ctl_word_max(int n, int word);
 
 volatile uint32_t g_plugins_seen, g_plugins_loaded, g_plugins_failed, g_plugins_booted, g_plugins_map_n;
 volatile uint32_t g_fx_dispatch_mono, g_fx_dispatch_st, g_fx_plugin_blocks;
@@ -77,7 +79,9 @@ char g_plugins_last_name[NAME_MAX];
 
 #define POSITIONS   5                                                     /* 0 synth, 1 drum, 2 master: an instance each (P2b);
                                                                              S2: 3 instrument slot 2, 4 master slot 2 */
-struct plug { const coop_fx_t *fx; const coop_fx_t *inst[POSITIONS]; char name[16]; int16_t def[4]; };
+/* e6: ctl = the file declares controls (then the render gets the core's params block, below); wmax[w] = the highest
+ * value word 5 + w may hold (-1: no control there, passed as 0); def5 = the words' defaults (the file's page-2 defaults) */
+struct plug { const coop_fx_t *fx; const coop_fx_t *inst[POSITIONS]; char name[16]; int16_t def[4]; int ctl; int16_t wmax[3], def5[3]; };
 static struct plug g_plug[SLOTS];                                          /* by number */
 struct mapent { char name[16]; uint8_t n, present; };
 static struct mapent g_map[MAP_MAX];
@@ -193,6 +197,7 @@ static void row_ensure(void *db, const char *table, const char *name, const int1
     }
     v[4] = MAGIC + n; v[5] = v[6] = v[7] = 0;
     if (engine) for (int w = 5; w < 8; w++) v[w] = coop_engine_control_default(n, w);   /* e4: declared controls */
+    else if (g_plug[n].ctl) for (int w = 5; w < 8; w++) v[w] = g_plug[n].def5[w - 5];   /* e6: an effect's declared controls */
     char want[96], sql[256], *o = want;
     *o++ = '[';
     for (int i = 0; i < 8; i++) { if (i) { *o++ = ','; *o++ = ' '; } o = snum(o, v[i]); }
@@ -302,9 +307,14 @@ static const char *load_one(const char *fname, uint8_t *stage)
             return "another file has the same name";
     if (in.kind == KN_KIND_SYNTH) return load_engine(in, stage, fname);
     if (in.kind != KN_KIND_FX) return "not an effect or a synth engine";
-    if (in.flags) return "plugin flags not supported yet";
+    /* e6: KN_FLAG_PAGE2 = the effect uses words 5..7 (pack.py sets it with "controls", the header's page-2 defaults are
+     * theirs). A core before e6 refuses the file here ("plugin flags not supported yet") instead of playing it with
+     * words 5..7 at 0 and no latch word. */
+    if (in.flags & ~KN_FLAG_PAGE2) return "plugin flags not supported yet";
+    if (in.controls && !(in.flags & KN_FLAG_PAGE2)) return "effect controls without the page-2 flag (repack)";
     int n = number_for(in.type_name);
     if (!n) return "no free plugin number";
+    if (in.controls) { err = coop_fx_set_controls(n, in.controls); if (err) return err; }   /* e6, before anything runs */
     /* one relocated instance per position (P2b): a plugin selected at two positions at once keeps two states */
     const coop_fx_t *inst[POSITIONS];
     uint8_t *raws[POSITIONS] = { 0 };
@@ -331,6 +341,14 @@ static const char *load_one(const char *fname, uint8_t *stage)
     }
     scopy(g_plug[n].name, in.type_name, 16);
     for (int i = 0; i < 4; i++) g_plug[n].def[i] = in.defaults[i];
+    if (in.flags & KN_FLAG_PAGE2) {                                        /* e6 */
+        for (int w = 0; w < 3; w++) {
+            int d = in.page2[w], m = coop_ctl_word_max(n, 5 + w);
+            g_plug[n].wmax[w] = (int16_t)m;
+            g_plug[n].def5[w] = (int16_t)(m < 0 || d < 0 ? 0 : (d > m ? m : d));
+        }
+        g_plug[n].ctl = 1;
+    }
     for (int k = 0; k < POSITIONS; k++) g_plug[n].inst[k] = inst[k];
     __asm__ __volatile__("ssync;" ::: "memory");
     g_plug[n].fx = inst[0];                                               /* selectable from here */
@@ -802,6 +820,47 @@ static void st_render(int pos, int16_t *l, int16_t *r, const int16_t *params)
 /* ---- dispatch at the three positions (the mono vtables of every stock type point here) ---- */
 static int fx_index(int n) { return (n > 0 && n < SLOTS && g_plug[n].fx) ? n : 0; }
 
+/* ---- e6: what an effect with declared controls receives (sdk/coop_plugin.h "Effect controls") ----
+ * params[0..4] as before; params[5..7] the stored words, clamped to each control (step index / Q15; 0 where nothing is
+ * declared); params[8] the position's latch bits (COOP_FX_LATCH); params[9..15] 0. A file without controls gets the
+ * stock's params pointer (slots 0-2) or the 8-word block (3-4) exactly as before e6. The latch word is written on the
+ * KeyHandler thread (one 16-bit store) and read once a block here; it is cleared whenever the plugin's init runs at the
+ * position (a selection, a sound change), so a latch is never saved. */
+static volatile uint16_t g_fx_latch[POSITIONS];
+static int16_t g_fx_pb[POSITIONS][16];                                     /* audio thread only, one block per position */
+volatile uint32_t g_fxc_blocks[POSITIONS], g_fxc_inits[POSITIONS], g_fxc_from_params;   /* inits: the plugin initialised there (latches cleared) */
+volatile int16_t g_fxc_seen[POSITIONS][4];                                 /* stats: words 5..8 last passed, per position */
+extern "C" int coop_fx_is_plugin(int n) { return fx_index(n) != 0; }
+extern "C" int coop_fx_latch(int pos) { return (pos >= 0 && pos < POSITIONS) ? g_fx_latch[pos] : 0; }
+extern "C" void coop_fx_latch_flip(int pos, int bit) { if (pos >= 0 && pos < POSITIONS) g_fx_latch[pos] = (uint16_t)(g_fx_latch[pos] ^ (1u << (bit & 15))); }
+static const int16_t *fx_params(int pos, int e, const int16_t *params, const volatile int16_t *w57)
+{
+    const struct plug *p = &g_plug[e];
+    if (!p->ctl) return params;
+    int16_t *b = g_fx_pb[pos];
+    for (int i = 0; i < 5; i++) b[i] = params[i];
+    for (int w = 0; w < 3; w++) {
+        int m = p->wmax[w], v = w57[w];
+        b[5 + w] = (int16_t)(m < 0 || v < 0 ? 0 : (v > m ? m : v));
+        g_fxc_seen[pos][w] = b[5 + w];
+    }
+    b[8] = (int16_t)g_fx_latch[pos];
+    for (int i = 9; i < 16; i++) b[i] = 0;
+    g_fxc_seen[pos][3] = b[8];
+    g_fxc_blocks[pos]++;
+    return b;
+}
+/* slots 0-2: words 5..7 from the position's stored FX words (the shown sound's), when they name the same plugin as the
+ * words the stock passed; else the passed words (their 5..7 are copied with the rest [I]) */
+static const volatile int16_t *fx_words57(int pos, const int16_t *params)
+{
+    const volatile int16_t *st = (const volatile int16_t *)(pos == 2 ? 0xFF8016C4u
+        : (pos ? 0xFF8015C4u + (uint32_t)(*(volatile int *)0xFF8016D8u & 7) * 16 : 0xFF801444u + (uint32_t)(*(volatile int *)0xFF8016D4u & 7) * 16));
+    if (st[4] == params[4]) return st + 5;
+    g_fxc_from_params++;
+    return params + 5;
+}
+
 /* kennel's guard: keep the raw knob words of every slot running a plugin inside the filter type's ranges; the stock
  * read_fx_param asserts on anything outside and the OP-1 locks up (at every boot while such a value is stored). */
 static void fx_sanitize(void)
@@ -847,10 +906,32 @@ extern "C" int coop_slot2_save(void);                                      /* be
 extern volatile int g_s2_save_req;
 extern "C" void coop_ui_service(void);                                    /* coop_ui.cc (u7): the UI's pending file writes */
 static void slot2_build_service(void);                                    /* below: slot 2's object, built here (u8) */
+/* e6: the master FX words live at 0xFF8016C4 and the stock keeps them in op1.db's master table, written by
+ * master_db_save (symbols/sdram.sym: 0x019D9B94, the only user of "UPDATE master SET ... fx_params"; it builds the row
+ * from the live words). A live write alone was lost at a power cycle [C op1emu e6]. A master control change asks for
+ * a save (KeyHandler thread); the main loop does it once the turns have stopped for ~0.5 s, so a long turn writes
+ * the database once. */
+#define MASTER_DB_SAVE ((void (*)(void *))0x019D9B94u)
+#define MASTER_SAVE_QUIET 200000000u                                      /* ~0.5 s at 400 MHz */
+static volatile uint32_t g_master_save_at;                                 /* 0 none, else CYCLES | 1 of the last change */
+volatile uint32_t g_master_saves;
+extern "C" void coop_master_save_request(void) { uint32_t c; __asm__ __volatile__("%0 = CYCLES;" : "=d"(c)); g_master_save_at = c | 1u; }
+static void master_save_service(void)
+{
+    uint32_t at = g_master_save_at, c;
+    if (!at) return;
+    __asm__ __volatile__("%0 = CYCLES;" : "=d"(c));
+    if (c - at < MASTER_SAVE_QUIET) return;
+    if (g_master_save_at != at) return;                                   /* a newer change came in: wait for it */
+    g_master_save_at = 0;
+    MASTER_DB_SAVE(0);
+    g_master_saves++;
+}
 extern "C" void coop_fx_service(void)
 {
     coop_ui_service();
     if (g_s2_save_req) { g_s2_save_req = 0; coop_slot2_save(); }
+    master_save_service();
     slot2_build_service();
     uint32_t seq = g_st0_req_seq;
     if (seq == g_st0_pub_seq) return;
@@ -889,13 +970,13 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
     }
     uint32_t c0 = coop_cost_now(), pf0[2]; coop_pf_now(pf0);
     const coop_fx_t *fx = g_plug[e].inst[pos];
-    if (e != g_cur[pos]) { g_cur[pos] = e; if (fx->init(pos) != 0) { g_plug[e].fx = 0; return; } }
+    if (e != g_cur[pos]) { g_cur[pos] = e; g_fx_latch[pos] = 0; g_fxc_inits[pos]++; if (fx->init(pos) != 0) { g_plug[e].fx = 0; return; } }
     int32_t L[BLOCK], R[BLOCK];
     for (int i = 0; i < BLOCK; i++) {                                     /* the instrument in stereo: mono + its difference */
         L[i] = (int32_t)coop_sat16((int32_t)buf[i] + dL[i]) << 16;
         R[i] = (int32_t)coop_sat16((int32_t)buf[i] + dR[i]) << 16;
     }
-    fx->render(pos, L, R, params, BLOCK);
+    fx->render(pos, L, R, g_plug[e].ctl ? fx_params(pos, e, params, fx_words57(pos, params)) : params, BLOCK);
     for (int i = 0; i < BLOCK; i++) {
         int16_t l = coop_sat16(L[i] >> 16), r = coop_sat16(R[i] >> 16);
         int16_t m = (int16_t)(((int32_t)l + r) >> 1);
@@ -906,9 +987,14 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
     g_fx_plugin_blocks++;
 }
 
+static int st_twin(void *self) { for (int k = 0; k < 3; k++) if (self && self == g_st[k].obj) return 1; return 0; }
+/* The stereo filter class's init. The stock master object: the master plugin starts again (as the stock re-inits its
+ * effect). A coop twin of the filter type (g_st: an FX 2 that holds the stock filter, which is what an empty FX 2 takes
+ * when FX 1 is a plugin) shares the class: before e6 its construction reset the master plugin too (its state, and
+ * since e6 its latches: op1emu, a master freeze lost on the first drop). Only the stock object counts now. */
 extern "C" void coop_fx_init_st(void *self)
 {
-    g_cur[2] = -1;
+    if (!st_twin(self)) g_cur[2] = -1;
     FILTER_ST_INIT(self);
 }
 
@@ -916,14 +1002,16 @@ extern "C" void coop_fx_render_st(void *self, int16_t *l, int16_t *r, const int1
 {
     coop_mark(0x46);
     g_fx_dispatch_st++;
+    if (st_twin(self)) { FILTER_ST_RENDER(self, l, r, params); return; }   /* e6: an FX 2 filter twin is the stock filter,
+                                                                             never the master's plugin (g_cur[2] untouched) */
     fx_sanitize();
     int e = fx_index(params[4] - MAGIC);
     if (!e) { g_cur[2] = 0; FILTER_ST_RENDER(self, l, r, params); return; }
     const coop_fx_t *fx = g_plug[e].inst[2];
-    if (e != g_cur[2]) { g_cur[2] = e; if (fx->init(2) != 0) { g_plug[e].fx = 0; FILTER_ST_RENDER(self, l, r, params); return; } }
+    if (e != g_cur[2]) { g_cur[2] = e; g_fx_latch[2] = 0; g_fxc_inits[2]++; if (fx->init(2) != 0) { g_plug[e].fx = 0; FILTER_ST_RENDER(self, l, r, params); return; } }
     int32_t L[BLOCK], R[BLOCK];
     for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)l[i] << 16; R[i] = (int32_t)r[i] << 16; }
-    fx->render(2, L, R, params, BLOCK);
+    fx->render(2, L, R, g_plug[e].ctl ? fx_params(2, e, params, fx_words57(2, params)) : params, BLOCK);
     for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16(L[i] >> 16); r[i] = coop_sat16(R[i] >> 16); }
     g_fx_plugin_blocks++;
 }
@@ -940,7 +1028,7 @@ extern "C" void coop_fx_render_st(void *self, int16_t *l, int16_t *r, const int1
 #define Y_WRITE      ((int (*)(int, const void *, int))0x01A99F84u)
 #define S2_FILE      "/yaffs2/user/coop_slot2.bin"
 struct slot2 { volatile int kind, id; volatile uint16_t knob[4]; volatile uint32_t req; uint32_t took; volatile int kind_on; int id_on; volatile int off;
-               volatile uint32_t built; volatile int rendering; };     /* u8: built = the req the main loop has constructed; rendering = the audio thread is inside the render */
+               volatile uint32_t built; volatile int rendering; volatile int16_t ext[3]; };   /* e6: ext = a plugin's words 5..7 */     /* u8: built = the req the main loop has constructed; rendering = the audio thread is inside the render */
 static struct slot2 g_s2[2];
 
 /* u1: FX 2 off / on (the page's T key, coop_ui.cc); the effect stays chosen and constructed, it just does not run */
@@ -988,6 +1076,8 @@ extern "C" int coop_slot2_set(int pos, int kind, int id, const uint16_t *knob)
     }
     struct slot2 *s = &g_s2[pos];
     for (int i = 0; i < 4; i++) s->knob[i] = knob[i] > 32767 ? 32767 : knob[i];
+    if (kind != s->kind || (kind ? id : 0) != s->id)                     /* e6: another effect: its words 5..7 at their defaults */
+        for (int w = 0; w < 3; w++) s->ext[w] = kind == 2 ? g_plug[id].def5[w] : 0;
     s->kind = kind; s->id = kind ? id : 0;
     __asm__ __volatile__("ssync;" ::: "memory");
     s->req++;
@@ -1001,6 +1091,11 @@ extern "C" void coop_slot2_get(int pos, uint8_t *out10)
     out10[0] = (uint8_t)s->kind; out10[1] = (uint8_t)s->id;
     for (int i = 0; i < 4; i++) { out10[2 + 2 * i] = (uint8_t)s->knob[i]; out10[3 + 2 * i] = (uint8_t)(s->knob[i] >> 8); }
 }
+
+/* e6: slot 2's plugin (the one asked for), 0 when it holds none; its words 5..7 (engine_ui.cc, KeyHandler thread) */
+extern "C" int coop_slot2_plugin(int pos2) { struct slot2 *s = &g_s2[pos2 & 1]; return s->kind == 2 ? s->id : 0; }
+extern "C" int coop_slot2_ext(int pos2, int word) { return (word >= 5 && word <= 7) ? g_s2[pos2 & 1].ext[word - 5] : 0; }
+extern "C" void coop_slot2_ext_set(int pos2, int word, int v) { if (word >= 5 && word <= 7) g_s2[pos2 & 1].ext[word - 5] = (int16_t)v; }
 
 /* the slot 2 page (coop_ui.cc): a loaded plugin's name by number, 0 if none */
 extern "C" const char *coop_plugin_name(int n) { return fx_index(n) ? g_plug[n].name : 0; }
@@ -1026,28 +1121,34 @@ extern "C" int coop_plugin_list(char *out, int cap)
 extern "C" void coop_lfo2_words_get(uint8_t *out17);                     /* lfo2.cc */
 extern "C" void coop_lfo2_words_set(const uint8_t *in17);
 #define S2_LEN 43
+#define S2_LEN_X (S2_LEN + 2 + 12)                                       /* e6: + 'X', 1, then words 5..7 of both slots (int16 LE).
+                                                                             The version byte stays 3: a core before e6 reads the
+                                                                             first 43 bytes as always and ignores the rest */
 volatile int g_s2_save_req;                                               /* u7: the KeyHandler thread asks, the main loop writes */
 extern "C" void coop_slot2_request_save(void) { g_s2_save_req = 1; }
 extern "C" int coop_slot2_save(void)
 {
-    uint8_t b[S2_LEN];
-    for (int i = 0; i < S2_LEN; i++) b[i] = 0;
+    uint8_t b[S2_LEN_X];
+    for (int i = 0; i < S2_LEN_X; i++) b[i] = 0;
     b[0] = 'C'; b[1] = 'S'; b[2] = '2'; b[3] = 3;
     coop_slot2_get(0, b + 4); coop_slot2_get(1, b + 14);
     b[24] = (uint8_t)g_s2[0].off; b[25] = (uint8_t)g_s2[1].off;
     coop_lfo2_words_get(b + 26);
+    b[S2_LEN] = 'X'; b[S2_LEN + 1] = 1;                                   /* e6 */
+    for (int pos = 0; pos < 2; pos++)
+        for (int w = 0; w < 3; w++) { uint16_t v = (uint16_t)g_s2[pos].ext[w]; b[S2_LEN + 2 + 6 * pos + 2 * w] = (uint8_t)v; b[S2_LEN + 3 + 6 * pos + 2 * w] = (uint8_t)(v >> 8); }
     int fd = Y_OPEN(S2_FILE, 0x242, 0x180);
     if (fd < 0) return 0;
-    int ok = Y_WRITE(fd, b, S2_LEN) == S2_LEN;
+    int ok = Y_WRITE(fd, b, S2_LEN_X) == S2_LEN_X;
     return (Y_CLOSE(fd) == 0) && ok;
 }
 
 static void slot2_load(void)
 {
-    uint8_t b[S2_LEN];
+    uint8_t b[S2_LEN_X];
     int fd = Y_OPEN(S2_FILE, 0, 0);
     if (fd < 0) return;
-    int got = Y_READ(fd, b, S2_LEN);
+    int got = Y_READ(fd, b, S2_LEN_X);
     Y_CLOSE(fd);
     if (got < 24 || b[0] != 'C' || b[1] != 'S' || b[2] != '2' || b[3] < 1 || b[3] > 3) return;
     for (int pos = 0; pos < 2; pos++) {
@@ -1058,6 +1159,9 @@ static void slot2_load(void)
         g_s2[pos].off = (b[3] >= 2 && got >= 26) ? (b[24 + pos] != 0) : 0;
     }
     if (b[3] >= 3 && got >= S2_LEN) coop_lfo2_words_set(b + 26);
+    if (got >= S2_LEN_X && b[S2_LEN] == 'X' && b[S2_LEN + 1] == 1)       /* e6: words 5..7 (the render clamps them) */
+        for (int pos = 0; pos < 2; pos++)
+            for (int w = 0; w < 3; w++) g_s2[pos].ext[w] = (int16_t)(b[S2_LEN + 2 + 6 * pos + 2 * w] | (b[S2_LEN + 3 + 6 * pos + 2 * w] << 8));
 }
 
 static int16_t knob_map(int lo, int hi, uint16_t k)
@@ -1102,7 +1206,7 @@ static void slot2_render(int pos, int16_t *l, int16_t *r)
         p[4] = (int16_t)(MAGIC + s->id_on); p[5] = p[6] = p[7] = 0;
         static int32_t L[BLOCK], R[BLOCK];                                /* audio thread only, never nested: off the interrupt stack */
         for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)l[i] << 16; R[i] = (int32_t)r[i] << 16; }
-        fx->render(3 + pos, L, R, p, BLOCK);
+        fx->render(3 + pos, L, R, g_plug[s->id_on].ctl ? fx_params(3 + pos, s->id_on, p, s->ext) : p, BLOCK);
         for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16(L[i] >> 16); r[i] = coop_sat16(R[i] >> 16); }
     }
     s->rendering = 0;
@@ -1127,7 +1231,7 @@ static void slot2_build_service(void)
             for (int spin = 0; spin < 400000 && s->rendering; spin++) { }   /* a render in flight: let it finish */
             g_s2_trace = 0x21;
             if (kind == 1) { g_s2_trace = 0x22; st_make(1 + pos, id); g_s2_trace = 0x23; if (g_st[1 + pos].type == id) s->kind_on = 1; }
-            else if (kind == 2 && fx_index(id)) { if (g_plug[id].inst[3 + pos]->init(3 + pos) == 0) s->kind_on = 2; }
+            else if (kind == 2 && fx_index(id)) { g_fx_latch[3 + pos] = 0; g_fxc_inits[3 + pos]++; if (g_plug[id].inst[3 + pos]->init(3 + pos) == 0) s->kind_on = 2; }
             s->id_on = id;
             g_s2_changes++;
         }

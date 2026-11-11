@@ -32,11 +32,35 @@ typedef struct coop_fx_t {
     /* the audio interrupt: l[n], r[n] in place. params[0..3] are the four knobs IN THE FILTER TYPE'S RANGE UNITS,
      * not Q15 (the host as of p6k): {64..14528}, {0..24576}, {0..22528}, {8192..32767}; at slots 0-2 the stock knob
      * words clamped into those ranges, at slots 3-4 coop's Q15 knobs mapped into them (plugin_host.cc fx_sanitize /
-     * knob_map). params[4] = 0x5300 + the plugin's number, params[5..7] = 0. A plugin that wants 0..1 divides by
-     * the range itself; the ABI v2 parameter store (guide/plugin-guidelines.md section 3) will hand over declared
-     * ranges instead. */
+     * knob_map). params[4] = 0x5300 + the plugin's number. params[5..7] = 0, unless the file declares controls (e6,
+     * below): then params[5..7] are the controls' words and params[8] the latch bits. A plugin that wants 0..1
+     * divides by the range itself; the ABI v2 parameter store (guide/plugin-guidelines.md section 3) will hand over
+     * declared ranges instead. */
     void (*render)(int slot, int32_t *l, int32_t *r, const int16_t *params, int n);
 } coop_fx_t;
+
+/* ---- e6: effect controls (docs/plugins.md "Effect controls", guide/plugin-guidelines.md §4) ----
+ * An effect declares up to eight controls in plugin.json "controls", as an engine does (the e4 table below), plus two
+ * things only an effect has (or uses yet):
+ *   "fine": true    on a continuous fn_turn control: shift + fn + turn on the same encoder moves the SAME control by
+ *                   1/16 of the coarse step (coarse 328 Q15 a detent = 1 %; fine 20.5, as 20 and 21). Nothing else may
+ *                   then be declared on that encoder's shift_fn_turn.
+ *   "kind": "latch" on a click action, with "bit": 0..15 instead of "word": momentary state (freeze, hold), off
+ *                   whenever the plugin is (re)initialised at the position (selected, a sound change), never saved,
+ *                   never randomised. A click flips it.
+ * Saved controls ("steps", "continuous") name "word": 5, 6 or 7 and a "default"; they are saved with the sound (slots
+ * 0-2: the sound's fx_params[5..7]; slots 3-4: coop's FX 2 file) and the file's FX list row starts them at the default.
+ * The core dispatches them on the effect page at every position (FX 1 and FX 2, instrument and master), shows the
+ * name and value top left in the encoder's colour, and passes them to render, which then receives AT LEAST 16 words:
+ *   params[5..7]  the words, clamped by the core: the step index (0..n-1) for steps, Q15 (0..32767) for continuous,
+ *                 0 for a word with no control. Clamp again: the clamp is the core's promise, not the stored value's.
+ *   params[8]     COOP_FX_LATCH: bit b = the latch declared with "bit": b (1 = on). Bits without a latch are 0.
+ *   params[9..15] 0 (reserved).
+ * Read them once at the block start and keep them for the block. pack.py sets the file's page-2 flag for an effect
+ * with controls, so a core before e6 refuses the file ("plugin flags not supported yet") instead of running it with
+ * params[5..7] = 0 and no params[8]. A file without "controls" gets exactly what it got before e6. */
+#define COOP_FX_LATCH       8                          /* params[COOP_FX_LATCH]: the latch bits (e6) */
+#define COOP_FX_PARAMS_MIN  16                         /* words a render with declared controls may read */
 
 /* ---- screens (E2, docs/engines.md "Screens"): a plugin that ships an SVG in its file draws it through these. Both
  * run on the GUI thread; `scr` is the screen object, handed to the sdk/coop_screen.h calls. ---- */
@@ -88,7 +112,8 @@ typedef struct coop_engine_t {
  * dispatches click, shift + click, fn + turn, fn + click, shift + fn + turn and shift + fn + click on the engine's page,
  * stores the value in a free knob word 5, 6 or 7 (saved with the sound, passed as params[5..7]: the step index for a
  * steps control, Q15 for a continuous one; clamp what you read, a sound may hold anything) and shows the name and value.
- * The engine reads params[5..7]; nothing else to call.
+ * The engine reads params[5..7]; nothing else to call. e6: "fine" (above) works on an engine's continuous fn_turn too;
+ * latches are for effects only (an engine's params block has 8 words).
  *
  * ---- e4: L1 for engines ----
  * coop_l1_lease: from the engine's init only (main thread, at load): a zeroed, 32-byte aligned block in L1 data bank B,

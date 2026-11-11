@@ -181,7 +181,9 @@ From the rings port's request (`docs/request-engine-controls-l1.md`); everything
   to 8 characters from the stock glyphs, lower case. The field names follow the v2 parameter table (guidelines §3.1).
   e5: `wrap` (steps only, default false): a turn past the last step goes to the first, and back (rings 0.5's model and
   polyphony). It packs as an 11th field (`... name steps 1`); a core before e5 skips the rest of the line, so the same
-  file loads there and its turns stop at the ends.
+  file loads there and its turns stop at the ends. e6: `"fine": true` on a continuous fn_turn makes shift + fn + turn on
+  that encoder its fine adjustment (1/16 of the 328 step; flags field value 2, `docs/plugins.md` "Effect controls"),
+  the same for engines as for effects; latches are for effects only.
 - `tools/plugin/pack.py` checks the declaration and packs it as extension tag 6 (text, one line per control:
   `action encoder word kind count default random detents name steps`); the loader refuses a malformed one with a
   reason the inventory shows. The control defaults go into the engine list's row (words 5..7).

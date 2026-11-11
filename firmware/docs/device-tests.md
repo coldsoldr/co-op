@@ -1839,3 +1839,56 @@ word is the step index: 0 was 4, is now 1).
 
 Result: (pending)
 
+
+## e6: effect controls (fn + turn, its fine, clicks, latches) — device test (pending, 2026-11-11)
+
+The owner's decisions of 2026-11-11 (`docs/ui-features.md` §14), for the eleven kennel effect ports: effects get the
+engines' control layers at every effect position (`docs/plugins.md` "Effect controls").
+- `build/pkg/op1_246_coop_e6.op1` (sha256 `079f650d40a823ffc4d5afbf1d9f0f0961d4f1f1a9be5bb5ba26161f0c98236d`), copy in Downloads. A **release** image as e5 (no
+  `COOP_M1`, no gap profile, `--tape-stereo --set-word g_coop_spread=32767`), plus e6. `verify_bootloader.py` PASS,
+  `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `e6`.
+- `build/plugins/test_fx.coop` (sha256 `4f118ea6b9384ec0213f1d82f55ca4a4f9fbd4f6582acffc2b5e908eb7a9a223`, 420 bytes): the test effect, not a real plugin. fn + blue = gain
+  (16384 = unity, 0..2x), shift + fn + blue = the same gain in fine steps, green click = polarity (normal / invert),
+  fn + white = depth (shown, does nothing), orange click = mute (a latch).
+- [C op1emu] `tests/sim/det_fx_controls.txt` then `det_fx_reload.txt` (a power cycle on the same NAND): every position
+  received the words and the latch, and kept the words but not the latches (figures in the gate notes below).
+- rings 0.5, saw and stereo_delay need no new files: their `.coop` are byte-identical when repacked.
+
+**What to do** (install `test_fx.coop` with the librarian, power-cycle; play something through each effect):
+1. Synth: T3, shift + T3, pick **test_fx**, T3 (FX 1 on). Hold Help and turn blue left a few detents: the sound gets
+   quieter, "GAIN 46"-style text top left in blue. Hold Shift + Help and turn blue: the same number moves very slowly
+   (1/16). Click green: the sound inverts polarity (hard to hear alone; with FX 2 also on it may thin); "POLARITY
+   INVERT" in green. Click orange: silence, "MUTE ON" in red; click again: back. Help + white: "DEPTH" moves, the sound
+   doesn't. Shift + Help + white: nothing (undeclared). A plain Help tap still opens help.
+2. Drop (FX 2), shift + blue to test_fx, blue push, T3 (on): repeat 1 on FX 2 (instrument).
+3. Mixer T3: master FX test_fx (shift + T3, pick, T3 on): Help + blue, orange click. Drop: master FX 2, the same.
+4. Drum: T3, pick test_fx, T3: Help + blue, green click.
+5. Power-cycle. Gain, polarity and depth are as you left them at every position; every mute is off.
+6. Leave mute on at the synth, switch to drum and back: mute is off (the stock restarts the instrument effect; say
+   whether that is acceptable for freeze / hold).
+7. Copy `/yaffs2/user/coop_stats.txt`: the `fxctl` line.
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e5.op1` (or stock).
+
+**Gate notes (op1emu, e6, 2026-11-11)** [C op1emu]:
+- `det_fx_controls.txt`, test_fx alone on the NAND: `fxctl fx 1 turns 11 fine 1 clicks 3 latches 4 ignored 1
+  cancelled 1 popup_frames 405 from_params 0 master_saves 1 p0=36117i2:15092/1/8520/0 p1=52852i2:16712/1/8192/0
+  p2=71596i1:16056/0/8192/1 p3=81313i1:17040/1/8192/0 p4=63052i1:16384/0/8848/0` (pN = blocks, inits, words 5/6/7 and
+  the latch word the render was last given). Expected per position: 15092 = 16384 - 4 x 328 + 20 (a fine detent),
+  17040 = + 2 x 328, 16056 = - 328, 16712 = + 328, 8520 / 8848 = 8192 + 1 / 2 x 328. The p0 latch was on (1) until the
+  drum visit restarted the instrument effect (i2); p2's stayed on. `plugins seen 1 loaded 1 failed 0`, no fault.
+- `det_fx_reload.txt` (power cycle, same NAND): `fxctl ... p0=80898i2:15092/1/8520/0 p1=2402i1:16712/1/8192/0
+  p2=83300i1:16056/0/8192/0 p3=82695i1:17040/1/8192/0 p4=82695i1:16384/0/8848/0`: every word kept, every latch off.
+  op1.db master `fx_params` `[7296,12288,11264,20479,21280,16056,0,8192]` (before the stock writer was called the
+  master's 16056 came back as 16384: the reason for `master_save_service`). coop_slot2.bin carries the `'X', 1` words.
+- Regression against e5 (the e5 core rebuilt from 94be6bd, same image flags): pristine NAND `det_chord.txt`
+  identical over 3,506,560 frames; stereo_delay `det_fx_select.txt` identical over 1,937,088 frames (`plugin_blocks
+  8188` both, e6 `fxctl fx 0`); saw `det_eng_controls.txt` on e6: `ctl_turns 1 ctl_clicks 1 ctl_ignored 1
+  ctl_cancelled 1 help_taps 1`, slot 0 knobs `[20000,8000,6000,4000,21280,1,0,1]`, as e4.
+- The e6 probe (`COOP_PROBE_ITER`): `filter_ranges [64,14528,14464] [0,24576,10485] [0,22528,32767] [8192,32767,10485]
+  [0,32767,0] [0,32767,0] [0,32767,0] [0,32767,0]`: words 5..7 of the filter type accept 0..32767.
+- Unproven [I]: device timing and feel; the master writer called from coop's main loop (op1emu: one call, no fault);
+  the drum and master pages' stock handling of encoder clicks (op1emu: coop takes them first, nothing else reacts);
+  the popup's look over the filter page (counted, not seen: op1emu screenshots are wall-timed).
+
+Result: (pending)

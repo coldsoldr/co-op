@@ -173,3 +173,90 @@ is history: `plugins/stereo_delay` is now the reference plugin on its own, gated
 second slot (S2) is the way to an effect on the master bus. In the same package the SDK header describes the
 `params` the host really passes (range units, `sdk/coop_plugin.h`), and `HELLO` reports the package tag plus a
 capabilities byte (`docs/sysex.md`).
+
+## Effect controls (e6, 2026-11-11): fn + turn, its fine, clicks and latches at every position
+
+Effects get the declared controls engines have had since e4 (`docs/engines.md` "Controls"), with two additions the
+eleven kennel effect ports need: a **fine** pairing for fn + turn, and **latches**. The owner's decisions are in
+`docs/ui-features.md` §14, the rules in `guide/plugin-guidelines.md` §3, §4, §4.1. Built and gated in op1emu; the
+device test is pending (`docs/device-tests.md` "e6").
+
+**Declaration** (`plugin.json` "controls", up to eight; `tools/plugin/pack.py` checks it and packs extension tag 6):
+
+| Field | Saved control (`steps`, `continuous`) | Latch (`latch`, effects only) |
+|---|---|---|
+| `id`, `name` | as e4: id `[a-z0-9_]`, name 1-8 stock glyphs, lower case | same |
+| `action` | `click`, `shift_click`, `fn_turn`, `fn_click`, `shift_fn_turn`, `shift_fn_click` (a continuous one: turns only) | a click action |
+| `encoder` | `blue`, `green`, `white`, `orange` | same |
+| `word` / `bit` | `word`: 5, 6 or 7, one control each | `bit`: 0..15 of `params[8]`, one latch each; no `word` |
+| `default` | step index / Q15 (0..32767) | none (a latch starts off) |
+| `steps` | `steps`: 2..16 names (1-8 glyphs) | none |
+| `detents`, `wrap` | as e4 / e5 (steps) | none |
+| `fine` | `true` on a continuous `fn_turn`: shift + fn + turn on that encoder is its fine; nothing else may sit there | none |
+| `random` | default true (randomise ignores effect controls today, `docs/ui-features.md` §14) | always false |
+
+Worked examples (what the ports declare):
+
+```json
+{"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
+ "default": 16384, "fine": true}
+{"id": "mode", "name": "mode", "action": "click", "encoder": "green", "word": 6, "kind": "steps",
+ "steps": ["shift", "ring"], "default": 0}
+{"id": "hold", "name": "hold", "action": "click", "encoder": "green", "kind": "latch", "bit": 0}
+```
+
+**What render receives.** An effect with controls gets the core's params block, at least 16 words
+(`COOP_FX_PARAMS_MIN`): `params[0..4]` as before (the four turns in the filter type's range units, the selector);
+`params[5..7]` the three words, clamped by the core to each control (step index 0..n-1; Q15 0..32767 for continuous;
+0 where nothing is declared); `params[8]` (`COOP_FX_LATCH`) the latch bits (bit b = the latch with `"bit": b`, 1 =
+on); `params[9..15]` 0. Coarse is 328 Q15 a detent (1 %), fine 1/16 of it (20.5: 20 and 21 alternately; 1,600
+detents across the range); a steps control moves one step per `detents` detents and a click steps once, wrapping.
+
+**What a port must do:**
+- Read `params[5..8]` once at the block start and use those values for the whole block (a turn or click lands between
+  blocks; a latch flips at a block boundary).
+- Clamp what it reads, even though the core clamps: a stored word is whatever a sound holds.
+- Treat a latch as state that may be cleared under it: the core clears a position's latches whenever the effect's
+  `init` runs there (selected, a sound change, the stock switching between synth and drum).
+- Not keep its own copy of a saved word across `init`; not write `params`; not read past `params[15]`.
+- Declare `defaults` for the four turns as before; the saved words' defaults come from the controls (the packer sets
+  the page-2 defaults from them; never write `page2_defaults` next to `controls`).
+
+**Where the words live.**
+- Slots 0 (synth) and 1 (drum), FX 1: the sound's stock FX words 5..7 (`0xFF801444 + 16 * inst`, `0xFF8015C4 +
+  16 * kit`), written live and then through `Patch::SetFxParams` (as the randomiser does), so they are saved in the
+  sound's `fx_params[5..7]`. The filter type's words 4..7 accept 0..32767 at the boot check [C op1emu: the e6 probe
+  `filter_ranges` printed `[0,32767,0]` for each].
+- Slot 2 (master), FX 1: `0xFF8016C4` words 5..7, then op1.db's master row through the stock's own writer
+  (`master_db_save` 0x019D9B94, `symbols/sdram.sym`), from the main loop once the turns stop for ~0.5 s. Without it
+  the words were lost at a power cycle [C op1emu].
+- Slots 3 and 4 (FX 2): coop's slot record (`plugin_host.cc` g_s2 ext), saved in `/yaffs2/user/coop_slot2.bin` after
+  the v3 record (`'X', 1`, then 6 int16 words). The version byte stays 3, so a core before e6 still reads the file.
+  Choosing another effect in FX 2 starts its words at the plugin's defaults.
+- The render takes slot 0-2 words from the shown sound's stored words when their selector equals the one the stock
+  passed, else from the stock's params (`from_params` counts those; 0 in every e6 run).
+
+**Compatibility.** pack.py sets the file's page-2 flag (`KN_FLAG_PAGE2`) for an effect with controls; a core before
+e6 refuses such a file ("plugin flags not supported yet"), so a port never runs with zero words and no latch word.
+A file without "controls" packs byte-identically to e5 (stereo_delay, saw, rings, probe_alu checked) and gets exactly
+the params it got before (the stock's pointer at slots 0-2, the 8-word block at 3-4).
+
+**Display.** On FX 1 the stock shows the filter type's page; on FX 2 coop's page. The core draws the control's name
+and value top left in the encoder's colour for ~1.2 s over either (latches show `on` / `off`). A plugin screen for
+effects is not built (the stock page is the filter's): showing the values permanently would take an effect screen
+hook like the engines' case-14 swap (E2), which needs the filter page's screen slot found and swapped per position.
+
+**Found and fixed on the way.** An FX 2 holding the stock filter (what an empty FX 2 takes when FX 1 is a plugin) is a
+coop twin of the stereo filter class, whose init and render the package points at `coop_fx_init_st` /
+`coop_fx_render_st`. Its construction reset the master plugin (`g_cur[2] = -1`: the master effect started again and,
+with e6, lost its latches) and its render would have restarted the master plugin every block while it ran. The twin
+now passes straight to the stock filter (`plugin_host.cc st_twin`).
+
+**Stats** (`coop_stats.txt`, line `fxctl`): `fx` effects with controls, `turns`, `fine`, `clicks`, `latches`,
+`ignored` (an undeclared layer), `cancelled` (a click that became a combo), `popup_frames`, `from_params`,
+`master_saves`, and per position `pN=blocks i inits : w5/w6/w7/latch` (what the render was last given).
+
+**Test plugin and scenarios.** `tests/plugins/test_fx` (gain on fn + blue with fine, polarity on the green click,
+depth on fn + white, mute latch on the orange click; it multiplies by the gain, inverts, mutes).
+`tests/sim/det_fx_controls.txt` walks the five positions; `tests/sim/det_fx_reload.txt` power-cycles the NAND it
+leaves. Packer checks: `tests/tools/test_pack_controls.py`.

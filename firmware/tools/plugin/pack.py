@@ -266,12 +266,15 @@ STOCK_GLYPHS = set('abcdefghijklmnopqrstuvwxyz0123456789!"#%*+,-./:;<=>?_ ')
 
 def control_lines(meta, kind):
     """plugin.json "controls" -> the text of extension tag 6, one tab-separated line per control:
-    action encoder word kind count default random detents name step,step,... (core/sdram/engine_ui.cc)."""
+    action encoder word kind count default random detents name step,step,... [flags] (core/sdram/engine_ui.cc).
+    flags (an 11th field): 1 wrap (steps, e5), 2 fine (continuous fn_turn, e6). A latch (effects, e6) packs as kind l
+    with its bit in the word column."""
     controls = meta.get('controls')
     if controls is None:
         return b''
-    if kind != F.KIND_SYNTH:
-        raise PackError('controls are for synth engines only (effects: the v2 parameter store)')
+    if kind not in (F.KIND_SYNTH, F.KIND_FX):
+        raise PackError('controls are for synth engines and effects')
+    fx = kind == F.KIND_FX
     if not isinstance(controls, list) or not 1 <= len(controls) <= 8:
         raise PackError('controls must be a list of 1 to 8 controls')
 
@@ -280,11 +283,12 @@ def control_lines(meta, kind):
             raise PackError(f'{what} {text!r}: 1 to 8 characters, lower case, from the stock glyphs, no comma')
         return text
 
-    lines, words, slots = [], set(), set()
+    lines, words, slots, bits, fines, deep = [], set(), set(), set(), set(), set()
     for c in controls:
         if not isinstance(c, dict):
             raise PackError('each control is an object')
-        unknown = set(c) - {'id', 'name', 'action', 'encoder', 'word', 'kind', 'steps', 'default', 'random', 'detents', 'wrap'}
+        unknown = set(c) - {'id', 'name', 'action', 'encoder', 'word', 'kind', 'steps', 'default', 'random', 'detents', 'wrap',
+                            'fine', 'bit'}
         if unknown:
             raise PackError(f'control {c.get("id")!r}: unknown fields {sorted(unknown)}')
         cid = c.get('id')
@@ -294,17 +298,33 @@ def control_lines(meta, kind):
             raise PackError(f'control {cid}: action must be one of {sorted(CONTROL_ACTIONS)} (turn and shift_turn are the stock knobs 0..3)')
         if c.get('encoder') not in CONTROL_ENCODERS:
             raise PackError(f'control {cid}: encoder must be one of {sorted(CONTROL_ENCODERS)}')
-        word = c.get('word')
-        if word not in (5, 6, 7):
-            raise PackError(f'control {cid}: word must be 5, 6 or 7 (the free knob words; word 4 is the selector the core owns)')
-        if word in words:
-            raise PackError(f'control {cid}: word {word} is used twice')
-        words.add(word)
+        ckind = c.get('kind')
+        if ckind == 'latch':                           # coop e6: momentary state, never saved: a bit of params[8]
+            if not fx:
+                raise PackError(f'control {cid}: a latch is for effects only')
+            if not c['action'].endswith('click'):
+                raise PackError(f'control {cid}: a latch needs a click action')
+            if 'word' in c:
+                raise PackError(f'control {cid}: a latch has a bit (0..15 of params[8]), not a word')
+            word = c.get('bit')
+            if type(word) is not int or not 0 <= word <= 15:
+                raise PackError(f'control {cid}: bit must be 0..15 (params[8], the latch word)')
+            if word in bits:
+                raise PackError(f'control {cid}: bit {word} is used twice')
+            bits.add(word)
+        else:
+            if 'bit' in c:
+                raise PackError(f'control {cid}: bit is for a latch')
+            word = c.get('word')
+            if word not in (5, 6, 7):
+                raise PackError(f'control {cid}: word must be 5, 6 or 7 (the free knob words; word 4 is the selector the core owns)')
+            if word in words:
+                raise PackError(f'control {cid}: word {word} is used twice')
+            words.add(word)
         slot = (c['action'], c['encoder'])
         if slot in slots:
             raise PackError(f'control {cid}: {c["action"]} on {c["encoder"]} is declared twice')
         slots.add(slot)
-        ckind = c.get('kind')
         name = label(c.get('name', cid), f'control {cid}: name')
         random = c.get('random', True)
         detents = c.get('detents', 1)
@@ -330,18 +350,38 @@ def control_lines(meta, kind):
             if type(default) is not int or not 0 <= default <= 32767:
                 raise PackError(f'control {cid}: default must be 0..32767 (Q15)')
             count, tail = 0, ''
+        elif ckind == 'latch':
+            if 'steps' in c or 'default' in c or 'detents' in c:
+                raise PackError(f'control {cid}: a latch has no steps, default or detents (it starts off)')
+            if c.get('random', False):
+                raise PackError(f'control {cid}: a latch is never randomised')
+            random, count, default, tail = False, 0, 0, ''
         else:
-            raise PackError(f'control {cid}: kind must be "steps" or "continuous"')
+            raise PackError(f'control {cid}: kind must be "steps", "continuous" or "latch"')
         wrap = c.get('wrap', False)                    # coop e5: a turn past the last step goes to the first (engine_ui.cc)
         if not isinstance(wrap, bool):
             raise PackError(f'control {cid}: wrap must be true or false')
         if wrap and ckind != 'steps':
             raise PackError(f'control {cid}: wrap is for a steps control')
+        fine = c.get('fine', False)                    # coop e6: shift + fn + turn on this encoder is this control, 1/16 the step
+        if not isinstance(fine, bool):
+            raise PackError(f'control {cid}: fine must be true or false')
+        if fine and (ckind != 'continuous' or c['action'] != 'fn_turn'):
+            raise PackError(f'control {cid}: fine is for a continuous fn_turn control')
+        if fine:
+            fines.add(c['encoder'])
+        if c['action'] == 'shift_fn_turn':
+            deep.add(c['encoder'])
         fields = [CONTROL_ACTIONS[c['action']], CONTROL_ENCODERS[c['encoder']], word, ckind[0], count, default,
                   int(random), detents, name, tail]
         if wrap:
             fields.append(1)                           # an 11th field: a core before e5 skips it and clamps
+        if fine:
+            fields.append(2)                           # e6: the same 11th field (flags)
         lines.append('\t'.join(str(f) for f in fields))
+    clash = fines & deep
+    if clash:
+        raise PackError(f'shift_fn_turn on {sorted(clash)[0]} is the fine of that encoder\'s fn_turn: declare one or the other')
     return ('\n'.join(lines) + '\n').encode('ascii') + b'\0'
 
 def pack(meta, obj_bytes, svg_dir=None):
@@ -416,6 +456,15 @@ def pack(meta, obj_bytes, svg_dir=None):
         raise PackError(f'order {order} outside 0..31')
     defaults = list(meta.get('defaults', [0, 0, 0, 0]))
     page2 = meta.get('page2_defaults')
+    if kind == F.KIND_FX and meta.get('controls') is not None:
+        # coop e6: an effect's controls set the page-2 flag (a core before e6 refuses the file) and its defaults are the
+        # declared defaults of words 5..7 (0 where none). Never written by hand next to "controls".
+        if page2 is not None:
+            raise PackError('page2_defaults: an effect with "controls" takes them from the controls')
+        page2 = [0, 0, 0]
+        for c in meta['controls']:
+            if isinstance(c, dict) and c.get('kind') in ('steps', 'continuous') and c.get('word') in (5, 6, 7):
+                page2[c['word'] - 5] = c.get('default', 0)
     if 'stereo' in meta and not isinstance(meta['stereo'], bool):
         raise PackError('stereo must be a boolean')
     if meta.get('stereo') and kind != F.KIND_FX:

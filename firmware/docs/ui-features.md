@@ -127,3 +127,27 @@ The owner's decisions (2026-11-10, from the rings port, `docs/request-engine-con
   lift / drop and their page keys, the settings menu takes its own keys while open).
 - e4c (the owner, 2026-11-10): Help with Shift held never reaches the stock (Shift + Help + Help up opened the date and
   time screen); a plain Help tap still opens help.
+
+## 14. Effect controls beyond the four turns — built in e6 (2026-11-11), device test pending
+
+The owner's decisions (2026-11-11, for the eleven kennel effect ports: bitcrusher, drive, ensemble, freq_shift,
+tape_drive, tape_echo, wavefolder, cs_hall, cs_plate, cs_clouds, cs_clouds_delay):
+- Effects get the engines' layers (§13) on the effect page, at **every** effect position: FX 1 of the synth, the drum
+  and the master, and FX 2 of the instrument and of the master. Turn and shift + turn stay the stock's (the four
+  knobs; shift is the stock fine adjustment, delta / 16 [C, te-op1-cfw HANDOVER: the synth FX knob case]).
+- **fn + turn** on an encoder edits that encoder's second control (kennel's push-page word): continuous, coarse steps,
+  1 % of the range a detent (328 in Q15).
+- **shift + fn + turn** on the same encoder moves **the same control** in fine steps: 1/16 of the coarse step, as the
+  stock shift does (20.5 in Q15 a detent, given as 20 and 21; 1,600 detents across the range). The plugin declares it
+  with `"fine": true` on the fn_turn control; that encoder then has nothing else on shift + fn + turn. New with e6: for
+  engines shift + fn + turn is a separate slot unless the engine declares `"fine"` too (allowed, not used yet).
+- **click** (on release) carries switches and latches: `steps` controls that wrap and are saved with the sound, and
+  `latch` controls (freeze, hold): momentary, **not saved**, off again whenever the effect starts at that position.
+- The colour follows the encoder (blue, green, white, orange); the core shows the name and value top left in that
+  colour for about a second, over FX 1's page and over coop's FX 2 page.
+- A plugin effect with no declared controls behaves exactly as before (fn + turn is then a plain turn, as it was).
+- Not decided, left as built: randomise does not touch an effect's declared controls (e4's engine rule draws them; for
+  an input gain a random draw is a level jump). Say if effects should follow the engine rule.
+- Found on the way (op1emu): the stock starts the instrument effect again when you switch between synth and drum, so
+  a latch at the synth or drum position is off after a visit to the other instrument (the effect's own state starts
+  again there too; this is not new).
