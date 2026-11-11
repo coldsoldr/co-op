@@ -526,8 +526,8 @@ The owner's decisions after the e6 gate: raise the file limit to 32 and report e
 why large plugin sets hang at boot, then add a load budget so the OP-1 always boots.
 
 **The boot hang, found** [C op1emu]. rings + tape_echo + cs_hall + cs_plate (2.34 MB) on a fresh NAND, e6 image, with
-op1emu's new `--dump-at-exit LO+LEN:PATH` (guest memory to a file and the PC / SP / RETS logged at exit; a local
-addition to `gui/main.cpp` of the op1emu work tree, not yet captured as `tools/op1emu-patches/0004` [pending]):
+op1emu's new `--dump-at-exit LO+LEN:PATH` (guest memory to a file and the PC / SP / FP / RETS logged at exit;
+`tools/op1emu-patches/0004-dump-at-exit.patch`, applied by `tools/setup_op1emu.sh` after 0001-0003):
 - The CPU sits at `0x0191995A`, `IDLE; JUMP.S self`, called from `0x01919B08`: the stock fatal handler (`0x01919AA8`).
   Its message buffer (`0x01BA138C`) reads `..\src\dsp\tape_c.cpp:62 data` with the backtrace `0x1a5425e 0x19d7bc8
   0x19f040a 0x19f0f08 0x1a9c290`. Nothing reaches the screen, so the last frame (the first-boot "side_b.aif 94 %")
@@ -561,10 +561,13 @@ addition to `gui/main.cpp` of the op1emu work tree, not yet captured as `tools/o
   ~1.1 MiB free after the boot, for what coop allocates later (an FX 2 delay / cwo line 173 KiB each, spring tanks
   57 KiB, the master's grid tank 264 KiB: ~0.75 MiB at most), the USB disk heap (96 KiB) and unknown stock use. A booted
   NAND has 0.3 MiB more. [I: the device's heap use is assumed to match op1emu's.]
-- **A second check, against the heap itself**: after a plugin's blocks are taken, heap 0 (read in place) must still hold
-  the tape's 24 nodes (node size read from the stock instruction at `0x01A54172`) and 512 KiB more, or the plugin is
-  freed and refused: `not enough memory left for the tape`. With the budget it never triggers in op1emu; it is there for
-  a device whose stock uses more heap before the scan (many files on the NAND) [I].
+- **A second check, against the heap itself**, before a plugin's blocks are taken: heap 0 (read in place) must still
+  hold the tape's 24 nodes **plus one spare** (node size read from the stock instruction at `0x01A54172`) and 512 KiB
+  more, counting the plugin's blocks as taken off the break (an engine with the largest voice state, 48 KiB), or the
+  plugin is refused: `not enough memory left for the tape`. The first version checked after allocating and freed the
+  refused plugin: op1emu still hung, because a freed block never goes back above the break and the 24th node did not
+  fit (gate below). With the budget it does not trigger in op1emu; it is there for a device whose stock uses more heap
+  before the scan (many files on the NAND) [I].
 - `heap_probe` is gone. The stats read heap 0 in place: `heap_largest`, `heap_free`, `heap_top` (above the break), on
   the `plugins` line, at the time the stats are written.
 - Test switch `--set-word g_coop_plug_budget=N` (another budget; 0 = 1,536 KiB) to exercise the heap check.
@@ -578,4 +581,23 @@ plugfile unnamed_skipped N                                             files pas
 **Inventory** (docs/sysex.md): a refused or skipped file is `failed` (the librarian's word for not loaded) with the
 reason, e.g. `over the plugin memory budget (needs 702 KB, 457 KB of 1536 KB left)`, `more than 32 plugin files`.
 
-**Gate** (op1emu, one run at a time): see `docs/device-tests.md` "e7".
+**Gate** (op1emu, one run at a time; figures in `docs/device-tests.md` "e7") [C op1emu]:
+- The 2.34 MB set that hung on e6 boots: rings and cs_plate load, tape_echo and cs_hall `over the plugin memory budget`.
+- The 11-file set (nine ports, rings, saw) boots on a fresh NAND and again on its second boot: 9 load (saw,
+  tape_drive, bitcrusher, ensemble, rings, cs_plate, drive, wavefolder, freq_shift, 1,451,544 bytes), tape_echo and
+  cs_hall are over budget; ~1.26 MB of heap 0 is left at the end of the first boot, ~1.59 MB on the second.
+- With the budget switched off (`g_coop_plug_budget=16777216`) the heap check alone keeps it booting: 8 load,
+  wavefolder, cs_hall and freq_shift `not enough memory left for the tape`, 0.67 MB left.
+- Without e4's probe, the 2.34 MB set itself would fit (all four load with the budget off, 0.39 MB left), and the e6
+  image boots it on the NAND's second boot (the first boot has 0.3 MB less): the probe's 8 MiB and the first-boot
+  tape files were what tipped that set over.
+- Regression: pristine `det_chord.txt` e7 vs e6 within the known run-to-run spread (one build identical over 3.2 M
+  frames), `det_fx_controls.txt` / `det_fx_reload.txt` and saw `det_eng_controls.txt` as e6.
+
+## Next: e8, kennel's memory model (owner's decision, 2026-11-11; not started)
+
+After e7 the owner chose kennel's memory model for effects: the firmware owns one working buffer per position (5 x
+about 176 KB), the active effect gets its position's buffer at init, each plugin is relocated **once** (not five
+times), and the nine ports go back to scratch-buffer state (their lines and tanks in the buffer they are given, not
+in their own .bss). An effect restarts when it is selected. This replaces the 5x relocation cost that the e7 budget
+now limits; the e7 budget and heap check stay as the guard for the tape's cache.

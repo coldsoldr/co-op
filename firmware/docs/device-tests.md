@@ -2248,40 +2248,84 @@ Result: (pending)
 ## e7: 32 plugin files, a plugin memory budget, the boot hang fixed — device test (pending, 2026-11-11)
 
 What changed (`docs/plugins.md` "e7"): up to 32 plugin files load (was 8), every file that does not load is named
-with a reason in the stats and the inventory, and the plugins may take at most 1,536 KiB of heap 0, so the stock tape
-cache (built from the same heap right after) always fits. The e6 hang with large sets was the stock tape asserting
-`tape_c.cpp:62 data` when a cache node no longer fit in heap 0 [C op1emu].
+with a reason in the stats and the inventory, and the plugins may take at most 1,536 KiB of heap 0, with a second
+check that the stock tape cache (24 x 512 KiB, built from the same heap right after the plugin scan) still fits. The
+e6 hang with large sets was the stock tape asserting `tape_c.cpp:62 data` when a cache node no longer fit in heap 0
+[C op1emu].
 
-- Package: **not built yet** (`build/pkg/op1_246_coop_e7.op1`, release image as e6: `--tape-stereo --set-word
-  g_coop_spread=32767`, build tag `e7`). The agent's WSL went read-only mid-gate when the C: drive filled up (0 bytes
-  free); the package and the remaining gates wait for space on C: [pending].
-- [C op1emu, e7 image, release core + `g_coop_force_stereo_out=1`] **rings + tape_echo + cs_hall + cs_plate (2.34 MB,
-  hung on e6), fresh NAND, `det_fx_select.txt`**: boots and plays (42.9 s of audio, no fault). Directory order: rings and
-  cs_plate load, tape_echo and cs_hall are refused:
-  ```
-  plugins seen 4 loaded 2 failed 2 disabled 0 skipped 0 over_budget 2 ...
-  plugmem budget 1572864 used 1103984 over_budget 2 heap_short 0 skipped 0 badname 0 tape_node 524288 heap_free_boot 14636460
-  plugfile tape_echo.coop failed needs 718480: over the plugin memory budget
-  plugfile cs_hall.coop failed needs 514880: over the plugin memory budget
-  ```
-  `heap_largest 1456596 heap_free 1622516 heap_top 1456596` at the end of the run (heap 0 left after the tape's cache).
-- Pending gates [pending]: pristine `det_chord.txt` against the e6 spread; `det_fx_controls.txt` / `det_fx_reload.txt`
-  (test_fx); saw `det_eng_controls.txt`; the 11-file NAND (nine ports + rings + saw) on a fresh NAND; the 2.34 MB set
-  with `--set-word g_coop_plug_budget=16777216` (the heap check alone must refuse and boot); a second boot of a NAND
-  that hung on e6.
+- `build/pkg/op1_246_coop_e7.op1` sha256 `f334c83d2c937233bdcb3c3940ca9fcd96bf3b7c7fbb78efc81cf60af32a6a55`, copy in
+  Downloads. Release image as e6 (`--tape-stereo --set-word g_coop_spread=32767`, no `COOP_M1`), build tag `e7`.
+  `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs.
+- No plugin file changed: the nine ports, rings, saw and test_fx are e6's.
 
-**What to do** (once the package exists):
-1. Flash `op1_246_coop_e7.op1`. Keep the plugins you have; power-cycle once. It boots to the tape as before.
-2. Install rings, tape_echo, cs_hall and cs_plate together (the set that would have hung on e6) and power-cycle. The
-   OP-1 must boot and play. Copy `/yaffs2/user/coop_stats.txt`: the `plugins` line, the `plugmem` line and every
+**Gate notes (op1emu, 2026-11-11, one run at a time; e7 images `--tape-stereo --set-word g_coop_spread=32767
+--set-word g_coop_force_stereo_out=1`, the release core of the commit with this entry)** [C op1emu]:
+
+| Run | Result |
+|---|---|
+| pristine `det_chord.txt`, e7 vs e6 | the known one-block onset shift (frame 1,395,072, "63 vs 64", max 5120) in two pairs, max 2 LSB with `--align 200`; an earlier e7 build (same code but the heap check placed after allocating) was **identical to e6 over 3,225,100 frames**. No regression. `plugmem ... used 0`, `heap_free 2729484` (first boot) |
+| `det_fx_controls.txt` (test_fx) | `fxctl fx 1 turns 11 fine 1 clicks 3 latches 4 ignored 1 cancelled 1 popup_frames 406 from_params 0 master_saves 1 random 2 p0=36116i2:11197/1/16703/0 p1=52844i2:17749/1/8192/0 p2=71587i1:15019/0/8192/1 p3=81303i1:19114/0/26899/0 p4=63042i1:16384/0/8848/0`, `rnd 2 rnd_back 0 rnd_refused 0 rnd_slot2 1`: the gain words as e6 (11197, 17749, 15019, 19114), randomised depth / polarity (drawn values differ run to run, as in e6), p2's latch on. `fx1_plugin=3068/3570` |
+| `det_fx_reload.txt` (same NAND) | `p0=84344i2:11197/1/16703/0 p1=2402i1:17749/1/8192/0 p2=86746i1:15019/0/8192/0 p3=86141i1:19114/0/26899/0 p4=86141i1:16384/0/8848/0`: words kept, every latch 0 |
+| saw `det_eng_controls.txt` | `help_taps 1`, `ctl_turns 1 ctl_clicks 1 ctl_ignored 1 ctl_cancelled 1`, as e4 / e6; `plugmem ... used 2320` |
+| **rings + tape_echo + cs_hall + cs_plate (2.34 MB, hung on e6), fresh NAND**, `det_fx_select.txt` | boots and plays (43.6 s of audio, no fault); see below |
+| **11 files (the nine ports + rings + saw), fresh NAND**, `det_fx_select.txt` + the SysEx self-test | boots and plays; 9 load, 2 refused; see below; the chord through wavefolder (the FX list's last row) `fx1_plugin=6432/14588` |
+| the same 11-file NAND, second boot | the same 9 / 2; `heap_free_boot 14605628` (fresh: 14279156), end `heap_free 1590924` (fresh: 1264972) |
+| the 11 files with `g_coop_plug_budget=16777216` (budget off, the heap check alone), fresh NAND | boots and plays: `plugins seen 11 loaded 8 failed 3`, `plugmem budget 16777216 used 2048664 over_budget 0 heap_short 3 ... heap_free_boot 13683428`, `plugfile wavefolder.coop failed needs 50280: not enough memory left for the tape`, the same for `cs_hall.coop` (514880) and `freq_shift.coop` (71080); end `heap_largest 572900 heap_free 669244` |
+| the 2.34 MB set with the budget off | all four load (`used 2337344`) and it **boots**: without e4's probe the set fits (end `heap_free 386372`); e7's budget still refuses two |
+| the e6 image on the NAND that hung on e6 (its second boot) | **boots and plays** (287 s, `plugins seen 4 loaded 4`, `heap_largest 8388608`): the second boot has ~0.3 MB more heap 0, so this set hung on the first boot only; heavier sets would hang on every boot (same mechanism) [I] |
+
+First version found by this gate: the heap check ran after the plugin's blocks were taken and freed a refused plugin;
+with the budget off the 11-file set still hung (`heap_short 1`, freq_shift refused, then the 24th tape node failed:
+a freed block never goes back above heap 0's break). The check now runs before allocating, counts the blocks as taken
+off the break and keeps one node spare (the run above).
+
+2.34 MB set (directory order rings, cs_plate, tape_echo, cs_hall):
+```
+plugins seen 4 loaded 2 failed 2 disabled 0 skipped 0 over_budget 2 ...
+plugmem budget 1572864 used 1103984 over_budget 2 heap_short 0 skipped 0 badname 0 tape_node 524288 heap_free_boot 14636460
+plugfile tape_echo.coop failed needs 718480: over the plugin memory budget
+plugfile cs_hall.coop failed needs 514880: over the plugin memory budget
+```
+end of run: `heap_largest 1456596 heap_free 1622516 heap_top 1456596`.
+
+11 files (loaded: saw, tape_drive, bitcrusher, ensemble, rings, cs_plate, drive, wavefolder, freq_shift):
+```
+plugins seen 11 loaded 9 failed 2 disabled 0 skipped 0 over_budget 2 ...
+plugmem budget 1572864 used 1451544 over_budget 2 heap_short 0 skipped 0 badname 0 tape_node 524288 heap_free_boot 14279156
+plugfile tape_echo.coop failed needs 718480: over the plugin memory budget
+plugfile cs_hall.coop failed needs 514880: over the plugin memory budget
+```
+end of run: `heap_largest 1168628 heap_free 1264972 heap_top 1168628`. Inventory (SysEx self-test, `g_coop_sysex_selftest=1`):
+```
+coop-inventory 1	build e7	protocol 1
+saw.coop	synth	saw	loaded	on	0.2	coldsoldr	6520
+tape_drive.coop	fx	tape drive	loaded	on	0.4	coldsoldr	11072
+bitcrusher.coop	fx	bitcrusher	loaded	on	0.1	coldsoldr	1680
+ensemble.coop	fx	ensemble	loaded	on	0.3	coldsoldr	10828
+rings.coop	synth	rings	loaded	on	0.5	coldsoldr	113048
+cs_plate.coop	fx	cs plate	loaded	on	0.1	coldsoldr	11460
+drive.coop	fx	drive	loaded	on	0.1	coldsoldr	9616
+tape_echo.coop	fx	tape echo	failed	on	0.1	coldsoldr	10664	over the plugin memory budget (needs 702 KB, 118 KB of 1536 KB left)
+wavefolder.coop	fx	wavefolder	loaded	on	0.1	coldsoldr	9988
+cs_hall.coop	fx	cs hall	failed	on	0.1	coldsoldr	17712	over the plugin memory budget (needs 503 KB, 118 KB of 1536 KB left)
+freq_shift.coop	fx	freq shift	loaded	on	0.1	coldsoldr	10308
+```
+("left" is what the budget has left after the whole scan.) Not exercised: more than 32 files, a name of 40+ characters
+(`skipped` / `badname` paths) [I].
+
+**What to do:**
+1. Flash `op1_246_coop_e7.op1` (keep your plugins). Power-cycle once; it boots to the tape as before.
+2. Install rings, tape_echo, cs_hall and cs_plate together (the set that hung on e6 in the emulator) and power-cycle.
+   The OP-1 must boot and play. Copy `/yaffs2/user/coop_stats.txt`: the `plugins` line, the `plugmem` line and every
    `plugfile` line. Expected: two of the four refused with `over the plugin memory budget` (which two depends on the
    directory order on the device).
-3. Open the librarian's plugin list: the refused files show as failed with the same reason and their sizes.
-4. Optional: put all nine effect ports, rings and saw on the device (11 files); every file is either loaded or has a
-   `plugfile` line; play an effect that loaded.
-5. Note `heap_free` / `heap_largest` on the `plugins` line after a few minutes of playing (the device's own heap margin).
+3. Open the librarian's plugin list: the refused files show as failed with the same reason.
+4. Put all nine effect ports, rings and saw on the device (11 files), power-cycle: every file is either loaded or has
+   a `plugfile` line; play an effect that loaded (wavefolder, freq_shift) and rings.
+5. After a few minutes of playing (an FX 2 delay on the synth and the master too), copy the stats again: `heap_free`
+   and `heap_largest` on the `plugins` line are the device's own heap 0 margin. Send both stats files.
 
 **If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e6.op1` (or stock), and
-remove the big plugins before booting e6.
+remove the big plugins (tape_echo, cs_hall) before booting e6.
 
 Result: (pending)

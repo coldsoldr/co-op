@@ -356,17 +356,21 @@ static int heap0_read(struct heap0 *h, uint32_t node, uint32_t extra)
     h->free += h->top;
     return 1;
 }
-/* After a plugin's blocks are taken (and `pending` bytes more will be): would the tape's nodes and HEAP_RESERVE
- * still fit? 1 = yes (or heap 0 cannot be read: then the budget alone decides). */
+/* Before a plugin's blocks are taken (`cost` bytes more): would the tape's nodes, one node spare and HEAP_RESERVE
+ * still fit afterwards? Asked before allocating, and the blocks are assumed to come off the break: a block taken and
+ * then freed never goes back above the break, so it is lost to the nodes (op1emu, e7 gate: checking after the
+ * allocation and freeing a refused plugin still hung the boot), and the stock's small blocks after the scan may land
+ * in any hole. 1 = yes (or heap 0 cannot be read: then the budget alone decides). */
 static uint32_t g_stage_blk;                                                /* the staging block, live while files load */
-static int heap_room_ok(uint32_t pending)
+static int heap_room_ok(uint32_t cost)
 {
     struct heap0 h;
     uint32_t node = blk(g_tape_node ? g_tape_node : 0x80000u);
     if (!heap0_read(&h, node, g_stage_blk)) return 1;
-    uint32_t need = TAPE_NODES * node + HEAP_RESERVE + pending;
-    if (h.nodes < TAPE_NODES + (pending + node - 1) / node) return 0;
-    return h.free >= need;
+    uint32_t list_nodes = h.nodes - h.top / node;
+    uint32_t nodes = (h.top > cost ? (h.top - cost) / node : 0) + list_nodes;
+    if (nodes < TAPE_NODES + 1) return 0;
+    return h.free >= TAPE_NODES * node + HEAP_RESERVE + cost;
 }
 
 static struct fileinfo *g_cur_info;                                       /* e3: the file load_one is reading (boot) */
@@ -407,6 +411,7 @@ static const char *load_one(const char *fname, uint8_t *stage)
     uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN, cost = POSITIONS * blk(cap);
     if (g_cur_info) g_cur_info->need = cost;
     if (g_plug_mem_used + cost > PLUG_BUDGET) { g_plugins_over_budget++; return R_BUDGET; }
+    if (!heap_room_ok(cost)) { g_plugins_heap_short++; return R_HEAP; }
     if (in.controls) { err = coop_fx_set_controls(n, in.controls); if (err) return err; }   /* e6, before anything runs */
     /* one relocated instance per position (P2b): a plugin selected at two positions at once keeps two states */
     const coop_fx_t *inst[POSITIONS];
@@ -429,7 +434,6 @@ static const char *load_one(const char *fname, uint8_t *stage)
                 else inst[k] = fx;
             }
         }
-        if (!err && k == POSITIONS - 1 && !heap_room_ok(0)) { err = R_HEAP; g_plugins_heap_short++; }   /* e7 */
         if (err) { for (int j = 0; j <= k; j++) if (raws[j]) FREE(raws[j]); return err; }
     }
     g_plug_mem_used += cost;
@@ -462,6 +466,7 @@ static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fn
     uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN, cost = blk(cap);
     if (g_cur_info) g_cur_info->need = cost;
     if (g_plug_mem_used + cost > PLUG_BUDGET) { g_plugins_over_budget++; return R_BUDGET; }   /* e7: the code alone already */
+    if (!heap_room_ok(cost + blk(COOP_VOICE_BYTES_MAX * COOP_VOICES + 32u))) { g_plugins_heap_short++; return R_HEAP; }   /* with the largest voice state */
     uint8_t *raw = (uint8_t *)MALLOC(cap);
     if (!raw) return "plugin memory full";
     uint32_t base = ((uint32_t)(uintptr_t)raw + ARENA_ALIGN - 1) & ~(ARENA_ALIGN - 1);
@@ -490,7 +495,6 @@ static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fn
         cost += vs;
         if (g_cur_info) g_cur_info->need = cost;
         if (g_plug_mem_used + cost > PLUG_BUDGET) { err = R_BUDGET; g_plugins_over_budget++; }
-        else if (!heap_room_ok(vs)) { err = R_HEAP; g_plugins_heap_short++; }
     }
     if (!err) err = coop_engine_set_controls(n, in.controls);           /* e4: before the engine plays */
     if (!err) err = coop_engine_add(n, e);
