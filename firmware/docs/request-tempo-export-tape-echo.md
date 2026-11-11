@@ -1,6 +1,6 @@
 # Request: the project tempo as a core export (from the tape_echo port, 2026-11-11)
 
-**Status:** built, 2026-11-11 (branch tempo-export, commit b40b34b; packaged with e10): the export
+**Status:** built, 2026-11-11 (branch tempo-export, commit bd49705; packaged with e10): the export
 `uint32_t coop_tempo_bpm_q16(void)` (`sdk/coop_exports.cc` entry 15, `core/sdram/plugin_host.cc`,
 `core/include/coop_tempo.h`; `docs/fx-abi.md` "Tempo") and tape_echo 0.3, which reads it once a block. Host tests
 bit-identical with the kennel reference at 120, 90, 133.5, 174 BPM and a seven-tempo walk; op1emu gate and device test

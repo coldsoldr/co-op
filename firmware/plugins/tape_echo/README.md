@@ -169,7 +169,7 @@ positions and the head fills against the SVG are the gate's to confirm.
   |---|---|
   | kennel stereo, te-op1-cfw simulator (9.2 MHz / 689 blocks a second) | 13,350 |
   | coop, GNU simulator, `make -C tests/host/tape_echo sim` (compute only, the scenario's 3,000 blocks) | 16,049 avg / 16,804 max (e9; e8 15,987 / 16,746 on the same build, so the display words cost ~60 a block) |
-  | coop, op1emu (`fx1_plugin=`, `s2_instr=`, `s2_master=`) | gate pending |
+  | coop, op1emu (`fx1_plugin=`, `s2_instr=`, `s2_master=`) | 0.3 at synth FX 1, sync 1/4 at 95 and 145 BPM: `fx1_plugin=17197/19074` (`docs/device-tests.md` "tape_echo 0.3"; 0.1: 16,778-16,821 avg) |
   | **coop, device** | **pending** |
 
   The ~2.4 k over kennel is the Q31 <-> int16 conversion of the bus, the dry copy and the clearing blocks averaged in.

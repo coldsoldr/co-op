@@ -2461,9 +2461,18 @@ console from the string at 0x018F7358. `tools/boot_logo.py` (in `tools/build_ima
 coop's (four dots blue / green / white / orange in coop's brights, the "co-op" wordmark) and the line with
 `coop e10 - 246`, generated from `COOP_BUILD_TAG` at build time. Data only: no code, no hook, no CALLBACK block; the
 stock picture's sha256 and the stock string are checked first. te-boot and its own screen are untouched. Build tag
-`e10`; the core is e9's otherwise.
+`e10`; the core is e9's otherwise, plus the tempo export (below).
 
-- `build/pkg/op1_246_coop_e10.op1` sha256 `f184a2f46b34af90bc045cb818ca57a31c46004d47ad91a95b1e29627fd41fee`, copy in
+- **The e10 package to flash (boot picture + the tempo export, 2026-11-11, branch tempo-export):**
+  `build/pkg/op1_246_coop_e10.op1` sha256 `23367c931e4ec33dfabbe00c44f2035bd3f505a53ed2f4ab2b7b359e722e23f4`, copy in
+  Downloads (overwrote the boot-picture-only build), with `tape_echo.coop` 0.3 (sha256
+  `be55ea5b50b8a610cdbe2e0306798934f118c977239860323c0d2038575a86b8`). `tools/build_device_package.sh ... --tape-stereo
+  --set-word g_coop_spread=32767`: `verify_bootloader.py` PASS (no te-boot.ldr), `pkg_check` = only `OP1_vdk.ldr`
+  differs. Its core adds `coop_tempo_bpm_q16` (export 15) and the stats `fxctl` fields `tempo_q16` / `tempo_inc`; the
+  op1emu gate of that core is in "tape_echo 0.3" below (pristine `det_chord` identical to `e10.ldr` within the run
+  spread).
+- Superseded (boot picture only): `build/pkg/op1_246_coop_e10.op1` sha256
+  `f184a2f46b34af90bc045cb818ca57a31c46004d47ad91a95b1e29627fd41fee`, copy in
   Downloads. Release image as e9 (`--tape-stereo --set-word g_coop_spread=32767`). `verify_bootloader.py` PASS (no
   te-boot.ldr), `pkg_check` = only `OP1_vdk.ldr` differs. Its L1 decrypts back to the op1emu-gated `e10.ldr` byte for
   byte. Loaded memory against the e9 image: the picture (7,977 bytes in 0x0200622C..0x0201F729), the console string
@@ -2502,11 +2511,26 @@ older core is refused at boot ("an import is not exported by the core", in the s
 loads there (sync at 120). The stats `fxctl` line now ends its counters with `tempo_q16` (the export: BPM x 65536) and
 `tempo_inc` (the stock LFO increment, bpm x 1662149.125).
 
-- `build/plugins/tape_echo.coop` 0.3 (23,892 bytes), on the e10 image.
+- `build/plugins/tape_echo.coop` 0.3 (23,892 bytes, sha256
+  `be55ea5b50b8a610cdbe2e0306798934f118c977239860323c0d2038575a86b8`), on the e10 image
+  (`op1_246_coop_e10.op1` sha256 `23367c93...`, the e10 entry above).
 - [C host, GNU simulator] bit-identical with the kennel reference at 120, 90, 133.5, 174 BPM and a seven-tempo walk
   (`make -C tests/host/tape_echo`; `sim` at 133.5 and 120), `plugins/tape_echo/README.md` "Tests".
 
-**op1emu gate:** (pending)
+**op1emu gate (2026-11-11, one run at a time, the e10 core of this branch; images `--tape-stereo --set-word
+g_coop_spread=32767`, plus `g_coop_force_stereo_out=1` for the tempo runs)** [C op1emu]:
+
+| Run | Result |
+|---|---|
+| tape_echo alone, `tests/sim/det_fx_tape_echo_tempo.txt` (tempo screen `turn enc1 ccw 60`, sync 1/4, notes; then `turn enc1 cw 100`, notes) | no fault; `plugins seen 1 loaded 1 failed 0`; `fxctl ... tempo_q16 9502720 tempo_inc 241011616 p0=77100i1:16384/8/0/0` (145.0 BPM at the end; the increment is the stock's own 145 x 1662149.125 in single precision; sync word 8 = 1/4); `cost fx1_plugin=17197/19074` |
+| the same scenario up to the tempo change (a scratch copy ending after section A) | no fault; `fxctl ... tempo_q16 6225920 tempo_inc 157904160` (95.0 BPM) |
+| echo period (envelope autocorrelation of the WAV over each note's repeats) | at 95 BPM: 0.6317 s and 0.6325 s (60/95 = 0.6316 s); at 145 BPM, after the tempo was changed with the effect running: 0.4137 s and 0.4134 s (60/145 = 0.4138 s). Within 0.15 %: the repeats follow the tempo, and the change took effect live |
+| pristine `det_chord.txt`, e10 (`e10.ldr`, the boot picture alone) vs this core, twice each | no fault; this core's run a identical to both e10 runs (3,502,766 frames from 5 s); its run b differs by the usual onset shift (max 3,073 unaligned, 1 aligned with `--align 200`, rms 58.4 both), the same spread as e10 vs e10 in the boot-picture gate and e9 vs e9 (3,073 / 1). No regression |
+
+The tempo screen in op1emu moved the BPM by 0.4 a step down (60 steps: 120 -> 95) and 0.5 a step up (100 steps: 95 ->
+145) [I: encoder acceleration]. Not seen in op1emu [I]: the beat ticks on the screen, the drum and master positions,
+a tempo change in the middle of a repeat (the time glides like any time change, by the DSP), external MIDI clock, the
+boot value (120.0f in the image bytes; every run here set the tempo first).
 
 **What to do** (flash the e10 image, install `tape_echo.coop` 0.3 with the librarian, power-cycle):
 1. Copy `/yaffs2/user/coop_stats.txt`: the `plugins` line says tape_echo loaded, failed 0.
