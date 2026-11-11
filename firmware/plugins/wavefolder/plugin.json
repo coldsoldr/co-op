@@ -4,6 +4,7 @@
   "symbol": "FX_wavefolder",
   "sources": [
     "wavefolder.cc",
+    "wavefolder_screen.cc",
     "src/fold.cc",
     "src/fold_bfin.S",
     "src/bus_bfin.S"
@@ -12,6 +13,7 @@
     "."
   ],
   "scratch": 960,
+  "screen": {"svg": "wavefolder.svg", "symbol": "SCREEN_wavefolder"},
   "defaults": [
     9830,
     16384,
@@ -23,6 +25,6 @@
      "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}
   ],
   "author": "coldsoldr",
-  "version": "0.1",
+  "version": "0.2",
   "description": "A sine wavefolder with first-order antiderivative anti-aliasing, in stereo at every position: te-op1-cfw's FOLD (ports/fx/src/fold at 5aa314b, coldsoldr's own code, GPL-3.0-or-later here) from the hundekraft kennel plugin wavefolder 0.2. Blue fold, green symmetry, white tone, orange mix; fn + blue the input gain into the folder (-6..+6 dB, 0 dB at the centre; shift + fn + blue fine)."
 }

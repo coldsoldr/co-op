@@ -13,7 +13,9 @@ SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin
 CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wextra
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
 SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -DFOLD_CYCLES
-COOP_SRC := $(COOP)/wavefolder.cc $(COOP)/src/fold.cc ../fx_scratch_host.cc
+COOP_SRC := $(COOP)/wavefolder.cc $(COOP)/wavefolder_screen.cc $(COOP)/src/fold.cc ../fx_scratch_host.cc ../screen_host.cc
+# e9: the screen file links with the render (its calls are ../screen_host.cc stubs); the SDK headers it includes
+SCREEN_H := ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h ../../../sdk/coop_plugin.h
 REF_SRC := $(TE)/fx/src/fold/fold.cc
 
 .PHONY: all sim clean
@@ -26,7 +28,7 @@ $(BUILD)/fold_ref: fold_compare.cc
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -DFOLD_REF -I$(TE)/fx fold_compare.cc $(REF_SRC) -o $@
 
-$(BUILD)/fold_coop: fold_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*)
+$(BUILD)/fold_coop: fold_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*) $(SCREEN_H) ../screen_host.cc
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -I$(COOP) -I../../../sdk fold_compare.cc $(COOP_SRC) -o $@
 
@@ -36,7 +38,7 @@ $(BUILD)/fold_ref.elf: fold_compare.cc
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DFOLD_REF -I$(TE)/fx fold_compare.cc $(REF_SRC) $(TE)/fx/src/fold/fold_bfin.S -o $@
 
-$(BUILD)/fold_coop.elf: fold_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*)
+$(BUILD)/fold_coop.elf: fold_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*) $(SCREEN_H) ../screen_host.cc
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -I$(COOP) -I../../../sdk fold_compare.cc $(COOP_SRC) $(COOP)/src/fold_bfin.S $(COOP)/src/bus_bfin.S -o $@
 

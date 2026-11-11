@@ -15,12 +15,15 @@
  * State (e8): one Fold and the block's buffers in the slot's position buffer (sdk/coop_plugin.h coop_fx_scratch,
  * plugin.json "scratch"); the file is relocated once and its .bss holds only the five buffer pointers. init binds the
  * slot's buffer and resets the state (the buffer holds whatever the effect before left).
+ * Screen (e9): wavefolder_screen.cc, wavefolder.svg; it reads the turns and the gain word only (no display data).
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission. */
 #include <stdint.h>
 
 #include "coop_plugin.h"
 #include "src/fold.h"
+
+extern "C" const coop_fx_screen_t SCREEN_wavefolder;   /* wavefolder_screen.cc (e9) */
 
 namespace {
 
@@ -140,4 +143,4 @@ void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
 
 }  // namespace
 
-extern "C" const coop_fx_t FX_wavefolder = { COOP_FX_MAGIC, COOP_PLUGIN_API, 0, init, render };
+extern "C" const coop_fx_t FX_wavefolder = { COOP_FX_MAGIC, COOP_PLUGIN_API, COOP_FX_F_SCREEN, init, render, &SCREEN_wavefolder };

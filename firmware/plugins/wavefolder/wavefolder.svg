@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" x="0px" y="0px" width="320px" height="160px" viewBox="0 0 320 160">
+<g id="palette" display="none"><line id="palblue" fill="none" stroke="#698EFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="0" y1="0" x2="1" y2="0"></line><line id="paldim" fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="0" y1="0" x2="1" y2="0"></line></g>
+<line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="44" y1="40" x2="236" y2="40"></line><line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="44" y1="112" x2="236" y2="112"></line>
+<line id="symmetry" fill="none" stroke="#00ED95" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="44" y1="76" x2="236" y2="76"></line>
+<line id="tonef" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="248" y1="64" x2="276" y2="64"></line>
+<line id="tones" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="276" y1="64" x2="288" y2="88"></line>
+<line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="16" y1="28" x2="16" y2="124"></line><line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="12" y1="28" x2="20" y2="28"></line><line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="12" y1="124" x2="20" y2="124"></line><line id="gzero" fill="none" stroke="#698EFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="12" y1="76" x2="20" y2="76"></line>
+<rect id="gbar" fill="#698EFF" stroke="none" stroke-width="1.5" x="14" y="52" width="4" height="24"></rect>
+<rect id="gbox" display="none" fill="none" stroke="#698EFF" stroke-width="1.5" x="8" y="22" width="16" height="108"></rect>
+<line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="304" y1="28" x2="304" y2="124"></line><line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="300" y1="28" x2="308" y2="28"></line><line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" x1="300" y1="124" x2="308" y2="124"></line>
+<rect id="mbar" fill="#FF3A5D" stroke="none" stroke-width="1.5" x="302" y="28" width="4" height="96"></rect>
+</svg>

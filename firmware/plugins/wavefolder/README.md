@@ -5,7 +5,7 @@ from the hundekraft kennel plugin `wavefolder` 0.2 (te-op1-cfw `ports/knl/wavefo
 te-op1-cfw's FOLD (`ports/fx/src/fold` at 5aa314b, the owner's own code, here under this folder's GPL-3.0-or-later),
 documented in te-op1-cfw `docs/fold-port.md` (mappings, fixed-point formats, aliasing, DC, the kernels' tests).
 
-Version 0.1 (2026-11-11). Device: **pending** (`docs/device-tests.md` "wavefolder 0.1").
+Version 0.2 (2026-11-11: the screen, e9; 0.1 the same day). Device: **pending** (`docs/device-tests.md` "wavefolder 0.1").
 
 ## Files
 
@@ -16,6 +16,7 @@ Version 0.1 (2026-11-11). Device: **pending** (`docs/device-tests.md` "wavefolde
 | `src/fold_bfin.S` | the Blackfin kernels (shape, tone mono, tone stereo), as upstream |
 | `src/bus_bfin.S` | coop's bus <-> int16 conversions, two samples a pass (new) |
 | `src/fold_layout.h`, `src/fold_tables.h`, `src/gen_fold_tables.py` | as upstream (the tables regenerate byte-identical) |
+| `wavefolder_screen.cc`, `wavefolder.svg`, `gen_wavefolder_svg.py` | the screen (e9, "Screen" below) |
 
 What changed against upstream: `Fold::Process` returns whether it wrote the output (false at a settled mix 0),
 `ChannelsEqual` / `MirrorChannels` for the shortcut, the test hook `set_use_asm` is gone, and the Blackfin build has
@@ -90,21 +91,50 @@ doubled the cost for 8-20 dB less aliasing at the top folds only).
   settled block); the L == R shortcut (mono kernels once, copied, bit-identical to the stereo run; taken only while
   the two channel states are equal, i.e. from init on a mono source). Next, if the device says so: fold the
   conversions into the kernels (the shape kernel reading the int32 high halves, the tone kernel writing int32).
+- **e9 (2026-11-11, 0.2, the screen):** file 14,304 bytes (SVG 2,579), `.text` 4,112, `.rodata` 6,244, `.bss` 56 (the screen's node table and two palette colours); load 10,412 bytes once (+1,292 over e8 with the 4-byte `screen` field, 9,120); the state unchanged (`"scratch": 960`). The screen draws 96 raster lines a frame on the GUI thread; the audio is bit-identical (host test below).
 - e8 (2026-11-11): the `Fold`, the block buffers and the param cache are in the slot's position buffer (plugin.json `"scratch": 960`, `coop_fx_scratch`); the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 9,716 bytes, load 9,116 once.
 - Memory: `.text` 3,064, `.rodata` 6,008 (the tables), `.bss` 936 (one `Fold` of 636 bytes, two 128-byte int16
   blocks, the parameter cache): load size 10,008 bytes a relocation, **50,040 bytes for the five**. L1: none
   (effects can't lease L1 yet, guidelines §2.3). Init: resets about 40 words, no tables built.
 - Cost on the device: **pending** (`fx1_plugin=`, `s2_instr=`, `s2_master=` in `/yaffs2/user/coop_stats.txt`).
 
-## Screen
+## Screen (e9, 0.2)
 
-No plugin screen: effects show the stock filter page (`docs/plugins.md` "Effect controls", Display), and the core
-draws "GAIN nn" top left in blue while fn + blue moves it. The upstream SVG (`fold.svg`, the canvas "Fold screen"
-design A "Wave, aligned") is not carried across. Brief for when effect screens exist (manifesto, guidelines §5): the
-folded output cycle large across the width between two dim fold lines, blue choosing one of eight poses by fold; the
-green offset line moving -24..+24 px about the centre; the white low-pass glyph at the right, its corner walking left
-as tone darkens; the orange mix gauge filling from its foot; the gain as a blue bar about the centre at the far left,
-shown with its value only while fn is held. No words at rest.
+Kennel's screen (`te-op1-cfw/ports/knl/wavefolder`: `fold.svg` from `gen_fold_knl_svg.py`, the canvas "Fold screen"
+design A "Wave, aligned", `fold_knl.cc` ScreenUpdate) on the e9 effect-screen path (`docs/plugins.md` "e9"):
+`wavefolder.svg` (from `gen_wavefolder_svg.py`) and `wavefolder_screen.cc`. It shows wherever wavefolder is the
+effect on the page: FX 1 of the synth, the drum or the master, FX 2 in focus.
+
+| Part | Encoder | What moves it |
+|---|---|---|
+| the output cycle between the two dim fold lines | blue (fold) | folds more as fold rises (y = 76 - 36 sin(g pi/2 sin th), g 1..5.2); dims to the body tone while fn is held |
+| the offset line | green (symmetry) | slides -24..+24 units about the centre |
+| the low-pass glyph (right) | white (tone) | its corner walks left as tone darkens, 20 units at full dark |
+| the gain gauge (left) | blue with fn (gain) | the bar about the centre, -6..+6 dB; a bracket while fn is held |
+| the mix gauge (right) | orange (mix) | scaled about its foot |
+
+What changed from kennel's screen:
+- **Inputs**: the four turns from `view->knobs` (kennel's `knl::ScreenPage1`, the stock pages' values with the LFO), the
+  gain from `view->words[0]` (word 5). Kennel's screen read no DSP state, so there is no display data: the render and
+  its state are unchanged (`"scratch": 960` unchanged) and the screen does not read `view->state`.
+- **Kennel's blue page 2 is fn held** (`view->mods` bit 1): fn + blue turns the gain, so while fn is down the gain's
+  bracket shows and the wave (fold, blue's plain turn) dims to the body tone 38354D, as bitcrusher's staircase does.
+  Kennel's page 2 showed the bracket but left the wave bright; the dimming is coop's held-layer rule.
+- **The dB readout is gone** (kennel's page-2 sign, digit, dot and tenth glyphs, 20 hidden groups): the core's popup
+  names the control and its value when fn + blue turns it.
+- **The wave is drawn by the code** with raster lines (`coop_scr_line`, 96 segments of 2 units, kennel's resolution)
+  instead of eight 97-point SVG polylines (about 12 KB of kennel's 16 KB file). The curve is kennel's formula, but its
+  fold factor follows the turn continuously (g = 1 + 4.2 fold, Q12) instead of stepping through the eight poses
+  (g = 1 + 0.6 k): with the wave in code a continuous morph costs nothing, and the picture then tells the truth of the
+  turn between poses. The fixed-point curve is within 0.04 units of the float formula. The lines are drawn after the
+  SVG, so the wave sits on top of the offset line, as kennel's z-order had it.
+- **Colours** are coop's brights (blue 698EFF, green 00ED95, white FFFFFF for the tone glyph, kennel's DED7FF;
+  orange FF3A5D), the body tone 38354D for the rails and fold lines. The palette holds only blue and the dim tone
+  (the wave's two states). The gain gauge stays blue (blue's control under fn), as kennel drew it.
+- SVG 2,579 bytes (kennel's 16,386, past pack.py's 16,384 limit), checked by `tools/plugin/pack.py` (R246's parser
+  rules) and by the generator.
+- Not added (open for the owner): the gain could also widen the drawn folding (the DSP's fold amount is fold x gain,
+  kept inside the fold range); kennel's picture ignored the gain and so does this one.
 
 ## Tests
 
