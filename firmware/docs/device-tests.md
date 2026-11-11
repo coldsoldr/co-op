@@ -1912,3 +1912,33 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
   the popup's look over the filter page (counted, not seen: op1emu screenshots are wall-timed).
 
 Result: (pending)
+
+## tape_echo 0.1: the kennel tape echo as a coop effect — device test (pending, 2026-11-11)
+
+- `build/plugins/tape_echo.coop` (sha256 `283acf99fd3009d308678d90423dc5ae113a1a444ecf280f793fe91f50b3c6ac`, 10,252
+  bytes), on the e6 image (`op1_246_coop_e6.op1`). Contract: `plugins/tape_echo/README.md`.
+- [C host, GNU simulator] bit-identical with te-op1-cfw's tape echo and the kennel glue (`make -C tests/host/tape_echo`
+  20,000 blocks; `sim`, 3,000 blocks with the assembly). Simulator compute 15,718 / 16,407 cycles a block.
+- op1emu gate: pending (plan in the README: `det_fx_select.txt`, `det_fx_tape_echo.txt`, `det_fx_reload.txt`, a
+  pristine `det_chord.txt`).
+
+**What to do** (install `tape_echo.coop` with the librarian, power-cycle; play through it):
+1. Synth: T3, shift + T3, pick **tape echo**, T3 (FX 1 on). Play short notes: echoes. Blue turn: the echo time (the
+   pitch bends while it moves, no clicks); green: more repeats, past ~90 % it sustains and howls (bounded); white:
+   the repeats get darker and wobble; orange: dry to wet.
+2. White click: the head pattern steps 3, 2+3, 1+2+3, 1+3 ("HEADS 2+3" top left in white), and wraps.
+3. Green click: hold ("HOLD ON" in green): new notes don't enter, the tape keeps looping what it has and fades
+   slowly. Click again to release.
+4. Hold Help and turn blue: "GAIN" moves (the level into the tape, not the dry); Shift + Help + blue: the same, very
+   fine.
+5. The same at drum FX 1, master FX 1 and both FX 2 slots (drop); listen for stereo (L and R echo separately).
+6. Power-cycle: gain and heads kept, hold off. Hold on at the synth, switch to drum and back: hold is off (accepted).
+7. Bypass (T3) and back on: the old echoes are gone (the tape starts clean), no click; the first ~25 ms after a
+   (re)start pass dry (the tape clear).
+8. Copy `/yaffs2/user/coop_stats.txt`: the `cost` line (`fx1_plugin=`, `s2_instr=`, `s2_master=`) and `fxctl`.
+   Expected [I]: 20-35 k a position; over 60 k is a bug.
+
+**If something is wrong:** power off; remove the file with the librarian, or recovery: hold COM at power-on and flash
+`op1_246_coop_e6.op1` (or stock).
+
+Result: (pending)

@@ -1,0 +1,202 @@
+# tape_echo (plugins/tape_echo, alone on the NAND): its declared controls at every position, and a chord and drum
+# keys through it. det_fx_controls.txt's walk (same timing, same list rows: the plugin is the last row) with the
+# actions changed for tape_echo's controls (fn + blue gain, word 5, fine on shift + fn + blue; green click hold, latch
+# bit 0; white click heads, steps, word 7). Guest-timed; op1emu `turn ENC cw 2` = one detent (1024).
+# Expected (stats line fxctl, pN=blocks i inits : w5/w6/w7/latch) [I, not run yet]:
+#  p0 synth FX 1: fn + blue 4 down (15072), shift + fn + blue 1 fine up (15092), green click (hold on), white click
+#     (heads 1), shift + fn + white (undeclared: ignored), orange click (undeclared: ignored)
+#                                                                       -> 15092/0/1/1 while there; the latch reads 0
+#     at the end (the stock starts the instrument effect again on the synth / drum switch).
+#  p3 instrument FX 2: fn + blue 2 up (17040), green twice (hold on, off), white click (heads 1), a blue push with
+#     shift pressed before its release (cancelled)                      -> 17040/0/1/0
+#  p2 master FX 1: fn + blue 1 down (16056, master_saves 1), green click (hold on)
+#                                                                       -> 16056/0/0/1
+#  p4 master FX 2: white click twice (heads 2)                          -> 16384/0/2/0
+#  p1 drum FX 1: fn + blue 1 up (16712), white click (heads 1)          -> 16712/0/1/0
+# Stats: fxctl turns 8 (one a detent, as e6 counted 11 for det_fx_controls), fine 1, clicks 5, latches 4, ignored 2,
+# cancelled 1; plugins: tape_echo loaded, rendering at p0-p4, no fault; cost fx1_plugin / s2_instr / s2_master.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 96
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36000
+tap t3 200
+at 37000
+tap t3 200
+at 38000
+press help
+at 38300
+turn enc1 ccw 8
+at 39000
+release help
+at 39500
+press shift
+at 39700
+press help
+at 40000
+turn enc1 cw 2
+at 40500
+release help
+at 40700
+release shift
+at 41500
+tap enc2 200
+at 42500
+tap enc3 200
+at 43200
+press shift
+at 43300
+press help
+at 43500
+turn enc3 cw 2
+at 43900
+release help
+at 44100
+release shift
+at 45000
+tap enc4 200
+at 46500
+tap drop 200
+at 48000
+press shift
+at 48200
+turn enc1 cw 6
+at 48800
+release shift
+at 49500
+tap enc1 200
+at 51000
+tap t3 200
+at 52500
+press help
+at 52800
+turn enc1 cw 4
+at 53300
+release help
+at 54000
+tap enc2 200
+at 54800
+tap enc2 200
+at 55600
+tap enc3 200
+at 56400
+press enc1
+at 56600
+press shift
+at 56800
+release enc1
+at 57000
+release shift
+at 58000
+tap lift 200
+at 59000
+tap mixer 200
+at 60500
+tap t3 200
+at 62000
+press shift
+at 62200
+tap t3 200
+at 62700
+release shift
+at 64000
+turn enc1 cw 96
+at 67000
+tap seq 200
+at 68000
+tap mixer 200
+at 69000
+tap t3 200
+at 69800
+tap t3 200
+at 70500
+press help
+at 70800
+turn enc1 ccw 2
+at 71300
+release help
+at 72000
+tap enc2 200
+at 73000
+tap drop 200
+at 74500
+press shift
+at 74700
+turn enc1 cw 6
+at 75300
+release shift
+at 76000
+tap enc1 200
+at 77500
+tap t3 200
+at 79000
+tap enc3 200
+at 79800
+tap enc3 200
+at 80500
+tap lift 200
+at 81500
+tap drum 200
+at 83000
+tap t3 200
+at 84500
+press shift
+at 84700
+tap t3 200
+at 85200
+release shift
+at 86500
+turn enc1 cw 96
+at 89500
+tap seq 200
+at 90500
+tap drum 200
+at 91500
+tap t3 200
+at 92200
+tap t3 200
+at 93000
+press help
+at 93300
+turn enc1 cw 2
+at 93800
+release help
+at 94500
+tap enc3 200
+at 95500
+tap synth 200
+at 96500
+press c4
+press e4
+press g4
+at 98500
+release c4
+release e4
+release g4
+at 99500
+tap drum 200
+at 100500
+press c4
+at 101000
+release c4
+press d4
+at 101500
+release d4
+wait 130000
+screenshot /root/op1emu-work/te_end.ppm
+wait 3000
+quit

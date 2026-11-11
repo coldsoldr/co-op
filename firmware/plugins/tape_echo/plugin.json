@@ -1,0 +1,34 @@
+{
+  "name": "tape_echo",
+  "kind": "fx",
+  "symbol": "FX_tape_echo",
+  "sources": [
+    "tape_echo.cc",
+    "src/tape_echo_core.cc",
+    "src/tape_echo_bfin.S",
+    "src/halfband.cc",
+    "src/halfband_bfin.S"
+  ],
+  "cflags": [
+    "-fno-tree-loop-distribute-patterns"
+  ],
+  "include_dirs": [
+    "."
+  ],
+  "defaults": [
+    16384,
+    14746,
+    9830,
+    13107
+  ],
+  "controls": [
+    {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
+     "default": 16384, "fine": true, "random": false},
+    {"id": "hold", "name": "hold", "action": "click", "encoder": "green", "kind": "latch", "bit": 0},
+    {"id": "heads", "name": "heads", "action": "click", "encoder": "white", "word": 7, "kind": "steps",
+     "steps": ["3", "2+3", "1+2+3", "1+3"], "default": 0, "wrap": true}
+  ],
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "Tape echo: a three-head tape delay (Space Echo style) at 22.05 kHz in stereo, from te-op1-cfw's fixed-point TAPE ECHO (the hundekraft kennel plugin ports/knl/tape_echo 0.2, coldsoldr, GPL-3.0-or-later), with the wow and flutter of Mutable Instruments Beads and the half-rate output stage of Clouds (Emilie Gillet, MIT). Blue time, green feedback, white age, orange mix; fn + blue input gain (shift + fn + blue fine), green click hold (a latch), white click the head pattern (3, 2+3, 1+2+3, 1+3)."
+}
