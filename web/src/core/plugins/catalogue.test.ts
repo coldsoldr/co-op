@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import type { PluginBuild, PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
+import type { HostedPluginEntry, PluginBuild, PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
 import { CatalogueError } from '../catalogue/catalogue';
 import { fetchManual, fetchPluginBytes, fetchPluginIndex, filterPlugins, groupByAuthor, pluginFileUrl, pluginFolderUrl } from './catalogue';
 
 const knl = new Uint8Array([0x4b, 0x4e, 0x4c, 0x00, 1, 2, 3, 4]);
 const sha = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
-const plugin = (overrides: Partial<PluginIndexEntry> = {}): PluginIndexEntry => ({
+const plugin = (overrides: Partial<HostedPluginEntry> = {}): HostedPluginEntry => ({
   id: 'rings',
   name: 'rings',
   firmware: 'op1/hundekraft',

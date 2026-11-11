@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "strum",
+  "name": "Strum",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "Strum is a Martin HD28 acoustic guitar, recorded note by note. Every key plays the right chord for your key and scale, and Strum's right hand plays it in a pattern that follows the tempo. There are 28 patterns, from campfire strumming and funk to Travis picking, bossa nova and flamenco. Keep it in open chords or move up the neck to barre shapes; the neck on screen shows where every finger goes.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Guitar: Jeff Learman's Martin HD28 recordings from the Discord SFZ GM Bank (CC0)",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { PluginIndexEntry } from '@co-op/shared/plugins';
+import type { HostedPluginEntry } from '@co-op/shared/plugins';
 import { readPatch } from '../core/codec/patch';
 import { soundTraits } from '../core/codec/sound-traits';
 import { listOpusPlugins } from '../core/library/mods';
@@ -21,7 +21,7 @@ const base = (): string => import.meta.env.BASE_URL;
 const INDEX_WAIT_MS = 5_000;
 
 interface Asking {
-  plugins: PluginIndexEntry[];
+  plugins: HostedPluginEntry[];
   /** How many of the patches need one of them. */
   patches: number;
   resolve: (ok: boolean) => void;
@@ -77,9 +77,9 @@ export function usePluginPrompt(device: Device): {
       const loaded = installedNames(installedPlugins);
       const inMods = profile.id === op1Opus.id ? await modsFiles(device) : new Set<string>();
       // requiredPlugins gives each plugin as its build for this profile, so firmware and file are that build's.
-      const known = (p: PluginIndexEntry): boolean =>
+      const known = (p: HostedPluginEntry): boolean =>
         p.firmware === op1Opus.id ? inMods.has(p.file.toLowerCase()) : p.savedName !== undefined && loaded.has(p.savedName);
-      const needed = new Map<string, PluginIndexEntry>();
+      const needed = new Map<string, HostedPluginEntry>();
       let patches = 0;
       for (const bytes of files) {
         let traits;
@@ -142,7 +142,7 @@ export function usePluginPrompt(device: Device): {
 }
 
 /** Download for a plugin file, checked against the index first. */
-function DownloadPlugin({ plugin }: { plugin: PluginIndexEntry }) {
+function DownloadPlugin({ plugin }: { plugin: HostedPluginEntry }) {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

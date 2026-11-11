@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import type { PluginIndexEntry } from '@co-op/shared/plugins';
+import type { HostedPluginEntry } from '@co-op/shared/plugins';
 import { copyOpusPlugin, findOpusPluginFile } from '../core/library/mods';
 import { fetchPluginBytes } from '../core/plugins/catalogue';
 import { op1Opus } from '../core/profiles/op1-opus';
@@ -18,7 +18,7 @@ type Outcome = { ok: boolean; message: string };
  * that follows refreshes the Installed opus plugins list. Without an opus drive open the button is
  * disabled and says what is needed.
  */
-export function CopyToMods({ plugin, device }: { plugin: PluginIndexEntry; device: Device }) {
+export function CopyToMods({ plugin, device }: { plugin: HostedPluginEntry; device: Device }) {
   const [working, setWorking] = useState(false);
   const [replacing, setReplacing] = useState<{ path: string; bytes: Uint8Array; key: number } | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);

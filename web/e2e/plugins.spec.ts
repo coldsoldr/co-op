@@ -1,6 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { hostedOnly, serveHostedOnly } from './plugin-index';
+
+test.beforeEach(async ({ page }) => {
+  await serveHostedOnly(page);
+});
 
 const seed = fileURLToPath(new URL('../../plugins/', import.meta.url));
 const SEED_IDS = ['audition', 'bitcrusher', 'drive', 'ensemble', 'freq_shift', 'grids', 'marbles', 'rings', 'tape_drive', 'tape_echo', 'wavefolder'];
@@ -31,7 +36,7 @@ test('explains how to submit a plugin and copies the prompt', async ({ page, con
 test('groups plugins by author, closed with several authors and open for a search', async ({ page }) => {
   await page.route('**/plugins/index.json', async (route) => {
     const response = await route.fetch();
-    const index = (await response.json()) as { plugins: Array<{ id: string; author: string }> };
+    const index = hostedOnly((await response.json()) as { plugins: Array<{ id: string; author: string }> });
     for (const plugin of index.plugins) if (plugin.id === 'rings') plugin.author = 'someone else';
     await route.fulfill({ response, json: index });
   });
@@ -358,4 +363,26 @@ test('a download that fails its check says so', async ({ page }) => {
   const rings = page.getByRole('article', { name: 'rings', exact: true });
   await rings.getByRole('button', { name: 'Download rings.knl' }).click();
   await expect(rings.getByRole('alert')).toContainText('does not match the plugin index');
+});
+
+test('lists other creators\' plugins under their names, linking out with no copy here', async ({ page }) => {
+  await page.unroute('**/plugins/index.json');
+  await page.goto('./');
+  await page.getByRole('tab', { name: 'Plugins' }).click();
+
+  // Several authors: every group starts closed, each under its own name.
+  for (const author of ['coldsoldr', 'fungiboletus', 'hundekraft', 'LizardMan', 'pcppcp']) {
+    await expect(page.getByRole('button', { name: new RegExp(`^${author}`) })).toHaveAttribute('aria-expanded', 'false');
+  }
+  await page.getByRole('button', { name: /^fungiboletus/ }).click();
+  const moai = page.getByRole('article', { name: 'Moai', exact: true });
+  await expect(moai).toContainText('by fungiboletus');
+  const get = moai.getByRole('link', { name: /Get it from hundekraft\.github\.io/ });
+  await expect(get).toHaveAttribute('href', 'https://hundekraft.github.io/op1-workshop/');
+  await expect(moai.getByRole('button', { name: /^Download/ })).toHaveCount(0);
+  await expect(moai.getByRole('link', { name: /Source code/ })).toHaveAttribute('href', 'https://github.com/fungiboletus/op-moai');
+
+  await moai.getByRole('button', { name: 'Read the manual of Moai' }).click();
+  await expect(page.getByRole('heading', { name: 'Who made it' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Manual of Moai' }).getByRole('link', { name: 'op-moai' })).toBeVisible();
 });

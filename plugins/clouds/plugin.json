@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "clouds",
+  "name": "Clouds",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "pcppcp",
+  "description": "A port of Mutable Instruments Clouds in granular mode: up to 24 grains over a buffer of about 2.7 seconds. Push an encoder to switch it to its page-2 value.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Port of Mutable Instruments Clouds by Émilie Gillet; from op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "effect",
+    "hundekraft",
+    "op1r"
+  ]
+}

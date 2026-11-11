@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "rackverb",
+  "name": "rackverb",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "rackverb is a rack of four effects units from the late 80s, with 316 programs between them: big halls, gated drum rooms and reverse reverbs, then flangers, slapback echoes and wide choruses. VERB I has 63 programs: reverbs, gated rooms and reverse rooms. VERB II has 100, from 00 to 99: reverbs, gates, reverses, flangers, choruses, delays and a few odd ones. Program 00 is a bypass. FEX has 63 echoes, multi-tap delays, slapbacks and stereo wideners.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Written from Eric Brombaugh's and thement's published Midiverb research; no Alesis ROM data",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "mixtur",
+  "name": "Mixtur",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "ultralazr",
+  "description": "A subharmonic organ after Oskar Sala's Mixtur-Trautonium. Four dividers play undertones of the key: the key is the top note, and the dividers add notes at 1/n of its frequency below it. Two formant filters turn the result into vowels. It sounds dark, vocal and slightly unearthly. Each divider offers OFF and 1 to 24. The starting values are 1, 2, 3 and 5.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/ultralazr/op1-musica-obscura",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Musica Obscura by ultralazr, from op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

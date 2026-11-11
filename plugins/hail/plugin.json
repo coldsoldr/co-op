@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "hail",
+  "name": "HAIL",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "HAIL records what comes in and plays many short, overlapping grains from it: pitched, reversed, smeared and sent into a reverb. It's based on the granular mode of Mutable Instruments Beads, with a buffer of about 1.5 seconds and up to 12 grains at once (8 while the reverb is on).",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Port of Mutable Instruments Beads by Émilie Gillet (MIT)",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

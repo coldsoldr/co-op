@@ -81,6 +81,7 @@ async function loadPlugin(pluginsDir: string, folder: string): Promise<Loaded> {
   if (result.issues.length > 0 || !infos) return { issues: result.issues, warnings: result.warnings, entry: null };
 
   const facts = manifestBuilds(manifest).map((build, i) => {
+    if (build.file === undefined) return null;
     const bytes = read.get(build.file) as Uint8Array;
     return { sizeBytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), info: infos[i] as PluginFileInfo };
   });
@@ -123,7 +124,7 @@ export function formatIssues(issues: readonly PluginIssue[], noun = 'issue'): st
  * file of each build, manual and screenshot.
  */
 function publishedPaths(plugin: PluginIndexEntry): string[] {
-  const files = pluginBuilds(plugin).map((b) => `${plugin.id}/${b.file}`);
+  const files = pluginBuilds(plugin).flatMap((b) => (b.file === undefined ? [] : [`${plugin.id}/${b.file}`]));
   return [`${plugin.id}/${MANIFEST_FILE}`, ...files, plugin.manual, plugin.screenshot];
 }
 

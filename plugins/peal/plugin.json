@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "peal",
+  "name": "Peal",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "Peal plays English change ringing. Pick PEAL with Shift + seq, then hold 3 to 8 keys: each is a bell, and the method changes their order on each row. One or two keys are silent. When you release the last key, the current row finishes and stops. Hold Shift while releasing it to keep ringing. Hold Shift and turn orange left to stop.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

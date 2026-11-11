@@ -88,10 +88,11 @@ For opus the id is 1 to 40 lower-case letters, digits, `_`, `.` or `-`, and
 | `firmware` | `op1/hundekraft`, `op1/coop` or `op1/opus`. |
 | `kind` | `synth`, `fx` or `feature`. For hundekraft it must match the kind in the file. An `.op1p` is a synth or an fx. |
 | `author` | 1 to 60 characters. |
-| `version` | 1 to 20 characters. If the file carries a version, use the same one (a mismatch is a warning). |
+| `version` | 1 to 20 characters. If the file carries a version, use the same one (a mismatch is a warning). Optional for a listed plugin. |
 | `description` | 1 to 500 characters. |
-| `license` | One of `GPL-3.0-or-later`, `GPL-3.0-only`, `GPL-2.0-or-later`, `MIT`, `BSD-3-Clause`, `Apache-2.0`, `MPL-2.0`, or `LicenseRef-Freeware` for a closed plugin that is free to use. A plugin built on an SDK must follow that SDK's licence (hundekraft's is GPL-3.0-or-later). |
-| `file` | hundekraft: `<id>.knl` or `<id>.op1p`. coop: `<id>.coop`. opus: a name ending in `.opmod`. |
+| `license` | One of `GPL-3.0-or-later`, `GPL-3.0-only`, `GPL-2.0-or-later`, `MIT`, `BSD-3-Clause`, `Apache-2.0`, `MPL-2.0`, or `LicenseRef-Freeware` for a closed plugin that is free to use. A plugin built on an SDK must follow that SDK's licence (hundekraft's is GPL-3.0-or-later). Optional for a listed plugin. |
+| `file` | hundekraft: `<id>.knl` or `<id>.op1p`. coop: `<id>.coop`. opus: a name ending in `.opmod`. Not for a listed plugin. |
+| `link` | A listed plugin only, in place of `file`: an `https://` link to where it is got, at most 200 characters. |
 | `screenshot` | A `.png` file name in the folder, usually `screenshot.png`. |
 | `manual` | Always `manual.md`. |
 | `source` | Optional but strongly encouraged: an `https://` link to the source, at most 200 characters. |
@@ -100,6 +101,15 @@ For opus the id is 1 to 40 lower-case letters, digits, `_`, `.` or `-`, and
 | `video` | Optional: an `https://` link to an `.mp4` of the plugin with its real sound, at most 300 characters. Shown on its card. |
 | `tags` | Optional, up to 8 tags of 1 to 20 lower-case letters, digits or hyphens. |
 | `savedName` | opus only: `opus.<id>`. |
+
+### A listed plugin
+
+A plugin co-op lists but does not host, such as one that comes with hundekraft's workshop or in
+Opus's releases, has a `link` to where it is got instead of a `file`, and its folder holds only
+`plugin.json`, `manual.md` and the screenshot. Its card links out and offers no download or
+install. `author` is whoever made the plugin, so it shows under their name: a port is its
+porter's, with the original in `credits`. The manual says what it does and links to its source
+and its full manual.
 
 ### One plugin, a file per firmware
 

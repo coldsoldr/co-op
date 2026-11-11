@@ -1,4 +1,4 @@
-import { pluginFor, type PluginIndex, type PluginIndexEntry } from '@co-op/shared/plugins';
+import { isHosted, pluginFor, type HostedPluginEntry, type PluginIndex } from '@co-op/shared/plugins';
 import type { SoundTraits } from '../codec/sound-traits';
 import { getProfile } from '../profiles/registry';
 import type { PluginContext } from '../profiles/types';
@@ -26,14 +26,20 @@ function pluginNames(traits: SoundTraits, firmwareId: string): Set<string> {
  * saved name is the sound's engine (synth sounds), effect, or opus plugin or effects. Names the
  * firmware has built in need nothing. In index order.
  */
-export function requiredPlugins(traits: SoundTraits, index: PluginIndex, firmwareId: string): PluginIndexEntry[] {
+export function requiredPlugins(traits: SoundTraits, index: PluginIndex, firmwareId: string): HostedPluginEntry[] {
   const names = pluginNames(traits, firmwareId);
   return pluginsFor(index, firmwareId).filter((p) => p.savedName !== undefined && names.has(p.savedName));
 }
 
-/** The library plugins with a build for `firmwareId`, each as that build (pluginFor), in index order. */
-function pluginsFor(index: PluginIndex, firmwareId: string): PluginIndexEntry[] {
-  return index.plugins.flatMap((p) => pluginFor(p, firmwareId) ?? []);
+/**
+ * The library plugins with a file co-op hosts for `firmwareId`, each as that build (pluginFor), in
+ * index order. A listed build (a link to its author's page) is left out: there is nothing to install.
+ */
+function pluginsFor(index: PluginIndex, firmwareId: string): HostedPluginEntry[] {
+  return index.plugins.flatMap((p) => {
+    const build = pluginFor(p, firmwareId);
+    return build && isHosted(build) ? [build] : [];
+  });
 }
 
 /** The saved names of the plugins an inventory reports loaded; empty without an inventory. */

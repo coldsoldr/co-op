@@ -11,13 +11,14 @@ COOP := ../../../plugins/drive
 SDK := ../../../sdk
 BUILD ?= ../../../build/host/drive
 # e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
+# e9: the screen (drive_screen.cc) links against ../screen_host.cc, the screen calls stubbed; the test compares audio
 SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
 CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-function -Wno-class-memaccess
 # upstream beside the plugin's copy: its namespace renamed, and its assembly entry points (unused by the reference,
 # which runs the C passes) too, so they don't collide with the plugin's
 ASM_NAMES := DriveInterpAsm DriveShapeAsm DriveDecimAsm DriveToneAsm DriveDcAsm DriveMixAsm DriveMonoWetAsm
 REF_DEFS := -Dop1fx=up $(foreach s,$(ASM_NAMES),-D$(s)=Ref$(s) -D_$(s)=_Ref$(s))
-COOP_SRC := $(COOP)/drive.cc $(COOP)/src/drive_dsp.cc ../fx_scratch_host.cc
+COOP_SRC := $(COOP)/drive.cc $(COOP)/drive_screen.cc $(COOP)/src/drive_dsp.cc ../fx_scratch_host.cc ../screen_host.cc
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
 SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -Wno-class-memaccess
@@ -36,13 +37,13 @@ $(BUILD)/tables_check: tables_check.cc $(COOP)/src/drive_tables.h
 	$(HOST_CXX) $(CXXFLAGS) -Wno-unused-variable -Dop1fx=up -I$(TE) '-DCOOP_TABLES="$(abspath $(COOP))/src/drive_tables.h"' \
 	  tables_check.cc -o $@
 
-$(BUILD)/drive_compare: drive_compare.cc drive_ref.cc $(COOP_SRC) $(wildcard $(COOP)/src/*.h)
+$(BUILD)/drive_compare: drive_compare.cc drive_ref.cc $(COOP_SRC) $(wildcard $(COOP)/src/*.h) $(SDK)/coop_fx_screen.h $(SDK)/coop_screen.h
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) $(REF_DEFS) -I$(TE) -c drive_ref.cc -o $(BUILD)/ref.o
 	$(HOST_CXX) $(CXXFLAGS) $(REF_DEFS) -I$(TE) -c $(TE)/src/drive/drive.cc -o $(BUILD)/ref_dsp.o
 	$(HOST_CXX) $(CXXFLAGS) -I$(COOP) -I$(SDK) drive_compare.cc $(COOP_SRC) $(BUILD)/ref.o $(BUILD)/ref_dsp.o -o $@
 
-sim: drive_compare.cc drive_ref.cc $(COOP_SRC) $(COOP)/src/drive_bfin.S
+sim: drive_compare.cc drive_ref.cc $(COOP_SRC) $(COOP)/src/drive_bfin.S $(SDK)/coop_fx_screen.h
 	@mkdir -p $(BUILD)/sim
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) $(REF_DEFS) -I$(TE) -c drive_ref.cc -o $(BUILD)/sim/ref.o
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) $(REF_DEFS) -I$(TE) -c $(TE)/src/drive/drive.cc -o $(BUILD)/sim/ref_dsp.o

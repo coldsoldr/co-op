@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "dddd",
+  "name": "dddd",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "pcppcp",
+  "description": "dddd by pcppcp is a noise instrument. All the keys you hold play one shared sound. The lowest key you hold drives it. Each held key also adds a tap to the feedback loop (the four newest count), so a chord changes the texture more than the harmony. Random \"hands\" keep moving the sound on their own.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "synth",
+    "hundekraft",
+    "op1r"
+  ]
+}

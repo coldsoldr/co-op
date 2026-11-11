@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import type { PluginIndexEntry } from '@co-op/shared/plugins';
+import type { HostedPluginEntry } from '@co-op/shared/plugins';
 import { Changelog } from './ui/Changelog';
 import { Feedback } from './ui/Feedback';
 import { CopyToMods } from './ui/CopyToMods';
@@ -57,7 +57,7 @@ export function App() {
 
   // hundekraft and coop plugins install over USB MIDI; the inventory the OP-1 reports afterwards is shared.
   // opus plugins are copied into mods/ on the open drive.
-  const pluginActions = (plugin: PluginIndexEntry) =>
+  const pluginActions = (plugin: HostedPluginEntry) =>
     plugin.firmware === 'op1/hundekraft' ? (
       <>
         <TryOnOp1 plugin={plugin} onInstalled={device.setInstalledPlugins} />

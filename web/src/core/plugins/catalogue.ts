@@ -6,6 +6,7 @@ import {
   PLUGIN_INDEX_FORMAT,
   PLUGIN_KINDS,
   pluginFor,
+  type HostedPluginEntry,
   type PluginFirmware,
   type PluginIndex,
   type PluginIndexEntry,
@@ -34,7 +35,8 @@ const inFolder = (id: string, path: unknown): boolean =>
  */
 function isIndexEntry(value: unknown): value is PluginIndexEntry {
   if (!isRecord(value)) return false;
-  const strings = ['id', 'name', 'author', 'description', 'license'].every((k) => typeof value[k] === 'string');
+  const strings = ['id', 'name', 'author', 'description'].every((k) => typeof value[k] === 'string');
+  if (value.license !== undefined && typeof value.license !== 'string') return false;
   if (!strings || !oneOf(PLUGIN_KINDS, value.kind)) return false;
   const id = value.id as string;
   if (!inFolder(id, value.screenshot) || !inFolder(id, value.manual)) return false;
@@ -49,12 +51,20 @@ function isIndexEntry(value: unknown): value is PluginIndexEntry {
   return firmware.size === builds.length && builds.every((b: unknown) => isRecord(b) && isBuild(b, id));
 }
 
-/** The fields of one build: a firmware for which the id is valid, a plain file name, its size and hash. */
+/**
+ * The fields of one build: a firmware for which the id is valid, and either a plain file name with
+ * its version, size and hash, or (a listed build) an https link to where the plugin is got.
+ */
 function isBuild(value: Record<string, unknown>, id: string): boolean {
-  if (typeof value.version !== 'string' || typeof value.file !== 'string' || !oneOf(PLUGIN_FIRMWARE, value.firmware)) return false;
-  if (!(value.firmware === 'op1/hundekraft' ? HUNDEKRAFT_ID : OPUS_ID).test(id) || !FILE_NAME.test(value.file)) return false;
-  if (typeof value.sizeBytes !== 'number' || typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)) return false;
-  const optional = ['requires', 'savedName', 'headerAuthor', 'headerVersion'];
+  if (!oneOf(PLUGIN_FIRMWARE, value.firmware)) return false;
+  if (!(value.firmware === 'op1/hundekraft' ? HUNDEKRAFT_ID : OPUS_ID).test(id)) return false;
+  if (value.link !== undefined) {
+    if (typeof value.link !== 'string' || !HTTPS.test(value.link) || value.file !== undefined) return false;
+  } else {
+    if (typeof value.version !== 'string' || typeof value.file !== 'string' || !FILE_NAME.test(value.file)) return false;
+    if (typeof value.sizeBytes !== 'number' || typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)) return false;
+  }
+  const optional = ['version', 'requires', 'savedName', 'headerAuthor', 'headerVersion'];
   if (!optional.every((k) => value[k] === undefined || typeof value[k] === 'string')) return false;
   return value.source === undefined || (typeof value.source === 'string' && HTTPS.test(value.source));
 }
@@ -140,7 +150,7 @@ export function pluginFolderUrl(baseUrl: string, id: string): string {
  */
 export async function fetchPluginBytes(
   baseUrl: string,
-  plugin: PluginIndexEntry,
+  plugin: HostedPluginEntry,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Uint8Array> {
   const label = `${plugin.id}/${plugin.file}`;

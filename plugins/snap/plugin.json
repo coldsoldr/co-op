@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "snap",
+  "name": "SNAP",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "SNAP pulls your singing onto the notes. It takes your voice from the OP-1's input, like Amp, and moves each note you sing to the nearest note of the key. Set gently, it nudges a shaky note into tune so nobody notices. Set hard, every note snaps to the key, the sound everyone knows from the radio. Hold keys and each one adds a copy of your voice at that key's pitch, with the key's envelope, so one chord gives you a small choir of yourself. A tuner needle shows how far off you sang.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

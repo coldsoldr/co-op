@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "hold",
+  "name": "HOLD",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "HOLD turns the keys you hold into a short loop. While it runs, every key you hold is written into the step under the playhead: keys held together make a chord, one after another a line. A key held across several steps becomes one long note. Let go and the pattern keeps looping. Hold a chord through a whole pass and you get a drone. It doesn't retrigger, even where the loop starts over. The rings on screen fill in as you write.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "sequencer",
+    "hundekraft"
+  ]
+}

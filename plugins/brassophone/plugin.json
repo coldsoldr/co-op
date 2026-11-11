@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "brassophone",
+  "name": "Brassophone",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "nvmsocool",
+  "description": "Brassophone by nvmsocool starts each note as a soft sine and opens it into a brassy tone as the OP-1's envelope rises. The pitch follows the envelope too, up to about a quarter tone sharp at its peak, so notes lean in the way a horn player's do. Hold a note: once the envelope settles at sustain, vibrato fades in. Shape it on the normal T2 envelope page; a slow attack makes the swell easy to hear.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

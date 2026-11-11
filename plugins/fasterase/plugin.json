@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "fasterase",
+  "name": "Fast tape erase",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "The stock erase gesture (Shift + tape, then press T1 to T4 together) now only clears the parts of the tape that have audio, so it takes seconds instead of minutes. It can't be undone, and it clears the undo history.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

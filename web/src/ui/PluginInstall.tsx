@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { PluginIndexEntry } from '@co-op/shared/plugins';
+import type { HostedPluginEntry } from '@co-op/shared/plugins';
 import { fetchPluginBytes } from '../core/plugins/catalogue';
 import { checkDevice, type CheckResult } from '../core/usbmidi/check';
 import { crc32 } from '../core/usbmidi/framing';
@@ -62,7 +62,7 @@ const recordOf = (inventory: Inventory | null, path: string, id: string): Invent
   inventory?.records.find((r) => r.path === path || (r.name === id && (r.source === 'knl' || r.source === 'op1p'))) ?? null;
 
 /** "Install over USB" for a hundekraft plugin, and the dialog that does it. */
-export function InstallOverUsb({ plugin, onInstalled }: { plugin: PluginIndexEntry; onInstalled: (inventory: Inventory | null) => void }) {
+export function InstallOverUsb({ plugin, onInstalled }: { plugin: HostedPluginEntry; onInstalled: (inventory: Inventory | null) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -78,7 +78,7 @@ export function InstallOverUsb({ plugin, onInstalled }: { plugin: PluginIndexEnt
  * "Try on my OP-1": the install, then a choice to keep the plugin or take it off again. A plugin
  * only loads when the OP-1 starts, so both ways mean a restart.
  */
-export function TryOnOp1({ plugin, onInstalled }: { plugin: PluginIndexEntry; onInstalled: (inventory: Inventory | null) => void }) {
+export function TryOnOp1({ plugin, onInstalled }: { plugin: HostedPluginEntry; onInstalled: (inventory: Inventory | null) => void }) {
   const [step, setStep] = useState<'idle' | 'installing' | 'trying' | 'removing'>('idle');
   const tried = useRef(false);
   return (
@@ -145,7 +145,7 @@ function PluginRemove({
   onRemoved,
   onClose,
 }: {
-  plugin: PluginIndexEntry;
+  plugin: HostedPluginEntry;
   onRemoved: (inventory: Inventory | null) => void;
   onClose: (removed: boolean) => void;
 }) {
@@ -241,7 +241,7 @@ function PluginRemove({
 }
 
 interface PluginInstallProps {
-  plugin: PluginIndexEntry;
+  plugin: HostedPluginEntry;
   /** Called with the inventory the OP-1 reports after its restart. */
   onInstalled: (inventory: Inventory | null) => void;
   onClose: () => void;
@@ -444,7 +444,7 @@ export function PluginInstall({ plugin, onInstalled, onClose }: PluginInstallPro
 
 /** What the OP-1 reports for the plugin after its restart. */
 /** What is on the OP-1 against what would replace it. */
-function AlreadyThere({ plugin, record, file }: { plugin: PluginIndexEntry; record: InventoryRecord; file: PluginFile }) {
+function AlreadyThere({ plugin, record, file }: { plugin: HostedPluginEntry; record: InventoryRecord; file: PluginFile }) {
   const onOp1 = record.version || 'not stated';
   const delta = plugin.sizeBytes - record.size;
   const sizeNote =

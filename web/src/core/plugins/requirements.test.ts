@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
+import type { HostedPluginEntry, PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
 import { soundTraits, type SoundTraits } from '../codec/sound-traits';
 import type { Op1Meta } from '../codec/op1-meta';
 import { parseInventory } from '../usbmidi/inventory';
 import { installedNames, pluginContext, requiredPlugins } from './requirements';
 import { SYNTH_META, DRUM_META } from '../../../test/fixtures/meta';
 
-const entry = (id: string, firmware: PluginIndexEntry['firmware'], savedName?: string): PluginIndexEntry => ({
+const entry = (id: string, firmware: PluginIndexEntry['firmware'], savedName?: string): HostedPluginEntry => ({
   id,
   name: id,
   firmware,

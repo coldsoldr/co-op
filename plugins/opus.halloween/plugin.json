@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "id": "opus.halloween",
+  "name": "halloween",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "1.0.0",
+  "description": "A Halloween colour theme for the whole OP-1 (above, on outatime's page), and the first plugin with no code at all: a theme is a plugin too.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/LizardMan245/opus/tree/main/plugin-kit/examples/opus.halloween",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.halloween",
+  "tags": [
+    "theme",
+    "opus"
+  ]
+}

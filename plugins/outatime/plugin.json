@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "outatime",
+  "name": "outatime",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "LizardMan",
+  "description": "Every voice plays three oscillators, the flux capacitor's three arms. Year picks their wave and Speed lets them drift through the years around it. Power is a strong overdrive, and Trail is the ignition: each note opens a resonant filter that then burns down. The amp envelope on T2, glide and the play modes work as on the other synths. Push blue, green or white for page 2.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "outatime by LizardMan245 (GPL-3.0), ported to kennel by Hundekraft",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

@@ -11,6 +11,7 @@ import {
   checkOp1p,
   checkOpmod,
   checkScreenshot,
+  isHosted,
   manifestBuilds,
   parsePluginManifest,
   pluginBuilds,
@@ -818,5 +819,80 @@ describe('plugins with a file per firmware', () => {
     expect(pluginBuilds(entry)).toEqual([
       { firmware: 'op1/hundekraft', file: 'tape_drive.knl', version: '1.0', requires: 'hundekraft 3.0.3', source: 'https://github.com/coldsoldr/te-op1-cfw', sizeBytes: 1, sha256: 'ab', savedName: 'tape drive' },
     ]);
+  });
+});
+
+describe('listed plugins (a link, no file)', () => {
+  const listed = (overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+    const m: Record<string, unknown> = {
+      ...valid(),
+      id: 'moai',
+      name: 'Moai',
+      kind: 'synth',
+      author: 'fungiboletus',
+      link: 'https://hundekraft.github.io/op1-workshop/',
+      ...overrides,
+    };
+    delete m.file;
+    delete m.version;
+    delete m.license;
+    for (const [k, v] of Object.entries(overrides)) m[k] = v;
+    for (const k of Object.keys(m)) if (m[k] === undefined) delete m[k];
+    return m;
+  };
+
+  it('accepts a link in place of a file, with no version or licence', () => {
+    const { manifest, issues } = parsePluginManifest(listed(), 'moai');
+    expect(issues).toEqual([]);
+    expect(manifest).toMatchObject({ id: 'moai', link: 'https://hundekraft.github.io/op1-workshop/' });
+    expect(manifest).not.toHaveProperty('file');
+    expect(manifest).not.toHaveProperty('license');
+    expect(manifest).not.toHaveProperty('version');
+  });
+
+  it('keeps a licence and version when given', () => {
+    const { manifest } = parsePluginManifest(listed({ license: 'GPL-3.0-or-later', version: '0.2' }), 'moai');
+    expect(manifest).toMatchObject({ license: 'GPL-3.0-or-later', version: '0.2' });
+  });
+
+  it('refuses a link with a file, or a link that is not https', () => {
+    expect(messages(parsePluginManifest(listed({ file: 'moai.knl' }), 'moai').issues)).toMatch(/listed build \(with a link\) has no file/);
+    expect(messages(parsePluginManifest(listed({ link: 'http://example.com/' }), 'moai').issues)).toMatch(/link must be an https:\/\/ link/);
+  });
+
+  it('still needs a licence while any build hosts a file', () => {
+    const m = listed({ link: undefined, builds: [
+      { firmware: 'op1/hundekraft', link: 'https://hundekraft.github.io/op1-workshop/' },
+      { firmware: 'op1/coop', file: 'moai.coop', version: '0.1' },
+    ] });
+    delete m.firmware;
+    delete m.requires;
+    delete m.link;
+    expect(messages(parsePluginManifest(m, 'moai').issues)).toMatch(/license undefined must be one of/);
+  });
+
+  it('needs only plugin.json, the manual and the screenshot in its folder', async () => {
+    const { manifest } = parsePluginManifest(listed(), 'moai');
+    const files: Record<string, Uint8Array> = {
+      'plugin.json': ascii('{}'),
+      'manual.md': ascii('# Moai\n'),
+      'screenshot.png': png(320, 240),
+    };
+    const listing = Object.entries(files).map(([path, bytes]) => ({ path, size: bytes.length }));
+    const result = await validatePluginFiles(manifest as PluginManifest, listing, async (path) => files[path] as Uint8Array);
+    expect(result).toEqual({ issues: [], warnings: [], info: {}, infos: [{}] });
+
+    const extra = [...listing, { path: 'moai.knl', size: 4 }];
+    const refused = await validatePluginFiles(manifest as PluginManifest, extra, async (path) => files[path] ?? new Uint8Array(4));
+    expect(messages(refused.issues)).toMatch(/not part of a plugin folder/);
+  });
+
+  it('indexes it with the link and no size or hash, and is not hosted', () => {
+    const { manifest } = parsePluginManifest(listed(), 'moai');
+    const entry = pluginIndexEntryOfBuilds(manifest as PluginManifest, [null]);
+    expect(entry).toMatchObject({ id: 'moai', link: 'https://hundekraft.github.io/op1-workshop/', manual: 'moai/manual.md' });
+    expect(entry).not.toHaveProperty('sizeBytes');
+    expect(entry).not.toHaveProperty('sha256');
+    expect(isHosted(entry)).toBe(false);
   });
 });

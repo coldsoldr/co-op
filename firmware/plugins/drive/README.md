@@ -58,16 +58,47 @@ costs ~30 % less, but switching between it and the stereo path restarts the cont
 states into R, so it would not be the same sound sample for sample, and the stereo cost is already a fifth of the
 30 k budget (5.5 k still, 8 k peak moving, simulator).
 
-## Screen
+## Screen (e9, 0.2)
 
-None yet: effects show the stock filter page until coop has an effect-screen hook (`docs/plugins.md` "Effect
-controls"), with the core's value popup over it. The brief for when it lands (manifesto, guidelines §5): kennel's
-design A "Schematic" (te-op1-cfw `ports/knl/drive/gen_drive_knl_svg.py`, coldsoldr's own art, not carried here
-unchecked): the circuit left to right, the pot's wiper moving with the gain, the diodes filling from the tip with
-drive, the triode's filament and glow warming with bias, the tilt's S curve flipping about its pivot with tone, the
-mix gauge rising; the gain's dB readout while fn is held (`coop_scr_mods`), replacing kennel's page-2 state.
+Kennel's screen (`te-op1-cfw/ports/knl/drive`: `drive.svg` from `gen_drive_knl_svg.py`, the canvas "Drive screen"
+design A "Schematic", `drive_knl.cc` ScreenUpdate) on the e9 effect-screen path (`docs/plugins.md` "e9"): `drive.svg`
+(from `gen_drive_svg.py`) and `drive_screen.cc`. The signal path as a circuit, left to right: the input jack, the
+input gain as a pot, the clipper's two diodes to ground, the triode, the tilt EQ's response, the output arrow, the mix
+gauge. It shows wherever drive is the effect on the page: FX 1 of the synth, the drum or the master, FX 2 in focus.
+
+| Part | Encoder | What moves it |
+|---|---|---|
+| the diodes' fill from the tip, conduction rays from 5/7 | blue (drive) | round(7 x drive) sevenths (none at 0); the outlines dim and the fill goes while fn is held |
+| the pot's wiper arrow | blue with fn (gain) | -13..+13 units along the resistor, -6..+6 dB; a bracket over its travel while fn is held |
+| the tilt's S curve | green (tone) | scaled about its pivot by 2t - 1: flat at the centre, flipped for dark |
+| the triode's filament and the glow under the cathode | white (bias) | filament from the body tone to white, glow from black to a warm grey |
+| the mix gauge (right) | orange (mix) | scaled about its foot |
+
+What changed from kennel's screen:
+- **Inputs**: the four turns from `view->knobs` (kennel's `knl::ScreenPage1`, the stock pages' values with the LFO);
+  the gain from `view->words[0]` (`knl::ScreenWord(5)`). Kennel's screen read no DSP state, so there are no display
+  words: the render and its state are unchanged (audio bit-identical, host test below).
+- **Kennel's blue page 2 is fn held** (`view->mods` bit 1): fn + blue turns the gain, so while fn is down the diodes
+  show their dim outlines without fill (kennel's page 2 did the same) and a blue bracket marks the wiper's travel
+  (new: the held layer's mark, as bitcrusher's gain bracket, in place of kennel's readout and its rule).
+- **The dB readout is gone** (kennel's page-2 sign, digit, point and tenth glyph sets, 9 KB of the 18 KB file): the
+  core's popup names the control and its value when fn + blue turns it.
+- **The diodes' fill is drawn by the code** with raster lines (`coop_scr_line`, blue, a scan line a unit from the
+  tip, the rays as short lines) instead of kennel's seven variants `clip1..clip7` of filled polygons.
+- **No polygons**: kennel's diode triangles and the wiper's arrowhead are closed polylines (R246's subset in the
+  guidelines §5.3 lists none); the input wire, the clipper's wires and the plate lead are one polyline each; the
+  tilt's S curve has 13 points instead of 25 (invisible at this size).
+- **Colours** are coop's brights (blue 698EFF, green 00ED95, white FFFFFF, orange FF3A5D). The wiring, grounds,
+  grid and gauge rail are the body tone 38354D (kennel drew the wires in a mid tone 514959); the triode's envelope,
+  plate and cathode are the pencil DFD9FF (structure no encoder owns; kennel's white DED7FF); the filament warms to
+  white (bias is white's); the glow keeps kennel's warm grey 7A6E8C. The node dot is radius 2 (kennel 1.8).
+- SVG 7,567 bytes (kennel's 18,132), checked by `tools/plugin/pack.py` (R246's parser rules) and by the generator.
 
 ## Memory, L1, cost
+- **e9 (2026-11-11, 0.2, the screen):** file 19,516 bytes (SVG 7,567), `.text` 8,288, `.rodata` 1,608, `.bss` 76 (the
+  five buffer pointers and the screen's node table and palette); load 9,972 bytes once (+1,488 over e8's 8,484 with
+  `coop_fx_t`'s new screen word); the state unchanged (no display words: `"scratch": 1600` unchanged). The SVG is
+  parsed into the stock TE heap, not heap 0 [I: not measured in op1emu].
 - **e8 (2026-11-11):** the Drive, the block copies and the param cache are in the slot's position buffer (plugin.json `"scratch": 1600`, `coop_fx_scratch`); the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 9,464 bytes, load 8,480 once.
 
 - File 9,608 bytes (0.1); `.text` 6,932, `.rodata` 1,432, `.data` 0, `.bss` 1,584 (the Drive object, 1.3 KB of
@@ -108,8 +139,9 @@ turning to the end (`cw 96`) would land on spring.
 
 1. `tests/sim/det_fx_drive_select.txt` (new: det_fx_select with `turn enc1 cw 16`; synth FX 1, a chord through it):
    no fault, `plugins seen 1 loaded 1 failed 0`, `plugin_blocks` counting, `fxctl fx 1`, p0's w5 16384, the stats
-   `cost` line's `fx1_plugin=` (an emulator figure). Check the screenshot shows the filter page with drive selected
-   [I: the row is worked out from the alphabetical order, not run].
+   `cost` line's `fx1_plugin=` (an emulator figure). Check the screenshot shows drive's screen (e9, 0.2: the
+   circuit, "Screen" above; on a core before e9 the filter page) with drive selected [I: the row is worked out from
+   the alphabetical order, not run]; with fn held, the dim diodes and the bracket over the pot.
 2. All five positions: `tests/sim/det_fx_controls.txt` with its FX-1 list turns (lines 32, 118, 166: `cw 96`)
    changed to `cw 16`, and its FX 2 picks (lines 78, 140: shift + blue `cw 6`) checked against where drive sits in
    the FX 2 list [I]. Only fn + blue (and its fine) is declared, so the gain moves as test_fx's did, and every other

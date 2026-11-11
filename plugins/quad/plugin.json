@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "quad",
+  "name": "Quad LFO",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "Four LFOs in one, each with its own target. They can modulate the engine encoders, the envelope, the effect, and each other. Works on synths and drums.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Lorenz waves and the Pond LFO by xoza; from op1r",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

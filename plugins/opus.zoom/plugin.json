@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "id": "opus.zoom",
+  "name": "zoom",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "1.0.0",
+  "description": "Zooms the tape view in and out.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/LizardMan245/opus/tree/main/plugin-kit/examples/opus.zoom",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.zoom",
+  "tags": [
+    "tape",
+    "opus"
+  ]
+}

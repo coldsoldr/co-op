@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.playpause",
+  "name": "play as pause",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "1.0.0",
+  "description": "While the tape plays, play pauses it where it is. Stop jumps back to the loop's start, or the tape's, and plays on.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.playpause",
+  "tags": [
+    "tape",
+    "opus"
+  ]
+}

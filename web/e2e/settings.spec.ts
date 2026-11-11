@@ -13,10 +13,19 @@ test.describe('Settings: the firmware choice', () => {
     await expect(page.getByText('Showing plugins for OP-1 (coop), the firmware chosen in Settings.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'On your OP-1' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Read plugins from the OP-1' })).toBeVisible();
-    // Filtered to coop, the author groups are open.
+    // Filtered to coop, a lone author's group starts open.
     await expect(page.getByRole('article', { name: 'saw', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Install on OP-1' }).first()).toBeVisible();
     if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/plugins-coop.png`, fullPage: true });
+
+    // The firmware from Settings is not a search: the author group still closes and opens.
+    const author = page.getByRole('button', { name: /^coldsoldr/ });
+    await expect(author).toBeEnabled();
+    await author.click();
+    await expect(author).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#panel-plugins article')).toHaveCount(0);
+    await author.click();
+    await expect(page.getByRole('article', { name: 'saw', exact: true })).toBeVisible();
 
     // The choice is remembered across a reload.
     await page.reload();

@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "bloodmoon",
+  "name": "Bloodmoon",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "Nola Drift",
+  "description": "Bloodmoon by Nola Drift (SammiBabe666) is a gothic organ. Every note is a pipe with its 2nd, 3rd and 4th harmonics, and a bell strikes on top of it. The bell's two partials sit a little off the organ, close to a minor third, so it never quite agrees with the pipes. A slow vibrato fades in after the attack, with a faint wobble under it, so held notes drift like old pipes.",
+  "license": "GPL-3.0-or-later",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/SammiBabe666/Project_Bloodmoon",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Nola Drift's Project Bloodmoon, published by SammiBabe666, brought into kennel by Hundekraft",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

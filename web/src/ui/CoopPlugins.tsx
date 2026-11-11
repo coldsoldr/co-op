@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { checkCoop, idFromSavedName, type PluginIndexEntry } from '@co-op/shared/plugins';
+import { checkCoop, idFromSavedName, type HostedPluginEntry } from '@co-op/shared/plugins';
 import { fetchPluginBytes } from '../core/plugins/catalogue';
 import {
   CoopCaps,
@@ -42,7 +42,7 @@ export async function withCoop<T>(work: (session: Session, hello: CoopHello) => 
 }
 
 interface CoopInstallProps {
-  plugin: PluginIndexEntry;
+  plugin: HostedPluginEntry;
   /** The inventory read after the install, shared with the rest of the app. */
   onInventory: (inventory: Inventory) => void;
 }

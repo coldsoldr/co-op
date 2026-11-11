@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "id": "opus.iter",
+  "name": "iter",
+  "firmware": "op1/opus",
+  "kind": "synth",
+  "author": "LizardMan",
+  "version": "1.0.0",
+  "description": "The OP-1's own hidden synth engine, back in the engine list. A sound made with it plays with or without the plugin.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "credits": "The hidden engine found in the custom firmware thread in 2016",
+  "savedName": "opus.iter",
+  "tags": [
+    "synth",
+    "opus"
+  ]
+}

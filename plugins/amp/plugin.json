@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "amp",
+  "name": "Amp",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "Amp turns the OP-1's live input into the instrument. The mic, line, radio or USB signal runs through a compressor, a tone control and an amp with a speaker cabinet. No key needs to be held. It is inspired by the OP-1 Field's live-input instrument.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

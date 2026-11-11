@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "sid",
+  "name": "SID",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "Based on Hermit’s cRSID, SID combines three oscillators per note with a resonant filter. The modes cover triangle, saw, pulse, noise, oscillator sync and ring modulation. It is inspired by the 8580 chip, not an exact copy of one. Use the OP-1's normal ADSR page to shape each note. Turn blue to choose a waveform and white to open or close the filter. The cutoff number shows control position, not hertz.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Adapts Hermit (Mihaly Horvath)'s cRSID 1.58 light renderer",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

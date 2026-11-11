@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "id": "opus.dx",
+  "name": "dx",
+  "firmware": "op1/opus",
+  "kind": "synth",
+  "author": "LizardMan",
+  "version": "0.4.1",
+  "description": "A Yamaha DX7 voice player: six operators, the DX7's 32 algorithms, Opus's own voices, and your own banks from the disk.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "credits": "Contains code derived from Google's Music Synthesizer for Android (Apache-2.0); its voices are Opus's own",
+  "savedName": "opus.dx",
+  "tags": [
+    "synth",
+    "opus"
+  ]
+}

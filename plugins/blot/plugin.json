@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "blot",
+  "name": "blot",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "pcppcp",
+  "description": "blot (from op1r) is an acid bass line synth. A saw-to-square oscillator goes into a model of the TB-303's own filter (after Open303), with its own decaying filter envelope, so the bass holds steady under heavy resonance. Notes played hard (velocity 100 or more) are accented: the filter sweeps further and the note plays louder, and the accent fades with the Decay knob. For slides, set the play mode to mono or legato and use the OP-1's portamento.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Filter after Open303's TB-303 filter by Robin Schmidt (MIT); from op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "synth",
+    "hundekraft",
+    "op1r"
+  ]
+}

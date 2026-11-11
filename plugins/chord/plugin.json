@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "chord",
+  "name": "Chord mode",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "Chord mode turns every key into a chord. It knows about scales and progressions, so you can play a whole song with one finger. It works with every synth, including the stock ones, and with every sequencer. It's off until you switch it on.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Voicings and strums from op1r",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

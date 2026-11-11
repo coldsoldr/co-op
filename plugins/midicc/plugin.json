@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "midicc",
+  "name": "MIDI CC control",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "A computer, a controller or a MIDI track can turn the current synth's knobs with CCs on the OP-1's MIDI channel. It works like turning the knob and is saved in the sound.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

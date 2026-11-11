@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "oxbow",
+  "name": "Oxbow",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "Two oscillators with sync and cross-modulation into a state-variable filter, an internal filter envelope and a little vintage drift per voice. It comes from OberVave, zvenson's polysynth for the M-VAVE FM-1. Each encoder is a macro that moves several of these at once, so every position is a usable sound. Save and recall sounds with the normal OP-1 presets.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Port of OberVave by zvenson (GPL-3.0)",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

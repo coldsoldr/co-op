@@ -2,6 +2,11 @@ import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { stubOp1 } from './op1-stub';
+import { serveHostedOnly } from './plugin-index';
+
+test.beforeEach(async ({ page }) => {
+  await serveHostedOnly(page);
+});
 
 const ensemble = readFileSync(fileURLToPath(new URL('../../plugins/ensemble/ensemble.knl', import.meta.url)));
 

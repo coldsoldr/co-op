@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "randomiser",
+  "name": "Randomiser",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "Lewis-Clayton",
+  "description": "On a synth page, hold Shift and press drop to make a new variation of the current sound. The engine stays the same; its knobs, envelope, effect and LFO can change. Randomiser chooses from the effects and LFOs available on this OP-1. MIDI LFO is excluded.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r-src/tree/7cf11afc2bade31f0fb08d3af877b9bb04f970bd/synth_sdk/rnd",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Algorithm, history and panel by Lewis-Clayton / pcppcp; native kennel integration by Hundekraft",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

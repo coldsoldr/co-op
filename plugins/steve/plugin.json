@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "steve",
+  "name": "Steve",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "pcppcp",
+  "description": "Steve by pcppcp records a short loop and plays it back as two to four copies. In drift mode the copies run at slightly different speeds, so they slide apart and back together, like Reich's *It's Gonna Rain*. In steps mode the copies jump ahead one unit at a time and lock there, like *Piano Phase*.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "effect",
+    "hundekraft",
+    "op1r"
+  ]
+}

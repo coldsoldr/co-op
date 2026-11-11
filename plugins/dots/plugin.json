@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "dots",
+  "name": "Dots",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "Six slots of up to 64 steps each, all playing at once at 1/16. Every step can have a note, a level, ratchets, a chance, a condition, a nudge and up to four effect locks.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

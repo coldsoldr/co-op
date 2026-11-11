@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "hollowsaint",
+  "name": "Hollow Saint",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "SammiBabe666",
+  "description": "Hollow Saint by SammiBabe666 is a hurdy-gurdy in a cathedral. Each note is a bowed melody string. Under it run two drone strings, root and fifth, and the trompette, a string whose buzzing bridge slaps on the strokes of the wheel. The wheel turns in time with the OP-1's tempo. Then the sound goes into a stone room that darkens and rings, and turned up high it strikes a distant bell on each note. It's all synthesis, no samples.",
+  "license": "GPL-3.0-or-later",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/SammiBabe666/Project_Hollow_Saint",
+  "requires": "hundekraft 3.2.6",
+  "credits": "SammiBabe666's Cathedral of the Hollow Saint, brought into kennel by Hundekraft",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

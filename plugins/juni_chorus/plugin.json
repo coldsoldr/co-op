@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "juni_chorus",
+  "name": "JUNI chorus",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "Made for JUNI, but it works on anything. As the master effect it's stereo, with one delay per side and the two sides moving in opposite directions. On a synth or the drums it's mono. The bass stays dry, so low notes keep their weight.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

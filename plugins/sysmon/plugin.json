@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "sysmon",
+  "name": "System monitor",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "Shift + help, then T1. The top shows CPU, audio load, memory, disk and MIDI activity. Press T1 again to close it. The AUDIO bar shows instrument, envelope, effect and other work, and its peak marker helps spot brief bursts of high load.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

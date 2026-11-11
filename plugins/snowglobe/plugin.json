@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "snowglobe",
+  "name": "Snowglobe",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "A shimmer reverb whose tail climbs an octave at a time. At the top of orange the tail freezes into a pad that holds until you turn back.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

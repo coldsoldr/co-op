@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "warble",
+  "name": "Warble",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "A short delay whose time wobbles in two uneven rhythms, so the movement never repeats exactly. Half mix gives chorus; full mix gives vibrato. A slow rate and small depth give tape-like pitch movement. The cassette artwork comes from Maiko's #250 with permission; its hubs turn and the loose tape moves with the controls.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Reconstructs Maiko Pruett's #250 algorithm and artwork, used with permission",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

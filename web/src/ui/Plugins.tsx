@@ -2,8 +2,10 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import {
   PLUGIN_FIRMWARE,
   PLUGIN_KINDS,
+  isHosted,
   pluginBuilds,
   pluginFor,
+  type HostedPluginEntry,
   type PluginIndex,
   type PluginIndexEntry,
 } from '@co-op/shared/plugins';
@@ -36,7 +38,8 @@ interface PluginsProps {
    * More actions for a plugin, shown beside Download on its card and manual: "Install over USB"
    * for hundekraft and "Copy to mods/" for opus.
    */
-  renderActions?: (plugin: PluginIndexEntry) => ReactNode;
+  /** Install actions, for a build with a file co-op hosts; a listed build links out instead. */
+  renderActions?: (plugin: HostedPluginEntry) => ReactNode;
   /** The firmware chosen in Settings (a profile id): the list starts filtered to its plugins. */
   firmwareId?: string;
   /** Shown above the list: the plugins on the connected OP-1, for a firmware co-op manages them on (coop). */
@@ -192,9 +195,11 @@ function PluginList({ index, filter, onFilter, toggled, onToggle, onOpen, return
   const shown = filterPlugins(index, filter).map(view);
   const groups = groupByAuthor(shown);
   // A search or filter shows what it found. Otherwise several authors start closed, and a lone
-  // author starts open, as a closed group would be all there is to see.
-  const filtering = Object.keys(filter).length > 0;
-  const startsOpen = groupByAuthor(index.plugins).length === 1;
+  // author in the list as shown starts open, as a closed group would be all there is to see. The
+  // firmware is not a search: it is set from Settings for most visitors, and counting it kept every
+  // group open with its toggle disabled.
+  const filtering = filter.text !== undefined || filter.kind !== undefined || filter.tag !== undefined;
+  const startsOpen = groups.length === 1;
   const tags = useMemo(() => [...new Set(index.plugins.flatMap((p) => p.tags))].sort(), [index]);
   /** Sets one criterion; the empty string clears it. */
   function set<K extends keyof PluginFilter>(key: K, value: string): void {
@@ -296,11 +301,12 @@ function PluginFacts({ plugin }: { plugin: PluginIndexEntry }) {
   return (
     <>
       <p className="muted">
-        by {plugin.author} · version {plugin.version}
+        by {plugin.author}
+        {plugin.version !== undefined && ` · version ${plugin.version}`}
       </p>
       <p className="badges">
         <span className="badge">{plugin.kind}</span>
-        <span className="badge licence">{plugin.license}</span>
+        {plugin.license !== undefined && <span className="badge licence">{plugin.license}</span>}
         {/* The build shown first, then any other firmware the plugin has a file for. */}
         {[plugin.firmware, ...pluginBuilds(plugin).map((b) => b.firmware).filter((f) => f !== plugin.firmware)].map((id) => (
           <span key={id} className="badge firmware">
@@ -360,10 +366,44 @@ function PluginCard({ plugin, onOpen, focus, renderActions }: PluginCardProps) {
 }
 
 /**
+ * Where to get a plugin: a link out for a listed build, else Download and the install actions.
+ */
+function PluginDownload({ plugin, renderActions }: { plugin: PluginIndexEntry; renderActions: PluginsProps['renderActions'] }) {
+  return isHosted(plugin) ? <HostedDownload plugin={plugin} renderActions={renderActions} /> : <ListedLink plugin={plugin} />;
+}
+
+/** The host name of a link, for its label; the link itself if it does not parse. */
+function hostOf(link: string): string {
+  try {
+    return new URL(link).hostname;
+  } catch {
+    return link;
+  }
+}
+
+/**
+ * A listed build: co-op hosts no file for it, so the card links to where its author offers it.
+ */
+function ListedLink({ plugin }: { plugin: PluginIndexEntry }) {
+  if (plugin.link === undefined) return null;
+  return (
+    <div className="plugin-actions">
+      <div className="plugin-buttons">
+        <a className="button primary" href={plugin.link} target="_blank" rel="noopener noreferrer">
+          Get it from {hostOf(plugin.link)}
+          <span className="visually-hidden"> ({plugin.name}, opens a new tab)</span>
+        </a>
+      </div>
+      <p className="muted">Listed here for reference: co-op links to its author's page and hosts no copy.</p>
+    </div>
+  );
+}
+
+/**
  * Download (the file checked against the index first) and the actions later phases add, with the
  * safety note for hundekraft plugins beside them.
  */
-function PluginDownload({ plugin, renderActions }: { plugin: PluginIndexEntry; renderActions: PluginsProps['renderActions'] }) {
+function HostedDownload({ plugin, renderActions }: { plugin: HostedPluginEntry; renderActions: PluginsProps['renderActions'] }) {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const noteId = useId();

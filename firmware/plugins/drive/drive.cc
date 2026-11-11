@@ -13,12 +13,16 @@
  * (sdk/coop_plugin.h coop_fx_scratch, plugin.json "scratch"); the file is relocated once and its .bss holds only the
  * five buffer pointers. init binds the slot's buffer and resets the state (a few hundred stores; the buffer holds
  * whatever the effect before left).
+ * Screen (e9): drive_screen.cc, drive.svg; it reads only the knobs, the gain word and fn, so the render publishes
+ * nothing for it (no display words: the state is unchanged).
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission; the halfband's coefficients are
  * Clouds' (MIT, LICENSE-MIT). */
 #include <stdint.h>
 #include "coop_plugin.h"
 #include "src/drive_dsp.h"
+
+extern "C" const coop_fx_screen_t SCREEN_drive;   /* drive_screen.cc (e9) */
 
 namespace {
 
@@ -108,4 +112,4 @@ void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
 
 }  // namespace
 
-extern "C" const coop_fx_t FX_drive = { COOP_FX_MAGIC, COOP_PLUGIN_API, 0, init, render };
+extern "C" const coop_fx_t FX_drive = { COOP_FX_MAGIC, COOP_PLUGIN_API, COOP_FX_F_SCREEN, init, render, &SCREEN_drive };

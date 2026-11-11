@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "washer",
+  "name": "Washer",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "A chorus that turns into a flanger. Three taps of one short delay line are swept by an LFO a third of a turn apart, which gives the wide ensemble sound of old string machines. Add foam and the taps move closer and feed back until it's a jet flanger.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

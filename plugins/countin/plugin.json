@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "countin",
+  "name": "Count-in",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "pcppcp",
+  "description": "With the tape stopped, hold REC and press metronome. You get 4, 8 or 16 clicks, then the tape starts recording on the next beat. You can let go of REC. STOP cancels. Set the length on the settings page.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "tool",
+    "hundekraft",
+    "op1r"
+  ]
+}

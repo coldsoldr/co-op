@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "trail",
+  "name": "Trail",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "Hold a note and Trail plays a short phrase in your scale. Each phrase is built from a short idea of four or eight steps that comes back, changed a little, and the phrase ends on the root or a chord tone. Leave it running and Trail keeps working on that idea: it moves a bit of the tune up a step, turns it upside down or plays it backwards, so the phrase drifts somewhere new while you play over it.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "sequencer",
+    "hundekraft"
+  ]
+}

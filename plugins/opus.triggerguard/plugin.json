@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.triggerguard",
+  "name": "trigger guard",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "1.1.0",
+  "description": "A worn key that fires twice plays once: on the keyboard's note keys, a second press inside the window (50 ms to start, 10 to 300) is dropped. One window per note or one for all keys, and \"false releases held\" keeps a note sounding through a bounce. The synth, the drums, the sequencers and USB MIDI out all get the cleaned keys. The idea is u/Andromax_sussybaka's.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.triggerguard",
+  "tags": [
+    "playing",
+    "opus"
+  ]
+}

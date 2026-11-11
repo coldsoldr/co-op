@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "gin",
+  "name": "Gin",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "SquareWave Studio",
+  "description": "Gin is a drum synthesiser by SquareWave Studio, based on Eric Lewis's libpo32. Open the drum engine browser with Shift + T1 and select GIN. DBOX and DRUM+ remain available.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://squarewave.studio",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Based on libpo32 by Eric Lewis; factory sounds adapt CNTR RNDM's kits. Ported to kennel by Hundekraft",
+  "tags": [
+    "drums",
+    "hundekraft"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "reactor",
+  "name": "REACTOR",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "Four sine waves sit in a loop and modulate each other, like fuel rods in a core. Heat pushes the loop and cooling holds it back. While cooling keeps up you get clean FM; turn up the heat and the tone grows, bends and starts to howl. The fun is finding how close to the edge you can play.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

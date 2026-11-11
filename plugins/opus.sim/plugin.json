@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.sim",
+  "name": "SIM",
+  "firmware": "op1/opus",
+  "kind": "synth",
+  "author": "LizardMan",
+  "version": "0.1.9",
+  "description": "A drum engine whose page is a physics simulation: every hit throws a solid into a virtual box, and what it does shows the key's sound. Its size is the pitch, its bounce the decay, its throw the sweep, its debris the noise, and a scope along the top draws the sound. It follows the endless sequencer's transposition and your colour theme. SIM draws with orbit3d, which goes in mods beside it.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.sim",
+  "tags": [
+    "synth",
+    "opus"
+  ]
+}

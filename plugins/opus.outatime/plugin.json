@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "id": "opus.outatime",
+  "name": "outatime",
+  "firmware": "op1/opus",
+  "kind": "synth",
+  "author": "LizardMan",
+  "version": "1.4.3",
+  "description": "A time-travel synth engine. Each voice is three oscillators that morph from 1955 (warm) through 1985 (saws) to 2015 (glassy); speed sends them drifting through time, power is a strong overdrive in four types (warm, hard, tube, fold: on shift + orange, kept with each sound) that stays as loud at any amount, and trail ignites each note and burns it down. Its page is a time machine on the road: it drives while you play and lights a fire trail at the set speed.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/LizardMan245/opus/tree/main/plugin-kit/examples/opus.outatime",
+  "requires": "opus 2.0 beta 4.1",
+  "savedName": "opus.outatime",
+  "tags": [
+    "synth",
+    "opus"
+  ]
+}

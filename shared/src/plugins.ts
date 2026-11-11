@@ -76,9 +76,19 @@ const HTTPS_LINK = /^https:\/\/[^\s/?#]+\.[^\s/?#]+([/?#]\S*)?$/;
  */
 export interface PluginBuildManifest {
   firmware: PluginFirmware;
-  /** `<id>.knl` or `<id>.op1p` for hundekraft, `<name>.opmod` for opus, `<id>.coop` for coop. */
-  file: string;
-  version: string;
+  /**
+   * `<id>.knl` or `<id>.op1p` for hundekraft, `<name>.opmod` for opus, `<id>.coop` for coop. Absent
+   * for a listed build (see link).
+   */
+  file?: string;
+  /**
+   * A listed build: an https:// link to the page where the plugin is got (its author's workshop or
+   * releases). co-op lists the plugin there and hosts no file, so a listed build has no `file` and
+   * nothing to install or download here.
+   */
+  link?: string;
+  /** Required for a build with a file; optional for a listed one. */
+  version?: string;
   /** Free text such as "hundekraft 3.0.3". */
   requires?: string;
   /** An https:// link to the source. */
@@ -95,7 +105,8 @@ export interface PluginManifest extends PluginBuildManifest {
   kind: PluginKind;
   author: string;
   description: string;
-  license: PluginLicense;
+  /** Required unless every build is listed (has a link and no file). */
+  license?: PluginLicense;
   /** A .png file name in the plugin folder. */
   screenshot: string;
   manual: typeof MANUAL_FILE;
@@ -113,9 +124,10 @@ export interface PluginManifest extends PluginBuildManifest {
 
 /** One firmware's build in the index: its file, with the size and hash, and what differs per firmware. */
 export interface PluginBuild extends Omit<PluginBuildManifest, 'savedName'> {
-  sizeBytes: number;
-  /** Lower-case hex SHA-256 of the plugin file. */
-  sha256: string;
+  /** The plugin file's size; absent for a listed build. */
+  sizeBytes?: number;
+  /** Lower-case hex SHA-256 of the plugin file; absent for a listed build. */
+  sha256?: string;
   /** The name sounds store: from the file header for hundekraft and coop, from plugin.json for opus. */
   savedName?: string;
   /** Author and version from a .knl or .coop extension table, when it has them. */
@@ -125,7 +137,7 @@ export interface PluginBuild extends Omit<PluginBuildManifest, 'savedName'> {
 
 /** The index entry fields that belong to one build. */
 const BUILD_KEYS = [
-  'firmware', 'file', 'version', 'requires', 'source', 'savedName', 'sizeBytes', 'sha256', 'headerAuthor', 'headerVersion',
+  'firmware', 'file', 'link', 'version', 'requires', 'source', 'savedName', 'sizeBytes', 'sha256', 'headerAuthor', 'headerVersion',
 ] as const satisfies readonly (keyof PluginBuild)[];
 
 export interface PluginIndexEntry
@@ -148,6 +160,14 @@ function buildOf(entry: PluginIndexEntry): PluginBuild {
   const build: Record<string, unknown> = {};
   for (const key of BUILD_KEYS) if (entry[key] !== undefined) build[key] = entry[key];
   return build as unknown as PluginBuild;
+}
+
+/** An index entry (as pluginFor gives it) whose build has a file co-op hosts, to download or install. */
+export type HostedPluginEntry = PluginIndexEntry & { file: string; version: string; sizeBytes: number; sha256: string };
+
+/** True when the entry's build is a file co-op hosts; false for a listed build, which only links out. */
+export function isHosted(entry: PluginIndexEntry): entry is HostedPluginEntry {
+  return entry.link === undefined && entry.file !== undefined && entry.sizeBytes !== undefined && entry.sha256 !== undefined;
 }
 
 /** Every build of a plugin in the index: its `builds`, or the one build at the top of the entry. */
@@ -195,7 +215,7 @@ export interface PluginIssue {
 }
 
 /** The plugin.json fields of one build; with `builds`, all but source go in each build only. */
-const MANIFEST_BUILD_FIELDS = ['firmware', 'file', 'version', 'requires', 'source', 'savedName'] as const;
+const MANIFEST_BUILD_FIELDS = ['firmware', 'file', 'link', 'version', 'requires', 'source', 'savedName'] as const;
 const MANIFEST_FIELDS = new Set<string>([
   'format', 'id', 'name', 'kind', 'author', 'description', 'license',
   'screenshot', 'manual', 'credits', 'video', 'tags', 'builds', ...MANIFEST_BUILD_FIELDS,
@@ -271,11 +291,19 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
       else if (firmware === 'op1/coop' && !/^[a-z0-9_]{1,15}$/.test(id)) fail(`id "${id}" must be 1 to 15 lower-case letters, digits or _`);
       else if (!opus && !HUNDEKRAFT_ID.test(id)) fail(`id "${id}" must be 1 to 15 lower-case letters, digits, _ or -`);
     }
-    const version = textIn(record, where, 'version', MAX_VERSION);
+    const link = record.link;
+    const listed = link !== undefined;
+    if (listed) {
+      if (typeof link !== 'string' || !HTTPS_LINK.test(link)) fail(`${where}link must be an https:// link`);
+      else if (link.length > MAX_SOURCE) fail(`${where}link must be at most ${MAX_SOURCE} characters`);
+    }
+    const version = listed && record.version === undefined ? undefined : textIn(record, where, 'version', MAX_VERSION);
 
     const file = record.file;
-    if (typeof file !== 'string') {
-      fail(`${where}file must be a string`);
+    if (listed) {
+      if (file !== undefined) fail(`${where}a listed build (with a link) has no file; co-op hosts nothing for it`);
+    } else if (typeof file !== 'string') {
+      fail(`${where}file must be a string, or link must give where the plugin is got`);
     } else if (firmware === 'op1/hundekraft' && typeof id === 'string') {
       if (file !== `${id}.knl` && file !== `${id}.op1p`) fail(`${where}file must be "${id}.knl" or "${id}.op1p"`);
       else if (file.endsWith('.op1p') && kind === 'feature') fail('an .op1p plugin is a synth or an fx, not a feature');
@@ -297,8 +325,8 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
     }
     return {
       firmware: firmware as PluginFirmware,
-      file: file as string,
-      version,
+      ...(listed ? { link: link as string } : { file: file as string }),
+      ...(version === undefined ? {} : { version }),
       ...(requires === undefined ? {} : { requires }),
       ...(record.source === undefined ? {} : { source: record.source as string }),
       ...(savedName === undefined ? {} : { savedName: savedName as string }),
@@ -334,7 +362,7 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
         }
         const build = parseBuild(raw, where);
         if (firmwareSeen.has(build.firmware)) fail(`${where}a second build for ${build.firmware}; give one per firmware`);
-        if (filesSeen.has(build.file)) fail(`${where}the file ${build.file} is already another build's`);
+        if (build.file !== undefined && filesSeen.has(build.file)) fail(`${where}the file ${build.file} is already another build's`);
         firmwareSeen.add(build.firmware);
         filesSeen.add(build.file);
         builds?.push(build.source === undefined && json.source !== undefined ? { ...build, source: json.source as string } : build);
@@ -348,7 +376,12 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
   const description = text('description', MAX_DESCRIPTION);
 
   const license = json.license;
-  if (!oneOf(PLUGIN_LICENSES, license)) fail(`license ${JSON.stringify(license)} must be one of ${PLUGIN_LICENSES.join(', ')}`);
+  const allListed = (builds ?? [primary]).every((b) => b.link !== undefined);
+  if (license === undefined && allListed) {
+    // A plugin co-op only lists says no licence of its own; its source link and manual tell.
+  } else if (!oneOf(PLUGIN_LICENSES, license)) {
+    fail(`license ${JSON.stringify(license)} must be one of ${PLUGIN_LICENSES.join(', ')}`);
+  }
 
   const screenshot = json.screenshot;
   if (typeof screenshot !== 'string' || !SCREENSHOT_NAME.test(screenshot) || isWindowsReservedName(screenshot)) {
@@ -380,7 +413,7 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
   }
 
   if (issues.length > 0) return { manifest: null, issues };
-  const { requires, source, savedName } = primary;
+  const { requires, source, savedName, link, file, version } = primary;
   return {
     manifest: {
       format: PLUGIN_FORMAT,
@@ -389,10 +422,11 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
       firmware: primary.firmware,
       kind: kind as PluginKind,
       author,
-      version: primary.version,
+      ...(version === undefined ? {} : { version }),
       description,
-      license: license as PluginLicense,
-      file: primary.file,
+      ...(license === undefined ? {} : { license: license as PluginLicense }),
+      ...(file === undefined ? {} : { file }),
+      ...(link === undefined ? {} : { link }),
       screenshot: screenshot as string,
       manual: MANUAL_FILE,
       ...(source === undefined ? {} : { source }),
@@ -771,9 +805,11 @@ export async function validatePluginFiles(
   files = files.filter((f) => !isIgnoredFile(f.path));
   const sizes = new Map(files.map((f) => [f.path, f.size]));
   const builds = manifestBuilds(manifest);
-  const expected = [MANIFEST_FILE, ...builds.map((b) => b.file), manifest.manual, manifest.screenshot];
+  const hostedFiles = builds.flatMap((b) => (b.file === undefined ? [] : [b.file]));
+  const expected = [MANIFEST_FILE, ...hostedFiles, manifest.manual, manifest.screenshot];
 
-  const infos: (PluginFileInfo | null)[] = builds.map(() => null);
+  // A listed build has no file, so nothing to say about one: its info is empty.
+  const infos: (PluginFileInfo | null)[] = builds.map((b) => (b.file === undefined ? {} : null));
   for (const path of expected) {
     const size = sizes.get(path);
     if (size === undefined) {
@@ -815,7 +851,7 @@ export async function validatePluginFiles(
     if (check.info.kind !== manifest.kind) fail(`the file's kind is ${check.info.kind} but plugin.json says ${manifest.kind}`, path);
     const warn = (field: 'author' | 'version'): void => {
       const value = check.info?.[field];
-      if (value !== undefined && value !== build[field]) {
+      if (value !== undefined && build[field] !== undefined && value !== build[field]) {
         warnings.push({ plugin: manifest.id, file: path, message: `the file says ${field} "${value}" but plugin.json says "${build[field]}"` });
       }
     };
@@ -837,11 +873,11 @@ export async function validatePluginFiles(
 
 /**
  * The index entry of a valid single-firmware plugin, or of one build from manifestBuilds, given
- * its plugin file's size and hash and what the file says.
+ * its plugin file's size and hash and what the file says. A listed build has no file: null.
  */
 export function pluginIndexEntry(
   manifest: PluginManifest,
-  file: { sizeBytes: number; sha256: string },
+  file: { sizeBytes: number; sha256: string } | null,
   info: PluginFileInfo,
 ): PluginIndexEntry {
   const { format: _format, savedName: ownSavedName, builds: _builds, ...fields } = manifest;
@@ -850,8 +886,7 @@ export function pluginIndexEntry(
     ...fields,
     screenshot: `${manifest.id}/${manifest.screenshot}`,
     manual: `${manifest.id}/${manifest.manual}`,
-    sizeBytes: file.sizeBytes,
-    sha256: file.sha256,
+    ...(file === null ? {} : { sizeBytes: file.sizeBytes, sha256: file.sha256 }),
     ...(savedName === undefined ? {} : { savedName }),
     ...(info.author === undefined ? {} : { headerAuthor: info.author }),
     ...(info.version === undefined ? {} : { headerVersion: info.version }),
@@ -860,15 +895,16 @@ export function pluginIndexEntry(
 
 /**
  * The index entry of any valid plugin, given each build's file facts and what its file says, in
- * build order (one for a single-firmware plugin). A plugin with builds lists them all in `builds`
- * and has the first one's fields at the top.
+ * build order (one for a single-firmware plugin; null for a listed build, which has no file). A
+ * plugin with builds lists them all in `builds` and has the first one's fields at the top.
  */
 export function pluginIndexEntryOfBuilds(
   manifest: PluginManifest,
-  files: readonly { sizeBytes: number; sha256: string; info: PluginFileInfo }[],
+  files: readonly ({ sizeBytes: number; sha256: string; info: PluginFileInfo } | null)[],
 ): PluginIndexEntry {
   const entries = manifestBuilds(manifest).map((build, i) => {
     const file = files[i];
+    if (build.link !== undefined) return pluginIndexEntry(build, null, {});
     if (!file) throw new Error(`no file facts for build ${i + 1} of ${manifest.id}`);
     return pluginIndexEntry(build, file, file.info);
   });

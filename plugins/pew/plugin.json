@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "pew",
+  "name": "Pew",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "A drawbar organ in a jazz club, played through a rotary speaker. Each encoder is a whole organ control, so every position is a sound an organist would use: blue pulls out the drawbars, green adds the percussion, white adds chorus and then drive, and orange switches the rotary speaker. The screen moves with them: the drawbars slide out, notes fly up when you play, the smoke and the lamp follow white, and the red lines spin round the cabinet with the speaker.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

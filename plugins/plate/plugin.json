@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "plate",
+  "name": "Plate",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "Plate diffuses the input into a reverb tail. Decay sets how long it rings; tone sets how bright it stays. The artwork is Maiko's, used with permission. Synth, drum and master each have their own reverb. On a synth or the drums it is mono; the master is stereo.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "credits": "Reconstructs Maiko Pruett's #250 algorithm and artwork, used with permission",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

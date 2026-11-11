@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "ente",
+  "name": "ENTE",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "pcppcp",
+  "description": "ENTE by op1r is a sidechain compressor: it can listen to something other than the sound it turns down. Put it on a synth, pick track 1 as the source, and the synth ducks every time the drums on track 1 hit. It can also listen to the input, or to a steady beat from the tempo and pump in time with no drums at all. You get anything from house-style pumping to a gentle breath under the drums. The rubber duck on screen gets squashed as ENTE turns the sound down, and it lies flat at 24 dB.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r",
+  "requires": "hundekraft 3.2.6",
+  "credits": "From op1r, ported to kennel by Hundekraft",
+  "tags": [
+    "effect",
+    "hundekraft",
+    "op1r"
+  ]
+}

@@ -4,6 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hostedOnly } from './plugin-index';
 
 const fixtures = fileURLToPath(new URL('../test/fixtures/', import.meta.url));
 
@@ -13,7 +14,7 @@ const OPMOD = Buffer.from('OPMD test plugin bytes', 'latin1');
 /** Adds the test plugin to the real plugin index and serves its file. */
 async function serveOpusPlugin(page: Page): Promise<void> {
   await page.route('**/plugins/index.json', async (route) => {
-    const index = await (await route.fetch()).json();
+    const index = hostedOnly(await (await route.fetch()).json());
     index.plugins.push({
       id: 'test.mod',
       name: 'Test Mod',

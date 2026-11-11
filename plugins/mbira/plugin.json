@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "mbira",
+  "name": "MBIRA",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "A kalimba: every note plucks a steel tine, rings in a wooden box and fades by itself. Holding the key doesn't stretch the ring, but letting go starts the release on T2, so a short release cuts it. Turn up the buzz and bottle caps rattle while the tine swings.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.2.6",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}
