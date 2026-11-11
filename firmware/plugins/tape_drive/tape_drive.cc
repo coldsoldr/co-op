@@ -26,8 +26,8 @@
 // Replaced from the kennel build: op1_fx_param_q15 (the
 // stock range table at 0x01DE5C50) -> Q15() over the ranges coop documents; knl::Fine (the shift byte at
 // 0x01dd7f78, rewriting the stored word 5 from the render) -> the core's "fine" pairing; the screen (op1_fx_knobs,
-// op1_fx_page, op1_fx_screen_pos, op1_fx_knobs_live, op1_screen_draw) -> not ported: effect screens aren't built in
-// coop yet (README "Screen").
+// op1_fx_page, op1_fx_screen_pos, op1_fx_knobs_live, op1_screen_draw) -> e9's effect screen: tape_drive_screen.cc,
+// tape_drive.svg (README "Screen"). Kennel's screen read nothing from the DSP, so the render publishes nothing.
 //
 // Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
 
@@ -35,6 +35,8 @@
 
 #include "coop_plugin.h"
 #include "src/tape.h"
+
+extern "C" const coop_fx_screen_t SCREEN_tape_drive;   // tape_drive_screen.cc (e9)
 
 namespace {
 
@@ -95,4 +97,5 @@ void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
 
 }  // namespace
 
-extern "C" const coop_fx_t FX_tape_drive = { COOP_FX_MAGIC, COOP_PLUGIN_API, 0, init, render };
+extern "C" const coop_fx_t FX_tape_drive = { COOP_FX_MAGIC, COOP_PLUGIN_API, COOP_FX_F_SCREEN, init, render,
+                                        &SCREEN_tape_drive };

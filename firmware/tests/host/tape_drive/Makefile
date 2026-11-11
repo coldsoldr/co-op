@@ -10,7 +10,7 @@ BLOCKS ?= 20000
 # e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
 SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
 CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wextra -Wno-unused-function -Wno-unused-variable
-COOP_SRC := $(COOP)/tape_drive.cc $(COOP)/src/tape.cc ../fx_scratch_host.cc
+COOP_SRC := $(COOP)/tape_drive.cc $(COOP)/tape_drive_screen.cc $(COOP)/src/tape.cc ../fx_scratch_host.cc ../screen_host.cc
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
 SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns
@@ -27,11 +27,11 @@ $(BUILD)/tape_ref: tape_drive_compare.cc $(wildcard $(TE)/src/tape/*)
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -DTAPE_REF -I$(TE) tape_drive_compare.cc $(TE)/src/tape/tape.cc -o $@
 
-$(BUILD)/tape_coop: tape_drive_compare.cc $(COOP_SRC) $(wildcard $(COOP)/src/*)
+$(BUILD)/tape_coop: tape_drive_compare.cc $(COOP_SRC) $(wildcard $(COOP)/src/*) ../../../sdk/coop_fx_screen.h
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -I$(COOP) -I../../../sdk tape_drive_compare.cc $(COOP_SRC) -o $@
 
-$(BUILD)/tape_coop.elf: tape_drive_compare.cc $(COOP_SRC) $(wildcard $(COOP)/src/*)
+$(BUILD)/tape_coop.elf: tape_drive_compare.cc $(COOP_SRC) $(wildcard $(COOP)/src/*) ../../../sdk/coop_fx_screen.h
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -I$(COOP) -I../../../sdk tape_drive_compare.cc $(COOP_SRC) $(COOP)/src/tape_bfin.S -o $@
 	@if $(BFIN)/bfin-elf-nm $@ | grep -q '_GLOBAL__sub_I.*tape'; then echo "a static initialiser"; exit 1; fi

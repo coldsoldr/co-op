@@ -11,6 +11,8 @@ built and host-tested; the op1emu gate and the device run are still to do.
 | `src/tape.cc`, `src/tape.h`, `src/tape_layout.h`, `src/tape_tables.h` | te-op1-cfw's DSP. Only the include paths and one initialiser changed (below) |
 | `src/tape_bfin.S` | te-op1-cfw's three kernels (stereo delay, mono delay, lane). Only the include path changed. `tools/asm_lint.py`: 0 flagged |
 | `src/gen_tape_tables.py` | the offline table generator (plain Python, not built) |
+| `tape_drive_screen.cc` | the effect screen (e9): kennel's ScreenInit / ScreenUpdate on the coop screen calls |
+| `gen_tape_drive_svg.py`, `tape_drive.svg` | the screen's art (generated: `python3 gen_tape_drive_svg.py tape_drive.svg`) |
 | `op1/support.cc` | `memcpy` / `memset` / `memmove` for GCC's struct copies (the same file as `plugins/rings/op1/support.cc`) |
 | `LICENSE-MIT` | Beads' WowAndFlutter terms (the wobble's design) |
 
@@ -72,7 +74,7 @@ range) and `"fine_step": 273` (0.1 dB).
 | `page2_defaults [16384, 0, 0]` | taken from the controls by the packer (never written next to `controls`) |
 | `knl::Instance` (the position's scratch buffer) | one `TapeSat` in `.bss`: each of the five relocations has its own |
 | `op1_fx_param_q15` (the stock range table at `0x01DE5C50`) | the SDK's constant ranges, once a block |
-| the screen (`SCREEN_tape`, `tape_drive.svg`) | not ported yet (see "Screen") |
+| the screen (`SCREEN_tape`, `tape_drive.svg`) | `SCREEN_tape_drive` on e9's effect-screen path (see "Screen") |
 
 The page became a held layer (guidelines §4). The mix was already on orange (§4.3), so nothing moved.
 
@@ -108,6 +110,9 @@ The page became a held layer (guidelines §4). The mix was already on orange (§
     3. Run the mono half once when L == R. Not taken now: when the lanes' states differ, the output would differ from
        upstream for the length of a tail.
 - **Memory.**
+- **e9 (2026-11-11, 0.5, the screen):** file 22,384 bytes (SVG 7,815), `.text` 11,104, `.rodata` 1,584, `.bss` 176
+  (the five buffer pointers and the screen's node tables); load 12,864 bytes once (+2,232 over e8's 10,632 with the
+  new `coop_fx_t` field). The state is unchanged (the render publishes nothing: `"scratch": 3392` as before).
 - **e8 (2026-11-11):** the TapeSat and the block copies are in the slot's position buffer (plugin.json `"scratch": 3392`, `coop_fx_scratch`), as kennel's `knl::Instance` had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 11,084 bytes, load 10,628 once.
   - `.text` 9,416, `.rodata` 1,124, `.data` 0, `.bss` 3,372.
   - **Load size 13,912 bytes, x 5 relocations = 69,560 bytes** of heap 0.
@@ -133,31 +138,51 @@ Forbidden constructs found in the upstream plugin (`tape_knl.cc`, `common/knl_fx
 | `knl::ShiftHeld()` reading `0x01dd7f78`, and `knl::Fine` writing word 5 back through `op1_fx_knobs(pos)` | the core's `"fine"` |
 | `op1_fx_param_q15` (`0x01DE5C50`) | constant ranges |
 | `op1_fx_scratch` | `.bss` |
-| `op1_fx_page`, `op1_fx_screen_pos`, `op1_fx_knobs_live`, `op1_screen_draw` | screen only, not ported |
+| `op1_fx_page`, `op1_fx_screen_pos`, `op1_fx_knobs_live`, `op1_screen_draw` | the e9 view (`view->mods`, `view->slot`, `view->knobs`) and `coop_scr_draw` |
 
 The DSP itself had no float, no libc call, no address and no per-sample division. The only `float`, `sin` and `exp`
 are in comments and in the offline generator script.
 
-## Screen
+## Screen (e9, 0.5)
 
-The stock filter page shows until coop has an effect-screen hook (`docs/plugins.md` "Effect controls", "Display").
-The core already shows `GAIN` and its value top left in blue for about a second on fn + blue.
+Kennel's screen (`te-op1-cfw/ports/knl/tape_drive`: `tape_drive.svg` from `gen_tape_drive_knl_svg.py`, the canvas
+"Tape screen" design A "Reels, aligned", 2026-10-27, `tape_knl.cc` ScreenUpdate) on the e9 effect-screen path
+(`docs/plugins.md` "e9"): `tape_drive.svg` (from `gen_tape_drive_svg.py`) and `tape_drive_screen.cc`. It shows
+wherever tape_drive is the effect on the page: FX 1 of the synth, the drum or the master, FX 2 in focus.
 
-Brief for the coop screen, against the manifesto (guidelines §5). It follows te-op1-cfw's design A, "Reels,
-aligned" (2026-10-27, `gen_tape_drive_knl_svg.py`), which is not carried across here. Mock it in the playground
-first.
+| Part | Encoder | What moves it |
+|---|---|---|
+| the wave on the tape between the reels | blue (saturate) | eight variants, soft to square by saturate; dims to the body tone while fn is held |
+| the reels' hubs | green (wobble) | jittered at the wobble's rate, 0.5 Hz (wow) to 8 Hz (flutter), up to 2 units; the right hub a quarter turn behind |
+| the marker on the wow -> flutter scale | green (wobble) | 0..104 units along the scale |
+| the low-pass glyph | white (age) | its corner walks left as the tape wears (clockwise = newer: the corner goes right), dimming toward a worn white |
+| the hiss specks above it | white (age) | a count set, 0..6 as the tape wears |
+| the gain gauge (left) | blue with fn (gain) | the bar about the centre, -6..+6 dB; a bracket while fn is held |
+| the mix gauge (right) | orange (mix) | scaled about its foot |
+| the reels, tape path, head, scale, gauge rails | (none) | still, in the body tone |
 
-- **Blue:** the saturation, as a wave on the tape between the reels (8 poses, switched by visibility).
-- **Green:** the wobble, as the hubs jittering at the wobble's rate (0.5 Hz wow up to 8 Hz flutter), plus a marker on a
-  wow to flutter scale.
-- **White:** the age, as a low-pass glyph whose corner walks left and dims, plus hiss specks counting up.
-- **Orange:** the mix, as a bar scaled from its foot.
-- **The gain** is a bar about the centre, in blue.
-  - Its bracket and readout (sign, dB, tenths) show only while fn is held (`coop_scr_mods`), not on kennel's page-2
-    toggle.
-  - No words at rest.
-- Upstream's polyline reels had a turn-back that R246 draws as a spike (te-op1-cfw Test 52 notes). Check the new art
-  with `pack.py`'s turn-back check.
+What changed from kennel's screen:
+- **Inputs**: the four turns from `view->knobs` (kennel's `knl::ScreenPage1`, the stock pages' values with the LFO);
+  the gain from `view->words[0]` (word 5). Age is mirrored as in the render. Kennel's screen read nothing from the
+  DSP, so the render publishes no display data: the state, the audio and `"scratch"` are unchanged.
+- **Kennel's blue page 2 is fn held** (`view->mods` bit 1): fn + blue turns the gain, so while fn is down the gain's
+  bracket shows and the saturation wave (blue's plain turn) dims to the body tone, as bitcrusher's staircase does.
+- **The dB readout is gone** (kennel's page-2 sign, digit, dot and tenth glyph sets, 4.3 KB): the core's popup names
+  the control and its value when fn + blue turns it (in percent: a `format` field in the controls schema would let it
+  say dB; not built).
+- **Leaner art**: the wave variants have 27 points (2 units apart over the 52-unit gap, one decimal; kennel's had 53,
+  two decimals); lines go without `stroke-linejoin` (a line has no joins); the palette keeps only the four colours the
+  code reads. Kennel's two polygons (the hubs' triangles, the head) are closed polylines, the head without its black
+  fill (it sat on black). Nothing is drawn with raster lines: no large repeated set was left once the readout went.
+- **Colours** are coop's brights (blue 698EFF, green 00ED95, white FFFFFF, orange FF3A5D). Kennel drew the reels, the
+  tape path and the head in a lighter grey (514959) and the rails in the body tone; here all still structure is the
+  one body tone 38354D (the manifesto's "one dim body tone"). The age glyph wears from white toward 8E86B0
+  (kennel: toward 514959).
+- SVG 7,815 bytes (kennel's 15,111), checked by `tools/plugin/pack.py` (R246's parser rules) and by the generator.
+- The animation state (the frame clock, the hubs' phase) is shared by the positions, as kennel's was.
+
+The render is unchanged but for the `coop_fx_t` (`COOP_FX_F_SCREEN`, `&SCREEN_tape_drive`); the audio is
+bit-identical (host test, host and simulator).
 
 ## Gate plan (op1emu, step 9: not run here; one run at a time)
 
