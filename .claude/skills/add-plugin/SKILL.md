@@ -31,14 +31,14 @@ From these, settle:
 | firmware | `.knl` or a kennel SDK → `op1/hundekraft`; `.opmod` / opus plugin-kit → `op1/opus`; `.coop` → `op1/coop`. A plugin with builds for several firmwares gets a `builds` list, one entry per firmware, each with its own `link` (see `plugins/rings/plugin.json` for the shape, with `link` in place of `file`). If it runs on none of these three, stop and tell the user: co-op can't list it. |
 | kind | `synth`, `fx` or `feature` (sequencers, tools, utilities, anything that isn't a sound engine or effect). |
 | author | Whoever made it, as they name themselves: the README's credit, else the release author, else the repo owner's login. A port belongs to the porter, with the original maker in `credits`. Never coldsoldr unless the owner made it. If the README credits several people with no lead, ask the user. |
-| id | Lower case, from the plugin's name (letters, digits, `_`, `-`). An opus plugin's id is `opus.<name>` with `"savedName": "opus.<name>"`. Check `plugins/` for a clash; if the id is taken by a different plugin, add a suffix the way `grids_op1r` did and say so. If it's the same plugin already listed, update that folder instead of making a new one. |
-| link | Where people get it: the latest release page (`https://github.com/<repo>/releases/latest`) if there are releases, else the repo. https only, at most 200 characters. |
+| id | Lower case, from the plugin's name (letters, digits, `_`, `-`). For an opus-only plugin whose own plugin id is `opus.<name>` (LizardMan's), the id is that and `"savedName": "opus.<name>"`; any other opus plugin id (`sammi.erdtree`) doesn't fit `savedName`, so leave it out and use the plain name. A plugin with several builds takes one id for all of them (at most 15 characters if one build is hundekraft). Check `plugins/` for a clash; if the id is taken by a different plugin, add a suffix the way `grids_op1r` did and say so. If it's the same plugin already listed, update that folder instead of making a new one. |
+| link | Where people get it: the latest release page (`https://github.com/<repo>/releases/latest`) if there are releases; else, for several builds, each build's own folder in the repo (with its README and install steps); else the repo. https only, at most 200 characters. |
 | source | The repo URL. |
 | version | The latest release tag without a leading `v`, if there is one; otherwise leave it out. |
 | license | The SPDX id from `licenseInfo` (`GPL-3.0-or-later` if the README says "or later"). Leave it out when the repo has none: a listed plugin may. |
 | requires | The firmware version it needs, if the README says (`hundekraft 3.2.6`, `opus beta 4.1`, `coop e9`). |
 | tags | Up to 8, each 1–20 lower-case letters, digits or hyphens. Start with the kind, then what it is (`granular`, `sequencer`, `mutable-instruments`). |
-| video | Only an `https://…mp4` link the README gives; skip YouTube. |
+| video | An `.mp4` the README links or the repo ships: for a file in the repo, use `https://raw.githubusercontent.com/<repo>/<branch>/<path>.mp4`. Skip YouTube. |
 
 ## 2. Write the folder
 
