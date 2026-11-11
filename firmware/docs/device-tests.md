@@ -2050,4 +2050,38 @@ Compare by ear with the kennel build on hundekraft if you still have it (master 
 **If something is wrong:** power off, then delete the plugin file (the position plays the filter until the file
 returns), or recover as for e6.
 
+## tape_echo 0.1: the kennel tape echo as a coop effect — device test (pending, 2026-11-11)
+
+- `build/plugins/tape_echo.coop` (sha256 `757a047b31e9a6692907b149de1bbe3645bb0c75834bed12100ce1846c3416ae`, 10,664
+  bytes), on an image with e6 and its per-control steps (dev 50e7dbd: gain declares `"step"` / `"fine_step"`, which an
+  older core refuses). Contract: `plugins/tape_echo/README.md`.
+- [C host, GNU simulator] bit-identical with te-op1-cfw's tape echo and the kennel glue, sync included against
+  kennel's tempo lock at 120 BPM (`make -C tests/host/tape_echo` 20,000 blocks; `sim`, 3,000 blocks with the
+  assembly). Simulator compute 15,880 / 16,637 cycles a block.
+- op1emu gate: pending (plan in the README: `det_fx_select.txt`, `det_fx_tape_echo.txt`, `det_fx_reload.txt`, a
+  pristine `det_chord.txt`).
+
+**What to do** (install `tape_echo.coop` with the librarian, power-cycle; play through it):
+1. Synth: T3, shift + T3, pick **tape echo**, T3 (FX 1 on). Play short notes: echoes. Blue turn: the echo time (the
+   pitch bends while it moves, no clicks); green: more repeats, past ~90 % it sustains and howls (bounded); white:
+   the repeats get darker and wobble; orange: dry to wet.
+2. White click: the head pattern steps 3, 2+3, 1+2+3, 1+3 ("HEADS 2+3" top left in white), and wraps.
+3. Green click: hold ("HOLD ON" in green): new notes don't enter, the tape keeps looping what it has and fades
+   slowly. Click again to release.
+4. Hold Help and turn blue: "GAIN" moves 0.5 dB a detent (the level into the tape, not the dry); Shift + Help +
+   blue: the same, 0.1 dB a detent.
+4b. Hold Help and turn green: "SYNC 1/8" etc. in green. The echo time jumps (glides) to that division at 120 BPM
+   (1/8 = 250 ms, 1/4 = 500 ms, 1/2 = 1 s) and the blue turn no longer moves it; back to `OFF` and blue sets the time
+   again. It doesn't wrap at either end. Power-cycle: the setting is kept.
+5. The same at drum FX 1, master FX 1 and both FX 2 slots (drop); listen for stereo (L and R echo separately).
+6. Power-cycle: gain, sync and heads kept, hold off. Hold on at the synth, switch to drum and back: hold is off
+   (accepted).
+7. Bypass (T3) and back on: the old echoes are gone (the tape starts clean), no click; the first ~25 ms after a
+   (re)start pass dry (the tape clear).
+8. Copy `/yaffs2/user/coop_stats.txt`: the `cost` line (`fx1_plugin=`, `s2_instr=`, `s2_master=`) and `fxctl`.
+   Expected [I]: 20-35 k a position; over 60 k is a bug.
+
+**If something is wrong:** power off; remove the file with the librarian, or recovery: hold COM at power-on and flash
+the previous coop image (or stock).
+
 Result: (pending)
