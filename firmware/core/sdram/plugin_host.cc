@@ -453,12 +453,12 @@ static const char *load_one(const char *fname, uint8_t *stage)
     /* the old model: one relocated instance per position (P2b), a plugin selected at two positions at once keeps two
      * states in two .bss; e8: one image for all five, the two states in two position buffers */
     const coop_fx_t *inst[POSITIONS];
-    uint8_t *raws[POSITIONS] = { 0 };
+    uint8_t *raws[POSITIONS];                                              /* set as each is taken (an initialiser here became a memset call) */
     for (int k = 0; k < copies; k++) {
         uint8_t *raw = (uint8_t *)MALLOC(cap);
+        raws[k] = raw;
         if (!raw) err = "plugin memory full";
         else {
-            raws[k] = raw;
             uint32_t base = ((uint32_t)(uintptr_t)raw + ARENA_ALIGN - 1) & ~(ARENA_ALIGN - 1);
             uint32_t room = cap - (base - (uint32_t)(uintptr_t)raw), used = 0;
             if (!kn_relocate_far(stage, &in, (uint8_t *)(uintptr_t)base, base, room, coop_exports, coop_exports_count, &err, &used)) {
