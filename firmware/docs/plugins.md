@@ -260,3 +260,21 @@ now passes straight to the stock filter (`plugin_host.cc st_twin`).
 depth on fn + white, mute latch on the orange click; it multiplies by the gain, inverts, mutes).
 `tests/sim/det_fx_controls.txt` walks the five positions; `tests/sim/det_fx_reload.txt` power-cycles the NAND it
 leaves. Packer checks: `tests/tools/test_pack_controls.py`.
+
+## wavefolder 0.1 (2026-11-11, a kennel effect port)
+
+`plugins/wavefolder` (contract, cost and gate plan in its README): te-op1-cfw's FOLD (a sine wavefolder with
+first-order ADAA, `ports/fx/src/fold` at 5aa314b) from the kennel plugin `wavefolder` 0.2. Turns fold, symmetry,
+tone, mix as kennel; fn + blue the input gain (word 5, -6..+6 dB, `"fine": true` so shift + fn + blue is its fine,
+`"random": false`). The upstream stereo path runs at every position; no `"stereo"` flag in plugin.json (a
+`coop_fx_t` is stereo by ABI, and the loader would read the flag as kennel's `op1_fx_stereo_t`).
+- Removed from the kennel wrapper: `knl::Fine` (the shift byte at 0x01DD7F78, rewriting stored words),
+  `op1_fx_param_q15` (the range table at 0x01DE5C50; now the SDK's constant ranges, once a block and only when a
+  word moved), `op1_fx_scratch` (one `Fold` in each relocation's `.bss`), the page-2 press and the screen calls.
+- coop additions: the int32 <-> int16 bus conversion in assembly (`src/bus_bfin.S`), a mix-0 bypass that leaves the
+  bus words untouched, and an L == R shortcut (the mono kernels once while the channel states are equal:
+  bit-identical to the stereo run).
+- Host test `tests/host/wavefolder` (`make TE=<te-op1-cfw>/ports all sim`): bit-identical to the upstream driven as
+  `fold_knl.cc` drove it, natively (C kernels) and in the GNU simulator (assembly). Simulator cost a block: 5,716
+  avg / 6,962 max stereo (upstream `Process` alone 4,807); device estimate 9-15 k [I]. Packed 9,980 bytes, load size
+  10,008 (x 5 = 50,040). op1emu gate: not run yet (plan in the README); device: pending.
