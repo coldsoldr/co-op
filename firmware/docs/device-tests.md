@@ -1892,3 +1892,25 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
   the popup's look over the filter page (counted, not seen: op1emu screenshots are wall-timed).
 
 Result: (pending)
+
+## drive 0.1: the kennel drive effect on coop — device test (pending, 2026-11-11)
+
+Needs the e6 core (effect controls). `build/plugins/drive.coop` (9,608 bytes, sha256
+`2f3dcb9132c5ebc76ae84e06179cebecdc9d0c4d5158771f7223b4cfa506f387`), `plugins/drive/README.md`. The op1emu gate was
+still pending when this was written: run it first.
+
+**What to do** (install `drive.coop` with the librarian, power-cycle):
+1. Synth: T3, shift + T3, pick **drive** (between delay and grid), T3 (FX 1 on). Play a chord. Blue (drive) up: it
+   saturates, the level stays about the same (auto-level). Green (tone): darker left, brighter right, flat at the
+   centre. White (bias): fuller, more even harmonics. Orange (mix): fully left is the dry sound exactly.
+2. Hold Help and turn blue: `GAIN` top left in blue; more grit up, less down, the dry part unchanged. Shift + Help +
+   blue: the same gain in fine steps. Other encoders with Help: nothing.
+3. Check the stereo survives: a wide chord (voice spread) through drive at the synth stays wide.
+4. The same at the drum (T3 on the drum page), the master (mixer T3), and in FX 2 of the instrument and the master.
+5. Power-cycle: the gain is where you left it at every position.
+6. Copy `/yaffs2/user/coop_stats.txt`: the `cost` line (`fx1_plugin=` for FX 1, `s2_instr=` / `s2_master=` for
+   FX 2; budget under 30 k a block, simulator 5.5 k still / 8 k peak moving) and the `fxctl` line.
+
+**If something is wrong:** power off; delete `drive.coop` over SysEx or recover with COM at power-on.
+
+Result: (pending)
