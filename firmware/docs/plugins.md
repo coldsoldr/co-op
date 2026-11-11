@@ -282,3 +282,19 @@ now passes straight to the stock filter (`plugin_host.cc st_twin`).
 depth on fn + white, mute latch on the orange click; it multiplies by the gain, inverts, mutes).
 `tests/sim/det_fx_controls.txt` walks the five positions; `tests/sim/det_fx_reload.txt` power-cycles the NAND it
 leaves. Packer checks: `tests/tools/test_pack_controls.py`.
+
+## Port: bitcrusher (2026-11-11, e6 controls)
+
+te-op1-cfw's kennel bitcrusher (`ports/knl/bitcrusher`, 5aa314b; DSP `ports/fx/src/crush/crush.h`, coldsoldr) as
+`plugins/bitcrusher/` (self-contained: `src/crush.h`, `op1/support.cc`). Notes in `plugins/bitcrusher/README.md`.
+- Turns rate / bits / jitter / mix as kennel (`params[0..3]` normalised from the filter ranges in the render, rate
+  and bits mirrored: clockwise = more). Kennel's blue page word 5 (input gain, -6..+6 dB) is the declared `fn_turn`
+  `gain` on blue, `"fine": true` (shift + fn + blue), `"random": false`. No other presses upstream; no latch.
+- The stereo core runs at every position (kennel: stereo at the master only). Q31 buffers: the crusher reads the top
+  16 bits, the dry side keeps the low bits; bit-identical to upstream << 16 (`tests/host/bitcrusher`, 40,000 blocks,
+  0 mismatches) [C host].
+- Do not set plugin.json `"stereo"` on a coop effect: the loader then checks kennel's `op1_fx_stereo_t` layout
+  (callbacks at +0, +4, +12) and a `coop_fx_t` fails it ("stereo callback outside plugin text") [I: read in
+  `plugin_load.cc`, not run].
+- 1,672 bytes packed, load 1,356 (x5 = 6,780); simulator compute 5.3 k / 6.7 k cycles a block avg / max [C simulator];
+  device pending. op1emu gate pending (plan in the README).

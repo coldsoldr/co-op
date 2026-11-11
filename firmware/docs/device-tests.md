@@ -1912,3 +1912,29 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
   the popup's look over the filter page (counted, not seen: op1emu screenshots are wall-timed).
 
 Result: (pending)
+
+
+## bitcrusher 0.1 (port of the kennel bitcrusher, e6 controls) — device test (pending, 2026-11-11)
+
+- On the e6 package (`build/pkg/op1_246_coop_e6.op1`, above); `build/plugins/bitcrusher.coop` (1,672 bytes),
+  installed with the librarian, then a power cycle. Notes: `plugins/bitcrusher/README.md`.
+- [C host] bit-identical to te-op1-cfw's crush core and kennel mapping (`tests/host/bitcrusher`). op1emu gate: pending
+  (the README's plan: `det_fx_select.txt`, `det_fx_controls.txt`, `det_fx_reload.txt` with bitcrusher alone on the NAND).
+
+**What to do** (play a chord or a drum loop through each):
+1. Synth: T3, shift + T3, pick **bitcrusher**, T3 (FX 1 on). Blue clockwise: a higher rate (cleaner), anticlockwise
+   down to 500 Hz (heavy aliasing). Green clockwise: more bits; anticlockwise down to 2 bits. White: jitter (the
+   rate gets rough, noisy). Orange: mix; at the bottom the dry sound unchanged.
+2. Hold Help and turn blue: "GAIN" top left in blue; the crusher is driven harder (+6 dB at the top, clipping) or
+   softer; with mix at 0 the sound must not change. Shift + Help + blue: the same gain in fine steps. Clicks and the
+   other encoders' Help layers do nothing.
+3. Spread up, a chord at the synth position: both sides crush, the placement kept (stereo at every position is new).
+4. The same on FX 2 (drop), on the master (mixer T3) and its FX 2, and on the drum.
+5. Power-cycle: the gain is as you left it at every position.
+6. Copy `/yaffs2/user/coop_stats.txt`: the `cost` line (`fx1_plugin=`, `s2_instr=`, `s2_master=`) and `fxctl`.
+   Budget: under 30 k a block (simulator: 5.3 k avg, 6.7 k max).
+
+**If something is wrong:** delete `bitcrusher.coop` with the librarian and power-cycle (sounds saved on it play the
+filter until it returns); recovery as e6.
+
+Result: (pending)
