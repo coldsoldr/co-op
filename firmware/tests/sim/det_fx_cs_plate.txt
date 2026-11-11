@@ -1,0 +1,109 @@
+# cs_plate (plugins/cs_plate) at the synth FX 1 position, alone on the NAND (the last row of the stock FX list):
+# select it as det_fx_select.txt does, switch FX 1 on (a second T3: FX 1 is off in the pristine sounds), then a
+# chord and its tail through the plate, its controls, the freeze latch and a size change under a ringing tail.
+# Guest-timed; op1emu: `turn ENC cw 2` = one detent; size has 4 detents a step.
+#   38.0 s  chord C E G, released at 40.0 s: the tail rings (decay 16384, mix 11469 by default)
+#   41.0 s  fn + blue 4 detents up: size step 4 -> 5 (shown "6")            -> fxctl p0 w5 = 5
+#   42.5 s  fn + green 2 detents up: diffusion 22938 + 656 = 23594          -> w6 = 23594
+#   43.5 s  fn + white 1 detent up, then shift + fn + white 1 fine up: motion 9830 + 328 + 20 = 10178 -> w7 = 10178
+#   45.0 s  chord again, released at 46.0 s; 46.5 s orange click: freeze on (latch bit 0) -> the tail holds
+#   50.0 s  fn + blue 8 detents down under the frozen tail: size 5 -> 3 (fade, crossfade, fade in; the tail carries on)
+#   55.0 s  orange click: freeze off, the tail decays; 57.0 s shift + fn + blue (undeclared: fxctl ignored +1)
+#   58.0 s  a last chord, released at 59.0 s, then the tail to the end.
+# Expected (stats): `plugins seen 1 loaded 1 failed 0`, no fault; `fxctl fx 1 turns 4 fine 1 clicks 2 latches 2
+# ignored 1 ... p0=<blocks>i1:3/23594/10178/0`; the cost line's `fx1_plugin=` (emulator figure, device 10-35 % higher).
+# Counts and words are [I] until the first run.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 96
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36000
+tap t3 200
+at 37000
+tap t3 200
+at 38000
+press c4
+press e4
+press g4
+at 40000
+release c4
+release e4
+release g4
+at 41000
+press help
+at 41300
+turn enc1 cw 8
+at 41800
+release help
+at 42500
+press help
+at 42800
+turn enc2 cw 4
+at 43200
+release help
+at 43500
+press help
+at 43800
+turn enc3 cw 2
+at 44100
+press shift
+at 44300
+turn enc3 cw 2
+at 44600
+release help
+at 44800
+release shift
+at 45000
+press c4
+press e4
+press g4
+at 46000
+release c4
+release e4
+release g4
+at 46500
+tap enc4 200
+at 50000
+press help
+at 50300
+turn enc1 ccw 16
+at 50800
+release help
+at 55000
+tap enc4 200
+at 57000
+press shift
+at 57200
+press help
+at 57400
+turn enc1 cw 2
+at 57700
+release help
+at 57900
+release shift
+at 58000
+press c4
+press e4
+press g4
+at 59000
+release c4
+release e4
+release g4
+wait 20000
+screenshot /root/op1emu-work/cs_plate_end.ppm
+wait 3000
+quit
