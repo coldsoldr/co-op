@@ -264,9 +264,8 @@ with the four turns, as before, all written through `Patch::SetFxParams`. FX 2 o
 randomise (the key combination is the synth / drum key's). The stats count draws in `fxctl random`.
 
 **Display.** On FX 1 the stock shows the filter type's page; on FX 2 coop's page. The core draws the control's name
-and value top left in the encoder's colour for ~1.2 s over either (latches show `on` / `off`). A plugin screen for
-effects is not built (the stock page is the filter's): showing the values permanently would take an effect screen
-hook like the engines' case-14 swap (E2), which needs the filter page's screen slot found and swapped per position.
+and value top left in the encoder's colour for ~1.2 s over either (latches show `on` / `off`). e9 (below) adds effect
+screens: an effect that ships one shows it instead of those pages, with the same popup over it.
 
 **Found and fixed on the way.** An FX 2 holding the stock filter (what an empty FX 2 takes when FX 1 is a plugin) is a
 coop twin of the stereo filter class, whose init and render the package points at `coop_fx_init_st` /
@@ -684,3 +683,141 @@ could not hold). With rings (666,064) and saw (2,320 + its voice state) the owne
 New sim scenarios: `tests/sim/det_fx_two_pos.txt` (one plugin at synth FX 1, instrument FX 2 and master FX 2 at once;
 `det_fx_two_pos_first.txt` for a plugin on the first row of the FX list) and `tests/sim/det_fx_switch.txt` (cs_hall /
 tape_echo switched at synth FX 1 and at instrument FX 2: one init per selection). Gate: `docs/device-tests.md` "e8".
+
+## e9 (2026-11-11): effect screens
+
+The owner's decision after e8: effect plugins get real screens, and the nine kennel effect ports get their kennel art
+and animation back. Built and gated in op1emu; the device test is pending (`docs/device-tests.md` "e9").
+
+**The hook** (`core/sdram/engine_screen.cc`, `engine_screen.S`; the engines' E2 path, extended):
+- Every plugin effect runs as the stock filter type, whose page is screen id 0x0B (`ScreenId::for_fx(5)`). For each
+  effect with a screen, coop builds an object of the iter screen class with id 0x0B (`SCREEN_CTOR`, the table entry put
+  back), a copy of iter's vtable with update / init pointed at coop's wrappers, and loads the SVG from the plugin file
+  (`../../plugins/<file>`, as for engines). Built on the Gfx thread on the first frame after the whole boot scan
+  (`g_plugins_scan_done`, new: set after the position buffers are taken), once the stock filter screen has its document.
+- `ScreenId::for_fx`'s case 5 (jump-table word `0x018F7FF8`, stock `0x01A3BF26`, kennel 3.1 `make_firmware.py`
+  DATA_PATCHES; checked against the stock word by `tools/l1_stereo_insert.py`) goes to `coop_fx_screen_case5`, which
+  calls `coop_fx_screen_select`: table slot 0x0B gets the shown effect's object, or the stock filter screen. The same
+  select runs every frame before the stock update (`coop_screens_frame`), so a lift / drop or a position change that
+  posts no new id still swaps; E2's frame fix resets the document that left the table.
+- **Which effect is shown**: the effect page's position byte (`0x01DF4E3C`: 0 synth, 1 drum, 3 master) and FX 2's focus
+  there (`coop_fx2_focused`). FX 2 in focus: slot 3 / 4 and the plugin FX 2 holds; else FX 1: slot 0 / 1 / 2, a plugin
+  when the position's type is the filter and its selector word names one. A plugin without a screen, a stock type, or
+  a screen that was not built: the stock page, as before e9.
+- **FX 2**: a plugin with a screen in focus gets the filter id as its page (`coop_fx2_post_screen` posts `for_fx(5)`, the
+  pop hook rewrites an effect-page id to it, `coop_fx2view.cc`); the stock "FX OFF" overlay follows FX 2's on / off state
+  there, as for stock types; coop's own FX 2 page is drawn only for a plugin without a screen. The core's name / value
+  popup and the pending-pick name draw over a plugin's screen as over the stock pages.
+
+**The ABI** (`sdk/coop_plugin.h` "e9", additive, API 1):
+```c
+#define COOP_FX_F_SCREEN 0x1u                 /* coop_fx_t.flags: coop_fx_t.screen is present */
+typedef struct coop_fx_t { uint32_t magic, api, flags; int (*init)(int); void (*render)(...);
+                           const struct coop_fx_screen_t *screen; } coop_fx_t;   /* screen read only with the flag */
+typedef struct coop_fx_view_t {
+    int32_t slot;            /* 0..4, the position shown */
+    int16_t knobs[4];        /* 0..32767 as the stock pages see them: FX 1 read_fx_param (LFO included), FX 2 its Q15 */
+    int16_t words[3];        /* params[5..7] as render gets them */
+    uint16_t latches;        /* params[8] */
+    int32_t mods;            /* bit 0 shift, bit 1 fn */
+    const volatile void *state; uint32_t state_bytes;   /* the position buffer (scratch effects), read only */
+    int32_t live;            /* the effect has been initialised at slot since it was selected there */
+    int32_t reserved[4];
+} coop_fx_view_t;
+typedef struct coop_fx_screen_t { void (*init)(void *scr); void (*update)(void *scr, int dt, const coop_fx_view_t *v); } coop_fx_screen_t;
+```
+- The core fills the view on the GUI thread every frame (`engine_screen.cc view_fill`, `plugin_host.cc
+  coop_fx_view_core`). FX 1's knobs come from `read_fx_param(0x01DF4E38, pos)` normalised with the filter type's ranges
+  (kennel's `op1_fx_knobs_live`, so the LFO's movement shows; the float bits are converted without float code); FX 2's
+  are the slot's Q15 knobs. The words are clamped to the declared controls as the render gets them (FX 1 the shown
+  sound's stored words, FX 2 the slot record). live = the position initialised this plugin last (`g_cur`), or FX 2
+  built and initialised it.
+- The screen draws with the E2 exports (`sdk/coop_screen.h`): **no new export**. `sdk/coop_fx_screen.h` (new, header
+  only) is te-op1-cfw's `fx_screen.h` / `screen_anim.h` on those exports, so a kennel screen ports line for line
+  (`Find`, `FindAll`, `SetMatrix`, `ShowOne`, `Steps`, `FrameClock`, `PhaseStep`, `SinQ15`, `Published<T>`).
+- **Display data** (the e9 path): what the DSP publishes for the screen lives in the effect's own state in its position
+  buffer: a small struct of whole 32-bit words written once a block after the DSP ran (one store each), initialised in
+  init, read by the screen through `view->state` only while `view->live` (`coop_scr::Published<T>(view)`); never DSP
+  working state (guidelines §5.3). Chosen over a core-owned display block because it needs no export, so such a file
+  still loads on a pre-e9 core. Users: bitcrusher and freq_shift (the input level), tape_echo (the time word in force,
+  the sync division in force, the 96th-note length at the tempo).
+- **Compatibility, decided: a core before e9 safely ignores a screen.** The flag is in the entry object, which an older
+  core never reads (it checks magic, api and the two callbacks), and the screen uses only E2 exports: the file loads
+  there and plays with the stock filter page. The header flags are unchanged (e6's page-2 and e8's scratch bits: the
+  port files still need e8 for the position buffers). An e9 core refuses a coop_fx_t flag it does not know ("effect
+  flags not supported yet"), a screen object or callback outside the plugin, and a screen without its SVG.
+- **pack.py**: an effect's `"screen"` and `COOP_FX_F_SCREEN` go together, `coop_fx_t.screen` must be relocated to the
+  screen symbol, unknown coop_fx_t flags are refused, and an effect's SVG is at most 16,384 bytes (guidelines §5.3:
+  about 8 KiB of art). Tests: `tests/tools/test_pack_fx_screen.py`; host stubs of the screen calls for the port tests:
+  `tests/host/screen_host.cc`.
+- `coop_fx_t` grew a member: every effect file is 4 bytes larger (stereo_delay and test_fx too: they no longer pack
+  byte-identically to e8; nothing else changes for them).
+
+**Memory.**
+- Heap 0, in the e7 budget, once: the screen code is in the image (relocated once since e8), and the screen object coop
+  builds (`struct escr`, a 248-byte heap-0 block) is charged at load for every file with a screen (engines too, since
+  e9).
+- The SVG is not in heap 0: the stock loader parses it into R246's TE heap (TLSF, 8.25 MB at `0x0106B7CC`), where the
+  stock pages' documents live. The stats show `te_used` / `te_max` (TLSF's own counters, its signature checked:
+  `te_sig 710539865` = 0x2A59FA59 [C op1emu]) and `fscr_te`, what the effect screens' SVGs took. A screen whose SVG
+  would leave the TE heap under 1 MiB + 64 KiB is not built (`fscr_skipped`; the effect keeps the stock page). op1emu:
+  ~4.7 MB of the 8.25 MB in use after boot; bitcrusher's SVG took 15,744 bytes.
+  **For the owner:** the budget (heap 0) does not charge the SVG, because the SVG never comes from heap 0; the TE heap
+  has its own guard and its own figures. (Kennel 3.1.4 added 1.5 MB of heap 0 to the TE heap when it ran low.)
+- Per port, e9 adds 1,292-3,560 bytes of image and the 248-byte screen object (table below). On the device the owner's
+  15-file set used 1,572,304 of 1,572,864 bytes: with e9's ~22 KB more for the nine ports that set will have one file
+  refused (named in the stats and the inventory) unless something is removed.
+
+**The nine ports** (each README's "Screen (e9)" section has the parts table and what changed from kennel's screen):
+
+| Plugin | Version | Packed e8 -> e9 | Load e8 -> e9 (+) | SVG e9 (kennel's) | Display words |
+|---|---|---|---|---|---|
+| bitcrusher | 0.2 | 1,864 -> 12,292 | 1,480 -> 3,640 (+2,160) | 6,995 (29,389) | input level |
+| drive | 0.2 | 9,468 -> 19,516 | 8,484 -> 9,972 (+1,488) | 7,567 (18,132) | none |
+| ensemble | 0.4 | 9,740 -> 19,928 | 8,996 -> 11,300 (+2,304) | 6,415 (11,306) | none |
+| freq_shift | 0.2 | 10,156 -> 23,396 | 9,668 -> 13,228 (+3,560) | 7,711 (16,570) | input level |
+| tape_drive | 0.5 | 11,088 -> 22,384 | 10,632 -> 12,864 (+2,232) | 7,815 (15,111) | none |
+| tape_echo | 0.2 | 10,164 -> 23,616 | 9,136 -> 12,604 (+3,468) | 8,118 (26,607) | time, division, 96th |
+| wavefolder | 0.2 | 9,720 -> 14,304 | 9,120 -> 10,412 (+1,292) | 2,579 (16,386) | none |
+| cs_hall | 0.2 | 17,064 -> 23,184 | 16,220 -> 17,616 (+1,396) | 3,927 (4,047) | none |
+| cs_plate | 0.2 | 10,944 -> 19,332 | 10,068 -> 12,304 (+2,236) | 4,507 (4,861) | none |
+
+("e8" is the e8 file rebuilt with the 6-member coop_fx_t: the e8 table + 4 bytes.) Audio: every port's host test
+(`tests/host/<id>`, host and GNU simulator) is still bit-identical. The published words cost cycles: bitcrusher's and
+freq_shift's meters (~0.3 k / ~0.7 k a block in the simulator), tape_echo's ~60.
+
+**Conventions the ports follow** (coop's, not kennel's; the open points for the owner are in each README):
+- Kennel's page 2 (a press flipped an encoder to its second word) is gone since e6: the screens show **the fn layer
+  while fn is held** (the gain bracket, the fn controls' marks) and dim what the plain turns own. Latches (hold, freeze)
+  show from `view->latches`; steps clicks (freq_shift's mode, tape_echo's heads) are always drawn by the art.
+- **Readout glyphs are dropped** (kennel's dB / division / pattern numbers, 4-16 KB each): the core's popup names the
+  value on every turn and click. It shows continuous values in percent; dB / ms need a `format` field in the controls
+  schema (not built).
+- Large repeated sets are drawn by the code with raster lines (`coop_scr_line`): bitcrusher's clock row, tape_echo's
+  beat ticks, wavefolder's wave, drive's diode fill. Their coordinates are the SVG's units [C op1emu, bitcrusher].
+- Coop's brights (blue 698EFF, green 00ED95, white FFFFFF, orange FF3A5D), one body tone 38354D, pencil DFD9FF; a part
+  an encoder moves (its fn layer included) in that encoder's colour; kennel's polygons / ellipses as polylines or paths.
+
+**Stats**: the `plugins` line gains `fscr_built fscr_failed fscr_skipped fscr_swaps fscr_updates fscr_te te_used te_max
+te_sig`. Build tag `e9`. Scenarios: `tests/sim/det_fx_screen.txt` (FX 1, fn, FX 2, lift, drum, synth, master),
+`det_fx_screen_reload.txt` (after a power cycle), `det_fx_screen_switch.txt` (five effects in turn at synth FX 1, the
+11-file set), `det_fx_screen_others.txt` (the other five ports in turn at synth FX 1, each with fn held). Gate:
+`docs/device-tests.md` "e9".
+
+**Gate, the 11-file set** (the nine e9 ports + rings + saw, fresh NAND, op1emu 2026-11-11) [C op1emu]:
+- `plugins seen 11 loaded 11 failed 0 ... over_budget 0`, `fscr_built 9 fscr_failed 0 fscr_skipped 0`, no fault in
+  either run.
+- **Budget: `plugmem budget 1572864 used 1450224`** (122,640 bytes left; e8's 11-file set ~1.43 MB), `scratch_files 9
+  fxbuf 134784 fxbuf_mem 673960 fxbuf_short 0`, `heap_free_boot 14280420`; end of run `heap_largest 1166164 heap_free
+  1263988` (e8: 1185388 / 1287100).
+- **TE heap**: the nine SVGs took `fscr_te 118896`; `te_used 4667560 te_max 5107504` (`det_fx_screen_switch.txt`),
+  `te_used 4739232 te_max 5107504` (`det_fx_screen_others.txt`) of the 8.25 MB: ~3.4 MB to spare, the 1 MiB + 64 KiB
+  guard far off.
+- Screens: every port showed its own screen when picked, the stock pages for stock types (cwo's cow), the stock "FX OFF"
+  overlay over drive's screen before FX 1 was switched on, and the fn layer (the gain bracket, the plain parts dimmed)
+  while fn was held. `det_fx_screen_switch.txt`: `fscr_swaps 25 fscr_updates 3890`; `det_fx_screen_others.txt`:
+  `fscr_swaps 58 fscr_updates 5577`.
+- Pristine `det_chord.txt`, e9 vs e8: one e9 run and one e8 run **identical over 2,159,572 frames** (onset frame
+  1,395,120 in both; rms 154.7 / 118.7, width 0.2339, as e8's gate). Other runs of either image start the chord at
+  another frame (1,395,122, 1,395,130) and differ from it by up to ~3,400 LSB after `--align 200` with equal levels: the
+  run-to-run spread is wider than e8's notes say (it is not a one-block shift every time), but the same for both images.

@@ -2389,3 +2389,65 @@ listening test for the device.
 port files do not load on e7 (refused, named in its stats): put the e7-era port files back or remove them.
 
 Result: (pending)
+
+## e9: effect screens, the nine kennel effect ports with their screens — device test (pending, 2026-11-11)
+
+What changed (`docs/plugins.md` "e9"): an effect plugin can ship its own screen, shown on the effect page instead of
+the stock filter page (FX 1) or coop's FX 2 page, at every position; the core's name / value popup draws over it. The
+nine kennel effect ports (bitcrusher 0.2, drive 0.2, ensemble 0.4, freq_shift 0.2, tape_drive 0.5, tape_echo 0.2,
+wavefolder 0.2, cs_hall 0.2, cs_plate 0.2) have their kennel art and animation back. Their audio is unchanged
+(bit-identical host tests). The SVGs go to the TE heap, not the plugin budget; heap 0 pays a 248-byte screen object a
+file plus the screen code (1,292-3,560 bytes a port). The e9 port files load on an e8 image too (the screen is ignored
+there); an e8 port file on e9 plays with the stock page [I: by the ABI, not run].
+
+- `build/pkg/op1_246_coop_e9.op1` sha256 (below, the package commit), copy in Downloads with the nine e9 port files
+  and rings.coop and saw.coop (overwriting the older copies). Release image as e8 (`--tape-stereo --set-word
+  g_coop_spread=32767`, no `COOP_M1`), build tag `e9`.
+
+**Gate notes (op1emu, 2026-11-11, one run at a time; e9 image `--tape-stereo --set-word g_coop_spread=32767 --set-word
+g_coop_force_stereo_out=1`, the release core of commit d4f26c7 on dev)** [C op1emu]:
+
+| Run | Result |
+|---|---|
+| bitcrusher alone, `det_fx_screen.txt` (twice) | no fault; `fscr_built 1 fscr_swaps 6 fscr_updates 1589 fscr_te 15744 te_used 4724000 te_max 4966440`; synth FX 1 and instrument FX 2 both ran it (`p0=...i2 p3=...i1`) |
+| the same NAND, power cycle, `det_fx_screen_reload.txt` | no fault; `fscr_built 1` after the boot scan, `fscr_swaps 1 fscr_updates 1891`; the screen on the effect page, at FX 2 and back |
+| **11 files (the nine e9 ports + rings + saw), fresh NAND**, `det_fx_screen_switch.txt` | no fault; `plugins seen 11 loaded 11 failed 0 ... over_budget 0`; `fscr_built 9 fscr_failed 0 fscr_skipped 0 fscr_swaps 25 fscr_updates 3890 fscr_te 118896 te_used 4667560 te_max 5107504`; `plugmem budget 1572864 used 1450224 ... scratch_files 9 fxbuf 134784 fxbuf_mem 673960 fxbuf_short 0`, `heap_free_boot 14280420`, end `heap_largest 1166164 heap_free 1263988`. Screens in order: bitcrusher, cs hall, the stock cwo page, wavefolder, cs plate |
+| the same set, fresh NAND, `det_fx_screen_others.txt` | no fault; 11 loaded, `fscr_built 9 fscr_swaps 58 fscr_updates 5577`, `te_used 4739232`; screens in order: drive (the stock "FX OFF" overlay over it until FX 1 was switched on), ensemble, freq shift, tape drive, tape echo, each with its fn layer while fn was held |
+| pristine `det_chord.txt`, e9 vs e8 (`e8.ldr`) | one run of each identical over 2,159,572 frames (onset 1,395,120, rms 154.7 / 118.7, width 0.2339 as e8's gate): no regression. Other runs of either image start the chord 2-10 frames later and differ by up to ~3,400 LSB after `--align 200`, equal levels: run-to-run, the same for both images |
+
+What the screens looked like in op1emu (each the kennel screen redrawn in coop's colours):
+- bitcrusher: a sine and its stepped (crushed) copy, a clock-tick row above, the input meter right.
+- drive: a schematic, input resistor and diode pair into a tube, the output line in green.
+- ensemble: two delay lines with their moving taps, an LFO dial and a level bar right.
+- freq shift: a half-circle dial, the shift needle and a green arc, an arrow and mode circle top right.
+- tape drive: two reels with green play triangles, the tape path with a wave under them, a saturation curve right.
+- tape echo: a tape loop with four heads (the active one white), the feedback path with green arrows, a sync glyph top right.
+- wavefolder: the folded wave between two limit lines, a transfer-curve icon right.
+- cs hall: a hall outline and the decay envelope below it; cs plate: a plate with rings and the decay envelope.
+- With fn held: a blue bracket around the gain meter (left), the plain turns' parts dimmed.
+
+Not shown in op1emu [I]: drum and master positions and FX 2 with the ports other than bitcrusher; the look on the
+device's real display (colours, flicker); the animation rate under load; tape_echo's beat ticks (the bottom row showed
+a plain line in op1emu at the default sync setting).
+
+**What to do** (once the package exists):
+1. Flash `op1_246_coop_e9.op1`. Copy the nine e9 port files, rings and saw to the plugins folder, all eleven
+   together. Power-cycle. It must boot to the tape. Copy `/yaffs2/user/coop_stats.txt`: the `plugins` line (`loaded
+   11 failed 0`, `fscr_built 9 fscr_failed 0 fscr_skipped 0`, `fscr_te`, `te_used`, `te_max`) and the `plugmem` line
+   (op1emu: `used 1450224` of `budget 1572864`).
+2. Pick each effect at **synth FX 1** and look at its screen (list above): it is the plugin's screen, not the stock
+   filter page; turn each encoder, the part it moves follows and the popup names the value.
+3. The same at **FX 2** (drop), at **drum FX 1** and **master FX 1 / FX 2**: the screen of the effect at that position,
+   switching right when you move between positions (lift / drop, synth / drum / mixer).
+4. Hold **fn**: the fn layer (the gain bracket, dimmed plain parts); release: back to normal.
+5. **Switch** plugins at one position (e.g. bitcrusher -> cs hall -> cwo -> wavefolder), and two plugins at two
+   positions (e.g. tape_echo at synth FX 1, cs_plate at FX 2): each redraw is the right screen, no flicker, no
+   leftover of the previous screen, stock types still show their own pages.
+6. Let it play a few minutes and copy the stats again: the `plugins` line (`heap_free`, `heap_largest`, `te_used`,
+   `te_max`, `fscr_updates`) and the `cost` line (`fx1_plugin`, `s2_instr`, `s2_master`).
+7. Your 15-file set: with e9's ~22 KB more one file may be refused (named in the stats and the inventory); note which.
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e8.op1` (or stock). The
+e9 port files load on e8 with the stock pages.
+
+Result: (pending)
