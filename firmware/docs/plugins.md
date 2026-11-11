@@ -433,3 +433,21 @@ cleared in render, 4 KB a block (21 blocks dry), not in init (guidelines §2.3).
 bit-identical to the upstream through kennel's glue, host C and the Blackfin build in the simulator (18-22 k cycles a
 block, 26 k peak there). Load size 102,932 bytes (~515 KB for five relocations). No `format` field in the controls
 schema yet, so predelay can't be shown in ms. op1emu gate and device test pending (`docs/device-tests.md` "cs_hall").
+
+## cs_plate (2026-11-11): the plate reverb, a kennel effect port on e6
+
+`plugins/cs_plate` (the contract and port notes are in its `README.md`). It is te-op1-cfw's Dattorro plate
+(`ports/fx/src/plate`, 9ced415), true stereo at every position, from its unreleased kennel build
+(`ports/knl/cs_plate`). The four turns are kennel's four knobs. fn + blue is size as 8 `steps`: the plate's 8 tank
+lengths were quantised in kennel's glue, so guidelines §3.1 make them steps. It has 4 detents a step, no wrap and no
+fine. fn + green is diffusion and fn + white is motion, both continuous with their fine. Freeze is a latch on the
+orange click. Notes for the other effect ports:
+- kennel's `"stereo": true` is not carried into plugin.json (the loader would take it for `op1_fx_stereo_t`).
+- `constexpr double` table builders become integer literal tables, checked against the upstream build by the host test.
+- A large state (here 76 KB) is not cleared in `init`. `init` arms a counter, and the renders clear 8 KB a block
+  with the dry passing (2.2 k cycles a block in the GNU simulator, 10 blocks), then reset. Kennel's half-rate
+  restart on a 5 ms pause (`op1::Cycles`) goes, since coop calls `init` at every restart.
+- The turns' range units map to Q15 with kennel's `op1_fx_param_q15` formula and the SDK's constant ranges.
+- Host test: `tests/host/cs_plate` (host: C both sides; GNU simulator: the plugin's assembly against upstream's C),
+  bit-identical. Cost in the simulator: 17,456 cycles a block, of which the plate is 7,956 and the half-rate path
+  ~7,500. The op1emu gate and the device run are pending; the gate scenario is `tests/sim/det_fx_cs_plate.txt`.

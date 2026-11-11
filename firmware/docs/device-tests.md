@@ -2132,4 +2132,38 @@ flash `op1_246_coop_e5.op1` (or stock).
 Listen for: crackle or dropouts with the size knob moving (the crossfade block is the peak), a frozen tail that grows
 or dies, a click at the clear.
 
+## cs_plate 0.1: coldsoldr's plate reverb, the first ported kennel effect with controls — device test (pending, 2026-11-11)
+
+- `build/plugins/cs_plate.coop` (11,460 bytes, sha256 `5eb1368044fae3674632fcb964e075037c9fd642425d8a2fa3a052bc012d8770`),
+  `plugins/cs_plate` (`README.md` has the contract). It needs the e6 package or later (effect controls); an older
+  core refuses the file ("plugin flags not supported yet"). Install it from the co-op Settings tab (or
+  `tools/coop_sysex.html`) and power-cycle.
+- Host: bit-identical to te-op1-cfw's plate and its kennel half-rate path (`make -C tests/host/cs_plate`; the
+  simulator run checks the assembly against upstream's C too). GNU simulator: 17,456 cycles a block steady, 19,828
+  max. op1emu gate: pending (the plan is in the README). Load size ~87.5 KB a position (x 5 = ~438 KB of heap 0).
+
+**What to do**:
+1. Synth: T3, shift + T3, pick **cs plate**, T3 (FX 1 on). Play chords and short notes: a bright plate tail. Turn
+   blue (decay: short to very long), green (damp: bright to dark), white (pre-delay: a gap before the tail, up to
+   200 ms), orange (mix: dry to fully wet). Listen for clicks, zipper noise while turning, crackle or dropouts.
+2. Hold Help (fn) and turn blue: "SIZE 1".."8" top left, one step every 4 detents, stopping at 1 and 8 (no wrap).
+   Play a long chord and change size under it: the tail dips for about 30 ms and carries on at the new size, with no
+   click. Help + green: diffusion (smeared onsets at the top, grainy echoes at 0). Help + white: motion (chorus-like
+   shimmer at the top, a static tail at 0). Shift + Help + green / white: the same values in fine steps. Shift +
+   Help + blue: nothing (size has no fine).
+3. Click orange: "FREEZE ON"; the tail holds forever and new notes are not added to it. Change size while frozen:
+   the frozen tail carries on at the new size. Click again: it decays.
+4. Freeze at the synth, switch to drum and back: freeze is off (the stock restarts the instrument effect; accepted).
+5. The same at the drum position, the master (mixer T3) and both FX 2 slots (drop, shift + blue to cs plate, blue
+   push, T3 on). Run it on two or three positions at once with a six-voice chord: no dropouts.
+6. Randomise on the synth FX page (synth key + right): size, diffusion and motion change with the four turns, and
+   freeze stays as it was.
+7. Save the sound, power-cycle: size, diffusion and motion come back; freeze is off.
+8. Copy `/yaffs2/user/coop_stats.txt`: the `cost` line (`fx1_plugin=` at a stock position, `s2_instr=` / `s2_master=`
+   in FX 2), from a moment with a chord ringing and the encoders turning; the `plugins` line (`heap_largest`); the
+   `fxctl` line.
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash the e6 package (or stock), then
+delete the plugin from the Settings tab.
+
 Result: (pending)
