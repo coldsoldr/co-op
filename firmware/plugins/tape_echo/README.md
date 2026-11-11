@@ -37,9 +37,12 @@ flutter (Beads) and the half-rate output stage (Clouds) follow Mutable Instrumen
 - **sync** (fn + green, word 6, steps, saved, no wrap, randomised, default `off`): kennel's tempo lock. `off`: the
   blue turn sets the time. `1/16t`, `1/16`, `1/8t`, `1/16.`, `1/8`, `1/4t`, `1/8.`, `1/4`, `1/2t`, `1/4.`, `1/2`
   (shortest first): the time follows that division at the tempo, and the blue turn does nothing to the time until sync
-  is back on `off` (its value is kept). The time glides to a new division like any time change. **The tempo is 120
-  BPM** (a 16th 125 ms, a half note 1 s) until the core exports the project tempo
-  (`docs/request-tempo-export-tape-echo.md`): kennel's own fallback, guidelines §2.3. At a tempo where a division is
+  is back on `off` (its value is kept). The time glides to a new division like any time change. **The tempo is the
+  project tempo** (0.3, the tempo screen's BPM, which the tape and the sequencer follow): the core's export
+  `coop_tempo_bpm_q16` (`sdk/coop_plugin.h`, e10; `docs/request-tempo-export-tape-echo.md`), read once a block, so a
+  tempo change moves a synced time while the echo plays (it glides there). 120 BPM (a 16th 125 ms, a half note 1 s)
+  when the core reports no tempo, kennel's own fallback (guidelines §2.3). A core before e10 refuses the 0.3 file
+  ("an import is not exported by the core"): use tape_echo 0.2 there (sync at 120 BPM). At a tempo where a division is
   over 1.5 s (1/2 below 80 BPM, 1/4. below 60, 1/2t below 54) the time falls back to the turn, as kennel skipped such
   divisions. Arithmetic as kennel's (`DivisionWord`, `TapeEchoTimeWord`): the division's delay as a time word.
 - **hold** (green click, latch bit 0 of `params[8]`, not saved, never randomised): the input off, the loop gain exactly
@@ -74,7 +77,7 @@ No `"stereo"` flag: a `coop_fx_t` is stereo by its ABI, and coop's loader reads 
 | blue press: page 2, blue turns the input gain (word 5); shift + blue a tenth of a dB (`knl::Fine`, reading the shift byte at 0x01DD7F78 and rewriting the stored word) | fn + blue (0.5 dB), shift + fn + blue its fine (0.1 dB) | every layer is held (guidelines §4); the core does the fine step |
 | green press: hold, `OP1_PRESS_LATCH` (`op1_fx_page[pos][1]`) | green click, latch bit 0 | guidelines §7.1 |
 | white press: page 2, white clicks the head pattern (word 7, `ClickMode(word, 4)`: 1536 a click) | white click, steps, word 7 holds the step index | enumerations are steps (§3.1); a sound saved by kennel decodes clamped (word 7 >= 3 plays as `1+3`) |
-| shift + blue on page 1: a shifted click walked the time through the tempo divisions (1/16T .. 1/2; the tempo read at 0x01AADAD4); a free turn unlocked it; not saved | fn + green sync, steps (`off` + the 11 divisions), word 6, saved; 120 BPM until a tempo export | the owner, 2026-11-11: shift + turn is the core's fine step and the plugin never sees shift; a sync setting belongs to the sound |
+| shift + blue on page 1: a shifted click walked the time through the tempo divisions (1/16T .. 1/2; the tempo read at 0x01AADAD4); a free turn unlocked it; not saved | fn + green sync, steps (`off` + the 11 divisions), word 6, saved; the tempo from the core's export `coop_tempo_bpm_q16` (0.3; 120 BPM in 0.1-0.2) | the owner, 2026-11-11: shift + turn is the core's fine step and the plugin never sees shift; a sync setting belongs to the sound |
 | `op1_fx_param_q15` (the stock range table at 0x01DE5C50) | the SDK's constant filter ranges, once a block | no firmware addresses in a plugin (§2.1) |
 | the instance in the position's scratch buffer (`op1_fx_scratch`) | `.bss` (one instance per relocation, i.e. per position) | §2.3 |
 | `TapeEcho::Init` clears the 133 KB tape on every (re)start, in the audio interrupt | the clear is spread over the first 17 blocks (2,048 pairs a block, 25 ms), the dry passing through (accepted as it is by the owner, 2026-11-11: listen for it) | a slow init doesn't ship (§2.3) |
@@ -112,7 +115,8 @@ What changed from kennel's screen:
   the clearing blocks included; read through `Published<>` while `view->live`): `time`, the time word the echo gets
   (the turn's, or the sync division's: `SyncedTime`), `div`, the division in force (0..10, 1/16T .. 1/2; -1 when sync
   is off or the division fell back to the turn), and `beat`, a 96th note at the tempo in use (Q4 samples at
-  22.05 kHz; 7350 at the fixed 120 BPM, so the ticks follow a tempo export without a screen change). Kennel's screen
+  22.05 kHz; 7350 at 120 BPM; 0.3: at the project tempo, so the ticks follow a tempo change; before the first render
+  the screen reads the export itself). Kennel's screen
   read its `TimeLock::div[]` and recomputed the time word itself. Before the first render (`time` -1) the screen
   shows the blue turn. `TapeEchoTimeSamplesQ4` (the word's delay, for the dot and the ticks) is back in
   `src/tape_echo_core.cc` for the screen; the render doesn't call it.
@@ -144,6 +148,10 @@ positions and the head fills against the SVG are the gate's to confirm.
   pairs, every head read serving both channels, so stereo costs about 1.56x the mono path rather than 2x (te-op1-cfw
   simulator: 9.2 MHz stereo, 5.9 MHz mono, whole effect). coop runs it at every position (synth, drum, master and both
   FX 2 slots): the instrument positions now hear the echo in stereo, and each position is a full stereo instance.
+- **0.3 (2026-11-11, the tempo export):** file 23,892 bytes, `.text` 9,060, `.rodata` 3,560, `.bss` 184 (8 more: the
+  tempo the render last saw and its 96th, so the 16-step division runs only when the tempo moves); one import more,
+  `_coop_tempo_bpm_q16`. Simulator 16,090 avg / 16,844 max at 120 BPM (+41 over e9's 16,049: the export call and the
+  compare a block; without the cache it was 16,440, the division every block).
 - **e9 (2026-11-11, 0.2, the screen):** file 23,616 bytes (SVG 8,118), `.text` 8,864, `.rodata` 3,564, `.bss` 176 (the
   screen's node tables and the five buffer pointers); load 12,604 bytes once (+3,468 over e8's 9,136 with the e9
   `coop_fx_t.screen` field); the state 134,776 bytes (12 more: the three display words), `"scratch": 134784`
@@ -181,10 +189,21 @@ positions and the head fills against the SVG are the gate's to confirm.
   blocks (noise, saws, impulses, silence, L != R; knobs walking and jumping; feedback over 1; gain, sync, heads and
   hold changing; restarts by pause and by re-init), on the host: **bit-identical** (11,521 blocks changed by the
   effect, 9,194 with sync on). The reference takes sync from kennel's own lock (`TimeLock::Word`, `DivisionWord`,
-  `kDivision96ths`) at its 120 BPM fallback, and both builds print the 11 division time words at 120 BPM
-  (8543 11940 14362 15350 17746 20156 21142 23565 25961 26948 29358), which must agree.
-- `make -C tests/host/tape_echo sim`: the same in the Blackfin simulator, the plugin's assembly kernels against the
-  original's C: **bit-identical** over 3,000 blocks, plus the cycle figures above.
+  `kDivision96ths`), and both builds print the 11 division time words, which must agree; at 120 BPM
+  8543 11940 14362 15350 17746 20156 21142 23565 25961 26948 29358.
+- **0.3, the tempo:** the same run at 120, 90, 133.5 and 174 BPM and a walk through seven tempos (90, 133.5, 174, 120,
+  60, 200, 45; a change every 1,300 blocks, sync on and off). The coop build gets the core's export through
+  `tests/host/tempo_host.cc` (the IEEE single the stock would hold, through the core's own conversion,
+  `core/include/coop_tempo.h`); the reference gets kennel's `TempoIncrement` for the same tempo (the export's BPM x
+  1662149.125, truncated: 199457895 at 120, kennel's constant). **Bit-identical at every tempo** (20,000 blocks each).
+  96ths: 9800 at 90, 6606 at 133.5, 5068 at 174, 7350 at 120. The coop build also checks `NinetySixthQ4` against
+  kennel's quotient at every tenth of a BPM from 20.0 to 400.0 (3,801 of 3,801 equal) and the fallback (0, over 400:
+  120 << 16). Against the increment the stock itself computes (bpm x 1662149.125 in single precision, truncated), 27
+  of the 3,801 tempos differ by one Q4 unit (a sixteenth of a sample at 22.05 kHz a 96th; e.g. 90 BPM: kennel on the
+  device 9799, coop 9800): kennel's rounding, not a coop change. The 120 run is the scenario as before the export.
+- `make -C tests/host/tape_echo sim`: the same in the Blackfin simulator (at 133.5 BPM, `SIM_TEMPO=1335`; also run at
+  1200), the plugin's assembly kernels against the original's C: **bit-identical** over 3,000 blocks, plus the cycle
+  figures above.
 - `make -C tests/host/tape_echo tables`: regenerates `src/tape_echo_tables.h` from the original's constexpr tables.
 - `tools/asm_lint.py plugins/tape_echo/src/*.S`: 0 packets flagged (neither kernel has a parallel packet).
 

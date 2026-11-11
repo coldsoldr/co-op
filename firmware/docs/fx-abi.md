@@ -93,3 +93,28 @@ its image once plus what it grows the five buffers by (the buffers are counted o
 its per-voice state. A file that would take the total over the budget is refused at boot, named in the stats
 (`plugfile`) and the inventory. The nine ports with the buffers: 758,248 bytes (2,014,450 x5 before e8; tape_echo alone
 was 718,260).
+
+## Tempo (e10, 2026-11-11: built; `docs/request-tempo-export-tape-echo.md`)
+
+`uint32_t coop_tempo_bpm_q16(void)` (a core export, `sdk/coop_plugin.h`, `sdk/coop_exports.cc` entry 15): the project
+tempo, the tempo screen's BPM, which the tape and the sequencer follow, as Q16 (120 BPM = 7,864,320).
+- **Source** [C bytes]: the stock's own BPM word, an IEEE single at `0x018C1878` (`core/include/fw_addrs.h`
+  `FW_TEMPO_BPM_F32`, `symbols/sdram.sym` `d_tempo_bpm_f32`). `SetTempo(float)` (`0x01A5E9A4`) stores it first and
+  derives the rest from it: the sequencer's tick period (`0x01B60524`) and the LFOs' tempo increment (`0x01AADAD4`,
+  bpm x 1662149.125, the word kennel's `TempoIncrement` read). The tape controller and the sequencer read the float
+  through its getter `0x01A5E7A0`. The float is the more direct word: it is what the tempo screen sets, exact (the
+  increment goes through a single-precision product, so kennel's 96th at 90 BPM was 9799 Q4 samples, not 9800), and
+  the image holds 120.0f there, so it is valid from boot (the increment word is .bss, 0 until the first SetTempo).
+- **Conversion** (`core/include/coop_tempo.h`): integer only, the single's exponent and mantissa shifted into Q16
+  (truncated). Outside 20..400 BPM (0, negative, NaN) it returns 120 << 16, kennel's fallback. The stock's SetTempo
+  asserts 40..220.
+- **Use**: a plain word read, no lock: from render (once a block), init or the screen. Divide by it once a block, never
+  per sample (tape_echo: a 16-step restoring division, redone only when the tempo changes).
+- **Follows a change**: SetTempo stores the word as the tempo is turned; a render reads it at the next block (op1emu
+  gate below; device pending).
+- **Not covered** [I]: external sync (MIDI clock; sync sources 2/4/5 in te-op1-cfw `docs/sequencer-interface.md` §4)
+  may set the tempo another way; a bar or beat phase for effects that sync to the bar is not exported yet (later).
+- **Compatibility**: a file that imports `coop_tempo_bpm_q16` on a core before e10 is refused at load with "an import
+  is not exported by the core" (`plugin_load.cc` `relocate`: every import is checked against the core's table before
+  anything is written; the file's memory is freed, the reason kept for the stats and the inventory, the boot goes on).
+  It never plays there at a wrong tempo.

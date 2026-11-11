@@ -1,0 +1,57 @@
+# tape_echo (alone on the NAND) synced to the project tempo (the e10 export coop_tempo_bpm_q16): the tempo screen sets
+# a tempo other than 120 first, tape_echo at synth FX 1 with sync 1/4 (fn + green, 8 steps), single short notes, then
+# the tempo is changed while the effect runs and the notes again. Guest-timed; op1emu `turn ENC cw 2` = one detent.
+# Head pattern 3 (the default): one repeat every TIME, so the echo period is the quarter note: 60 / bpm seconds.
+# Read: the WAV's repeats after each note (tools/wav_envelope.py or an onset scan), the stats fxctl line's tempo_q16
+# (the export at the last write: the second tempo) and tempo_inc (the stock LFO increment beside it).
+# Section A: notes at 44.0 s and 50.0 s at the first tempo; section B: notes at 61.0 s and 67.0 s at the second.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap tempo 200
+at 27500
+turn enc1 ccw 60
+at 30000
+tap synth 200
+at 31500
+tap t3 200
+at 33000
+press shift
+at 33200
+tap t3 200
+at 33700
+release shift
+at 35000
+turn enc1 cw 96
+at 38000
+tap seq 200
+at 39000
+tap synth 200
+at 40000
+tap t3 200
+at 41000
+tap t3 200
+at 42000
+press help
+at 42300
+turn enc2 cw 16
+at 43000
+release help
+at 44000
+tap c4 150
+at 50000
+tap c4 150
+at 56000
+tap tempo 200
+at 57000
+turn enc1 cw 100
+at 60000
+tap synth 200
+at 61000
+tap c4 150
+at 67000
+tap c4 150
+wait 90000
+screenshot /root/op1emu-work/te_tempo_end.ppm
+wait 3000
+quit

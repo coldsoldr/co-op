@@ -22,6 +22,8 @@
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
 #include "coop_build.h"
+#include "fw_addrs.h"                                                  /* e10: FW_TEMPO_LFO_INC */
+extern "C" uint32_t coop_tempo_bpm_q16(void);                         /* plugin_host.cc (e10) */
 #define STATS_BUILD   COOP_BUILD_TAG                                  /* the package tag (one place, p6k): proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
 #define WINDOWS       24                                              /* p5a: 2 minutes (was 12) */
@@ -640,6 +642,7 @@ static void write_file(void)
     { static char rep[4096]; coop_plugin_report(rep, (int)sizeof rep); put(rep); }   /* e7: plugmem, then a plugfile line a file not loaded */
     put("fxctl"); kv("fx", g_ctl_fx); kv("turns", g_fxc_turns); kv("fine", g_fxc_fine); kv("clicks", g_fxc_clicks); kv("latches", g_fxc_latches);   /* e6 */
     kv("ignored", g_fxc_ignored); kv("cancelled", g_fxc_cancelled); kv("popup_frames", g_fxc_popup_frames); kv("from_params", g_fxc_from_params); kv("master_saves", g_master_saves); kv("random", g_fxc_random);
+    kv("tempo_q16", coop_tempo_bpm_q16()); kv("tempo_inc", *(const volatile uint32_t *)FW_TEMPO_LFO_INC);   /* e10: the export, the stock LFO increment beside it */
     for (int p = 0; p < 5; p++) {                                       /* per position: blocks rendered with the block, words 5/6/7/latch last passed */
         char k[4] = { ' ', 'p', (char)('0' + p), 0 }; put(k); put("="); putn(g_fxc_blocks[p]); put("i"); putn(g_fxc_inits[p]);
         for (int w = 0; w < 4; w++) { put(w ? "/" : ":"); putn((uint32_t)(uint16_t)g_fxc_seen[p][w]); }

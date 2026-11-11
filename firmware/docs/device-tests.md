@@ -2493,4 +2493,40 @@ stock picture's sha256 and the stock string are checked first. te-boot and its o
 **If something is wrong:** power off; hold COM at power-on and flash `op1_246_coop_e9.op1` (or stock). A wrong picture
 cannot stop the boot (it is only data the display shows), and te-boot is reached before any app code runs.
 
+## tape_echo 0.3: sync follows the project tempo (the e10 tempo export) — device test (pending, 2026-11-11)
+
+What changed (`docs/request-tempo-export-tape-echo.md`, `docs/fx-abi.md` "Tempo"): the core exports the tempo screen's
+BPM (`coop_tempo_bpm_q16`, read from the stock's float BPM word); tape_echo's sync (fn + green) follows it instead of
+a fixed 120 BPM, live while it plays, and its screen's beat ticks with it. Needs the e10 image: tape_echo 0.3 on an
+older core is refused at boot ("an import is not exported by the core", in the stats and the inventory); 0.2 still
+loads there (sync at 120). The stats `fxctl` line now ends its counters with `tempo_q16` (the export: BPM x 65536) and
+`tempo_inc` (the stock LFO increment, bpm x 1662149.125).
+
+- `build/plugins/tape_echo.coop` 0.3 (23,892 bytes), on the e10 image.
+- [C host, GNU simulator] bit-identical with the kennel reference at 120, 90, 133.5, 174 BPM and a seven-tempo walk
+  (`make -C tests/host/tape_echo`; `sim` at 133.5 and 120), `plugins/tape_echo/README.md` "Tests".
+
+**op1emu gate:** (pending)
+
+**What to do** (flash the e10 image, install `tape_echo.coop` 0.3 with the librarian, power-cycle):
+1. Copy `/yaffs2/user/coop_stats.txt`: the `plugins` line says tape_echo loaded, failed 0.
+2. Press the tempo key (metronome) and set the tempo to **90** BPM. Synth: T3, shift + T3, pick **tape echo**, T3 so
+   FX 1 is on. Hold Help and turn green to **SYNC 1/4**.
+3. Start the sequencer or the metronome at 90 and play short notes on the beat: each repeat lands on the next beat
+   (a quarter at 90 = 667 ms), steady against the click. Try 1/8 (333 ms) and 1/2 (1.33 s) too.
+4. Set the tempo to **140** while the echo is still repeating: the repeats move to the new beat (the time glides
+   there, a short pitch bend, no click). A quarter at 140 = 429 ms. Turn the tempo slowly up and down: the echo
+   follows.
+5. Hold Help: the beat ticks over the tape are closer together at 140 than at 90 (they follow the tempo).
+6. Sync `OFF`: the blue turn sets the time again, the tempo no longer moves it.
+7. Power-cycle with the project at 140: after the boot the echo is at 140 with no change (the tempo is read from boot
+   on). A tempo between 40 and 220 (the stock's range) all work; 1/2 falls back to the blue turn below 80 BPM (over
+   1.5 s).
+8. Copy `coop_stats.txt` again: `tempo_q16` = BPM x 65536 (140: 9175040; 90: 5898240), `tempo_inc` = BPM x 1662149
+   (140: about 232700880).
+9. [I] With MIDI clock sync (if you use it): does the echo follow the external tempo? Note what happens.
+
+**If something is wrong:** power off; remove `tape_echo.coop` with the librarian (or put 0.2 back), or recovery: hold
+COM at power-on and flash the previous coop image (or stock).
+
 Result: (pending)

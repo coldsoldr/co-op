@@ -121,8 +121,11 @@ What the words mean:
     and its growth of the position buffers; an old-model effect five times its load size (a 129 KiB `.bss` takes
     645 KiB); an engine its image and voice state. Keep the state to what the sound needs. A file over the budget is
     refused at boot with the reason in the stats and the inventory.
-- Tempo: an effect that syncs reads the core's beat clock (an export, [proposed]: tempo, MIDI clock or tape speed),
-  and falls back to 120 BPM as kennel does.
+- Tempo: an effect that syncs reads the project tempo from the core's export `coop_tempo_bpm_q16()` (e10, [now]:
+  BPM as Q16, the tempo screen's, live; `sdk/coop_plugin.h`, `docs/fx-abi.md` "Tempo"), once a block, and divides by
+  it once a block, never per sample. The export already returns 120 BPM when the tempo is unknown, as kennel fell
+  back. A file that imports it is refused by a core before e10. A beat or bar phase (MIDI clock, sync to the bar) is
+  still [proposed].
 
 ### 2.4 Cost (MUST)
 - An effect slot SHOULD stay under 30 k cycles a block. Over 60 k is a bug to fix before release (the budget is

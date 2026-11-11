@@ -1,7 +1,23 @@
 # Request: the project tempo as a core export (from the tape_echo port, 2026-11-11)
 
-**Status:** open; for the firmware work, not built. The port ships its sync control at 120 BPM without it
-(`plugins/tape_echo/README.md`, fn + green).
+**Status:** built, 2026-11-11 (branch tempo-export, commit b40b34b; packaged with e10): the export
+`uint32_t coop_tempo_bpm_q16(void)` (`sdk/coop_exports.cc` entry 15, `core/sdram/plugin_host.cc`,
+`core/include/coop_tempo.h`; `docs/fx-abi.md` "Tempo") and tape_echo 0.3, which reads it once a block. Host tests
+bit-identical with the kennel reference at 120, 90, 133.5, 174 BPM and a seven-tempo walk; op1emu gate and device test
+in `docs/device-tests.md` ("tape_echo 0.3"). Device: pending.
+
+What was built, against the request below:
+- **The source is the stock's float BPM at `0x018C1878`, not the LFO increment at `0x01AADAD4`** [C bytes,
+  `symbols/sdram.sym`]: `SetTempo(float)` `0x01A5E9A4` stores the float first and derives the increment from it
+  (`(uint)(bpm x 1662149.125f)`, through a single-precision product); the tape and the sequencer read the float. It is
+  exact, it holds 120.0f in the image (valid from boot; the increment word is .bss, 0 until the first SetTempo), and it
+  is the word the tempo screen sets.
+- Q16 by integer shifts of the single (no float op); 120 << 16 outside 20..400 BPM.
+- tape_echo: the 96th note is floor(882000 x 2^16 / bpm_q16) (a 16-step 32-bit division, only when the tempo moved);
+  at 120 BPM 7350, as before, so the 120 audio is unchanged. The screen's ticks follow (the render publishes the 96th
+  every block).
+- A tape_echo 0.3 file on a core before e10: refused at load, "an import is not exported by the core".
+- Not done: the beat / bar phase (not needed by tape_echo).
 
 ## What the plugin needs
 
