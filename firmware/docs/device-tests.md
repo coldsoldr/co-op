@@ -2347,10 +2347,24 @@ flags"); test_fx, stereo_delay, rings and saw are unchanged.
   profile 5,900 / 7,572 cycles a block. Simulator costs, cycles a block (avg / max): drive 7,662 / 8,126 moving, ensemble
   12,815 / 14,824, freq_shift 9,833 / 11,095 (L == R) and 14,450 / 15,950, tape_drive 9,194 / 9,419, tape_echo 15,987 /
   16,746, wavefolder 5,749 / 7,046 (stereo); about what they cost before e8 (one pointer load a block more).
-- op1emu gates [pending: run after e7's gates, one at a time]: pristine `det_chord.txt` (against the spread),
-  `det_fx_controls.txt` and `det_fx_reload.txt` (test_fx, the old model), the 11-file NAND (the nine ports, rings, saw)
-  loading everything and a fresh NAND booting to audio, tape_echo / cs_hall / cs_plate each at three positions at once
-  (`det_fx_two_pos.txt`, `det_fx_two_pos_first.txt`), switching at a position (`det_fx_switch.txt`), the stats lines.
+
+**Gate notes (op1emu, 2026-11-11, one run at a time; e8 image `--tape-stereo --set-word g_coop_spread=32767 --set-word
+g_coop_force_stereo_out=1`, release core of commit 48a3d15 on branch e8-shared-buffers)** [C op1emu]:
+
+| Run | Result |
+|---|---|
+| **11 files (the nine e8 ports + rings + saw), fresh NAND**, `det_fx_select.txt` | boots and plays (46.0 s of audio, no fault): **all 11 load**, `heap_short 0 over_budget 0`; the chord through wavefolder (last FX row) `fx1_plugin=6339/18112`; end `heap_largest 1185388 heap_free 1287100` |
+| the same NAND, second boot | boots (63.8 s, no fault), 11 loaded; `heap_free_boot 14627756` (fresh 14301284); end `heap_largest 1518940 heap_free 1613572` |
+| pristine `det_chord.txt`, e8 vs e7 (`e7_st.ldr`) | the known one-block onset shift (31.635 vs 31.637 s), then max 2 LSB with `--align 200`, equal rms / width (154.7 / 118.6, 0.2339): no regression. `plugmem ... used 0 ... scratch_files 0 fxbuf 0`, end `heap_free 2729484` (e7: 2729484) |
+| `det_fx_controls.txt` + `det_fx_reload.txt` (test_fx, the old model: 5 relocations, `used 720`) | `p0=36116i2:11197/0/28121/0 p1=59736i2:17749/1/8192/0 p2=78479i1:15019/0/8192/1 p3=88195i1:19114/1/21903/0 p4=69934i1:16384/0/8848/0`, `turns 11 fine 1 clicks 3 latches 4 ignored 1 cancelled 1 master_saves 1 random 2` (gains as e6 / e7; the drawn words differ run to run); after the power cycle `p0=87791i2:11197/0/28121/0 p1=2402i1:17749/1/8192/0 p2=90193i1:15019/0/8192/0 p3=89588i1:19114/1/21903/0 p4=89588i1:16384/0/8848/0`: words kept, latches 0 |
+| tape_echo at synth FX 1 and instrument FX 2 at once (`det_fx_two_pos.txt`) | no fault; `p0=21645i1 p3=42028i1`; `fx1_plugin=16891/18310 s2_instr=15642/16202`; `plugmem ... used 683152 ... scratch_files 1 fxbuf 134784 fxbuf_mem 673960 fxbuf_short 0`, `heap_free_boot 15058684`, end `heap_free 2042916` |
+| cs_hall the same (`det_fx_two_pos_first.txt`) | no fault; `p0=22390i1 p3=45473i1`; `fx1_plugin=19971/21573 s2_instr=18732/20191`; `used 450072 ... fxbuf 86752 fxbuf_mem 433800` |
+| cs_plate the same | no fault; `p0=22390i1 p3=42043i1`; `fx1_plugin=19157/20648 s2_instr=17896/18974`; `used 398480 ... fxbuf 77664 fxbuf_mem 388360` |
+| switching (`det_fx_switch.txt`, cs_hall + tape_echo) | no fault; synth FX 1 cs hall -> tape echo -> cs hall: `p0=54141i3` (one init a selection); instrument FX 2 first -> second -> first: `p3=29968i3`; `plugmem ... used 699424 ... scratch_files 2 fxbuf 134784` (the larger declaration) |
+
+Not shown in op1emu [I]: the master FX 2 pick in `det_fx_two_pos.txt` landed on a stock type (s2_master ran stock), so
+a third simultaneous position was not exercised; the restart's audible result (no old tail after a switch) is a
+listening test for the device.
 
 **What to do** (once the package exists):
 1. Flash `op1_246_coop_e8.op1`. Copy the nine e8 port files (bitcrusher, drive, ensemble, freq_shift, tape_drive,

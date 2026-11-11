@@ -678,8 +678,8 @@ slot it renders (2).
 | **nine** | | | | **84,288** | buffers **673,960** | **2,014,450** |
 
 All nine with the buffers: **758,248 bytes** of heap 0 (was 2,014,450 plus block headers, which the 1,536 KiB budget
-could not hold). With rings (666,064) and saw (2,320 + its voice state) the owner's 11-file set needs ~1.43 MB of the
-1,572,864 budget [I: arithmetic from the packed headers until the gate's `plugmem used`].
+could not hold). With rings (666,064) and saw (2,320 + its voice state) the owner's 11-file set takes 1,426,632 bytes of the
+1,572,864 budget [C op1emu: `plugmem ... used 1426632`, all 11 loaded, `heap_short 0`; on e7 the same set loaded 9 (1,451,544) and with the budget off the heap check refused three]. Gate results: `docs/device-tests.md` "e8".
 
 New sim scenarios: `tests/sim/det_fx_two_pos.txt` (one plugin at synth FX 1, instrument FX 2 and master FX 2 at once;
 `det_fx_two_pos_first.txt` for a plugin on the first row of the FX list) and `tests/sim/det_fx_switch.txt` (cs_hall /
