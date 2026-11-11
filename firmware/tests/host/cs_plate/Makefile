@@ -15,10 +15,12 @@ BFIN ?= $(HOME)/op1-toolchain/bfin/bin
 
 INC := -I$(COOP) -I../../../sdk -I$(TE) -I$(TE)/fx -I$(TE)/clouds -I$(TE)/rings
 WARN := -Wall -Wno-unused-variable -Wno-unused-function -Wno-class-memaccess
-HOST_FLAGS := -O2 -std=c++17 $(WARN) -DOP1_HOST_SIM
-SIM_FLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns $(WARN) \
+# e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
+SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
+HOST_FLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 $(WARN) -DOP1_HOST_SIM
+SIM_FLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns $(WARN) \
              -DOP1_HOST_SIM -DOP1FX_NO_ASM -DOP1CLOUDS_NO_ASM
-COOP_SRC := $(COOP)/cs_plate.cc $(COOP)/plate.cc $(COOP)/halfband.cc
+COOP_SRC := $(COOP)/cs_plate.cc $(COOP)/plate.cc $(COOP)/halfband.cc ../fx_scratch_host.cc
 COOP_ASM := $(COOP)/plate_bfin.S $(COOP)/halfband_bfin.S
 REF_SRC := $(TE)/fx/src/plate/plate.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clouds/src/core/clouds_tables.cc \
            $(TE)/rings/src/fixed_tables.cc

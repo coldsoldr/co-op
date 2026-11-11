@@ -93,6 +93,7 @@ Blackfin always runs the assembly (`plate_bfin.S`, `halfband_bfin.S`, unchanged 
 `tools/asm_lint.py`: 0 packets flagged). `PlateTankRunMonoAsm` stays in `plate_bfin.S` unused.
 
 ## Init and memory (guidelines §2.3)
+- **e8 (2026-11-11):** the plate and the half-rate path are in the slot's position buffer (plugin.json `"scratch": 77664`, `coop_fx_scratch`; the clear counter and block buffers beside them in a `Slot`), as kennel's `knl::Instance` had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 10,940 bytes, load 10,064 once.
 
 - `init(slot)` only sets a counter (a few cycles). The renders that follow zero the state 2048 words (8 KB) a block,
   for 10 blocks (~14.5 ms), leaving the block untouched: the dry passes, as kennel's restart block did (accepted as

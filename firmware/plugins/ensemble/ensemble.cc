@@ -12,7 +12,8 @@
  * The gain scales the wet path's input only (the decimated signal before the core): at mix 0 it changes nothing.
  *
  * Kennel -> coop: the render is stereo at every position (kennel's synth and drum positions ran it mono: one swept
- * copy set, the left side only); the instance is this relocation's .bss (kennel: the position's scratch buffer); the
+ * copy set, the left side only); the instance is in the slot's position buffer as on kennel (e8: coop_fx_scratch,
+ * plugin.json "scratch"; the file is relocated once, its .bss holds the five buffer pointers, init resets it all); the
  * fine step on the gain is the core's (kennel's knl::Fine read the shift byte at a firmware address); the screen is
  * the stock filter page until effect screens exist (README.md has the brief).
  *
@@ -42,7 +43,10 @@ struct Instance {
   int32_t gain_q14;      /* the input gain, Q14 */
 };
 
-Instance g;              /* this relocation's: each position has its own copy of the plugin's .bss */
+#ifdef COOP_FX_SCRATCH_BYTES
+static_assert(sizeof(Instance) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
+#endif
+Instance* g_inst[COOP_FX_SLOTS];   /* .bss: each slot's state, in its position buffer (bound by init) */
 
 inline int32_t Clamp15(int32_t v) { return v < 0 ? 0 : (v > 32767 ? 32767 : v); }
 
@@ -83,16 +87,20 @@ void Gain(int16_t* x, int32_t gain_q14) {
 }
 
 int Init(int slot) {
-  (void)slot;
-  g.half.Stop();         /* the first render restarts: filters and core cleared there, the input passed through */
-  g.raw_valid = false;
+  if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+  uint32_t bytes = 0;
+  Instance* g = static_cast<Instance*>(coop_fx_scratch(slot, &bytes));
+  g_inst[slot] = (g && bytes >= sizeof(Instance)) ? g : nullptr;
+  if (!g_inst[slot]) return -1;
+  g->half.Stop();        /* the first render restarts: filters and core cleared there, the input passed through */
+  g->raw_valid = false;
   return 0;
 }
 
 void Render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
-  (void)slot;
+  if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   /* not bound: dry */
   if (n != kFxBlockSize) return;                      /* the core always hands 64; anything else passes through */
-  Instance* in = &g;
+  Instance* in = g_inst[slot];
   if (!in->half.Begin(Cycles())) {                    /* a restart: the input passes through */
     in->ensemble.Init();
     in->half.End();

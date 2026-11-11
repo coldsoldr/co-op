@@ -6,11 +6,13 @@ HOST_CXX ?= g++
 TE ?= ../../../../../te-op1-cfw/ports
 COOP := ../../../plugins/bitcrusher
 BUILD ?= ../../../build/host/bitcrusher
+# e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
+SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
 INC := -I$(COOP) -I../../../sdk -I$(TE)/knl -I$(TE) -I../../../third_party/kennel/synth_sdk
-CXXFLAGS := -O2 -std=c++17 -Wall -Wextra -Wno-unused-function -Wno-int-to-pointer-cast
-SRCS := bitcrusher_compare.cc $(COOP)/bitcrusher.cc
+CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wextra -Wno-unused-function -Wno-int-to-pointer-cast
+SRCS := bitcrusher_compare.cc $(COOP)/bitcrusher.cc ../fx_scratch_host.cc
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
-SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -Wno-unused-function -DBC_PROFILE
+SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -Wno-unused-function -DBC_PROFILE
 
 .PHONY: all profile clean
 all: $(BUILD)/bitcrusher_compare

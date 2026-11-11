@@ -19,6 +19,7 @@
 
 extern "C" const coop_fx_t FX_drive;
 extern "C" void drive_ref_init(void);
+extern "C" long coop_fx_scratch_check(const coop_fx_t* fx, const int16_t* params, long blocks);   /* ../fx_scratch_host.cc */
 extern "C" void drive_ref_render(int16_t* l, int16_t* r, const int16_t* p, int n);
 
 namespace {
@@ -180,5 +181,9 @@ int main() {
            static_cast<unsigned long>(total / (kRuns - 100)), static_cast<unsigned long>(mx));
   }
 #endif
+  {   /* e8: two positions at once and a restart on a dirty position buffer (tests/host/fx_scratch_host.cc) */
+    int16_t p[COOP_FX_PARAMS_MIN] = { 9000, 15000, 6000, 28000, 0x5300 + 32, 20000 };
+    if (coop_fx_scratch_check(&FX_drive, p, 1500)) bad++;
+  }
   return bad || ident ? 1 : 0;
 }

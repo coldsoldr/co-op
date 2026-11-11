@@ -108,6 +108,7 @@ The page became a held layer (guidelines §4). The mix was already on orange (§
     3. Run the mono half once when L == R. Not taken now: when the lanes' states differ, the output would differ from
        upstream for the length of a tail.
 - **Memory.**
+- **e8 (2026-11-11):** the TapeSat and the block copies are in the slot's position buffer (plugin.json `"scratch": 3392`, `coop_fx_scratch`), as kennel's `knl::Instance` had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 11,084 bytes, load 10,628 once.
   - `.text` 9,416, `.rodata` 1,124, `.data` 0, `.bss` 3,372.
   - **Load size 13,912 bytes, x 5 relocations = 69,560 bytes** of heap 0.
   - The packed file is 11,064 bytes.

@@ -82,7 +82,12 @@ char g_plugins_last_name[NAME_MAX];
                                                                              S2: 3 instrument slot 2, 4 master slot 2 */
 /* e6: ctl = the file declares controls (then the render gets the core's params block, below); wmax[w] = the highest
  * value word 5 + w may hold (-1: no control there, passed as 0); def5 = the words' defaults (the file's page-2 defaults) */
-struct plug { const coop_fx_t *fx; const coop_fx_t *inst[POSITIONS]; char name[16]; int16_t def[4]; int ctl; int16_t wmax[3], def5[3]; };
+/* e8: a scratch file (KN_FLAG_SCRATCH) is relocated once: inst[0..4] are the same object, and the effect keeps its
+ * state in the position buffers (coop_fx_scratch). Until the buffers exist (the end of the boot scan) such a file
+ * waits in `pend` (fx 0: not selectable yet); raw = its image block, fi = its row in the boot report. */
+struct fileinfo;
+struct plug { const coop_fx_t *fx; const coop_fx_t *inst[POSITIONS]; char name[16]; int16_t def[4]; int ctl; int16_t wmax[3], def5[3];
+              const coop_fx_t *pend; void *raw; struct fileinfo *fi; uint32_t img; };
 static struct plug g_plug[SLOTS];                                          /* by number */
 struct mapent { char name[16]; uint8_t n, present; };
 static struct mapent g_map[MAP_MAX];
@@ -101,6 +106,8 @@ static struct fileinfo g_finfo[MAX_FILES + SKIP_KEEP];
 static const char *const R_SKIPPED = "more than 32 plugin files";
 static const char *const R_BUDGET = "over the plugin memory budget";
 static const char *const R_HEAP = "not enough memory left for the tape";
+static const char *const R_SCRATCH_BIG = "effect buffer larger than this core gives (repack)";   /* e8 */
+static const char *const R_FXBUF = "no memory for the effect buffers";                       /* e8 */
 static int g_cur[3] = { -1, -1, -1 };                                       /* the plugin each position initialised last */
 static void *g_self[2];                                                    /* the mono filter objects of positions 0 / 1 */
 static int16_t g_params_z[8];
@@ -173,7 +180,7 @@ static void map_save(void *db)
     scat(o, "')");
     db_write(db, sql);
 }
-static int taken(int n) { return g_plug[n].fx != 0 || coop_engine_at(n) != 0; }   /* one number space for both kinds */
+static int taken(int n) { return g_plug[n].fx != 0 || g_plug[n].pend != 0 || coop_engine_at(n) != 0; }   /* one number space for both kinds */
 static int number_for(const char *name)
 {
     int me = -1;
@@ -362,9 +369,30 @@ static int heap0_read(struct heap0 *h, uint32_t node, uint32_t extra)
  * allocation and freeing a refused plugin still hung the boot), and the stock's small blocks after the scan may land
  * in any hole. 1 = yes (or heap 0 cannot be read: then the budget alone decides). */
 static uint32_t g_stage_blk;                                                /* the staging block, live while files load */
+
+/* ---- e8: the position buffers (docs/plugins.md "e8") ----
+ * One working buffer per FX position (0 synth, 1 drum, 2 master, 3 instrument FX 2, 4 master FX 2), owned by the core
+ * and handed to whichever scratch effect is active there (coop_fx_scratch). Sized at boot to the largest declaration
+ * among the scratch files that loaded (32-byte rounded, at most COOP_FX_SCRATCH_MAX), one heap-0 block for all five,
+ * taken at the end of the plugin scan (before the tape's cache) and only when a scratch file loaded. The budget counts
+ * it once: each scratch file is charged its image plus what it grows the five buffers by. */
+static uint8_t *g_fxbuf;                                                    /* POSITIONS x g_fxbuf_bytes, 32-aligned */
+static uint32_t g_scr_max;                                                  /* the size the scan has committed to */
+volatile uint32_t g_fxbuf_bytes, g_fxbuf_mem, g_scratch_files, g_fxbuf_short;
+static uint32_t fxbuf_cost(uint32_t each) { return each ? blk(POSITIONS * each + ARENA_ALIGN) : 0; }
+extern "C" void *coop_fx_scratch(int slot, uint32_t *bytes)
+{
+    uint8_t *b = g_fxbuf;
+    if (slot < 0 || slot >= POSITIONS || !b) { if (bytes) *bytes = 0; return 0; }
+    if (bytes) *bytes = g_fxbuf_bytes;
+    return b + (uint32_t)slot * g_fxbuf_bytes;
+}
+
 static int heap_room_ok(uint32_t cost)
 {
     struct heap0 h;
+    if (!g_fxbuf) cost += fxbuf_cost(g_scr_max);                            /* e8: the buffers still to be taken (off the
+                                                                               break too, at the end of the scan) */
     uint32_t node = blk(g_tape_node ? g_tape_node : 0x80000u);
     if (!heap0_read(&h, node, g_stage_blk)) return 1;
     uint32_t list_nodes = h.nodes - h.top / node;
@@ -396,27 +424,37 @@ static const char *load_one(const char *fname, uint8_t *stage)
         g_cur_info->size = (uint32_t)got;
     }
     for (int k = 1; k < SLOTS; k++)
-        if ((g_plug[k].fx && seq(g_plug[k].name, in.type_name)) || (coop_engine_at(k) && seq(g_eng_name[k], in.type_name)))
+        if (((g_plug[k].fx || g_plug[k].pend) && seq(g_plug[k].name, in.type_name)) || (coop_engine_at(k) && seq(g_eng_name[k], in.type_name)))
             return "another file has the same name";
     if (in.kind == KN_KIND_SYNTH) return load_engine(in, stage, fname);
     if (in.kind != KN_KIND_FX) return "not an effect or a synth engine";
     /* e6: KN_FLAG_PAGE2 = the effect uses words 5..7 (pack.py sets it with "controls", the header's page-2 defaults are
      * theirs). A core before e6 refuses the file here ("plugin flags not supported yet") instead of playing it with
      * words 5..7 at 0 and no latch word. */
-    if (in.flags & ~KN_FLAG_PAGE2) return "plugin flags not supported yet";
+    /* e8: KN_FLAG_SCRATCH = the effect works in the core's position buffers (pack.py sets it with "scratch"); a core
+     * before e8 refuses the bit in kn_parse ("unknown plugin flags"). */
+    if (in.flags & ~(KN_FLAG_PAGE2 | KN_FLAG_SCRATCH)) return "plugin flags not supported yet";
     if (in.controls && !(in.flags & KN_FLAG_PAGE2)) return "effect controls without the page-2 flag (repack)";
+    const int scr = (in.flags & KN_FLAG_SCRATCH) != 0;
+    if (!scr && kn_imports(stage, &in, "_coop_fx_scratch")) return "calls coop_fx_scratch without the scratch flag (repack)";
+    if (scr && in.scratch > COOP_FX_SCRATCH_MAX) return R_SCRATCH_BIG;
     int n = number_for(in.type_name);
     if (!n) return "no free plugin number";
-    /* e7: the budget first (five relocations, one block each), before anything is taken or set */
-    uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN, cost = POSITIONS * blk(cap);
+    /* e7: the budget first, before anything is taken or set. The old model: five relocations, one block each. e8, a
+     * scratch file: one relocation, plus what it grows the five position buffers by (they are counted once). */
+    const int copies = scr ? 1 : POSITIONS;
+    uint32_t each = scr ? (in.scratch + 31u) & ~31u : 0, new_max = each > g_scr_max ? each : g_scr_max;
+    uint32_t grow = scr ? fxbuf_cost(new_max) - fxbuf_cost(g_scr_max) : 0;
+    uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports + ARENA_ALIGN, cost = (uint32_t)copies * blk(cap) + grow;
     if (g_cur_info) g_cur_info->need = cost;
     if (g_plug_mem_used + cost > PLUG_BUDGET) { g_plugins_over_budget++; return R_BUDGET; }
     if (!heap_room_ok(cost)) { g_plugins_heap_short++; return R_HEAP; }
     if (in.controls) { err = coop_fx_set_controls(n, in.controls); if (err) return err; }   /* e6, before anything runs */
-    /* one relocated instance per position (P2b): a plugin selected at two positions at once keeps two states */
+    /* the old model: one relocated instance per position (P2b), a plugin selected at two positions at once keeps two
+     * states in two .bss; e8: one image for all five, the two states in two position buffers */
     const coop_fx_t *inst[POSITIONS];
     uint8_t *raws[POSITIONS] = { 0 };
-    for (int k = 0; k < POSITIONS; k++) {
+    for (int k = 0; k < copies; k++) {
         uint8_t *raw = (uint8_t *)MALLOC(cap);
         if (!raw) err = "plugin memory full";
         else {
@@ -436,6 +474,7 @@ static const char *load_one(const char *fname, uint8_t *stage)
         }
         if (err) { for (int j = 0; j <= k; j++) if (raws[j]) FREE(raws[j]); return err; }
     }
+    for (int k = copies; k < POSITIONS; k++) inst[k] = inst[0];            /* e8: one image serves every position */
     g_plug_mem_used += cost;
     scopy(g_plug[n].name, in.type_name, 16);
     for (int i = 0; i < 4; i++) g_plug[n].def[i] = in.defaults[i];
@@ -449,7 +488,10 @@ static const char *load_one(const char *fname, uint8_t *stage)
     }
     for (int k = 0; k < POSITIONS; k++) g_plug[n].inst[k] = inst[k];
     __asm__ __volatile__("ssync;" ::: "memory");
-    g_plug[n].fx = inst[0];                                               /* selectable from here */
+    if (scr) {                                                             /* e8: selectable once the buffers exist */
+        g_plug[n].pend = inst[0]; g_plug[n].raw = raws[0]; g_plug[n].fi = g_cur_info; g_plug[n].img = blk(cap);
+        g_scr_max = new_max; g_scratch_files++;
+    } else g_plug[n].fx = inst[0];                                        /* selectable from here */
     row_ensure(DB_FACTORY(), "fx_types", g_plug[n].name, g_plug[n].def, n);
     return 0;
 }
@@ -505,6 +547,40 @@ static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fn
     g_engines_loaded++;
     row_ensure(DB_FACTORY(), "synth_types", in.type_name, in.defaults, n);
     return 0;
+}
+
+/* e8: after the scan, the five position buffers (zeroed; their size the largest a loaded scratch file declared), then
+ * the waiting scratch files become selectable. Taken before the staging block is freed, so they come from the break
+ * and do not split the staging hole the tape's cache will use. When heap 0 cannot give them (the scan's heap check
+ * said it could: only a heap read gone wrong), every waiting file is refused after all and its image freed. */
+static void fxbuf_publish(void)
+{
+    if (!g_scr_max || g_fxbuf) return;
+    uint32_t each = g_scr_max, total = POSITIONS * each;
+    uint8_t *raw = (uint8_t *)MALLOC(total + ARENA_ALIGN);
+    if (raw) {
+        uint8_t *b = (uint8_t *)(((uint32_t)(uintptr_t)raw + ARENA_ALIGN - 1) & ~(ARENA_ALIGN - 1));
+        for (uint32_t i = 0; i < total; i += 4) *(volatile uint32_t *)(b + i) = 0;
+        g_fxbuf_bytes = each; g_fxbuf_mem = fxbuf_cost(each);
+        __asm__ __volatile__("ssync;" ::: "memory");
+        g_fxbuf = b;
+    } else {
+        g_plug_mem_used -= fxbuf_cost(each);
+        g_fxbuf_short++;
+    }
+    for (int n = 1; n < SLOTS; n++) {
+        struct plug *p = &g_plug[n];
+        if (!p->pend) continue;
+        if (raw) { __asm__ __volatile__("ssync;" ::: "memory"); p->fx = p->pend; }
+        else {
+            FREE(p->raw); g_plug_mem_used -= p->img;
+            if (p->fi) { p->fi->state = FS_FAILED; p->fi->reason = R_FXBUF; }
+            if (g_plugins_loaded) g_plugins_loaded--;
+            g_plugins_failed++; g_plugins_last_error = R_FXBUF; scopy(g_plugins_last_name, p->name, NAME_MAX);
+            if (g_scratch_files) g_scratch_files--;
+        }
+        p->pend = 0; p->raw = 0;
+    }
 }
 
 static void slot2_load(void);                                              /* S2, below */
@@ -575,6 +651,7 @@ extern "C" void coop_plugins_boot(void)
         if (err) { g_plugins_failed++; g_plugins_last_error = err; scopy(g_plugins_last_name, g_names[i], NAME_MAX); g_finfo[i].state = FS_FAILED; g_finfo[i].reason = err; }
         else { g_plugins_loaded++; g_finfo[i].state = FS_LOADED; }
     }
+    fxbuf_publish();                                                       /* e8: before the staging block goes */
     FREE(stage);
     g_stage_blk = 0;
     { struct heap0 h; heap0_read(&h, 0, 0); g_heap0_free_boot = h.free; }  /* e7: what the tape's cache will take from */
@@ -1370,10 +1447,14 @@ extern "C" int coop_fx_plugin_render(int32_t *l, int32_t *r, int n) { (void)l; (
 
 /* ---- e7: the stats report (coop_stats.cc, after the `plugins` line) ----
  *   plugmem budget B used U over_budget N heap_short N skipped N badname N tape_node X heap_free_boot F
+ *           scratch_files S fxbuf E fxbuf_mem M fxbuf_short K
  *   plugfile <file> <failed|disabled|skipped> needs <bytes>: <reason>     one line for every file the boot did not load
- * `used` = heap bytes the loaded plugins took (blocks with their headers, five relocations an effect, an engine's code
- * and voice state); `needs` = what that file takes or would have taken (0: not read that far); heap_free_boot = heap 0
- * free right after the scan, before the tape's cache (12 MiB with the stereo tape) is taken from it. */
+ * `used` = heap bytes the loaded plugins took (blocks with their headers: five relocations an old-model effect, one a
+ * scratch effect (e8) plus the five position buffers once, an engine's code and voice state); `needs` = what that file
+ * takes or would have taken (0: not read that far; a scratch file: its image and what it grows the buffers by);
+ * heap_free_boot = heap 0 free right after the scan, before the tape's cache (12 MiB with the stereo tape) is taken
+ * from it. e8: scratch_files = scratch effects loaded, fxbuf = each position buffer's bytes (0: none taken), fxbuf_mem =
+ * the five buffers' heap block, fxbuf_short = 1 when heap 0 could not give them (the scratch files were refused). */
 extern "C" int coop_plugin_report(char *out, int cap)
 {
     char *o = out, *end = out + cap - 1, num[12];
@@ -1381,7 +1462,9 @@ extern "C" int coop_plugin_report(char *out, int cap)
     #define PUTN(k, v) do { PUT(" "); PUT(k); PUT(" "); snum(num, (int)(v)); PUT(num); } while (0)
     PUT("plugmem"); PUTN("budget", PLUG_BUDGET); PUTN("used", g_plug_mem_used); PUTN("over_budget", g_plugins_over_budget);
     PUTN("heap_short", g_plugins_heap_short); PUTN("skipped", g_plugins_skipped); PUTN("badname", g_plugins_badname);
-    PUTN("tape_node", g_tape_node); PUTN("heap_free_boot", g_heap0_free_boot); PUT("\n");
+    PUTN("tape_node", g_tape_node); PUTN("heap_free_boot", g_heap0_free_boot);
+    PUTN("scratch_files", g_scratch_files); PUTN("fxbuf", g_fxbuf_bytes); PUTN("fxbuf_mem", g_fxbuf_mem);   /* e8 */
+    PUTN("fxbuf_short", g_fxbuf_short); PUT("\n");
     for (int k = 0; k < MAX_FILES + SKIP_KEEP; k++) {
         if (k >= g_n_names && k < MAX_FILES) continue;
         if (k >= MAX_FILES && k >= MAX_FILES + g_n_skipnames) break;

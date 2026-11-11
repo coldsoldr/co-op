@@ -9,15 +9,17 @@ COOP := ../../../plugins/tape_echo
 BUILD ?= ../../../build/host/tape_echo
 BLOCKS ?= 20000
 SIM_BLOCKS ?= 3000
-CXXFLAGS := -O2 -std=c++17 -Wall -Wno-unused-function
+# e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
+SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
+CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-function
 REF_INC := -I$(TE)/fx -I$(TE) -I$(TE)/rings -I$(TE)/clouds
 REF_SRC := $(TE)/fx/src/tape_echo/tape_echo.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clouds/src/core/clouds_tables.cc \
            $(TE)/rings/src/fixed_tables.cc
-COOP_SRC := $(COOP)/tape_echo.cc $(COOP)/src/tape_echo_core.cc $(COOP)/src/halfband.cc
+COOP_SRC := $(COOP)/tape_echo.cc $(COOP)/src/tape_echo_core.cc $(COOP)/src/halfband.cc ../fx_scratch_host.cc
 COOP_DEPS := $(wildcard $(COOP)/*.cc $(COOP)/src/*)
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
-SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns
+SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns
 
 .PHONY: all sim tables clean
 all: $(BUILD)/tape_echo_ref $(BUILD)/tape_echo_coop

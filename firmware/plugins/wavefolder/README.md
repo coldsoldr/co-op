@@ -90,6 +90,7 @@ doubled the cost for 8-20 dB less aliasing at the top folds only).
   settled block); the L == R shortcut (mono kernels once, copied, bit-identical to the stereo run; taken only while
   the two channel states are equal, i.e. from init on a mono source). Next, if the device says so: fold the
   conversions into the kernels (the shape kernel reading the int32 high halves, the tone kernel writing int32).
+- e8 (2026-11-11): the `Fold`, the block buffers and the param cache are in the slot's position buffer (plugin.json `"scratch": 960`, `coop_fx_scratch`); the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 9,716 bytes, load 9,116 once.
 - Memory: `.text` 3,064, `.rodata` 6,008 (the tables), `.bss` 936 (one `Fold` of 636 bytes, two 128-byte int16
   blocks, the parameter cache): load size 10,008 bytes a relocation, **50,040 bytes for the five**. L1: none
   (effects can't lease L1 yet, guidelines §2.3). Init: resets about 40 words, no tables built.

@@ -35,6 +35,7 @@
 #include "src/shift.h"
 extern "C" const coop_fx_t FX_freq_shift;
 extern "C" op1fx::FreqShift* freq_shift_instance();
+extern "C" long coop_fx_scratch_check(const coop_fx_t* fx, const int16_t* params, long blocks);   /* ../fx_scratch_host.cc */
 #endif
 
 namespace {
@@ -190,7 +191,7 @@ int main(int argc, char** argv) {
     uint32_t c0, c1;
     __asm__ volatile("%0 = CYCLES;" : "=d"(c0));
 #endif
-    FX_freq_shift.render(b % 5 == 0 ? 2 : 0, l, r, params, kN);
+    FX_freq_shift.render(0, l, r, params, kN);          /* e8: one slot, one state (a slot is a position buffer) */
     const int pairs = freq_shift_instance()->pairs_run();
     if (pairs == 1) one++; else two++;
 #ifdef FS_SIM
@@ -222,6 +223,7 @@ int main(int argc, char** argv) {
 #endif
   // Mix 0, after wet blocks, any other settings, inputs with low bits: returned bit for bit.
   int bad = 0;
+  if (FX_freq_shift.init(4) != 0) return 2;            /* e8: slot 4 has its own state: start it */
   for (int b = 0; b < 2000; b++) {
     int16_t params[16] = {0};
     for (int i = 0; i < 3; i++) params[i] = KnobMap(i, Range(0, 32767));
@@ -234,6 +236,10 @@ int main(int argc, char** argv) {
     if (b >= 5 && (memcmp(in[0], l, sizeof(l)) || memcmp(in[1], r, sizeof(r)))) bad++;
   }
   printf("freq_shift coop: mix 0 bit for bit: %s (%d blocks differ)\n", bad ? "FAIL" : "ok", bad);
+  {   /* e8: two positions at once and a restart on a dirty position buffer (tests/host/fx_scratch_host.cc) */
+    int16_t sp[COOP_FX_PARAMS_MIN] = { 9000, 15000, 6000, 28000, 0x5300 + 32, 20000, 0 };
+    if (coop_fx_scratch_check(&FX_freq_shift, sp, 1500)) bad++;
+  }
   return bad ? 1 : 0;
 #else
   return 0;

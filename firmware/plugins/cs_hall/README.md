@@ -84,18 +84,18 @@ the fine step (the owner, 2026-11-11; guidelines §4, §4.1, held layers instead
 
 ## The glue (cs_hall.cc)
 
-- One instance in `.bss` (`HallReverb` + the half-rate path, 86,740 bytes); each of coop's five relocations has its
-  own, so each position has its own tail.
+- One instance in the slot's position buffer (e8; before e8 in `.bss`, 86,740 bytes, one per relocation): each
+  position has its own tail.
 - params read once a block: `params[0..3]` mapped from the filter type's range units to Q15 with kennel's formula
   (`(v - lo) × 32767 / (hi - lo)`, four divides a block, outside the sample loops), `params[5..7]` clamped to Q15,
   freeze from `params[8]` bit 0.
 - **The tank clear (guidelines §2.3).** Kennel zeroed the instance (84 KB) in `Init` and on a restart; coop's init
   runs in the audio interrupt at the stock positions, so `init` only resets the reverb's control state and marks the
   buffers. `render` then zeroes 4 KB a block (1024 word stores) and passes the input through dry until done: 21 blocks,
-  ~30 ms of dry signal after a sound change or a re-selection, when the tank was used (accepted as it is by the
-  owner, 2026-11-11: listen for it on the device). A tank the reverb hasn't
-  written since it was last zero (the loader zeroes `.bss`) is not cleared: a fresh selection starts after one block,
-  as kennel's did.
+  ~30 ms of dry signal after every selection, sound change or re-selection (accepted as it is by the owner,
+  2026-11-11: listen for it on the device). Before e8 a tank the reverb hadn't written since it was last zero (the
+  loader zeroed `.bss`) was not cleared; e8's shared position buffer is always cleared, so a first selection is dry
+  for the same ~30 ms.
 - **The restart after a pause** is kennel's (`half_rate.h`): more than 5 ms between two renders (the effect bypassed
   with T3, or not rendered) starts the reverb again, cleared the same way. The pause is measured with the core clock's
   CYCLES register (not a firmware address; rings does the same).
@@ -114,6 +114,7 @@ page on FX 2, with the core's name / value popup). The kennel build's `hall.svg`
 - the clear in progress (the 30 ms dry) needs no mark (too short to see).
 
 ## Memory, L1, cost
+- **e8 (2026-11-11):** the hall and the half-rate path (at most the declared 86,752 bytes, static_assert) are in the slot's position buffer (plugin.json `"scratch": 86752`, `coop_fx_scratch`), as kennel's `op1_fx_scratch` had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). The tank is cleared on every (re)start now, a fresh selection included (~30 ms dry). File 17,060 bytes, load 16,216 once.
 
 - File 17,712 bytes; `.text` 11,168, `.rodata` 5,024, `.data` 0, `.bss` 86,740: load size 102,932 bytes, so five
   relocations take ~515 KB of heap 0 (op1emu reports ~8-9 MB free after the scan, `docs/engines.md`) [I until the gate].

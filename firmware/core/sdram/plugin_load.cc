@@ -86,6 +86,8 @@ int kn_parse(const uint8_t *file, uint32_t size, uint16_t api_version, kn_info *
     in->controls = 0;
     in->bigbuf_offset = KN_NONE; in->bigbuf_min = in->bigbuf_max = 0; in->cost[0] = in->cost[1] = 0;
     int has_bigbuf = 0;                              /* extension 4 seen (its value may be any word) */
+    int has_scratch = 0;                             /* coop e8: extension 7 seen */
+    in->scratch = 0;
     hs += hoff;                                      /* blocks after the header start here */
     if (rd16(file + hoff + O_API) != api_version) FAIL("built for a different coop core");
     in->kind = file[hoff + O_KIND];
@@ -98,8 +100,9 @@ int kn_parse(const uint8_t *file, uint32_t size, uint16_t api_version, kn_info *
     if (len == 16 || len == 0) FAIL("type name empty or not NUL-terminated");
     for (int i = 0; i < 16; i++) in->type_name[i] = i < len ? (char)nm[i] : 0;
     in->flags = H32(O_FLAGS);
-    if (in->flags & ~(KN_FLAG_USES_SAMPLE | KN_FLAG_PAGE2 | KN_FLAG_STEREO | KN_FLAG_INPUT | KN_FLAG_BIGBUF | KN_FLAG_COARSE_MASK))
+    if (in->flags & ~(KN_FLAG_USES_SAMPLE | KN_FLAG_PAGE2 | KN_FLAG_STEREO | KN_FLAG_INPUT | KN_FLAG_BIGBUF | KN_FLAG_COARSE_MASK | KN_FLAG_SCRATCH))
         FAIL("unknown plugin flags");
+    if ((in->flags & KN_FLAG_SCRATCH) && in->kind != KN_KIND_FX) FAIL("scratch flag requires FX kind");
     if ((in->flags & KN_FLAG_COARSE_MASK) && in->kind != KN_KIND_SYNTH) FAIL("coarse knobs require synth kind");
     if ((in->flags & KN_FLAG_STEREO) && in->kind != KN_KIND_FX) FAIL("stereo flag requires FX kind");
     if ((in->flags & KN_FLAG_INPUT) && (in->kind != KN_KIND_SYNTH || (in->flags & KN_FLAG_USES_SAMPLE))) FAIL("input flag requires nonsampler synth");
@@ -184,10 +187,16 @@ int kn_parse(const uint8_t *file, uint32_t size, uint16_t api_version, kn_info *
             } else if (tag == KN_EXT_BIGBUF) {
                 if (n != 4 || has_bigbuf) FAIL("bigbuf entry malformed");
                 in->bigbuf_offset = rd32(file + eo + 4); has_bigbuf = 1;
+            } else if (tag == KN_EXT_SCRATCH) {                  /* coop e8 */
+                if (n != 4 || has_scratch) FAIL("scratch entry malformed");
+                in->scratch = rd32(file + eo + 4); has_scratch = 1;
             }
             eo += 4 + ((n + 3) & ~3u);
         }
     }
+    /* coop e8: the scratch flag and its size together, 1 byte .. 1 MiB */
+    if (!(in->flags & KN_FLAG_SCRATCH) != !has_scratch) FAIL("scratch flag and size disagree");
+    if (has_scratch && (!in->scratch || in->scratch > KN_SCRATCH_PARSE_MAX)) FAIL("scratch size 0 or over 1 MiB");
     /* declared pool buffer: flag and extension together, the descriptor inside .data (written by the loader later) */
     if (!(in->flags & KN_FLAG_BIGBUF) != !has_bigbuf) FAIL("bigbuf flag and descriptor disagree");
     if (in->flags & KN_FLAG_BIGBUF) {

@@ -97,6 +97,7 @@ the tape drawn as a wave whose amplitude follows age (white) and breathes with t
   pairs, every head read serving both channels, so stereo costs about 1.56x the mono path rather than 2x (te-op1-cfw
   simulator: 9.2 MHz stereo, 5.9 MHz mono, whole effect). coop runs it at every position (synth, drum, master and both
   FX 2 slots): the instrument positions now hear the echo in stereo, and each position is a full stereo instance.
+- **Memory (e8, 2026-11-11):** the tape, the core's state, the half-rate path and the block buffers (at most the declared 134,784 bytes, static_assert) are in the slot's position buffer (plugin.json `"scratch": 134784`, `coop_fx_scratch`), as kennel's `op1_fx_scratch` had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 10,160 bytes, load 9,132 once; the core's five buffers are sized to this declaration when tape_echo is the largest installed (5 x 134,784 = 673,920 bytes for all scratch effects together).
 - **Memory:** file 10,664 bytes; `.text` 5,836, `.rodata` 3,052, `.data` 0, `.bss` 134,764 (the tape 132,868, the
   core's state, the half-rate filters, the dry buffers). Load size 143,652 bytes; five relocations: **718,260 bytes of
   heap 0** (heap_largest was ~9 MB after the plugin scan in e4). No imports.

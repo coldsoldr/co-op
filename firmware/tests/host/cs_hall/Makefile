@@ -7,15 +7,17 @@ HOST_CXX ?= g++
 TE ?= ../../../../../te-op1-cfw/ports
 COOP := ../../../plugins/cs_hall
 BUILD ?= ../../../build/host/cs_hall
-CXXFLAGS := -O2 -std=c++17 -Wall -Wno-unused-variable -Wno-unused-function
-COOP_SRC := $(COOP)/cs_hall.cc $(COOP)/hall.cc $(COOP)/halfband.cc
+# e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
+SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
+CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-variable -Wno-unused-function
+COOP_SRC := $(COOP)/cs_hall.cc $(COOP)/hall.cc $(COOP)/halfband.cc ../fx_scratch_host.cc
 REF_SRC := $(TE)/fx/src/hall/hall.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clouds/src/core/clouds_tables.cc \
            $(TE)/rings/src/fixed_tables.cc
 # hall_knl.cc's include order (ports/knl/cs_hall/plugin.json)
 REF_INC := -I$(TE)/knl -I$(TE) -I$(TE)/fx -I$(TE)/rings -I$(TE)/clouds
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
-SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns -Wall
+SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns -Wall
 
 .PHONY: all sim clean
 all: $(BUILD)/hall_ref $(BUILD)/hall_coop

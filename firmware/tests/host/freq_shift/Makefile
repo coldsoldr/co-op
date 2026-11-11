@@ -4,9 +4,11 @@ HOST_CXX ?= g++
 TE ?= ../../../../../te-op1-cfw/ports
 COOP := ../../../plugins/freq_shift
 BUILD ?= ../../../build/host/freq_shift
-CXXFLAGS := -O2 -std=c++17 -Wall -Wextra
+# e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
+SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
+CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wextra
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
-SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti
+SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti
 
 .PHONY: all clean sim
 all: $(BUILD)/fs_ref $(BUILD)/fs_ref_st $(BUILD)/fs_coop
@@ -29,14 +31,14 @@ $(BUILD)/fs_ref_st: freq_shift_compare.cc $(TE)/fx/src/shift/shift.cc
 $(BUILD)/fs_coop: freq_shift_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*)
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -DFREQ_SHIFT_TEST -I$(COOP) -I../../../sdk freq_shift_compare.cc $(COOP)/freq_shift.cc \
-	  $(COOP)/src/shift.cc -o $@
+	  $(COOP)/src/shift.cc ../fx_scratch_host.cc -o $@
 
 # The plugin's assembly path in the GNU simulator against its C kernels (-DSHIFT_C_KERNELS), the same scenarios:
 # make sim. Also prints the cycles of a render (no cache or SDRAM model).
 $(BUILD)/fs_sim.elf: freq_shift_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*)
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DFREQ_SHIFT_TEST -DFS_SIM -DSHIFT_C_KERNELS -I$(COOP) -I../../../sdk \
-	  freq_shift_compare.cc $(COOP)/freq_shift.cc $(COOP)/src/shift.cc $(COOP)/src/shift_bfin.S -o $@
+	  freq_shift_compare.cc $(COOP)/freq_shift.cc $(COOP)/src/shift.cc $(COOP)/src/shift_bfin.S ../fx_scratch_host.cc -o $@
 
 sim: $(BUILD)/fs_sim.elf $(BUILD)/fs_coop
 	$(BUILD)/fs_coop $(BUILD)/coop0.raw 0 > /dev/null

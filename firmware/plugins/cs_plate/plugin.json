@@ -11,6 +11,7 @@
   ],
   "include_dirs": ["."],
   "cflags": ["-fno-tree-loop-distribute-patterns"],
+  "scratch": 77664,
   "defaults": [16384, 9830, 3277, 11469],
   "controls": [
     {"id": "size", "name": "size", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "steps",

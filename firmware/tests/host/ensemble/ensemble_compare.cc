@@ -29,6 +29,7 @@
 #include "src/ensemble_tables.h"
 
 extern "C" const coop_fx_t FX_ensemble;
+extern "C" long coop_fx_scratch_check(const coop_fx_t* fx, const int16_t* params, long blocks);   /* ../fx_scratch_host.cc */
 
 #ifndef __bfin__
 uint32_t op1::host_cycles;
@@ -190,7 +191,7 @@ int main(int argc, char** argv) {
       L[i] = static_cast<int32_t>(a) << 16; R[i] = static_cast<int32_t>(c) << 16;
     }
     if (mode == 1) ++mono_blocks;
-    if (Range(0, 2000) == 0) { RefInit(); FX_ensemble.init(Range(0, 4)); ++inits; }
+    if (Range(0, 2000) == 0) { RefInit(); (void)Range(0, 4); FX_ensemble.init(0); ++inits; }   /* e8: the slot rendered */
 #ifndef __bfin__
     const uint32_t step = (pauses && Range(0, 1500) == 0) ? 3000000u : 580499u;
     if (step > 2000000u) ++restarts;
@@ -223,5 +224,9 @@ int main(int argc, char** argv) {
 #endif
   if (bad) return 1;
   std::printf("ensemble: coop == te-op1-cfw, bit-identical\n");
+  {   /* e8: two positions at once and a restart on a dirty position buffer (tests/host/fx_scratch_host.cc) */
+    int16_t sp[COOP_FX_PARAMS_MIN] = { 9000, 15000, 6000, 28000, 0x5300 + 32, 20000 };
+    if (coop_fx_scratch_check(&FX_ensemble, sp, 1500)) return 1;
+  }
   return 0;
 }

@@ -78,6 +78,7 @@ every position); the gain gauge dim at rest and lit in blue while fn is held (§
 lists its name and value). The SVG needs checking against the manifesto (stroke widths, no glow) before it ships.
 
 ## Memory, L1, cost
+- **e8 (2026-11-11):** the lines, filters and control state are in the slot's position buffer (plugin.json `"scratch": 10400`, `coop_fx_scratch`), as kennel had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 9,736 bytes, load 8,992 once.
 
 - File 10,820 bytes (0.3); `.text` 5,236, `.rodata` 3,764 (the 1025-point sine, the rate and cap curves, the
   soft-limit and crossfade tables), `.data` 0, `.bss` 10,380 (two int16 delay lines of 2,288 words, the half-rate

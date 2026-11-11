@@ -68,6 +68,7 @@ drive, the triode's filament and glow warming with bias, the tilt's S curve flip
 mix gauge rising; the gain's dB readout while fn is held (`coop_scr_mods`), replacing kennel's page-2 state.
 
 ## Memory, L1, cost
+- **e8 (2026-11-11):** the Drive, the block copies and the param cache are in the slot's position buffer (plugin.json `"scratch": 1600`, `coop_fx_scratch`); the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 9,464 bytes, load 8,480 once.
 
 - File 9,608 bytes (0.1); `.text` 6,932, `.rodata` 1,432, `.data` 0, `.bss` 1,584 (the Drive object, 1.3 KB of
   histories and kernel blocks, the block's int16 copies, the param cache). Load size 9,948 bytes, x 5 relocations =

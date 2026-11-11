@@ -11,6 +11,7 @@
   "include_dirs": ["."],
   "cflags": ["-DOP1FX_DRIVE_ASM_ONLY"],
   "defaults": [11469, 16384, 0, 32767],
+  "scratch": 1600,
   "controls": [
     {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
      "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}

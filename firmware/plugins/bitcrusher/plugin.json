@@ -5,6 +5,7 @@
   "sources": ["bitcrusher.cc", "op1/support.cc"],
   "include_dirs": ["."],
   "defaults": [24767, 24767, 0, 32767],
+  "scratch": 32,
   "controls": [
     {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
      "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}

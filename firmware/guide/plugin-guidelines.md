@@ -63,7 +63,8 @@ What the words mean:
   call. There is no mono position in coop.
 - Kennel and Opus effects with only a mono render are hosted **dual-mono**: two independent states, one per channel.
   - A port MUST key its state by channel as well as by position. Kennel keys state by `pos` only.
-  - Each of coop's five relocations has its own `.bss`, so per-position state comes free. Per-channel state does not.
+  - Per-position state: one state per `slot`, each in that slot's position buffer (section 2.3, e8). Per-channel
+    state is the port's to lay out inside it.
 - An effect with cross-channel behaviour (stereo reverb, ping-pong, widening, mid/side) MUST be written as true
   stereo. The kennel effects flagged stereo are crush, father, juni_chorus, plate, sister, steve and warble.
   - On kennel these ran stereo only at the master. On coop they run their stereo render at every position, so the
@@ -86,7 +87,25 @@ What the words mean:
     hook. ABI v2 will provide one ([proposed]). Until then, a plugin with a slow init doesn't ship.
 - Nothing in render allocates memory, touches a file, waits or calls a long helper. [now]
 - Memory sources:
-  - Long lines and tanks go in the plugin's own `.bss`. The loader zeroes it, five times over.
+  - **An effect's state goes in its position buffer** (e8, kennel's model; `sdk/coop_plugin.h` "e8", `docs/plugins.md`
+    "e8"). The core owns one working buffer per position and hands it to whichever effect is active there:
+    - declare the bytes in plugin.json `"scratch": N` (at most `COOP_FX_SCRATCH_MAX`, 176 KiB; a multiple of 32 is
+      tidy). pack.py sets the file's scratch flag (a core before e8 refuses the file) and compiles the sources with
+      `-DCOOP_FX_SCRATCH_BYTES=N`: `static_assert(sizeof(State) <= COOP_FX_SCRATCH_BYTES)`;
+    - in `init(slot)`: `coop_fx_scratch(slot, &bytes)`, check `bytes >= sizeof(State)` (else return non-zero), keep
+      the pointer in a five-entry `.bss` array indexed by `slot`, and reset **every** field there: the buffer holds
+      whatever the effect active before left, never zeros, never your last state. A large line or tank is cleared over
+      the next renders with the dry signal passing (as before);
+    - in `render(slot, ...)`: take the slot's pointer and work there. Nothing of the state lives in `.bss`: only the
+      five pointers and, at most, tiny per-slot values indexed by `slot` (the host test checks `.bss` stays small);
+    - a shared `.bss` temporary must not be touched in `init` (slot 2's `init` runs on the main loop while the
+      audio interrupt renders the other positions): put block buffers in the state too;
+    - the effect restarts at every selection (the core calls `init`), and the same effect at two positions works in
+      two buffers: two independent states. Test both with `tests/host/fx_scratch_host.cc` (`coop_fx_scratch_check`).
+    The file is relocated once, so it costs its code once plus what it grows the five buffers by (the buffers are
+    sized at boot to the largest declaration installed). The old model (state in `.bss`, five relocations, `.bss`
+    zeroed by the loader five times over) still loads for a file without `"scratch"`, at five times its load size.
+  - An engine's long lines go in its `.bss` (one relocation) or its per-voice state.
   - Data the per-sample loop touches every block goes in L1 (a line the audio interrupt touches in SDRAM costs a bus
     wait when it isn't cached, ~107 cycles measured by Opus; L1 never does). [now, e4, engines; `sdk/coop_plugin.h`, `docs/engines.md`]
     - `coop_l1_lease(bytes)` from the engine's `init` only: a zeroed, 32-byte aligned block of L1 data bank B kept
@@ -98,8 +117,10 @@ What the words mean:
   - The host's own effects follow `docs/fx-data-placement-plan.md`; a port does the same: prefetch its delay-line
     streams a few lines ahead (`PREFETCH [P]`), process a delay line in block passes rather than per sample across
     several lines, keep per-sample state in registers, keep the render inside the I-cache's reach. [proposed]
-  - Each relocation costs the file's load size, so a 129 KiB plugin takes 645 KiB of heap 0. Keep `.bss` to what
-    the sound needs. A plugin that doesn't fit fails to load with "plugin memory full".
+  - All plugins together may take 1,536 KiB of heap 0 (`docs/plugins.md` "e7"): a scratch effect counts its image once
+    and its growth of the position buffers; an old-model effect five times its load size (a 129 KiB `.bss` takes
+    645 KiB); an engine its image and voice state. Keep the state to what the sound needs. A file over the budget is
+    refused at boot with the reason in the stats and the inventory.
 - Tempo: an effect that syncs reads the core's beat clock (an export, [proposed]: tempo, MIDI clock or tape speed),
   and falls back to 120 BPM as kennel does.
 
@@ -386,7 +407,8 @@ The manifesto is the full guide, with numbers from R246's 61 stock screen files.
 | `coarse` 8-step knobs | `steps: 8` |
 | Shift byte read from render (Steve's unison) | A declared `shift_click` switch |
 | `OP1_VOICE_VEL`, `OP1_PITCH_INC`, `op1_eng_page`, screen node addresses | Engine ABI arguments (`velocity`, `pitch[]`), `coop_scr_words` / `coop_scr_mods` and the SDK screen calls (e4) |
-| `op1_l1_claim`, `op1_fx_big`, `OP1_BIGBUF` | `coop_l1_lease` (persistent, from `init`), `coop_l1_scratch` (per call) and `.bss` (section 2.3) |
+| `op1_fx_scratch(pos)`, `knl::Instance` | `coop_fx_scratch(slot, &bytes)` and plugin.json `"scratch"` (e8, section 2.3): the same model, five positions |
+| `op1_l1_claim`, `op1_fx_big`, `OP1_BIGBUF` | `coop_l1_lease` (persistent, from `init`), `coop_l1_scratch` (per call), an effect's position buffer or an engine's `.bss` (section 2.3) |
 | `cost` in `plugin.json` | Measured device figures in the contract (section 2.4) |
 
 ### 7.2 From Opus 2
@@ -397,7 +419,7 @@ The manifesto is the full guide, with numbers from R246's 61 stock screen files.
 | `limits[8][3] {min, max, step}` | The parameter table; `step` becomes the coarse resolution |
 | `shift_knob` returning 0 (OS fine) | Default fine (no `shift_turn` declared) |
 | `shift_knob` returning 1 (a second bank in params 4-7) | Declared `shift_turn` parameters |
-| `need()` with `state` / `bulk` / `fast`, core-allocated per instance | `.bss` per relocation, an L1 lease for the fast part |
+| `need()` with `state` / `bulk` / `fast`, core-allocated per instance | an effect: its position buffer (`"scratch"`, e8); an engine: `.bss` or voice state; an L1 lease for the fast part |
 | `opus_on_key` / `opus_on_knob`, engine `turn` writing knobs itself | Not allowed. Every control is declared and the core dispatches it |
 | Floats outside audio (zoom) | Not allowed (section 2.1) |
 | `cpu.txt` worst block | The contract's device cost figures |

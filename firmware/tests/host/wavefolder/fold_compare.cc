@@ -29,6 +29,7 @@
 #else
 #include "coop_plugin.h"
 extern "C" const coop_fx_t FX_wavefolder;
+extern "C" long coop_fx_scratch_check(const coop_fx_t* fx, const int16_t* params, long blocks);   /* ../fx_scratch_host.cc */
 #endif
 
 namespace {
@@ -236,6 +237,10 @@ int main(int argc, char** argv) {
 #endif
 #ifndef FOLD_REF
   if (bad_bus) return 1;
+  {   /* e8: two positions at once and a restart on a dirty position buffer (tests/host/fx_scratch_host.cc) */
+    int16_t sp[COOP_FX_PARAMS_MIN] = { 9000, 15000, 6000, 28000, 0x5300 + 32, 20000 };
+    if (coop_fx_scratch_check(&FX_wavefolder, sp, 1500)) return 1;
+  }
 #endif
   return 0;
 }

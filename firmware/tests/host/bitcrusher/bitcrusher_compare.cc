@@ -24,6 +24,7 @@
 #include "fx/src/crush/crush.h"   // te-op1-cfw ports: op1fx::Crush
 
 extern "C" const coop_fx_t FX_bitcrusher;
+extern "C" long coop_fx_scratch_check(const coop_fx_t* fx, const int16_t* params, long blocks);   /* ../fx_scratch_host.cc */
 
 #ifdef BC_PROFILE   // the Blackfin simulator build (make profile): the render timed with CYCLES (compute only)
 static inline uint32_t Cycles() { uint32_t c; __asm__ __volatile__("%0 = CYCLES;" : "=d"(c)); return c; }
@@ -150,6 +151,12 @@ int main(int argc, char** argv) {
   std::printf("render, simulator cycles a block (64 stereo samples): avg %lu, max %lu\n",
               static_cast<unsigned long>(cyc_sum / static_cast<unsigned long long>(blocks)),
               static_cast<unsigned long>(cyc_max));
+#endif
+#ifndef BC_PROFILE
+  {   /* e8: two positions at once and a restart on a dirty position buffer (tests/host/fx_scratch_host.cc) */
+    int16_t p[COOP_FX_PARAMS_MIN] = { 7000, 12000, 9000, 26000, 0x5300 + 32, 20000 };
+    if (coop_fx_scratch_check(&FX_bitcrusher, p, 2000)) bad++;
+  }
 #endif
   return bad ? 1 : 0;
 }

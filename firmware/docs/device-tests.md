@@ -2329,3 +2329,46 @@ freq_shift.coop	fx	freq shift	loaded	on	0.1	coldsoldr	10308
 remove the big plugins (tape_echo, cs_hall) before booting e6.
 
 Result: (pending)
+
+## e8: the position buffers, every effect port relocated once — device test (pending, 2026-11-11)
+
+What changed (`docs/plugins.md` "e8"): the core owns one working buffer per FX position (synth, drum, master, instrument
+FX 2, master FX 2) and the effect active there works in it, as on kennel; an effect file is relocated once instead of
+five times; an effect restarts whenever it is selected at a position. The nine effect ports are rebuilt for it (their
+plugin.json declares `"scratch"`): all nine together take 758,248 bytes of heap 0 instead of ~2 MB, so tape_echo and
+cs_hall load beside rings. **The new port files need the e8 image** (an older image refuses them: "unknown plugin
+flags"); test_fx, stereo_delay, rings and saw are unchanged.
+
+- Package: **not built yet** (`build/pkg/op1_246_coop_e8.op1`, release image as e7, build tag `e8`) [pending].
+- Host tests (this branch, 2026-11-11) [C host / GNU simulator]: all nine ports bit-identical to upstream on the host,
+  with the position buffers filled with random bytes before init; `coop_fx_scratch_check` (the port at slots 0 and 3 at
+  once, and restarted on a dirtied buffer) 0 differing blocks for each. Simulator builds: drive, ensemble, freq_shift,
+  tape_drive, tape_echo, wavefolder, cs_hall, cs_plate bit-identical (assembly) with the scratch check passing; bitcrusher's
+  profile 5,900 / 7,572 cycles a block. Simulator costs, cycles a block (avg / max): drive 7,662 / 8,126 moving, ensemble
+  12,815 / 14,824, freq_shift 9,833 / 11,095 (L == R) and 14,450 / 15,950, tape_drive 9,194 / 9,419, tape_echo 15,987 /
+  16,746, wavefolder 5,749 / 7,046 (stereo); about what they cost before e8 (one pointer load a block more).
+- op1emu gates [pending: run after e7's gates, one at a time]: pristine `det_chord.txt` (against the spread),
+  `det_fx_controls.txt` and `det_fx_reload.txt` (test_fx, the old model), the 11-file NAND (the nine ports, rings, saw)
+  loading everything and a fresh NAND booting to audio, tape_echo / cs_hall / cs_plate each at three positions at once
+  (`det_fx_two_pos.txt`, `det_fx_two_pos_first.txt`), switching at a position (`det_fx_switch.txt`), the stats lines.
+
+**What to do** (once the package exists):
+1. Flash `op1_246_coop_e8.op1`. Copy the nine e8 port files (bitcrusher, drive, ensemble, freq_shift, tape_drive,
+   tape_echo, wavefolder, cs_hall, cs_plate) and rings and saw to the plugins folder, all eleven together. Power-cycle.
+   It must boot to the tape. Copy `/yaffs2/user/coop_stats.txt`: the `plugins` line (loaded 11, failed 0) and the
+   `plugmem` line. Expected: `used` about 1.43 MB of `budget 1572864`, `scratch_files 9 fxbuf 134784 fxbuf_mem 673960
+   fxbuf_short 0`, no `plugfile` line.
+2. Play each port at **synth FX 1, drum FX 1, master FX 1 and FX 2** (instrument and master) once: it plays at each.
+3. **Two positions at once**: tape_echo at synth FX 1 and at instrument FX 2 together, a chord: two echoes, each with
+   its own knobs, no crackle, no fault. The same with cs_hall and with cs_plate.
+4. **Restart on select**: play a long cs_hall tail at synth FX 1, switch FX 1 to tape_echo, then back to cs_hall while
+   the old tail would still ring: cs_hall starts clean (after ~30 ms dry), no burst of the old tail, no noise. The same
+   at FX 2. A first selection of cs_hall is now also ~30 ms dry (it was immediate before e8).
+5. Leave it playing a few minutes and copy the stats again: `heap_free` / `heap_largest` on the `plugins` line (the
+   device's own margin), the `cost` line's `fx1_plugin`, `s2_instr`, `s2_master`.
+6. Open the librarian's plugin list: all eleven loaded.
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e7.op1` (or stock). The e8
+port files do not load on e7 (refused, named in its stats): put the e7-era port files back or remove them.
+
+Result: (pending)

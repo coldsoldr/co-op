@@ -18,10 +18,12 @@
 // input's low halves: out = wet16 << 16 | (in & 0xffff). The high half is bit-identical to upstream, and at mix 0 the
 // whole int32 sample is the input, bit for bit (upstream's promise at 16 bits, kept at 32).
 //
-// State: one TapeSat (about 3.1 KB) in .bss; each of coop's five relocations has its own. init resets it (about
-// 1.5 k cycles: the 2 KB wobble ring is cleared).
+// State (e8): one TapeSat (about 3.1 KB) and the block's int16 copies in the slot's position buffer (sdk/coop_plugin.h
+// coop_fx_scratch, plugin.json "scratch"), as kennel's knl::Instance had it in the position's scratch buffer; the
+// file is relocated once and its .bss holds only the five buffer pointers. init binds the slot's buffer and resets the
+// state there (about 1.5 k cycles: the 2 KB wobble ring is cleared; the buffer holds whatever the effect before left).
 //
-// Replaced from the kennel build: knl::Instance (the position's scratch buffer) -> .bss; op1_fx_param_q15 (the
+// Replaced from the kennel build: op1_fx_param_q15 (the
 // stock range table at 0x01DE5C50) -> Q15() over the ranges coop documents; knl::Fine (the shift byte at
 // 0x01dd7f78, rewriting the stored word 5 from the render) -> the core's "fine" pairing; the screen (op1_fx_knobs,
 // op1_fx_page, op1_fx_screen_pos, op1_fx_knobs_live, op1_screen_draw) -> not ported: effect screens aren't built in
@@ -36,9 +38,15 @@
 
 namespace {
 
-op1fx::TapeSat g_tape;                   // trivially constructible (no .ctors): Init() sets every field
-alignas(4) int16_t g_l[op1fx::kTapeMaxBlock];
-alignas(4) int16_t g_r[op1fx::kTapeMaxBlock];
+struct Instance {
+  op1fx::TapeSat tape;                   // trivially constructible (no .ctors): Init() sets every field
+  alignas(4) int16_t l[op1fx::kTapeMaxBlock];
+  alignas(4) int16_t r[op1fx::kTapeMaxBlock];
+};
+#ifdef COOP_FX_SCRATCH_BYTES
+static_assert(sizeof(Instance) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
+#endif
+Instance* g_inst[COOP_FX_SLOTS];         // .bss: each slot's state, in its position buffer (bound by init)
 
 inline int32_t Clamp15(int32_t v) { return v < 0 ? 0 : (v > 32767 ? 32767 : v); }
 
@@ -58,24 +66,29 @@ op1fx::TapeParams Params(const int16_t* p) {
 }
 
 int init(int slot) {
-  (void)slot;
-  g_tape.Init();
+  if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+  uint32_t bytes = 0;
+  Instance* p = static_cast<Instance*>(coop_fx_scratch(slot, &bytes));
+  g_inst[slot] = (p && bytes >= sizeof(Instance)) ? p : nullptr;
+  if (!g_inst[slot]) return -1;
+  p->tape.Init();
   return 0;
 }
 
 void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
-  (void)slot;
+  if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   // not bound: dry
+  Instance& g = *g_inst[slot];
   if (n <= 0 || n > op1fx::kTapeMaxBlock || (n & 1)) return;   // the DSP takes n even, 2..64 (coop: always 64)
   const op1fx::TapeParams q = Params(params);                   // read once, for the whole block
   for (int i = 0; i < n; ++i) {
-    g_l[i] = static_cast<int16_t>(l[i] >> 16);
-    g_r[i] = static_cast<int16_t>(r[i] >> 16);
+    g.l[i] = static_cast<int16_t>(l[i] >> 16);
+    g.r[i] = static_cast<int16_t>(r[i] >> 16);
   }
-  g_tape.Process(g_l, g_r, n, q);
+  g.tape.Process(g.l, g.r, n, q);
   for (int i = 0; i < n; ++i) {
-    l[i] = static_cast<int32_t>((static_cast<uint32_t>(static_cast<uint16_t>(g_l[i])) << 16) |
+    l[i] = static_cast<int32_t>((static_cast<uint32_t>(static_cast<uint16_t>(g.l[i])) << 16) |
                                 (static_cast<uint32_t>(l[i]) & 0xffffu));
-    r[i] = static_cast<int32_t>((static_cast<uint32_t>(static_cast<uint16_t>(g_r[i])) << 16) |
+    r[i] = static_cast<int32_t>((static_cast<uint32_t>(static_cast<uint16_t>(g.r[i])) << 16) |
                                 (static_cast<uint32_t>(r[i]) & 0xffffu));
   }
 }

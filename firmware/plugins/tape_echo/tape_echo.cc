@@ -18,10 +18,12 @@
  *   params[7]     the head pattern (white click): step 0..3.
  *   params[8]     bit 0: hold (green click, a latch).
  *
- * Memory: one instance per relocation (the core relocates the file once per position, each with its own .bss):
- * the tape is 132,868 bytes. Its clear is spread over the first blocks after a (re)start (kClearPairs a block, the
- * dry passing through meanwhile) instead of 133 KB of stores in init, which runs in the audio interrupt at the stock
- * positions (guidelines §2.3).
+ * Memory (e8): the instance is in the slot's position buffer (sdk/coop_plugin.h coop_fx_scratch, plugin.json
+ * "scratch"), as kennel's position scratch buffer had it; the file is relocated once and its .bss holds only the five
+ * buffer pointers. The tape is 132,868 bytes. Its clear is spread over the first blocks after a (re)start
+ * (kClearPairs a block, the dry passing through meanwhile) instead of 133 KB of stores in init, which runs in the
+ * audio interrupt at the stock positions (guidelines §2.3). Every selection restarts it so: the buffer holds whatever
+ * the effect before left.
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission. The DSP in src/ is te-op1-cfw's
  * (GPL-3.0-or-later), with Mutable Instruments Beads' wow and flutter and Clouds' output stage (Emilie Gillet, MIT,
@@ -82,7 +84,10 @@ struct Instance {
     int16_t gained[2][kHalfN];                         /* the decimated input after the gain */
 };
 
-Instance g;                                            /* .bss: zeroed by the loader (the tape too) */
+#ifdef COOP_FX_SCRATCH_BYTES
+static_assert(sizeof(Instance) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
+#endif
+Instance *g_inst[COOP_FX_SLOTS];                       /* .bss: each slot's state, in its position buffer (e8) */
 
 inline int32_t Clamp15(int32_t v) { return v < 0 ? 0 : (v > 32767 ? 32767 : v); }
 
@@ -109,22 +114,27 @@ inline int32_t GainQ14(int32_t word)
 
 int init(int slot)
 {
-    (void)slot;
-    g.half.Stop();                                     /* the next render restarts: core reset, tape cleared */
+    if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+    uint32_t bytes = 0;
+    Instance *g = static_cast<Instance *>(coop_fx_scratch(slot, &bytes));
+    g_inst[slot] = (g && bytes >= sizeof(Instance)) ? g : nullptr;
+    if (!g_inst[slot]) return -1;
+    g->half.Stop();                                     /* the next render restarts: core reset, tape cleared */
     return 0;
 }
 
 void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
 {
-    (void)slot;
-    if (n != kBlock) return;                           /* the host's block is 64; anything else passes through */
-    if (!g.half.Begin(Cycles())) {
-        g.echo.Init();
-        g.clear = 0;
+    if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   /* not bound: dry */
+    Instance *const g = g_inst[slot];
+    if (n != kBlock) return;                          /* the host's block is 64; anything else passes through */
+    if (!g->half.Begin(Cycles())) {
+        g->echo.Init();
+        g->clear = 0;
     }
-    if (g.clear < TE_TAPE_PAIRS) {                     /* starting: clear a slice, the dry passes through */
-        g.clear = g.echo.ClearTape(g.clear, kClearPairs);
-        g.half.End(Cycles());
+    if (g->clear < TE_TAPE_PAIRS) {                     /* starting: clear a slice, the dry passes through */
+        g->clear = g->echo.ClearTape(g->clear, kClearPairs);
+        g->half.End(Cycles());
         return;
     }
 
@@ -139,19 +149,19 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
     const int32_t gain = GainQ14(params[5]);
 
     /* The bus to int16, into the decimators' buffers and the dry copy the mix works on. */
-    int16_t *dl = g.dry[0], *dr = g.dry[1];
-    int16_t *il = g.half.in_full(0), *ir = g.half.in_full(1);
+    int16_t *dl = g->dry[0], *dr = g->dry[1];
+    int16_t *il = g->half.in_full(0), *ir = g->half.in_full(1);
     for (int32_t i = 0; i < kBlock; ++i) {
         const int16_t a = static_cast<int16_t>(l[i] >> 16), b = static_cast<int16_t>(r[i] >> 16);
         dl[i] = il[i] = a;
         dr[i] = ir[i] = b;
     }
-    g.half.Decimate();
+    g->half.Decimate();
 
     /* The input gain: what reaches the record head, saturating (the dry side of the mix is the input as it came). */
     for (int32_t c = 0; c < 2; ++c) {
-        const int16_t *src = g.half.in(c);
-        int16_t *dst = g.gained[c];
+        const int16_t *src = g->half.in(c);
+        int16_t *dst = g->gained[c];
         for (int32_t i = 0; i < kHalfN; ++i) {
             int32_t y = (src[i] * gain) >> 14;
             if (y > 32767) y = 32767;
@@ -159,13 +169,13 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
             dst[i] = static_cast<int16_t>(y);
         }
     }
-    g.echo.Process(g.gained[0], g.gained[1], g.half.wet(0), g.half.wet(1), kHalfN, q);
-    g.half.Mix(dl, dr, mix);
+    g->echo.Process(g->gained[0], g->gained[1], g->half.wet(0), g->half.wet(1), kHalfN, q);
+    g->half.Mix(dl, dr, mix);
     for (int32_t i = 0; i < kBlock; ++i) {
         l[i] = static_cast<int32_t>(dl[i]) << 16;
         r[i] = static_cast<int32_t>(dr[i]) << 16;
     }
-    g.half.End(Cycles());
+    g->half.End(Cycles());
 }
 
 }  // namespace

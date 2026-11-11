@@ -9,8 +9,10 @@
  *     kennel common/knl_fx.h's, into DriveParams::gain. It scales the clipper's gain only: the dry side of the mix
  *     and the auto-level don't see it. Its fine step is the core's (shift + fn + blue, "fine": true); kennel's
  *     knl::Fine, which read the stock shift byte at a firmware address, is gone.
- * State: one Drive per relocation (coop relocates the file once per position, each with its own .bss): 1.2 KB, plus
- * the block's int16 copies. init only resets it (a few hundred stores).
+ * State (e8): one Drive (1.2 KB) with the block's int16 copies and the knob cache in the slot's position buffer
+ * (sdk/coop_plugin.h coop_fx_scratch, plugin.json "scratch"); the file is relocated once and its .bss holds only the
+ * five buffer pointers. init binds the slot's buffer and resets the state (a few hundred stores; the buffer holds
+ * whatever the effect before left).
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission; the halfband's coefficients are
  * Clouds' (MIT, LICENSE-MIT). */
@@ -20,8 +22,19 @@
 
 namespace {
 
-op1fx::Drive g_drive;                                      /* trivially constructible: .bss, no constructor */
-int16_t g_l[op1fx::kDriveMaxBlock], g_r[op1fx::kDriveMaxBlock];
+/* The last block's words and what they gave: a still block skips the six divides (a cache of the inputs, cleared by
+ * init; not a copy of the saved word) */
+struct Instance {
+  op1fx::Drive drive;                                      /* trivially constructible: no constructor */
+  int16_t l[op1fx::kDriveMaxBlock], r[op1fx::kDriveMaxBlock];
+  int16_t words[5];
+  op1fx::DriveParams q;
+  bool have;
+};
+#ifdef COOP_FX_SCRATCH_BYTES
+static_assert(sizeof(Instance) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
+#endif
+Instance* g_inst[COOP_FX_SLOTS];                           /* .bss: each slot's state, in its position buffer */
 
 /* The filter type's knob ranges (the core's fx_rng, plugin_host.cc; kennel read the same row, 0x01DE5C50 + 5 x 0x30) */
 const int16_t kRange[4][2] = { { 64, 14528 }, { 0, 24576 }, { 0, 22528 }, { 8192, 32767 } };
@@ -45,30 +58,33 @@ int32_t GainQ14(int32_t word) {
   return kTable[i] + (((kTable[i + 1] - kTable[i]) * frac) / 32767);
 }
 
-/* The last block's words and what they gave: a still block skips the six divides (a cache of the inputs, cleared by
- * init; not a copy of the saved word) */
-int16_t g_words[5];
-op1fx::DriveParams g_q;
-bool g_have;
-
 int init(int slot) {
-  (void)slot;
-  g_drive.Init();
-  g_have = false;
+  if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+  uint32_t bytes = 0;
+  Instance* g = static_cast<Instance*>(coop_fx_scratch(slot, &bytes));
+  g_inst[slot] = (g && bytes >= sizeof(Instance)) ? g : nullptr;
+  if (!g_inst[slot]) return -1;
+  g->drive.Init();
+  g->have = false;
   return 0;
 }
 
 void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
-  (void)slot;
+  if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   /* not bound: dry */
+  Instance& g = *g_inst[slot];
+  int16_t* const g_words = g.words;
+  int16_t* const g_l = g.l;
+  int16_t* const g_r = g.r;
+  op1fx::DriveParams& g_q = g.q;
   const int16_t w0 = params[0], w1 = params[1], w2 = params[2], w3 = params[3], w5 = params[5];   /* once a block */
-  if (!g_have || w0 != g_words[0] || w1 != g_words[1] || w2 != g_words[2] || w3 != g_words[3] || w5 != g_words[4]) {
+  if (!g.have || w0 != g_words[0] || w1 != g_words[1] || w2 != g_words[2] || w3 != g_words[3] || w5 != g_words[4]) {
     g_words[0] = w0; g_words[1] = w1; g_words[2] = w2; g_words[3] = w3; g_words[4] = w5;
     g_q.drive = KnobQ15(g_words, 0);
     g_q.tone = KnobQ15(g_words, 1);
     g_q.bias = KnobQ15(g_words, 2);
     g_q.mix = KnobQ15(g_words, 3);
     g_q.gain = GainQ14(w5);                                /* clamped in GainQ14 (a sound may hold anything) */
-    g_have = true;
+    g.have = true;
   }
   const op1fx::DriveParams q = g_q;
   for (int at = 0; at + 2 <= n;) {                         /* coop hands 64; any even run of 2..64 works */
@@ -81,7 +97,7 @@ void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
       g_l[i] = static_cast<int16_t>(bl[i] >> 16);
       g_r[i] = static_cast<int16_t>(br[i] >> 16);
     }
-    g_drive.Process(g_l, g_r, m, q);
+    g.drive.Process(g_l, g_r, m, q);
     for (int i = 0; i < m; i++) {
       bl[i] = static_cast<int32_t>(g_l[i]) * 65536;
       br[i] = static_cast<int32_t>(g_r[i]) * 65536;

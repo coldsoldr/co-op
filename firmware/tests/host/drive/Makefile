@@ -10,15 +10,17 @@ TE ?= ../../../../../te-op1-cfw/ports/fx
 COOP := ../../../plugins/drive
 SDK := ../../../sdk
 BUILD ?= ../../../build/host/drive
-CXXFLAGS := -O2 -std=c++17 -Wall -Wno-unused-function -Wno-class-memaccess
+# e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
+SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
+CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-function -Wno-class-memaccess
 # upstream beside the plugin's copy: its namespace renamed, and its assembly entry points (unused by the reference,
 # which runs the C passes) too, so they don't collide with the plugin's
 ASM_NAMES := DriveInterpAsm DriveShapeAsm DriveDecimAsm DriveToneAsm DriveDcAsm DriveMixAsm DriveMonoWetAsm
 REF_DEFS := -Dop1fx=up $(foreach s,$(ASM_NAMES),-D$(s)=Ref$(s) -D_$(s)=_Ref$(s))
-COOP_SRC := $(COOP)/drive.cc $(COOP)/src/drive_dsp.cc
+COOP_SRC := $(COOP)/drive.cc $(COOP)/src/drive_dsp.cc ../fx_scratch_host.cc
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
-SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -Wno-class-memaccess
+SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -Wno-class-memaccess
 
 .PHONY: all tables host sim clean
 all: tables host

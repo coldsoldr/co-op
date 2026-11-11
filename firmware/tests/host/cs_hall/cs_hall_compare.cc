@@ -10,8 +10,8 @@
 //
 // What the kennel glue did and coop does differently, and how the script lines them up:
 //   - kennel cleared the 84 KB tank in Init and on a restart (a > 5 ms pause between calls), and passed one block
-//     dry; coop clears it over kClearBlocks blocks in render, dry, when the tank was used (a fresh load is already
-//     zero). The reference plays those extra blocks dry without calling the hall.
+//     dry; coop clears it over kClearBlocks blocks in render, dry, on every (re)start (e8: the tank is in the shared
+//     position buffer). The reference plays those extra blocks dry without calling the hall.
 //   - kennel's knobs came through op1_fx_param_q15 from the stock range table; coop maps the raw words with the
 //     SDK's constant ranges. The script sends raw words in the ranges and the reference applies kennel's formula.
 //   - the freeze latch: kennel's op1_fx_page[pos][3]; coop's params[8] bit 0.
@@ -32,6 +32,7 @@ static uint32_t& Clock() { return op1::host_cycles; }
 #else
 #include "coop_plugin.h"
 extern "C" const coop_fx_t FX_cs_hall;
+extern "C" long coop_fx_scratch_check(const coop_fx_t* fx, const int16_t* params, long blocks);   /* ../fx_scratch_host.cc */
 #if defined(__bfin__)
 static uint32_t sim_clock;
 static uint32_t& Clock() { return sim_clock; }   // unused: the plugin reads CYCLES
@@ -68,7 +69,7 @@ struct Instance {
 };
 Instance* inst;
 int skip;                                          // blocks the coop build spends clearing: dry here too
-bool tank_used;
+bool tank_used;                                    // before e8 the clear was skipped while unused (unused now)
 
 int32_t KennelQ15(const int16_t* p, int i) {       // op1_fx_param_q15 with the table filled
   int32_t v = (p[i] - kLo[i]) * 32767 / (kHi[i] - kLo[i]);
@@ -87,7 +88,7 @@ void FxRender(int16_t* l, int16_t* r, const int16_t* p) {
   if (!inst->half.Begin(op1::Cycles())) {
     inst->hall.Init();
     inst->half.End();
-    if (tank_used) skip = kClearBlocks;
+    skip = kClearBlocks;                           // e8: coop clears on every (re)start (its buffer is shared)
     return;
   }
   int32_t v[8];
@@ -110,7 +111,7 @@ uint32_t last_cost;
 uint32_t last_cost, max_cost;
 uint64_t sum_cost;
 uint32_t n_cost;
-void FxInit() { FX_cs_hall.init(0); }
+void FxInit() { FX_cs_hall.init(2); }               // e8: the slot rendered (each slot has its own state)
 void FxRender(int16_t* l, int16_t* r, const int16_t* p) {
   int32_t L[kBlock], R[kBlock];
   for (int i = 0; i < kBlock; ++i) { L[i] = l[i] * 65536; R[i] = r[i] * 65536; }
@@ -238,5 +239,11 @@ int main(int argc, char** argv) {
   Play(MONO_NOISE, 800, true);
   Scenario("end");
   std::fclose(out);
+#ifndef HALL_REF
+  {   /* e8: two positions at once and a restart on a dirty position buffer (tests/host/fx_scratch_host.cc; stderr) */
+    int16_t sp[16] = { 9000, 18000, 6000, 26000, 0x5300 + 32, 6000, 12000, 30000 };
+    if (coop_fx_scratch_check(&FX_cs_hall, sp, 1500)) return 1;
+  }
+#endif
   return 0;
 }

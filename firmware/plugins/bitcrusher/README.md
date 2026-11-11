@@ -85,6 +85,7 @@ page globals and its page-2 bracket follows the retired toggle. The brief for a 
   clock ticks and readout glyphs go; the core draws the value text).
 
 ## Memory, L1, cost
+- **e8 (2026-11-11):** the state is in the slot's position buffer (plugin.json `"scratch": 32`, `coop_fx_scratch`); the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 1,860 bytes, load 1,476 once.
 
 - File 1,672 bytes; `.text` 1,200, `.rodata` 140, `.data` 0, `.bss` 16 (the phase, two held samples, the jitter
   generator). Load size 1,356 bytes; five relocations (FX 1 at synth, drum, master; FX 2 instrument, master): 6,780

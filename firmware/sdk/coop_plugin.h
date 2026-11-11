@@ -69,6 +69,37 @@ typedef struct coop_fx_t {
 #define COOP_FX_LATCH       8                          /* params[COOP_FX_LATCH]: the latch bits (e6) */
 #define COOP_FX_PARAMS_MIN  16                         /* words a render with declared controls may read */
 
+/* ---- e8: the position buffers (docs/plugins.md "e8", docs/fx-abi.md "Memory") ----
+ * The core owns one working buffer per FX position (slot 0 synth, 1 drum, 2 master, 3 instrument FX 2, 4 master
+ * FX 2); the effect active at a position works in that position's buffer. An effect declares the bytes it needs in
+ * plugin.json "scratch": N (pack.py sets the file's scratch flag, so a core before e8 refuses the file, and compiles
+ * the sources with -DCOOP_FX_SCRATCH_BYTES=N, so a port can static_assert its state fits). Such a file is relocated
+ * ONCE and serves all five positions from the one image; its .bss holds only per-slot pointers or tiny per-slot
+ * values (indexed by `slot`), never the effect's state.
+ *
+ * coop_fx_scratch(slot, &bytes): the slot's buffer (32-byte aligned, at least the declared bytes; *bytes = its size),
+ * or 0 (slot outside 0..4, or the file declares no "scratch"). The address is fixed for the session, so a port may
+ * keep it (per slot) from init. Call it from init or render only.
+ *
+ * The contents are NOT preserved across selections: whichever scratch effect is active at the position uses the same
+ * memory, so init(slot), which the core calls every time the effect is selected (or restarted) there, must reset all
+ * of the effect's state as if it found garbage (it does). init stays cheap (it may run in the audio interrupt): a
+ * large line or tank is cleared over the next renders while the dry signal passes (guide/plugin-guidelines.md §2.3).
+ * The same effect at two positions works in two buffers: two independent states.
+ *
+ * COOP_FX_SCRATCH_MAX: the most a file may declare (176 KiB: every kennel effect core fits it, kennel's position
+ * buffer is 176,460 bytes); a larger declaration is refused by pack.py and by the core. The core sizes the five
+ * buffers at boot to the largest declaration among the scratch files it loaded. */
+#define COOP_FX_SLOTS        5
+#define COOP_FX_SCRATCH_MAX  180224u
+#ifdef __cplusplus
+extern "C" {
+#endif
+void *coop_fx_scratch(int slot, uint32_t *bytes);
+#ifdef __cplusplus
+}
+#endif
+
 /* ---- screens (E2, docs/engines.md "Screens"): a plugin that ships an SVG in its file draws it through these. Both
  * run on the GUI thread; `scr` is the screen object, handed to the sdk/coop_screen.h calls. ---- */
 typedef struct coop_screen_t {

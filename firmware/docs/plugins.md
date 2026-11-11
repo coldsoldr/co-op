@@ -112,7 +112,7 @@ plugins.
 
 Every plugin is relocated five times now: synth, drum and master for slot 1 (P2b), plus instrument slot 2 and master
 slot 2 (`docs/stereo-bus-v2.md`, S2). A plugin in slot 2 gets `init(3)` / `init(4)` and the same `render` call as at
-slot 1, with the four knob words in the filter ranges and `params[4] = 0x5300 + n`. Memory: five times the load size
+slot 1, with the four knob words in the filter ranges and `params[4] = 0x5300 + n`. Memory (until e8, which keeps an effect's state in a position buffer and relocates it once; old-model files still load this way): five times the load size
 (the stereo delay: 5 x 129 KiB of heap 0); a plugin that no longer fits fails to load with "plugin memory full".
 
 ## Next
@@ -296,7 +296,7 @@ te-op1-cfw's kennel bitcrusher (`ports/knl/bitcrusher`, 5aa314b; DSP `ports/fx/s
 - Do not set plugin.json `"stereo"` on a coop effect: the loader then checks kennel's `op1_fx_stereo_t` layout
   (callbacks at +0, +4, +12) and a `coop_fx_t` fails it ("stereo callback outside plugin text") [I: read in
   `plugin_load.cc`, not run].
-- 1,680 bytes packed (with the gain steps), load 1,356 (x5 = 6,780); simulator compute 5.3 k / 6.7 k cycles a block
+- 1,680 bytes packed (with the gain steps), load 1,356 (x5 = 6,780; e8: 1,860 packed, load 1,476 once, scratch 32 a position); simulator compute 5.3 k / 6.7 k cycles a block
   avg / max [C simulator]; op1emu gate passed 2026-11-11 (below); device pending.
 
 ## Port: drive (kennel effect, 2026-11-11) [C host + GNU simulator + op1emu; device pending]
@@ -314,7 +314,7 @@ the kennel plugin `ports/knl/drive` 0.2), self-contained: `src/drive_dsp.{h,cc}`
   read at 0x01DE5C50 (a constant row), the mono split and the fused mono wet kernel (coop has no mono position), the
   tests-only no-oversampling path, the DriveParams default member initialiser (a static constructor otherwise).
 - Stereo: upstream's packed path (L low halves, R high, one dual MAC) at every position; no L == R shortcut.
-- Size: 9,608 bytes packed, load 9,948 (x 5 = 49,740 bytes of heap 0); no imports; `.bss` 1,584.
+- Size: 9,608 bytes packed, load 9,948 (x 5 = 49,740 bytes of heap 0); no imports; `.bss` 1,584. e8: 9,464 packed, load 8,480 once, `.bss` 20, scratch 1,600 a position.
 - Tests (`make -C tests/host/drive all sim`): the plugin's render on the int32 bus against upstream's DSP behind
   kennel's stereo glue over 20,000 random blocks (knobs jumping, sweeping, out of range; gain word changing; re-inits),
   bit-identical on the host (C passes) and in bfin-elf-run with the device build (assembly passes) against upstream's
@@ -332,7 +332,7 @@ four turns as kennel (rate, depth, voices, mix; normalised from the filter range
 ranges as constants), fn + blue the input gain (word 5) with shift + fn + blue its fine (`"fine": true`, `"random":
 false`); no latch. Kennel's `"stereo": true` is left out (coop's loader reads it as kennel's stereo layout). True
 stereo at every position; one exact saving: a block with L == R and equal decimator histories copies the left
-decimator's result. File 10,820 bytes, load 19,380 x 5. `tests/host/ensemble`: bit-identical to the upstream on the
+decimator's result. File 10,820 bytes, load 19,380 x 5 (e8: 9,736 bytes, load 8,992 once, scratch 10,400 a position). `tests/host/ensemble`: bit-identical to the upstream on the
 host (C) and in bfin-elf-run (assembly), 12.8 k mean / 14.8 k max cycles a block in the simulator. Gate plan and the
 scenario `tests/sim/det_fx_ensemble.txt`: `plugins/ensemble/README.md`. Device test: `docs/device-tests.md`
 "ensemble 0.3".
@@ -348,7 +348,7 @@ assembly, `op1/support.cc`, `LICENSE-MIT`). Contract, stereo and cost: `plugins/
   is the green click, steps `shift` / `ring`, word 6, saved, wrapping, randomised.
 - **Removed from the kennel glue** (`common/knl_fx.h`): the shift byte read at 0x01DD7F78 (`knl::Fine`, now the core's
   fine), the range table read at 0x01DE5C50 (`op1_fx_param_q15`, now the constant ranges once a block), the instance
-  in `op1_fx_scratch` (now `.bss`, one per relocation), `op1_fx_page` / `op1_fx_knobs` / the screen reads, the input
+  in `op1_fx_scratch` (`.bss`, one per relocation, until e8 put it back in a position buffer: `coop_fx_scratch`), `op1_fx_page` / `op1_fx_knobs` / the screen reads, the input
   meter, `memset` / `<cstring>` in the DSP. No `"stereo"` flag (kennel's layout; a `coop_fx_t` is stereo by ABI). The
   screen (`shift.svg`) is not carried: effect screens aren't built.
 - **Stereo:** a Hilbert pair per channel instead of upstream's one pair on (L + R) / 2 (guidelines §2.2: no mono
@@ -356,7 +356,7 @@ assembly, `op1/support.cc`, `LICENSE-MIT`). Contract, stereo and cost: `plugins/
   spread, R at shift - spread), and with L == R to upstream's stereo path (`make -C tests/host/freq_shift`); the
   assembly equals the host C in the GNU simulator (`make ... sim`).
 - **Cost** (GNU simulator, cycles a block): 9,762 avg / 11,013 max with L == R, 14,383 / 15,868 with L != R
-  (upstream's stereo call: 6,585 / 7,187). op1emu: below; device pending. File 10,308 bytes, load 14,168 (x5 = 70,840).
+  (upstream's stereo call: 6,585 / 7,187). op1emu: below; device pending. File 10,308 bytes, load 14,168 (x5 = 70,840; e8: 10,152 bytes, load 9,664 once, scratch 4,640 a position).
 - Gated in op1emu 2026-11-11 (below); scenario `tests/sim/det_fx_freq_shift.txt`.
 
 ## tape_drive (2026-11-11): the kennel tape saturation, stereo at every position
@@ -398,7 +398,7 @@ Instruments Beads (MIT, `plugins/tape_echo/LICENSE-MIT`). Contract, mapping, cos
   struct zeroing (`k_ = Kernel()`) into a `memset` call, which the packer lists as an import (`imports _memset`)
   even with `-fno-tree-loop-distribute-patterns`: zero it with a loop of words; (3) two sources with the same stem
   (`tape_echo.cc`, `src/tape_echo.cc`) give one object name and a link error: rename one.
-- 10,664 bytes packed, `.bss` 134,764; load size 143,652 x 5 = 718,260 bytes of heap 0. GNU simulator 15,880 /
+- 10,664 bytes packed, `.bss` 134,764; load size 143,652 x 5 = 718,260 bytes of heap 0 (e8: 10,160 bytes, load 9,132 once, `.bss` 20, the 134,784-byte state in each position buffer). GNU simulator 15,880 /
   16,637 cycles a block (avg / max); op1emu gate passed 2026-11-11 (below); device pending (`docs/device-tests.md` "tape_echo 0.1").
 
 ## wavefolder 0.1 (2026-11-11, a kennel effect port)
@@ -410,14 +410,14 @@ tone, mix as kennel; fn + blue the input gain (word 5, -6..+6 dB, `"fine": true`
 `coop_fx_t` is stereo by ABI, and the loader would read the flag as kennel's `op1_fx_stereo_t`).
 - Removed from the kennel wrapper: `knl::Fine` (the shift byte at 0x01DD7F78, rewriting stored words),
   `op1_fx_param_q15` (the range table at 0x01DE5C50; now the SDK's constant ranges, once a block and only when a
-  word moved), `op1_fx_scratch` (one `Fold` in each relocation's `.bss`), the page-2 press and the screen calls.
+  word moved), `op1_fx_scratch` (one `Fold` in each relocation's `.bss`; e8: in the position buffer again, `coop_fx_scratch`), the page-2 press and the screen calls.
 - coop additions: the int32 <-> int16 bus conversion in assembly (`src/bus_bfin.S`), a mix-0 bypass that leaves the
   bus words untouched, and an L == R shortcut (the mono kernels once while the channel states are equal:
   bit-identical to the stereo run).
 - Host test `tests/host/wavefolder` (`make TE=<te-op1-cfw>/ports all sim`): bit-identical to the upstream driven as
   `fold_knl.cc` drove it, natively (C kernels) and in the GNU simulator (assembly). Simulator cost a block: 5,716
   avg / 6,962 max stereo (upstream `Process` alone 4,807); device estimate 9-15 k [I]. Packed 9,980 bytes, load size
-  10,008 (x 5 = 50,040). op1emu gate passed 2026-11-11 (below); device: pending. Packed 9,988 with the gain steps.
+  10,008 (x 5 = 50,040; e8: 9,716 bytes, load 9,116 once, scratch 960 a position). op1emu gate passed 2026-11-11 (below); device: pending. Packed 9,988 with the gain steps.
 
 ## cs_hall (2026-11-11): the hall reverb from te-op1-cfw (kennel cs_hall 0.1)
 
@@ -429,7 +429,7 @@ the file). Controls: the four turns size / decay / damp / mix; fn + blue predela
 each with its fine on shift + fn (words 5-7, saved); freeze on the orange click (latch bit 0). The 84 KB tank is
 cleared in render, 4 KB a block (21 blocks dry), not in init (guidelines §2.3). Host test `tests/host/cs_hall`:
 bit-identical to the upstream through kennel's glue, host C and the Blackfin build in the simulator (18-22 k cycles a
-block, 26 k peak there). Load size 102,932 bytes (~515 KB for five relocations). No `format` field in the controls
+block, 26 k peak there). Load size 102,932 bytes (~515 KB for five relocations; e8: 17,060 bytes, load 16,216 once, the 86,752-byte state in each position buffer). No `format` field in the controls
 schema yet, so predelay can't be shown in ms. op1emu gate passed 2026-11-11 (below); device test pending (`docs/device-tests.md` "cs_hall").
 
 ## cs_plate (2026-11-11): the plate reverb, a kennel effect port on e6
@@ -470,7 +470,7 @@ bitcrusher, drive, ensemble, freq_shift, tape_drive, tape_echo, wavefolder, cs_h
 them for their cost: GNU simulator average 30 k / 37 k cycles a block, peaks 69 k / 80 k (over the 60 k a plugin may
 cost).
 
-**Sizes** (packed / load / load x 5 relocations, bytes):
+**Sizes before e8** (packed / load / load x 5 relocations, bytes; e8 relocates each once and keeps the state in the position buffers: "e8" below has the new figures):
 
 | Plugin | Packed | Load | x 5 |
 |---|---|---|---|
@@ -594,10 +594,93 @@ reason, e.g. `over the plugin memory budget (needs 702 KB, 457 KB of 1536 KB lef
 - Regression: pristine `det_chord.txt` e7 vs e6 within the known run-to-run spread (one build identical over 3.2 M
   frames), `det_fx_controls.txt` / `det_fx_reload.txt` and saw `det_eng_controls.txt` as e6.
 
-## Next: e8, kennel's memory model (owner's decision, 2026-11-11; not started)
+## e8 (2026-11-11): the position buffers, an effect relocated once
 
-After e7 the owner chose kennel's memory model for effects: the firmware owns one working buffer per position (5 x
-about 176 KB), the active effect gets its position's buffer at init, each plugin is relocated **once** (not five
-times), and the nine ports go back to scratch-buffer state (their lines and tanks in the buffer they are given, not
-in their own .bss). An effect restarts when it is selected. This replaces the 5x relocation cost that the e7 budget
-now limits; the e7 budget and heap check stay as the guard for the tape's cache.
+The owner's decision after e7 (the budget refused tape_echo and cs_hall, the e6 hang was the stock tape cache running
+out of heap 0): **kennel's model**. The firmware owns one working buffer per FX position; the effect active at a
+position works in it; an effect file is relocated once; an effect restarts (re-initialises, nothing preserved)
+whenever it is selected at a position. Kennel's reference: te-op1-cfw `ports/knl/common/knl_fx.h` (a 176,460-byte
+`op1_fx_scratch(pos)` per position, "re-initialised in init and never assumed preserved"). The nine ports came from that
+pattern and had moved their state into `.bss` (one copy per relocation, five relocations); e8 puts it back.
+
+**ABI** (`sdk/coop_plugin.h` "e8", `docs/fx-abi.md` "Memory"):
+- plugin.json `"scratch": N` (bytes, 1 .. `COOP_FX_SCRATCH_MAX` = 180,224). pack.py sets `KN_FLAG_SCRATCH` (0x20, a new
+  header flag) and extension 7 (u32 N), refuses N out of range, a non-effect, and a file that imports `coop_fx_scratch`
+  without declaring it; it compiles the sources with `-DCOOP_FX_SCRATCH_BYTES=N` so a port static_asserts its state
+  fits. `tools/plugin/reloc.py` and `core/sdram/plugin_load.cc` check flag and extension together.
+- `void *coop_fx_scratch(int slot, uint32_t *bytes)`: a core export (`sdk/coop_exports.cc`, entry 14), valid from init
+  and render: the slot's buffer (32-byte aligned; `*bytes` = its size, at least N), 0 for a slot outside 0..4 or
+  before the buffers exist. The address is fixed for the session; the ports keep it per slot from init.
+- `init(slot)` is the restart: the core already calls it whenever the effect is selected at a position (positions 0-2 on
+  the first block after a selection or sound change, slots 3-4 from the main loop when the FX 2 choice changes), so
+  nothing new is called. It resets every field of the state (the buffer holds the previous effect's bytes) and stays
+  cheap: tape_echo, cs_hall and cs_plate still clear their tanks over the next renders while the dry signal passes.
+  cs_hall now clears on every (re)start (before e8 it skipped a tank the loader had zeroed): the first selection
+  also passes ~30 ms dry.
+- **Backward compatible**: a file without the flag (stereo_delay, test_fx, the probes) loads as before: five
+  relocations, its state in `.bss`, the e7 budget at five times its load size. The engines (saw, rings) are not
+  touched. **A core before e8 refuses a scratch file** at `kn_parse`: "unknown plugin flags" (as e6 did with
+  `KN_FLAG_PAGE2` for cores before it) [C: the e7 flag mask in `tests/tools/test_pack_scratch.py`; I on a device].
+
+**Core** (`core/sdram/plugin_host.cc`):
+- A scratch file is relocated once; `g_plug[n].inst[0..4]` are the same object. It waits in `pend` (not selectable)
+  until the buffers exist.
+- **The buffers**: one heap-0 block of 5 x E (+ 32 for the alignment), zeroed, taken at the end of the boot scan, before
+  the staging block is freed (so it comes from the break and does not split the staging hole the tape's nodes use) and
+  so before the stock tape's cache; only when a scratch file loaded. E = the largest declaration among the scratch
+  files that loaded, 32-byte rounded: with the nine ports, tape_echo's 134,784 (5 x 134,784 = 673,920; the block
+  673,960). Sized at boot rather than fixed, because a set of small effects then costs almost nothing (bitcrusher
+  alone: 5 x 32 bytes) and the full set fits the budget with rings (kennel's 176,460 x 5 = 882 KB plus rings' 666 KB
+  would not). The ceiling `COOP_FX_SCRATCH_MAX` (176 KiB) keeps any kennel effect core portable. Then every waiting
+  file is published. If heap 0 cannot give the block after all (the scan's heap check said it could: a heap read gone
+  wrong), every scratch file is refused with "no memory for the effect buffers" and its image freed.
+- **The budget counts the buffers once**: a scratch file costs its image block plus what it grows the buffer block by
+  (`fxbuf_cost(new max) - fxbuf_cost(old max)`); the e7 heap check (`heap_room_ok`, before allocating, blocks counted off the break) adds the buffers still to be taken
+  to every file's check, scratch or not, so the tape's 24 nodes and 512 KiB stay free. `needs` in `plugfile` lines and
+  the inventory is that charge.
+- Same effect at two positions: two buffers, two states (positions 0, 1, 2, 3, 4 each have their own). Switching effects
+  at a position: the new effect's init resets the buffer for itself; selecting the old one again inits it again. A
+  stock effect at a position does not use the buffer. Slot 2's init runs on the main loop while the audio interrupt
+  renders the other positions; the ports keep nothing shared that init writes (block buffers are in the state too).
+- Checked and unchanged: the latches (`g_fx_latch[pos]`, cleared at every init), the per-position controls (e6), the
+  stats `fxctl` and cost lines (per position, not per instance), `g_cur[]` (which plugin each position initialised
+  last: it is what triggers the restart), the screens (the stock filter page), `g_plug[n].fx = 0` when an init fails
+  (one image: the effect is dropped at every position, as before when any instance's init failed).
+- Refusals: "effect buffer larger than this core gives (repack)" (N over `COOP_FX_SCRATCH_MAX`), "calls coop_fx_scratch
+  without the scratch flag (repack)", "no memory for the effect buffers", as e7's in the stats and the inventory.
+- Build tag `e8`.
+
+**Stats**: the `plugmem` line gains `scratch_files S fxbuf E fxbuf_mem M fxbuf_short K` (scratch effects loaded, each
+position buffer's bytes, the buffers' heap block, 1 when heap 0 could not give it).
+
+**The nine ports** (each README's memory line): the state struct moved into the slot's buffer (`Instance* g_inst[5]` in
+`.bss`, 20 bytes; cs_plate a `Slot` with the clear counter outside the cleared plate); init binds the slot and resets
+the state; render works on the slot's state. Host tests (`tests/host/<id>`) link `tests/host/fx_scratch_host.cc`: five
+buffers of the declared size filled with random bytes, so an init that relied on zeroed memory fails the bit-exact
+comparison (checked: bitcrusher without its `Init()` mismatches 853,221 samples), and `coop_fx_scratch_check` (the
+effect at slots 0 and 3 interleaved on different signals must give slot 0 the output it gives alone; a restart on a
+dirtied buffer must give it again). Harness changes: freq_shift renders at slot 0 only and initialises slot 4 before its
+mix-0 check (it had rendered slots 0 / 2 / 4 from one state); ensemble's random re-init uses the rendered slot;
+cs_hall's reference passes its 21 clear blocks after every restart (the plugin clears always now) and initialises the
+slot it renders (2).
+
+| Plugin | Packed | Load (once) | `.bss` | Image block | `"scratch"` | Before e8: load x 5 |
+|---|---|---|---|---|---|---|
+| bitcrusher | 1,860 | 1,476 | 20 | 1,536 | 32 | 6,780 |
+| drive | 9,464 | 8,480 | 20 | 8,536 | 1,600 | 49,740 |
+| ensemble | 9,736 | 8,992 | 20 | 9,048 | 10,400 | 96,900 |
+| freq_shift | 10,152 | 9,664 | 20 | 9,720 | 4,640 | 70,840 |
+| tape_drive | 11,084 | 10,628 | 20 | 10,688 | 3,392 | 69,560 |
+| tape_echo | 10,160 | 9,132 | 20 | 9,192 | 134,784 | 718,260 |
+| wavefolder | 9,716 | 9,116 | 20 | 9,176 | 960 | 50,040 |
+| cs_hall | 17,060 | 16,216 | 20 | 16,272 | 86,752 | 514,660 |
+| cs_plate | 10,940 | 10,064 | 20 | 10,120 | 77,664 | 437,670 |
+| **nine** | | | | **84,288** | buffers **673,960** | **2,014,450** |
+
+All nine with the buffers: **758,248 bytes** of heap 0 (was 2,014,450 plus block headers, which the 1,536 KiB budget
+could not hold). With rings (666,064) and saw (2,320 + its voice state) the owner's 11-file set needs ~1.43 MB of the
+1,572,864 budget [I: arithmetic from the packed headers until the gate's `plugmem used`].
+
+New sim scenarios: `tests/sim/det_fx_two_pos.txt` (one plugin at synth FX 1, instrument FX 2 and master FX 2 at once;
+`det_fx_two_pos_first.txt` for a plugin on the first row of the FX list) and `tests/sim/det_fx_switch.txt` (cs_hall /
+tape_echo switched at synth FX 1 and at instrument FX 2: one init per selection). Gate: `docs/device-tests.md` "e8".

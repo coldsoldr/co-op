@@ -68,7 +68,9 @@ invent mappings.
    Until ABI v2 lands the core hands four Q15 knobs only; put the extra parameters in the table marked *proposed* and
    map the four turn parameters to `params[0..3]`.
 
-5. **Write the plugin**: `plugins/<id>/<id>.cc` exporting one `coop_fx_t` (`sdk/coop_plugin.h`), state in `.bss`,
+5. **Write the plugin**: `plugins/<id>/<id>.cc` exporting one `coop_fx_t` (`sdk/coop_plugin.h`), its state in the
+   position buffer (e8: plugin.json `"scratch"`, `coop_fx_scratch(slot, &bytes)` in `init`, five pointers in `.bss`,
+   every field reset in `init`: guidelines §2.3; kennel's `knl::Instance` / `op1_fx_scratch` map straight onto it),
    `init(slot)` cheap (reset and bind only; a slow table build is noted as needing the main-thread hook), and
    `plugins/<id>/README.md` with the 4 x 6 action table (rows: turn, click, shift + turn, shift + click,
    shift + fn + turn, shift + fn + click; columns: blue, green, white, orange), the upstream mapping, and the
@@ -79,11 +81,13 @@ invent mappings.
    (`tools/playground/coop-playground.html`) first.
 
 7. **Build and lint** (WSL): `wsl -e bash -lc 'cd /mnt/i/GitHub/coldsoldr/co-op/firmware && make -C plugins'` →
-   `build/plugins/<id>.coop`; any `.S` goes through `tools/asm_lint.py`. Check the packed size and the load size x 5.
+   `build/plugins/<id>.coop`; any `.S` goes through `tools/asm_lint.py`. Check the packed size, the load size (once) and the declared scratch.
 
 8. **Host test where a C reference exists**: a `tests/sim` harness against the upstream DSP over random blocks
    (bit-identical for a straight port; levels within tolerance for a restructured one), as `docs/plugin-performance.md`
-   "How a rewrite is accepted".
+   "How a rewrite is accepted". Link `tests/host/fx_scratch_host.cc` (the position buffers, filled with garbage;
+   `-DCOOP_FX_SCRATCH_BYTES` from plugin.json) and call `coop_fx_scratch_check` at the end: two positions at once
+   and a restart on a dirty buffer must give the same output (e8).
 
 9. **op1emu gate** (`docs/plugins.md` "Building and testing"): overlay NAND with the `.coop` via `tools/make_nand.py`,
    run `tests/sim/det_fx_select.txt`-style scenarios with the plugin at the synth, drum and master positions and at

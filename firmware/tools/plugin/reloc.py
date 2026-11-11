@@ -20,6 +20,9 @@ EXT_CLAIMS, EXT_AUTHOR, EXT_VERSION = 1, 2, 3          # extension table tags (d
 EXT_BIGBUF = 4                                         # u32 image offset of the op1_bigbuf_t (flag bit 4)
 EXT_CONTROLS = 6                                       # coop e4: the engine's control declaration (text, docs/engines.md)
 EXT_COST = 5                                           # u32 x 2: declared worst-block cost, bcore packets (information)
+EXT_SCRATCH = 7                                        # coop e8: u32, the position buffer bytes an effect needs (flag 0x20)
+SCRATCH_PARSE_MAX = 0x100000                           # the loader's sanity bound (plugin_load.h KN_SCRATCH_PARSE_MAX)
+SCRATCH_MAX = 180224                                   # the most a file may declare (sdk/coop_plugin.h COOP_FX_SCRATCH_MAX)
 BIGBUF = struct.Struct('<6I')                          # magic, version, min, max, ptr, size
 BIGBUF_MAGIC, BIGBUF_VERSION, BIGBUF_MAX = 0x42424E4B, 1, 0x80000   # BIGBUF_MAX = kn_mem.h KN_DECL_MAX
 assert HEADER.size == HEADER_SIZE
@@ -31,6 +34,7 @@ SYM_LOCAL = 0xFFFF
 KIND_SYNTH, KIND_FX, KIND_FEATURE = 1, 2, 3
 KINDS = {'synth': KIND_SYNTH, 'fx': KIND_FX, 'feature': KIND_FEATURE}
 FLAG_USES_SAMPLE, FLAG_PAGE2, FLAG_STEREO, FLAG_INPUT, FLAG_BIGBUF = 1, 2, 4, 8, 0x10
+FLAG_SCRATCH = 0x20                                    # coop e8: the effect works in the core's position buffers
 FLAG_COARSE_SHIFT, FLAG_COARSE_MASK = 16, 0xF0000      # synth: bit 16 + k = knob k in 8 steps ("coarse")
 
 R_ABS32, R_HI16, R_LO16, R_PCREL24 = 1, 2, 3, 4
@@ -101,6 +105,8 @@ def parse_ext(data, off, first):
                 raise PluginError('claims list not double-NUL-terminated')
         if tag == EXT_BIGBUF and (n != 4 or tag in out):
             raise PluginError('bigbuf entry malformed')
+        if tag == EXT_SCRATCH and (n != 4 or tag in out):
+            raise PluginError('scratch entry malformed')
         out[tag] = val
         off += 4 + ((n + 3) & ~3)
 
@@ -175,8 +181,10 @@ def parse(data, api_version=None):
         elif sym >= h['import_count']:
             raise PluginError(f'relocation {i}: import {sym} out of range')
         relocs.append((off, typ, sym, addend))
-    if h['flags'] & ~(FLAG_USES_SAMPLE | FLAG_PAGE2 | FLAG_STEREO | FLAG_INPUT | FLAG_BIGBUF | FLAG_COARSE_MASK):
+    if h['flags'] & ~(FLAG_USES_SAMPLE | FLAG_PAGE2 | FLAG_STEREO | FLAG_INPUT | FLAG_BIGBUF | FLAG_COARSE_MASK | FLAG_SCRATCH):
         raise PluginError('unknown plugin flags')
+    if h['flags'] & FLAG_SCRATCH and h['kind'] != KIND_FX:
+        raise PluginError('scratch flag requires FX kind')
     if h['flags'] & FLAG_COARSE_MASK and h['kind'] != KIND_SYNTH:
         raise PluginError('coarse knobs require synth kind')
     if h['flags'] & FLAG_INPUT and (h['kind'] != KIND_SYNTH or h['flags'] & FLAG_USES_SAMPLE):
@@ -207,6 +215,13 @@ def parse(data, api_version=None):
     h['claims'] = [c.decode('ascii') for c in h['ext'].get(EXT_CLAIMS, b'').split(b'\0') if c]
     c = h['ext'].get(EXT_COST, b'')                     # declared cost: any other length is ignored, never refused
     h['cost'] = list(struct.unpack('<II', c)) if len(c) == 8 else [0, 0]
+    h['scratch'] = None                                 # coop e8: the position buffer bytes (plugin_load.cc, same order)
+    if bool(h['flags'] & FLAG_SCRATCH) != (EXT_SCRATCH in h['ext']):
+        raise PluginError('scratch flag and size disagree')
+    if h['flags'] & FLAG_SCRATCH:
+        h['scratch'], = struct.unpack('<I', h['ext'][EXT_SCRATCH])
+        if not 0 < h['scratch'] <= SCRATCH_PARSE_MAX:
+            raise PluginError('scratch size 0 or over 1 MiB')
     h['bigbuf'] = None                                  # declared pool buffer (kn_load.c, same checks and order)
     if bool(h['flags'] & FLAG_BIGBUF) != (EXT_BIGBUF in h['ext']):
         raise PluginError('bigbuf flag and descriptor disagree')

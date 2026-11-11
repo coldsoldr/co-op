@@ -11,6 +11,7 @@
   "include_dirs": [
     "."
   ],
+  "scratch": 960,
   "defaults": [
     9830,
     16384,

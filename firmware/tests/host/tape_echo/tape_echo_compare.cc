@@ -36,6 +36,7 @@ static uint32_t& clock_now = op1::host_cycles;
 #include "coop_plugin.h"
 #include "src/tape_echo.h"   // TapeEchoTimeWord, for the division table printout
 extern "C" const coop_fx_t FX_tape_echo;
+extern "C" long coop_fx_scratch_check(const coop_fx_t* fx, const int16_t* params, long blocks);   /* ../fx_scratch_host.cc */
 uint32_t g_tape_echo_host_cycles;
 static uint32_t& clock_now = g_tape_echo_host_cycles;
 #endif
@@ -292,6 +293,12 @@ int main(int argc, char** argv) {
   std::printf("tape_echo render, simulator compute: avg %lu, max %lu cycles a block over %lu blocks\n",
               static_cast<unsigned long>(cyc_sum / (cyc_n ? cyc_n : 1)), static_cast<unsigned long>(cyc_max),
               static_cast<unsigned long>(cyc_n));
+#endif
+#ifndef TE_REF
+  {   /* e8: two positions at once and a restart on a dirty position buffer (tests/host/fx_scratch_host.cc; stderr) */
+    int16_t sp[COOP_FX_PARAMS_MIN] = { 5000, 18000, 6000, 26000, 0x5300 + 32, 20000, 0, 1 };
+    if (coop_fx_scratch_check(&FX_tape_echo, sp, 1500)) return 1;
+  }
 #endif
   return 0;
 }

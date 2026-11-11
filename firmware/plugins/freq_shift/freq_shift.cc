@@ -2,8 +2,9 @@
  * from te-op1-cfw's kennel plugin (ports/knl/freq_shift/shift_knl.cc 0.2, DSP ports/fx/src/shift, at 5aa314b).
  *
  * The DSP is upstream's (src/shift.*, src/shift_bfin.S unchanged but for a Hilbert pair per channel, src/shift.h).
- * This file replaces kennel's glue (common/knl_fx.h): the instance lives in this relocation's .bss (each of coop's
- * five relocations, one per slot, has its own, so per-slot state comes free) instead of op1_fx_scratch; the turns
+ * This file replaces kennel's glue (common/knl_fx.h): the instance lives in the slot's position buffer (e8:
+ * coop_fx_scratch, kennel's op1_fx_scratch; plugin.json "scratch"), the file is relocated once and its .bss holds only
+ * the five buffer pointers; init binds the slot's buffer and resets everything there; the turns
  * are normalised here as op1_fx_param_q15 did, but from the ranges coop_plugin.h names (no range-table address); the
  * page-2 words are declared controls (plugin.json): gain on fn + blue (shift + fn + blue its fine, given by the core,
  * so kennel's knl::Fine and its shift-byte address are gone), the mode on the green click (a step index, so kennel's
@@ -23,13 +24,19 @@
 
 namespace {
 
-op1fx::FreqShift g_shift;
-int16_t g_l[SH_MAX_BLOCK], g_r[SH_MAX_BLOCK];
 /* The words the mapped parameters were last computed from (turns 0..3, word 5), and the mapped values. A word is
  * int16; kNoWord is outside it, so the first render after init computes all of them. */
 const int32_t kNoWord = 0x10000;
-int32_t g_words[5];
-int32_t g_mapped[5];   /* plain words: a global ShiftParams would need a static constructor (its gain initialiser) */
+struct Instance {
+    op1fx::FreqShift shift;
+    int16_t l[SH_MAX_BLOCK], r[SH_MAX_BLOCK];
+    int32_t words[5];
+    int32_t mapped[5];   /* plain words: a ShiftParams member would need a constructor (its gain initialiser) */
+};
+#ifdef COOP_FX_SCRATCH_BYTES
+static_assert(sizeof(Instance) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
+#endif
+Instance *g_inst[COOP_FX_SLOTS];                       /* .bss: each slot's state, in its position buffer */
 
 inline int32_t Clamp15(int32_t v) { return v < 0 ? 0 : (v > 32767 ? 32767 : v); }
 
@@ -52,18 +59,25 @@ int32_t GainQ14(int32_t word) {
 
 int init(int slot)
 {
-    (void)slot;
-    g_shift.Init();
-    for (int i = 0; i < 5; i++) g_words[i] = kNoWord;  /* every mapped value is recomputed at the first render */
+    if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+    uint32_t bytes = 0;
+    Instance *p = static_cast<Instance *>(coop_fx_scratch(slot, &bytes));
+    g_inst[slot] = (p && bytes >= sizeof(Instance)) ? p : nullptr;
+    if (!g_inst[slot]) return -1;
+    p->shift.Init();
+    for (int i = 0; i < 5; i++) p->words[i] = kNoWord;  /* every mapped value is recomputed at the first render */
     return 0;
 }
 
 void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
 {
-    (void)slot;
+    if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   /* not bound: dry */
+    Instance &g = *g_inst[slot];
+    int32_t *const g_words = g.words;
+    int16_t *const g_l = g.l, *const g_r = g.r;
     /* Read once for the block (docs/plugins.md "Effect controls"). bfin GCC divides by a constant through
      * __divsi3, so the mapped values are kept and recomputed only for a word that changed. */
-    int32_t *m = g_mapped;
+    int32_t *m = g.mapped;
     if (params[0] != g_words[0]) { g_words[0] = params[0]; m[0] = KnobQ15<64, 14528>(params[0]); }   /* blue shift */
     if (params[1] != g_words[1]) { g_words[1] = params[1]; m[1] = KnobQ15<0, 24576>(params[1]); }    /* green fb */
     if (params[2] != g_words[2]) { g_words[2] = params[2]; m[2] = KnobQ15<0, 22528>(params[2]); }    /* white spread */
@@ -89,7 +103,7 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
             g_r[i] = b;
             diff |= (uint32_t)(uint16_t)(a ^ b);
         }
-        const uint32_t w = g_shift.Process(g_l, g_r, k, q, diff == 0);
+        const uint32_t w = g.shift.Process(g_l, g_r, k, q, diff == 0);
         if (w & 1)
             for (int i = 0; i < k; i++) pl[i] = (int32_t)((uint32_t)(uint16_t)g_l[i] << 16);
         if (w & 2)
@@ -101,7 +115,7 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
 }  // namespace
 
 #ifdef FREQ_SHIFT_TEST                                /* tests/host/freq_shift: the instance's counters */
-extern "C" op1fx::FreqShift *freq_shift_instance() { return &g_shift; }
+extern "C" op1fx::FreqShift *freq_shift_instance() { return g_inst[0] ? &g_inst[0]->shift : nullptr; }   /* slot 0 */
 #endif
 
 extern "C" const coop_fx_t FX_freq_shift = { COOP_FX_MAGIC, COOP_PLUGIN_API, 0, init, render };

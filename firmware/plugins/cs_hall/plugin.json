@@ -15,6 +15,7 @@
   "cflags": [
     "-fno-tree-loop-distribute-patterns"
   ],
+  "scratch": 86752,
   "defaults": [19661, 16384, 9830, 11469],
   "controls": [
     {"id": "predelay", "name": "predelay", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",

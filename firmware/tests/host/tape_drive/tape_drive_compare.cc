@@ -27,6 +27,7 @@
 #include "src/tape.h"        // plugins/tape_drive (only for TapeParams' size; the render is the plugin's)
 #include "coop_plugin.h"
 extern "C" const coop_fx_t FX_tape_drive;
+extern "C" long coop_fx_scratch_check(const coop_fx_t* fx, const int16_t* params, long blocks);   /* ../fx_scratch_host.cc */
 #endif
 
 namespace {
@@ -222,6 +223,10 @@ int main(int argc, char** argv) {
   (void)cyc_sum;
   (void)cyc_max;
   (void)cyc_n;
+  {   /* e8: two positions at once and a restart on a dirty position buffer (tests/host/fx_scratch_host.cc) */
+    int16_t sp[COOP_FX_PARAMS_MIN] = { 9000, 15000, 6000, 28000, 0x5300 + 32, 20000 };
+    if (coop_fx_scratch_check(&FX_tape_drive, sp, 1500)) failures++;
+  }
   return (low_bad || failures || !ident_blocks || !wet_blocks) ? 1 : 0;
 #else
   printf("tape_drive ref: %ld blocks\n", static_cast<long>(blocks));

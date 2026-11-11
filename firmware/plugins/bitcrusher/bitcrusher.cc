@@ -9,8 +9,10 @@
  *     bits are the amount of crushing, so both are the knob mirrored (32767 - v), as upstream.
  *   params[5]: the input gain (fn + blue, shift + fn + blue fine; Q15, 16384 = 0 dB, -6..+6 dB), kennel's blue page
  *     word 5. Drives the crusher only.
- * Everything is read once a block. One relocation per slot (five, each its own .bss), so one state per file: the
- * slot argument is not needed.
+ * Everything is read once a block.
+ * Memory (e8): the state lives in the slot's position buffer (sdk/coop_plugin.h coop_fx_scratch, plugin.json
+ * "scratch"); the file is relocated once and its .bss holds only the five buffer pointers. init(slot) binds the slot's
+ * buffer and resets the state there (the buffer holds whatever the effect before left).
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission. */
 #include <stdint.h>
@@ -19,7 +21,11 @@
 
 namespace {
 
-crush::Crush g_crush;   /* plain data in .bss: no constructor runs */
+typedef crush::Crush Instance;
+#ifdef COOP_FX_SCRATCH_BYTES
+static_assert(sizeof(Instance) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
+#endif
+Instance* g_inst[COOP_FX_SLOTS];   /* .bss: each slot's state, in its position buffer (bound by init) */
 
 /* The filter type's ranges (sdk/coop_plugin.h; plugin_host.cc fx_rng; the device table, docs/device-tests.md e6
  * probe `filter_ranges`). */
@@ -32,20 +38,24 @@ inline int32_t Q15(const int16_t* p, int i) {
 }
 
 int init(int slot) {
-  (void)slot;
-  g_crush.Init();
+  if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+  uint32_t bytes = 0;
+  Instance* g = static_cast<Instance*>(coop_fx_scratch(slot, &bytes));
+  g_inst[slot] = (g && bytes >= sizeof(Instance)) ? g : nullptr;
+  if (!g_inst[slot]) return -1;
+  g->Init();
   return 0;
 }
 
 void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
-  (void)slot;
+  if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   /* not bound: dry */
   crush::Params q;
   q.rate = 32767 - Q15(params, 0);   /* clockwise = a higher rate */
   q.bits = 32767 - Q15(params, 1);   /* clockwise = more bits */
   q.jitter = Q15(params, 2);
   q.mix = Q15(params, 3);
   q.gain_q14 = crush::GainQ14(params[5]);   /* clamped inside */
-  g_crush.Process(l, r, n, q);
+  g_inst[slot]->Process(l, r, n, q);
 }
 
 }  // namespace

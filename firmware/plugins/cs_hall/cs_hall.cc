@@ -13,12 +13,13 @@
  *   fixed: motion at 9830 (the firmware build's fourth page-2 knob, as kennel)
  *
  * What changed from the kennel glue (hall_knl.cc):
- *   - one instance in .bss (each of coop's five relocations has its own), not kennel's position scratch buffer;
+ *   - the instance is in the slot's position buffer, as kennel's position scratch buffer had it (e8: coop_fx_scratch,
+ *     plugin.json "scratch"); the file is relocated once and its .bss holds only the five buffer pointers;
  *   - the tank's clear (84 KB) is not done in init (guidelines section 2.3: init runs in the audio interrupt at the
  *     stock positions): init resets the reverb's control state and marks the buffers for clearing; render then clears
- *     kClearWords a block and passes the input through dry until it is done (~21 blocks, 30 ms). A tank the
- *     reverb never wrote (the loader zeroes .bss) is not cleared. The restart after a pause (kennel's half_rate.h:
- *     over 5 ms without a call, e.g. bypassed) clears the same way;
+ *     kClearWords a block and passes the input through dry until it is done (~21 blocks, 30 ms), on every selection
+ *     (the buffer holds whatever the effect before left). The restart after a pause (kennel's half_rate.h: over 5 ms
+ *     without a call, e.g. bypassed) clears the same way;
  *   - knl::Fine (the shift byte at a firmware address) is gone: the core gives the fine step;
  *   - the stereo render runs at every position (kennel: mono in / mono out at synth and drum, width at the master
  *     only); there is no mono render;
@@ -132,19 +133,23 @@ struct Instance {
     op1fx::HallReverb hall;
     HalfRate half;
     int32_t clear_at;      /* next int16 word to clear; == ClearWords(): nothing to clear */
-    bool used;             /* the reverb has written its buffers since they were last zero */
 };
+#ifdef COOP_FX_SCRATCH_BYTES
+static_assert(sizeof(Instance) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
+#endif
 
-Instance g;                /* .bss: zeroed by the loader (clear_at 0 then means "all to clear", but used = false) */
+Instance *g_inst[COOP_FX_SLOTS];   /* .bss: each slot's state, in its position buffer (e8, bound by init) */
 
-void StartClear()
+/* e8: always the whole tank: the position buffer holds whatever the effect before left (before e8 a tank the reverb
+ * never wrote, zeroed by the loader, was skipped) */
+void StartClear(Instance &g)
 {
     g.hall.InitKeepBuffers();
-    g.clear_at = g.used ? 0 : op1fx::HallReverb::ClearWords();
+    g.clear_at = 0;
 }
 
 /* One block's share of the clear. The buffers start 4-byte aligned (the class holds int32 members before them). */
-void ClearStep()
+void ClearStep(Instance &g)
 {
     int16_t *const base = g.hall.ClearBase();
     const int32_t total = op1fx::HallReverb::ClearWords();
@@ -159,28 +164,32 @@ void ClearStep()
     }
     for (; i < end; ++i) base[i] = 0;
     g.clear_at = end;
-    if (end == total) g.used = false;
 }
 
 int init(int slot)
 {
-    (void)slot;
-    StartClear();
-    g.half.Stop();
+    if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+    uint32_t bytes = 0;
+    Instance *p = static_cast<Instance *>(coop_fx_scratch(slot, &bytes));
+    g_inst[slot] = (p && bytes >= sizeof(Instance)) ? p : nullptr;
+    if (!g_inst[slot]) return -1;
+    StartClear(*p);
+    p->half.Stop();
     return 0;
 }
 
 void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
 {
-    (void)slot;
+    if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   /* not bound: dry */
+    Instance &g = *g_inst[slot];
     if (n != kBlock) return;                                   /* the core always gives 64; anything else passes dry */
     if (!g.half.Begin(Cycles())) {                             /* a restart: the hall starts again, cleared */
-        StartClear();
+        StartClear(g);
         g.half.End();
         return;
     }
     if (g.clear_at < op1fx::HallReverb::ClearWords()) {        /* still clearing: dry */
-        ClearStep();
+        ClearStep(g);
         g.half.End();
         return;
     }
@@ -200,7 +209,6 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
         l16[i] = static_cast<int16_t>(l[i] >> 16);
         r16[i] = static_cast<int16_t>(r[i] >> 16);
     }
-    g.used = true;
     g.half.Decimate(l16, r16);
     g.hall.Process(g.half.in(0), g.half.in(1), g.half.wet(0), g.half.wet(1), kHalfN, q);
     g.half.Mix(l16, r16, mix);

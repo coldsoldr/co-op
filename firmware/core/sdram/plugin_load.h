@@ -25,6 +25,11 @@ extern "C" {
 #define KN_FLAG_INPUT       8u
 #define KN_FLAG_BIGBUF      0x10u        /* the file declares a pool buffer: extension KN_EXT_BIGBUF -> op1_bigbuf_t
                                             (op1_plugin.h). Cores before 2026-10-21 refuse the bit ("unknown flags") */
+#define KN_FLAG_SCRATCH     0x20u        /* coop e8: an effect working in the core's position buffers (sdk/coop_plugin.h
+                                            coop_fx_scratch), relocated once; extension KN_EXT_SCRATCH holds the bytes
+                                            it needs. Cores before e8 refuse the bit ("unknown plugin flags") */
+#define KN_EXT_SCRATCH      7            /* coop e8: u32, the position buffer bytes the effect needs */
+#define KN_SCRATCH_PARSE_MAX 0x100000u   /* kn_parse's sanity bound; the host's own limit is COOP_FX_SCRATCH_MAX */
 #define KN_EXT_BIGBUF       4            /* extension tag: u32 image offset of the op1_bigbuf_t descriptor */
 #define KN_EXT_CONTROLS     6            /* coop e4: the engine's control declaration, NUL-terminated text (docs/engines.md) */
 #define KN_EXT_COST         5            /* extension tag: u32 x 2, the declared worst-block cost in bcore packets (synth:
@@ -58,6 +63,7 @@ typedef struct {
     uint32_t cost[2];                /* KN_EXT_COST, {0, 0} if absent or malformed */
     const char *controls;            /* KN_EXT_CONTROLS text, 0 if absent (coop e4) */
     uint32_t n_imports;              /* entries of the import table */
+    uint32_t scratch;                /* KN_FLAG_SCRATCH: KN_EXT_SCRATCH's bytes, else 0 (coop e8) */
 } kn_info;
 
 /* Check `file` (size bytes) and fill `info`. 0 = ok, else *err says why (a static string). */

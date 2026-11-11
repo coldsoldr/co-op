@@ -97,6 +97,7 @@ in blue, the drawing dimmed to the body tone; nothing at rest. Ripples from the 
 reads from the core, not from the render (§5.3).
 
 ## Memory, L1, cost
+- **e8 (2026-11-11):** the Hilbert pairs, shifters, block buffers and param cache are in the slot's position buffer (plugin.json `"scratch": 4640`, `coop_fx_scratch`), as kennel's `op1_fx_scratch` had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 10,152 bytes, load 9,664 once.
 
 - File 10,300 bytes; `.text` 5,124, `.rodata` 4,428 (the 4 KB sin / cos table and its steps, the Hilbert
   coefficients), `.data` 0, `.bss` 4,616 (two Hilbert pairs, two shifters with their 256-sample complex loop lines,

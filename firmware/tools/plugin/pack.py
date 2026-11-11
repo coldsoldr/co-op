@@ -105,11 +105,26 @@ def run(cmd):
     return r.stdout
 
 
+def scratch_bytes(meta):
+    """coop e8: plugin.json "scratch" (the position buffer bytes an effect works in, sdk/coop_plugin.h
+    coop_fx_scratch) -> the int, or None when not declared. An effect only, 1..SCRATCH_MAX."""
+    if 'scratch' not in meta:
+        return None
+    n = meta['scratch']
+    if type(n) is not int or not 0 < n <= F.SCRATCH_MAX:
+        raise PackError(f'scratch must be the bytes the effect needs, 1..{F.SCRATCH_MAX} (COOP_FX_SCRATCH_MAX)')
+    if meta.get('kind') != 'fx':
+        raise PackError('scratch is for effects only (kind fx)')
+    return n
+
+
 def compile_plugin(plugin_dir, outdir, toolchain=None):
     """Compile plugin.json's sources -> list of object paths."""
     gcc, _ = find_toolchain(toolchain)
     meta = json.loads((Path(plugin_dir) / 'plugin.json').read_text())
     flags = meta.get('cflags', [])
+    scratch = scratch_bytes(meta)                       # e8: the sources see the declared bytes (a port static_asserts)
+    defs = [f'-DCOOP_FX_SCRATCH_BYTES={scratch}'] if scratch else []
     allowed = re.compile(r'-(?:D[A-Za-z_][A-Za-z0-9_]*(?:=[A-Za-z0-9_]+)?|O[0123sg]|fno-tree-loop-distribute-patterns)$')
     source_flags = meta.get('source_cflags', {})
     if not isinstance(source_flags,dict) or any(k not in meta['sources'] for k in source_flags): raise PackError('Invalid source compiler flags')
@@ -134,7 +149,7 @@ def compile_plugin(plugin_dir, outdir, toolchain=None):
         cxx = str(path).endswith(('.cc', '.cpp'))        # coop-fw: C++ sources through bfin-elf-g++
         cc = str(gcc)[:-3] + 'g++' if cxx else gcc
         extra = ['-std=c++17', '-fno-exceptions', '-fno-rtti', '-fno-threadsafe-statics'] if cxx else []
-        run([cc, *CFLAGS, *extra, *diag_cflags(), *flags, *meta.get('source_cflags', {}).get(src, []), *includes, f'-I{SDK}', f'-I{CORE_INC}', '-c', str(Path(plugin_dir) / src), '-o', str(o)])
+        run([cc, *CFLAGS, *extra, *diag_cflags(), *defs, *flags, *meta.get('source_cflags', {}).get(src, []), *includes, f'-I{SDK}', f'-I{CORE_INC}', '-c', str(Path(plugin_dir) / src), '-o', str(o)])
         objs.append(str(o))
     return objs
 
@@ -523,7 +538,11 @@ def pack(meta, obj_bytes, svg_dir=None):
         magic, version, mn, mx, ptr, size = F.BIGBUF.unpack_from(img, bigbuf_off)
         if (magic, version) != (F.BIGBUF_MAGIC, F.BIGBUF_VERSION) or mn > mx or not mx or mn > F.BIGBUF_MAX or ptr or size:
             raise PackError(f'bigbuf {bigbuf}: not a valid OP1_BIGBUF (min <= max, min <= {F.BIGBUF_MAX}, max > 0)')
-    flags = ((F.FLAG_BIGBUF if bigbuf is not None else 0) | (F.FLAG_USES_SAMPLE if meta.get('uses_sample') else 0) |
+    scratch = scratch_bytes(meta)                       # coop e8: the scratch flag (a core before e8 refuses the file)
+    if '_coop_fx_scratch' in imports and not scratch:
+        raise PackError('the effect calls coop_fx_scratch: declare "scratch" (its bytes) in plugin.json')
+    flags = ((F.FLAG_SCRATCH if scratch else 0) |
+             (F.FLAG_BIGBUF if bigbuf is not None else 0) | (F.FLAG_USES_SAMPLE if meta.get('uses_sample') else 0) |
              (F.FLAG_PAGE2 if page2 else 0) | (F.FLAG_STEREO if meta.get('stereo') else 0) | (F.FLAG_INPUT if meta.get('input_engine') else 0) |
              sum(1 << (F.FLAG_COARSE_SHIFT + k) for k in coarse))
     if len(defaults) != 4 or (page2 and len(page2) != 3):
@@ -572,6 +591,8 @@ def pack(meta, obj_bytes, svg_dir=None):
         ext += struct.pack('<HHI', F.EXT_BIGBUF, 4, bigbuf_off)
     if cost:
         ext += struct.pack('<HHII', F.EXT_COST, 8, cost.get(cost_keys[0], 0), cost.get(cost_keys[1], 0))
+    if scratch:                                          # coop e8
+        ext += struct.pack('<HHI', F.EXT_SCRATCH, 4, scratch)
     controls = control_lines(meta, kind)                 # coop e4
     if controls:
         ext += struct.pack('<HH', F.EXT_CONTROLS, len(controls)) + controls + bytes(-len(controls) % 4)
@@ -585,7 +606,7 @@ def pack(meta, obj_bytes, svg_dir=None):
     data = bytearray(prefix + header + b''.join(parts))
     struct.pack_into('<I', data, len(prefix) + 12, F.crc32(bytes(data), len(prefix) + 12))
     info = {'layout': layout, 'imports': imports, 'elf_reloc_types': types, 'relocs': len(relocs),
-            'entry': entry, 'screen': screen_off}
+            'entry': entry, 'screen': screen_off, 'scratch': scratch}
     return bytes(data), info
 
 
@@ -650,7 +671,8 @@ def main():
           + ', '.join(f'{k} {v[1]}' for k, v in info['layout'].items())
           + f'; {info["relocs"]} load-time relocations; ELF relocations '
           + ', '.join(f'{names.get(t, hex(t))} {n}' for t, n in sorted(info['elf_reloc_types'].items()))
-          + f'; imports {", ".join(info["imports"]) or "none"}')
+          + f'; imports {", ".join(info["imports"]) or "none"}'
+          + (f'; scratch {info["scratch"]} (one relocation, the position buffers)' if info.get('scratch') else ''))
 
 
 if __name__ == '__main__':

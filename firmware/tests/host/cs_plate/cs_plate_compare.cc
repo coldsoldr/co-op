@@ -30,6 +30,7 @@
 #include "src/plate/plate.h"
 
 extern "C" const coop_fx_t FX_cs_plate;
+extern "C" long coop_fx_scratch_check(const coop_fx_t* fx, const int16_t* params, long blocks);   /* ../fx_scratch_host.cc */
 
 namespace op1 {
 uint32_t host_cycles;   // OP1_HOST_SIM: half_rate.h's clock; never moves, so the upstream never sees a pause
@@ -413,5 +414,9 @@ int main(int argc, char** argv) {
   }
 #endif
   printf("%s: %d failure(s)\n", failures ? "FAIL" : "ok", failures);
+  {   /* e8: two positions at once and a restart on a dirty position buffer (tests/host/fx_scratch_host.cc) */
+    int16_t sp[COOP_FX_PARAMS_MIN] = { 9000, 15000, 6000, 26000, 0x5300 + 32, 3, 22938, 9830 };
+    if (coop_fx_scratch_check(&FX_cs_plate, sp, 1500)) failures++;
+  }
   return failures ? 1 : 0;
 }

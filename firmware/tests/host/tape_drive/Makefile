@@ -7,11 +7,13 @@ TE ?= ../../../../../te-op1-cfw/ports/fx
 COOP := ../../../plugins/tape_drive
 BUILD ?= ../../../build/host/tape_drive
 BLOCKS ?= 20000
-CXXFLAGS := -O2 -std=c++17 -Wall -Wextra -Wno-unused-function -Wno-unused-variable
-COOP_SRC := $(COOP)/tape_drive.cc $(COOP)/src/tape.cc
+# e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
+SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
+CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wextra -Wno-unused-function -Wno-unused-variable
+COOP_SRC := $(COOP)/tape_drive.cc $(COOP)/src/tape.cc ../fx_scratch_host.cc
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
-SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns
+SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns
 
 .PHONY: all clean
 all: $(BUILD)/tape_ref $(BUILD)/tape_coop $(BUILD)/tape_coop.elf

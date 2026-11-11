@@ -16,6 +16,7 @@
   "cflags": [
     "-fno-tree-loop-distribute-patterns"
   ],
+  "scratch": 10400,
   "defaults": [
     9830,
     16384,

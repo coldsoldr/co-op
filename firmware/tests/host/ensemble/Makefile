@@ -13,11 +13,13 @@ SIM_BLOCKS ?= 4000
 TE_INC := -I$(TE)/knl -I$(TE) -I$(TE)/fx -I$(TE)/rings -I$(TE)/clouds
 TE_SRC := $(TE)/fx/src/ensemble/ensemble.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clouds/src/core/clouds_tables.cc \
           $(TE)/rings/src/fixed_tables.cc
-COOP_SRC := $(COOP)/ensemble.cc $(COOP)/src/ensemble_core.cc $(COOP)/src/ensemble_tables.cc $(COOP)/src/halfband.cc
+COOP_SRC := $(COOP)/ensemble.cc $(COOP)/src/ensemble_core.cc $(COOP)/src/ensemble_tables.cc $(COOP)/src/halfband.cc ../fx_scratch_host.cc
 COOP_ASM := $(COOP)/src/ensemble_bfin.S $(COOP)/src/halfband_bfin.S
 INC := -I$(COOP) -I../../../sdk $(TE_INC)
-CXXFLAGS := -O2 -std=c++17 -Wall -Wno-class-memaccess -DOP1CLOUDS_SAMPLE_RATE=22050
-SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns \
+# e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
+SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
+CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-class-memaccess -DOP1CLOUDS_SAMPLE_RATE=22050
+SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns \
             -Wno-class-memaccess -DOP1CLOUDS_SAMPLE_RATE=22050 -DOP1FX_NO_ASM -DOP1CLOUDS_NO_ASM
 
 .PHONY: all sim clean

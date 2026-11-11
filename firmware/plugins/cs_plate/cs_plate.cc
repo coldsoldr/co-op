@@ -10,9 +10,11 @@
  *   orange click freeze (params[8] bit 0, a latch: not saved)
  *   fixed: low cut 3277 (kennel's choice: its orange press couldn't be a page knob)
  *
- * Memory: the plate and the half-rate path (~76 KB) in this relocation's .bss, one per position. init only arms a
- * clear: the next renders zero the state 8 KB a block (10 blocks, ~15 ms, dry passed through), then reset it and run
- * (guide/plugin-guidelines.md §2.3: no 76 KB clear on the audio thread in one go).
+ * Memory (e8): the plate and the half-rate path (~76 KB) in the slot's position buffer (coop_fx_scratch, plugin.json
+ * "scratch"), as kennel's position scratch buffer had them; the file is relocated once and its .bss holds only the five
+ * buffer pointers. init only arms a clear: the next renders zero the state 8 KB a block (10 blocks, ~15 ms, dry passed
+ * through), then reset it and run (guide/plugin-guidelines.md §2.3: no 76 KB clear on the audio thread in one go).
+ * The buffer holds whatever the effect before left, so every selection restarts it this way.
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission. The half-rate kernels and tables
  * come from te-op1-cfw's Clouds port (MIT, LICENSE-MIT). */
@@ -35,10 +37,17 @@ struct Instance {
 static_assert(sizeof(Instance) % 4 == 0, "cleared in words");
 const int32_t kWords = sizeof(Instance) / 4;
 
-/* Plain storage (trivial types: no constructor, zeroed by the loader). One per relocation, so one per position. */
-Instance g_in;
-int16_t g_l[kFxBlockSize], g_r[kFxBlockSize];
-int32_t g_cleared;                                     /* words zeroed since init; kWords + 1 = running */
+/* e8: a slot's state in its position buffer (sdk/coop_plugin.h coop_fx_scratch, plugin.json "scratch"): the plate
+ * (cleared by the renders after init), the block's int16 copies, the clear's progress. Trivial types: no constructor. */
+struct Slot {
+    Instance in;
+    int16_t l[kFxBlockSize], r[kFxBlockSize];
+    int32_t cleared;                                   /* words of `in` zeroed since init; kWords + 1 = running */
+};
+#ifdef COOP_FX_SCRATCH_BYTES
+static_assert(sizeof(Slot) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
+#endif
+Slot* g_slot[COOP_FX_SLOTS];                           /* .bss: each slot's state (bound by init) */
 
 /* The four turns' ranges (sdk/coop_plugin.h): what kennel's op1_fx_param_q15 read from the firmware's table. */
 const int16_t kLo[4] = { 64, 0, 0, 8192 };
@@ -52,14 +61,23 @@ inline int32_t Turn(const int16_t* p, int k) {
 }
 
 int init(int slot) {
-    (void)slot;
-    g_cleared = 0;
+    if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+    uint32_t bytes = 0;
+    Slot* s = static_cast<Slot*>(coop_fx_scratch(slot, &bytes));
+    g_slot[slot] = (s && bytes >= sizeof(Slot)) ? s : nullptr;
+    if (!g_slot[slot]) return -1;
+    s->cleared = 0;
     return 0;
 }
 
 void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
-    (void)slot;
-    if (n != kFxBlockSize) return;                     /* coop's block is 64 (§2.2); anything else passes dry */
+    if (slot < 0 || slot >= COOP_FX_SLOTS || !g_slot[slot]) return;   /* not bound: dry */
+    Slot& s = *g_slot[slot];
+    Instance& g_in = s.in;
+    int16_t* const g_l = s.l;
+    int16_t* const g_r = s.r;
+    int32_t& g_cleared = s.cleared;
+    if (n != kFxBlockSize) return;                    /* coop's block is 64 (§2.2); anything else passes dry */
     if (g_cleared < kWords) {                          /* restarting: clear a chunk, the input passes */
         uint32_t* w = reinterpret_cast<uint32_t*>(&g_in) + g_cleared;
         const int32_t m = kWords - g_cleared < kClearChunk ? kWords - g_cleared : kClearChunk;

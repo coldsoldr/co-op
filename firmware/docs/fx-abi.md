@@ -52,7 +52,7 @@ When porting a kennel (.knl) or opus plugin to a coop FX, the port MUST satisfy:
 4. **No mono collapse:** a port MUST NOT sum L+R to mono internally and re-spread, as that destroys
    upstream per-voice placement.
 5. Fixed-point only, no float, no libc, hot loop under the I-cache budget (docs/performance.md); state
-   and scratch from the declared buffers (region B), not static arrays.
+   in the position buffer the core gives (e8, "Memory" below), not static arrays.
 
 6. **Controls beyond the four turns** (e6, `docs/plugins.md` "Effect controls"): declare them in `plugin.json`
    "controls" (saved words 5..7, latches as bits of `params[8]`); read `params[5..8]` once per block, clamp them, and
@@ -68,10 +68,28 @@ Per-voice panning is not only synths: **each drum-kit voice is independently pan
 voices get their own per-voice pan + spread, same model as synth voices; `coop_voice.h` already sizes
 `COOP_MAX_VOICES` for the 12 drum voices). See docs/stereo-bus.md.
 
-## Memory (e7)
+## Memory (e8: the position buffers; e7: the budget)
 
-An effect is relocated five times (one instance per position), so its load size (code + data + .bss) counts five
-times against the plugin memory budget: 1,536 KiB for all plugin files together (`docs/plugins.md` "e7"); an engine
-counts once plus its per-voice state. A file that would take the total over the budget is refused at boot, named in
-the stats (`plugfile`) and the inventory. Keep large lines and tanks small: tape_echo (718 KB) and cs_hall (515 KB)
-each take a third to a half of the budget.
+**The scratch model (e8, the default for every effect port).** The core owns one working buffer per position
+(0 synth, 1 drum, 2 master, 3 instrument FX 2, 4 master FX 2), kennel's model (`op1_fx_scratch`). The effect active at
+a position works in that position's buffer; the effect file is relocated **once** and its `.bss` holds only five
+pointers (or tiny per-slot values indexed by `slot`).
+- Declare: plugin.json `"scratch": N`, the bytes of one position's state (1 .. `COOP_FX_SCRATCH_MAX` = 180,224, 176 KiB,
+  which every kennel effect core fits). pack.py writes the file's scratch flag (`KN_FLAG_SCRATCH` 0x20) and the bytes
+  (extension 7); a core before e8 refuses the file ("unknown plugin flags"); this core refuses a larger declaration
+  ("effect buffer larger than this core gives") and a file that calls `coop_fx_scratch` without the flag.
+- Get: `void *coop_fx_scratch(int slot, uint32_t *bytes)` (a core export, `sdk/coop_plugin.h`), from `init` or
+  `render`: the slot's buffer, 32-byte aligned, `*bytes` its size (at least the declaration). Fixed for the session.
+- Contract: the contents are not preserved across selections. `init(slot)`, called every time the effect is selected
+  (or restarted) at the position, resets all of the state as if the buffer held garbage; it stays cheap (a large tank
+  is cleared over the next renders, the dry signal passing). The same effect at two positions works in two buffers.
+- Sizing: the five buffers are one heap-0 block taken at the end of the boot scan (before the stock tape's cache), only
+  when a scratch file loaded, each as large as the largest declaration among the loaded scratch files (32-byte
+  rounded). The nine ports: tape_echo's 134,784 bytes, so 5 x 134,784 = 673,920 bytes.
+
+**The budget (e7).** 1,536 KiB of heap 0 for all plugin files together (`docs/plugins.md` "e7"). A scratch effect counts
+its image once plus what it grows the five buffers by (the buffers are counted once in all); an old-model effect (no
+`"scratch"`: state in `.bss`, five relocations, as before e8) counts five times its load size; an engine once plus
+its per-voice state. A file that would take the total over the budget is refused at boot, named in the stats
+(`plugfile`) and the inventory. The nine ports with the buffers: 758,248 bytes (2,014,450 x5 before e8; tape_echo alone
+was 718,260).
