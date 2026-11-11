@@ -81,22 +81,64 @@ and mixes per channel (approved by the owner, 2026-11-11: no L + R sum):
 - The bus is Q31 (the int16 bus widened); the DSP sees the high halves. A channel the DSP doesn't write (mix 0 at both
   ends of the block) is left exactly as it came, low bits included.
 
-## Screen
+## Screen (e9, 0.2)
 
-Not carried. Kennel's screen (`shift.svg`, the canvas "Freq shift screen" design B "Dial": needles at shift ± spread,
-the spread arc, input ripples, feedback arcs, a gain gauge with a dB readout, a mix bar, and a bracket round the mode
-marks while green was on page 2) needs an effect screen hook coop doesn't have yet (`docs/plugins.md` "Effect
-controls", Display). The stock filter page shows; the core's popup shows `GAIN` and `MODE` top left in blue and
-green for about a second.
+Kennel's screen (`te-op1-cfw/ports/knl/freq_shift`: `shift.svg` from `gen_shift_knl_svg.py`, the canvas "Freq shift
+screen" design B "Dial", `shift_knl.cc` ScreenUpdate) on the e9 effect-screen path (`docs/plugins.md` "e9"):
+`freq_shift.svg` (from `gen_freq_shift_svg.py`) and `freq_shift_screen.cc`. It shows wherever freq_shift is the
+effect on the page: FX 1 of the synth, the drum or the master, FX 2 in focus.
 
-Brief for when effect screens exist (guidelines §5): the Dial, one needle per channel in blue (they part with the
-white spread, one needle when the spread is 0), the feedback arcs in green, the spread arc in white, the mix bar in
-orange. The mode marks stay (green, the lit one the current step); drop the page-2 bracket (no page 2 now: the popup
-names the mode on the click). Gain becomes a held-layer readout: while fn is held, the gain gauge and its dB value
-in blue, the drawing dimmed to the body tone; nothing at rest. Ripples from the input level need a level the screen
-reads from the core, not from the render (§5.3).
+| Part | Encoder | What moves it |
+|---|---|---|
+| the two needles on the dial (0 Hz at the top, ±2 kHz at the ends, 78° each way) | blue (shift) | L at shift + spread / 3, R at shift - spread / 3; in ring mode the carriers \|shift ± spread / 3\|, mirrored about the top; dim while fn is held |
+| the feedback arcs (up to four) | green (feedback) | a count set, sweeping right from the top, mirrored for a shift down; centred on the top in ring mode |
+| the mode marks (top right: an arrow for shift, a ring for ring) | green click (mode) | the lit one green, the other the body tone |
+| the spread arc | white (spread) | seven spans, turned to the shift's angle (to \|shift\| in ring mode) |
+| the ripples from the hub | (the input) | born at the input level, growing to the rim over 0.8 s and fading |
+| the gain gauge (left) | blue with fn (gain) | the bar about the centre, -6..+6 dB; a bracket while fn is held |
+| the mix gauge (right) | orange (mix) | scaled about its foot |
+
+What changed from kennel's screen:
+- **Inputs**: the four turns from `view->knobs` (kennel's `knl::ScreenPage1`, the stock pages' values with the LFO);
+  the gain from `view->words[0]` (word 5), the mode from `view->words[1]` (word 6, a step index: 1 = ring, as the
+  render reads it; kennel counted clicks); the input level from the state the render publishes (`state.h`
+  `Display.level`, kennel's `in_level[]` in `.bss`): one word written once a block after the DSP, read while
+  `view->live`.
+- **Two needles everywhere.** coop is stereo at every position, so the needles part with the spread at every
+  position (kennel: on the master only, one needle elsewhere). In ring mode the right needle is at |shift - spread|
+  (the carrier the DSP uses; kennel clamped shift - spread at 0).
+- **Kennel's blue page 2 is fn held** (`view->mods` bit 1): fn + blue turns the gain, so while fn is down the gain's
+  bracket shows and the needles (blue's plain turn) dim to the body tone, as bitcrusher does.
+- **Kennel's green page 2 is gone**, and with it the mode bracket (`mbox`): the mode is a plain green click (word 6,
+  saved), with no page to bracket and nothing to hold. The mode marks show the mode at all times; the core's popup
+  names it (`MODE SHIFT` / `MODE RING`) on the click.
+- **The mode marks moved to the top right** (x 244..276, kennel x 48..80): the core's popup draws top left, so it
+  would cover the marks exactly when the click changes them.
+- **The dB readout is gone** (kennel's page-2 "+1.5" glyphs: sign, digit, dot and tenth sets, most of kennel's 16.5 KB):
+  the core's popup names the control and its value when fn + blue turns it (in percent: a `format` field in the
+  controls schema would let it say dB; not built).
+- **The ring-mode feedback set is the up set turned** (kennel's `fr1..fr4`, 60° arcs centred on the top, dropped): in
+  ring mode the screen turns `fu1..fu4` (70° arcs) 35° back so they centre on the top.
+- **Fewer points, one decimal**: the dial 24 segments (kennel 64), the ripples 16 (32), the feedback arcs 8 (12), the
+  spread spans k + 1 (16); the largest sagitta left is 0.4 units, on a ripple at the rim while it fades.
+- **Colours** are coop's brights (blue 698EFF, green 00ED95, white FFFFFF, orange FF3A5D); the dial, the rails and the
+  mode mark that is off in the body tone 38354D (kennel drew the dial in 514959); the ripples are born at 8E86B0 (the
+  tone bitcrusher's palette carries; kennel 514959) and fade to 010101. Every colour the screen writes comes from a
+  hidden palette group, so a screen shown again starts from the file's values.
+- SVG 7,711 bytes (kennel's 16,570), checked by `tools/plugin/pack.py` (R246's parser rules) and by the generator.
+
+Open for the owner: the earlier brief (0.1) wanted the gain gauge only while fn is held, with the whole drawing dimmed
+to the body tone; this port keeps kennel's (and bitcrusher's) always-shown gauge and dims only blue's needles. The
+ripple tone (8E86B0) and the mode marks' new place are choices to check on the device.
+
+The render's only addition is the meter (a peak over the block's 64 samples before the DSP; ~0.7 k cycles a block in
+the simulator, below); the audio is bit-identical (host test below).
 
 ## Memory, L1, cost
+- **e9 (2026-11-11, 0.2, the screen):** file 23,396 bytes (SVG 7,711), `.text` 8,172 (the screen 2,884 of it),
+  `.rodata` 4,856, `.bss` 200 (the screen's node tables and ripple state, the five buffer pointers); load 13,228 bytes
+  once (+3,560 over e8's 9,668 with the e9 `coop_fx_t` field); the state grew by the level word (4 bytes, `"scratch":
+  4640` unchanged: the static_assert holds). The meter costs ~0.7 k cycles a block (the table below, e9 row).
 - **e8 (2026-11-11):** the Hilbert pairs, shifters, block buffers and param cache are in the slot's position buffer (plugin.json `"scratch": 4640`, `coop_fx_scratch`), as kennel's `op1_fx_scratch` had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 10,152 bytes, load 9,664 once.
 
 - File 10,300 bytes; `.text` 5,124, `.rodata` 4,428 (the 4 KB sin / cos table and its steps, the Hilbert
@@ -113,7 +155,8 @@ reads from the core, not from the render (§5.3).
   |---|---|---|
   | upstream, GNU simulator (`docs/shift-port.md`): stereo 6,585 steady / 7,187 peak; mono 4,954 / 5,550 | | |
   | this port, GNU simulator (`make -C tests/host/freq_shift sim`), avg / max | 9,762 / 11,013 | 14,383 / 15,868 |
-  | (the C kernels, for scale) | 96,748 / 98,655 | 163,948 / 166,313 |
+  | e9 (0.2: with the screen's input meter), the same | 10,503 / 11,762 | 15,119 / 16,623 |
+  | (the C kernels, for scale; e9) | 97,489 / 99,404 | 164,683 / 167,060 |
   | op1emu (stats `fx1_plugin=`) | pending (gate) | pending (gate) |
   | device (stats `fx1_plugin=`, `s2_instr=`, `s2_master=`) | pending | pending |
 
@@ -135,6 +178,9 @@ them, against te-op1-cfw's DSP and kennel's mappings:
 - against two upstream mono instances (L at shift + spread, R at shift - spread): **bit-identical**;
 - with L == R throughout, against upstream's stereo path (the kennel master): **bit-identical**;
 - mix 0, any other settings, random low bits: both channels back bit for bit.
+
+Both builds link the screen (`freq_shift_screen.cc` with `../screen_host.cc`, the calls stubbed): with the e9 meter
+the host and simulator results are unchanged, all bit-identical [C host + GNU simulator, 2026-11-11, 0.2].
 
 `make -C tests/host/freq_shift sim`: the same scenario in the GNU simulator through the assembly (the plugin's path)
 and through the C kernels, each compared with the host's output; and the cycles of every render.

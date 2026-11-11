@@ -8,8 +8,9 @@
  * are normalised here as op1_fx_param_q15 did, but from the ranges coop_plugin.h names (no range-table address); the
  * page-2 words are declared controls (plugin.json): gain on fn + blue (shift + fn + blue its fine, given by the core,
  * so kennel's knl::Fine and its shift-byte address are gone), the mode on the green click (a step index, so kennel's
- * ClickMode quantisation is gone). The screen (shift.svg, the "Dial") is not carried: effect screens are not built
- * (docs/plugins.md "Effect controls", Display); the stock filter page shows, the core shows gain and mode.
+ * ClickMode quantisation is gone).
+ * Screen (e9): freq_shift_screen.cc, freq_shift.svg (kennel's "Dial"); the render publishes the input level in the
+ * state (state.h), kennel's in_level[] meter.
  *
  * Stereo at every slot: each channel through its own Hilbert pair and shifter (L at shift + spread, R at shift -
  * spread, each with its own barber-pole loop); an L == R block runs one pair (src/shift.h). The bus arrives as Q31
@@ -20,19 +21,16 @@
  * (LICENSE-MIT). */
 #include <stdint.h>
 #include "coop_plugin.h"
-#include "src/shift.h"
+#include "state.h"
+
+extern "C" const coop_fx_screen_t SCREEN_freq_shift;   /* freq_shift_screen.cc (e9) */
 
 namespace {
 
-/* The words the mapped parameters were last computed from (turns 0..3, word 5), and the mapped values. A word is
- * int16; kNoWord is outside it, so the first render after init computes all of them. */
+/* The state (state.h): words[] are the words the mapped parameters were last computed from. A word is int16; kNoWord
+ * is outside it, so the first render after init computes all of them. */
 const int32_t kNoWord = 0x10000;
-struct Instance {
-    op1fx::FreqShift shift;
-    int16_t l[SH_MAX_BLOCK], r[SH_MAX_BLOCK];
-    int32_t words[5];
-    int32_t mapped[5];   /* plain words: a ShiftParams member would need a constructor (its gain initialiser) */
-};
+typedef coop_freq_shift::State Instance;
 #ifdef COOP_FX_SCRATCH_BYTES
 static_assert(sizeof(Instance) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
 #endif
@@ -66,6 +64,7 @@ int init(int slot)
     if (!g_inst[slot]) return -1;
     p->shift.Init();
     for (int i = 0; i < 5; i++) p->words[i] = kNoWord;  /* every mapped value is recomputed at the first render */
+    p->disp.level = 0;
     return 0;
 }
 
@@ -91,6 +90,17 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
     q.gain = m[4];
     q.ring = params[6] == 1;                           /* green click, word 6: step 0 shift, 1 ring */
 
+    /* e9: the input level for the screen (kennel's Meter: the block's peak of the top 16 bits of L and R before the
+     * DSP, decaying by an eighth a block), published as one word after the block; the DSP never reads it */
+    int32_t peak = 0;
+    for (int i = 0; i < n; i++) {
+        int32_t a = l[i] >> 16, b = r[i] >> 16;
+        a = a < 0 ? -a : a;
+        b = b < 0 ? -b : b;
+        if (a > peak) peak = a;
+        if (b > peak) peak = b;
+    }
+
     for (int off = 0; off + 2 <= n; ) {                /* the kernels take an even n, 2..64 (the core gives 64) */
         int k = n - off;
         if (k > SH_MAX_BLOCK) k = SH_MAX_BLOCK;
@@ -110,6 +120,8 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
             for (int i = 0; i < k; i++) pr[i] = (int32_t)((uint32_t)(uint16_t)g_r[i] << 16);
         off += k;
     }
+    const int32_t held = g.disp.level - (g.disp.level >> 3);
+    g.disp.level = peak > held ? (peak > 32767 ? 32767 : peak) : held;
 }
 
 }  // namespace
@@ -118,4 +130,5 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
 extern "C" op1fx::FreqShift *freq_shift_instance() { return g_inst[0] ? &g_inst[0]->shift : nullptr; }   /* slot 0 */
 #endif
 
-extern "C" const coop_fx_t FX_freq_shift = { COOP_FX_MAGIC, COOP_PLUGIN_API, 0, init, render };
+extern "C" const coop_fx_t FX_freq_shift = { COOP_FX_MAGIC, COOP_PLUGIN_API, COOP_FX_F_SCREEN, init, render,
+                                     &SCREEN_freq_shift };

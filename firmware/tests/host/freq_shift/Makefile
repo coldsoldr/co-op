@@ -28,17 +28,18 @@ $(BUILD)/fs_ref_st: freq_shift_compare.cc $(TE)/fx/src/shift/shift.cc
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -DFS_REF_ST -I$(TE)/fx -I$(TE)/knl -I$(TE)/../third_party/kennel/synth_sdk -Wno-int-to-pointer-cast $^ -o $@
 
-$(BUILD)/fs_coop: freq_shift_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*)
+$(BUILD)/fs_coop: freq_shift_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/*.h $(COOP)/src/*) ../screen_host.cc
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -DFREQ_SHIFT_TEST -I$(COOP) -I../../../sdk freq_shift_compare.cc $(COOP)/freq_shift.cc \
-	  $(COOP)/src/shift.cc ../fx_scratch_host.cc -o $@
+	  $(COOP)/freq_shift_screen.cc $(COOP)/src/shift.cc ../fx_scratch_host.cc ../screen_host.cc -o $@
 
 # The plugin's assembly path in the GNU simulator against its C kernels (-DSHIFT_C_KERNELS), the same scenarios:
 # make sim. Also prints the cycles of a render (no cache or SDRAM model).
-$(BUILD)/fs_sim.elf: freq_shift_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*)
+$(BUILD)/fs_sim.elf: freq_shift_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/*.h $(COOP)/src/*) ../screen_host.cc
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DFREQ_SHIFT_TEST -DFS_SIM -DSHIFT_C_KERNELS -I$(COOP) -I../../../sdk \
-	  freq_shift_compare.cc $(COOP)/freq_shift.cc $(COOP)/src/shift.cc $(COOP)/src/shift_bfin.S ../fx_scratch_host.cc -o $@
+	  freq_shift_compare.cc $(COOP)/freq_shift.cc $(COOP)/freq_shift_screen.cc $(COOP)/src/shift.cc \
+	  $(COOP)/src/shift_bfin.S ../fx_scratch_host.cc ../screen_host.cc -o $@
 
 sim: $(BUILD)/fs_sim.elf $(BUILD)/fs_coop
 	$(BUILD)/fs_coop $(BUILD)/coop0.raw 0 > /dev/null
