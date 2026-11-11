@@ -64,27 +64,50 @@ shift + fn + blue, both dispatched by the core. A sound saved under kennel keeps
   the host's widened int16 the output is upstream's sample << 16, bit for bit (host test below).
 - **Removed**: kennel's per-position instance array (each coop relocation has its own `.bss`), the shift-byte fine
   hack and the page state (`op1_fx_page`), the firmware range-table read in `op1_fx_param_q15` (0x01DE5C50: the
-  ranges are the SDK's constants now), the input meter pass and the whole kennel screen (below). `CrushParams`' default
+  ranges are the SDK's constants now), the input meter pass and the whole kennel screen (both back with e9: "Screen"). `CrushParams`' default
   member initialiser and the class's private members became plain data (no constructor in `.bss`).
 - **Not set**: plugin.json `"stereo"`. That flag means kennel's `op1_fx_stereo_t` layout (render_stereo at +12) to
   the loader, which checks three callback pointers at offsets 0, 4 and 12; a `coop_fx_t` has its magic and api there,
   so the file would be refused. A coop effect is always stereo.
 
-## Screen
+## Screen (e9, 0.2)
 
-Until effect screens exist (`docs/plugins.md` "Effect controls", Display: the stock filter page shows, with the
-core's name / value popup top left), the stock filter screen shows. Kennel's own screen (`crush.svg` from
-`gen_crush_knl_svg.py`, the canvas "Bitcrusher screen" option C) is not carried across: it reads kennel's knob and
-page globals and its page-2 bracket follows the retired toggle. The brief for a coop screen, against the manifesto
-(§5), when effect screens land:
-- Blue: the staircase (eight step widths by rate) and its clock row; jitter (white) shakes the clock row's two halves
-  apart; green: the bit ladder (8 - round(7 x bits) rungs); orange: the mix bar scaled about its foot.
-- The gain: a bar about the centre line in blue's dim tone at rest; held fn shows GAIN and its value in dB (tenths,
-  signed) in blue, the drawing dimmed to its body tone; shift + fn the same, one more digit moving.
-- No words at rest; 1.5 strokes; nothing below y 140; the art about 8 KiB at most (kennel's was 29 KB: its 113
-  clock ticks and readout glyphs go; the core draws the value text).
+Kennel's screen (`te-op1-cfw/ports/knl/bitcrusher`: `crush.svg` from `gen_crush_knl_svg.py`, the canvas "Bitcrusher
+screen" option C, `crush_knl.cc` ScreenUpdate) on the e9 effect-screen path (`docs/plugins.md` "e9"):
+`bitcrusher.svg` (from `gen_bitcrusher_svg.py`) and `bitcrusher_screen.cc`. It shows wherever bitcrusher is the
+effect on the page: FX 1 of the synth, the drum or the master, FX 2 in focus.
+
+| Part | Encoder | What moves it |
+|---|---|---|
+| the staircase (eight step widths) and the clock row | blue (rate) | variant by rate; dims while fn is held |
+| the bit ladder | green (bits) | 8 - round(7 x bits) rungs |
+| the clock row's two halves shaken apart | white (jitter) | up to 4 units |
+| the sampling dot | (pencil) | runs the steps, faster at higher rates |
+| the gain gauge (left) | blue with fn (gain) | the bar about the centre, -6..+6 dB; its blue brightens with the input level; a bracket while fn is held |
+| the mix gauge (right) | orange (mix) | scaled about its foot |
+
+What changed from kennel's screen:
+- **Inputs**: the four turns from `view->knobs` (kennel's `op1_fx_knobs_live`, the stock pages' values with the LFO);
+  the gain from `view->words[0]`; the input level from the state the render publishes (`state.h` `Display.level`,
+  kennel's `in_level[]` in `.bss`): one word written once a block after the DSP, read while `view->live`.
+- **Kennel's blue page 2 is fn held** (`view->mods` bit 1): fn + blue turns the gain, so while fn is down the gain's
+  bracket shows and the staircase dims (kennel did both on page 2).
+- **The dB readout is gone** (kennel's page-2 "+1.5" glyphs, 4.2 KB): the core's popup names the control and its value
+  when fn + blue turns it (in percent: a `format` field in the controls schema would let it say dB; not built).
+- **The clock row is drawn by the code** with raster lines (`coop_scr_line`, white, the step width of the rate) instead
+  of 8 variants x 2 halves of SVG ticks (17 KB of kennel's 29 KB file). Their position matches the SVG's (op1emu
+  screenshots, `docs/device-tests.md` "e9").
+- **Colours** are coop's brights (blue 698EFF, green 00ED95, white FFFFFF, orange FF3A5D); the gain gauge is blue (it is
+  blue's control under fn; kennel drew it white), the dot pencil DFD9FF.
+- SVG 6,995 bytes (kennel's 29,389), checked by `tools/plugin/pack.py` (R246's parser rules) and by the generator.
+
+The render's only addition is the meter (a peak over the block's 128 samples before the crusher, ~0.3 k cycles a
+block [I]); the audio is bit-identical (host test below).
 
 ## Memory, L1, cost
+- **e9 (2026-11-11, 0.2, the screen):** file 12,292 bytes (SVG 6,995), `.text` 2,728, `.rodata` 744, `.bss` 168 (the
+  screen's node tables); load 3,640 bytes once (+2,164 over e8); the state 20 bytes (the crusher's 16 and the level
+  word: `"scratch": 32` unchanged). The SVG parses to 15,744 bytes of the stock TE heap (op1emu `fscr_te`), not heap 0.
 - **e8 (2026-11-11):** the state is in the slot's position buffer (plugin.json `"scratch": 32`, `coop_fx_scratch`); the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 1,860 bytes, load 1,476 once.
 
 - File 1,672 bytes; `.text` 1,200, `.rodata` 140, `.data` 0, `.bss` 16 (the phase, two held samples, the jitter

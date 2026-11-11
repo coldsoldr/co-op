@@ -13,15 +13,18 @@
  * Memory (e8): the state lives in the slot's position buffer (sdk/coop_plugin.h coop_fx_scratch, plugin.json
  * "scratch"); the file is relocated once and its .bss holds only the five buffer pointers. init(slot) binds the slot's
  * buffer and resets the state there (the buffer holds whatever the effect before left).
+ * Screen (e9): bitcrusher_screen.cc, bitcrusher.svg; the render publishes the input level in the state (state.h).
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission. */
 #include <stdint.h>
 #include "coop_plugin.h"
-#include "src/crush.h"
+#include "state.h"
+
+extern "C" const coop_fx_screen_t SCREEN_bitcrusher;   /* bitcrusher_screen.cc (e9) */
 
 namespace {
 
-typedef crush::Crush Instance;
+typedef coop_bitcrusher::State Instance;
 #ifdef COOP_FX_SCRATCH_BYTES
 static_assert(sizeof(Instance) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
 #endif
@@ -43,7 +46,8 @@ int init(int slot) {
   Instance* g = static_cast<Instance*>(coop_fx_scratch(slot, &bytes));
   g_inst[slot] = (g && bytes >= sizeof(Instance)) ? g : nullptr;
   if (!g_inst[slot]) return -1;
-  g->Init();
+  g->crush.Init();
+  g->disp.level = 0;
   return 0;
 }
 
@@ -55,9 +59,21 @@ void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
   q.jitter = Q15(params, 2);
   q.mix = Q15(params, 3);
   q.gain_q14 = crush::GainQ14(params[5]);   /* clamped inside */
-  g_inst[slot]->Process(l, r, n, q);
+  Instance* g = g_inst[slot];
+  /* e9: the input level for the screen (kennel's meter: the block's peak of the top 16 bits, decaying by an eighth a
+   * block), published as one word after the block; the DSP never reads it */
+  int32_t peak = 0;
+  for (int i = 0; i < n; ++i) {
+    int32_t a = l[i] >> 16, b = r[i] >> 16;
+    a = a < 0 ? -a : a; b = b < 0 ? -b : b;
+    if (a > peak) peak = a;
+    if (b > peak) peak = b;
+  }
+  g->crush.Process(l, r, n, q);
+  const int32_t held = g->disp.level - (g->disp.level >> 3);
+  g->disp.level = peak > held ? (peak > 32767 ? 32767 : peak) : held;
 }
 
 }  // namespace
 
-extern "C" const coop_fx_t FX_bitcrusher = { COOP_FX_MAGIC, COOP_PLUGIN_API, 0, init, render };
+extern "C" const coop_fx_t FX_bitcrusher = { COOP_FX_MAGIC, COOP_PLUGIN_API, COOP_FX_F_SCREEN, init, render, &SCREEN_bitcrusher };

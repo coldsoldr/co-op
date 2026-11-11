@@ -10,7 +10,7 @@ BUILD ?= ../../../build/host/bitcrusher
 SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
 INC := -I$(COOP) -I../../../sdk -I$(TE)/knl -I$(TE) -I../../../third_party/kennel/synth_sdk
 CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wextra -Wno-unused-function -Wno-int-to-pointer-cast
-SRCS := bitcrusher_compare.cc $(COOP)/bitcrusher.cc ../fx_scratch_host.cc
+SRCS := bitcrusher_compare.cc $(COOP)/bitcrusher.cc $(COOP)/bitcrusher_screen.cc ../fx_scratch_host.cc ../screen_host.cc
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
 SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -Wno-unused-function -DBC_PROFILE
 
@@ -19,7 +19,7 @@ all: $(BUILD)/bitcrusher_compare
 	$(BUILD)/bitcrusher_compare
 	BC_LOW_BITS=1 $(BUILD)/bitcrusher_compare
 
-$(BUILD)/bitcrusher_compare: $(SRCS) $(COOP)/src/crush.h
+$(BUILD)/bitcrusher_compare: $(SRCS) $(COOP)/src/crush.h $(COOP)/state.h
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) $(INC) $(SRCS) -o $@
 
