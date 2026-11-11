@@ -10,7 +10,10 @@ BUILD ?= ../../../build/host/cs_hall
 # e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
 SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
 CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-variable -Wno-unused-function
-COOP_SRC := $(COOP)/cs_hall.cc $(COOP)/hall.cc $(COOP)/halfband.cc ../fx_scratch_host.cc
+COOP_SRC := $(COOP)/cs_hall.cc $(COOP)/cs_hall_screen.cc $(COOP)/hall.cc $(COOP)/halfband.cc ../fx_scratch_host.cc \
+            ../screen_host.cc
+# e9: the screen (cs_hall_screen.cc) and the stand-in for the core's screen calls (../screen_host.cc)
+SDK_H := ../../../sdk/coop_plugin.h ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h
 REF_SRC := $(TE)/fx/src/hall/hall.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clouds/src/core/clouds_tables.cc \
            $(TE)/rings/src/fixed_tables.cc
 # hall_knl.cc's include order (ports/knl/cs_hall/plugin.json)
@@ -34,11 +37,11 @@ $(BUILD)/hall_ref: cs_hall_compare.cc $(REF_SRC)
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -Wno-class-memaccess -DHALL_REF -DOP1_HOST_SIM $(REF_INC) cs_hall_compare.cc $(REF_SRC) -o $@
 
-$(BUILD)/hall_coop: cs_hall_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h)
+$(BUILD)/hall_coop: cs_hall_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h) $(SDK_H)
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -I$(COOP) -I../../../sdk cs_hall_compare.cc $(COOP_SRC) -o $@
 
-$(BUILD)/hall_coop.elf: cs_hall_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h $(COOP)/*.S)
+$(BUILD)/hall_coop.elf: cs_hall_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h $(COOP)/*.S) $(SDK_H)
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -I$(COOP) -I../../../sdk cs_hall_compare.cc $(COOP_SRC) \
 	  $(COOP)/hall_bfin.S $(COOP)/halfband_bfin.S -o $@

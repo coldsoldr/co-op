@@ -23,7 +23,8 @@
  *   - knl::Fine (the shift byte at a firmware address) is gone: the core gives the fine step;
  *   - the stereo render runs at every position (kennel: mono in / mono out at synth and drum, width at the master
  *     only); there is no mono render;
- *   - no screen: coop has no effect screens yet (docs/plugins.md "Effect controls"), the stock filter page shows.
+ *   - the screen (e9) is cs_hall_screen.cc and cs_hall.svg; kennel's screen read nothing from the DSP, so the render
+ *     publishes nothing (the state is unchanged).
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission. */
 #include <stdint.h>
@@ -31,6 +32,8 @@
 #include "coop_plugin.h"
 #include "halfband.h"
 #include "hall.h"
+
+extern "C" const coop_fx_screen_t SCREEN_cs_hall;   /* cs_hall_screen.cc (e9) */
 
 #if !defined(__bfin__)
 extern "C" uint32_t cs_hall_host_cycles;               /* the host test steps it (tests/host/cs_hall) */
@@ -221,4 +224,4 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
 
 }  // namespace
 
-extern "C" const coop_fx_t FX_cs_hall = { COOP_FX_MAGIC, COOP_PLUGIN_API, 0, init, render };
+extern "C" const coop_fx_t FX_cs_hall = { COOP_FX_MAGIC, COOP_PLUGIN_API, COOP_FX_F_SCREEN, init, render, &SCREEN_cs_hall };

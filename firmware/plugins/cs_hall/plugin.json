@@ -4,6 +4,7 @@
   "symbol": "FX_cs_hall",
   "sources": [
     "cs_hall.cc",
+    "cs_hall_screen.cc",
     "hall.cc",
     "halfband.cc",
     "hall_bfin.S",
@@ -16,6 +17,7 @@
     "-fno-tree-loop-distribute-patterns"
   ],
   "scratch": 86752,
+  "screen": {"svg": "cs_hall.svg", "symbol": "SCREEN_cs_hall"},
   "defaults": [19661, 16384, 9830, 11469],
   "controls": [
     {"id": "predelay", "name": "predelay", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
@@ -27,6 +29,6 @@
     {"id": "freeze", "name": "freeze", "action": "click", "encoder": "orange", "kind": "latch", "bit": 0}
   ],
   "author": "coldsoldr",
-  "version": "0.1",
+  "version": "0.2",
   "description": "HALL, coldsoldr's 8-line FDN hall reverb (te-op1-cfw ports/fx/src/hall, the kennel build ports/knl/cs_hall 0.1 at 9ced415, never released), GPL-3.0-or-later with the OP-1 firmware permission; its half-rate path uses Clouds' halfband filters and Rings' soft limit (Emilie Gillet, MIT). True stereo at every position, 22.05 kHz inside. Blue size, green decay, white damp, orange mix; fn + blue pre-delay (0-200 ms), fn + green early reflections, fn + white width (shift + fn + each: fine); orange click freezes the tail."
 }

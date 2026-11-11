@@ -29,8 +29,8 @@ Forbidden constructs found and fixed (guidelines §2.1, §2.3, §7.1): `constexp
 (Exp, Cos, SizeScale: 6 tables, 16 size rows) → integer literals; kennel's `knl::Fine` (reads the shift byte at
 0x01DD7F78) → the core's `"fine"`; `op1_fx_param_q15` (the range table at 0x01DE5C50) → the SDK's constant ranges;
 `op1_fx_page` (the freeze latch) → `params[8]` bit 0; `op1_fx_scratch` (kennel's per-position buffer) → `.bss`;
-`op1_fx_knobs_live` / `op1_fx_screen_pos` / the screen node calls → no screen yet (below); the 84 KB tank clear in
-`Init` → spread over blocks in render (below). No libc, no float, no static constructors, imports none.
+`op1_fx_knobs_live` / `op1_fx_screen_pos` / the screen node calls → `view->knobs`, `view->slot`, the e9 screen calls ("Screen", below); the 84 KB tank clear in
+`Init` → spread over blocks in render (below). No libc, no float, no static constructors; imports `coop_fx_scratch` and the e9 screen calls only.
 `tools/asm_lint.py plugins/cs_hall/*.S`: 0 packets flagged.
 
 ## The contract
@@ -99,21 +99,62 @@ the fine step (the owner, 2026-11-11; guidelines §4, §4.1, held layers instead
 - **The restart after a pause** is kennel's (`half_rate.h`): more than 5 ms between two renders (the effect bypassed
   with T3, or not rendered) starts the reverb again, cleared the same way. The pause is measured with the core clock's
   CYCLES register (not a firmware address; rings does the same).
-- No mono render, no screen code, no `knl::Fine`.
+- No mono render, no `knl::Fine`. The screen is `cs_hall_screen.cc` (below); the render publishes nothing for it.
 
-## Screen brief (not built)
+## Screen (e9, 0.2)
 
-coop has no effect screens yet (`docs/plugins.md` "Effect controls": the stock filter page shows on FX 1, coop's
-page on FX 2, with the core's name / value popup). The kennel build's `hall.svg` is not carried across (guidelines
-§5, "don't carry upstream art across unchecked"). When effect screens come, the brief against the manifesto (§5):
-- at rest, no words: a room outline whose scale follows size (blue), a decay envelope whose length follows decay
-  (green; an open end at infinite) and whose top edge darkens with damp (white), the mix as a bar (orange);
-- the fn layer (held): the pre-delay as a gap before the envelope (blue), early reflections as ticks in green,
-  width as two marks spreading left / right in white, with the names and values listed;
-- freeze shown as a state of its own (the envelope held flat, the orange mark lit), not by colour alone;
-- the clear in progress (the 30 ms dry) needs no mark (too short to see).
+Kennel's screen (`te-op1-cfw/ports/knl/cs_hall`: `hall.svg`, the firmware build's hall screen with the category dots
+removed, and `hall_knl.cc` ScreenUpdate) on the e9 effect-screen path (`docs/plugins.md` "e9"): `cs_hall.svg` (from
+`gen_cs_hall_svg.py`) and `cs_hall_screen.cc`. Kennel has no generator for `hall.svg`: the coop generator holds
+kennel's coordinates as data (every point copied from `hall.svg`) and writes them in coop's colours and rules. It
+shows wherever cs_hall is the effect on the page: FX 1 of the synth, the drum or the master, FX 2 in focus.
+
+| Part | Encoder | What moves it |
+|---|---|---|
+| the hall outline and the reflection path inside it | blue (size) | scaled 0.4..1.0 about the floor's centre |
+| the decay envelope (+ the infinity sign at infinite) | green (decay) | length by decay, from the pre-delay's end; full length and the sign while infinite (decay at the top, or frozen) |
+| the damped envelope | white (damp) | shortened from the decay envelope's length by damp |
+| the mix bar (top right) | orange (mix) | scaled from its left end |
+| the freeze star (top) | orange click (freeze) | body tone, orange while the latch is on (the decay goes full length with the sign) |
+| fn layer: the pre-delay gap (left) | blue with fn (predelay) | the gap's length, and every envelope starts after it (up to 50 units) |
+| fn layer: the early taps and the late tail | green with fn (early) | the taps rise, the tail falls as early goes up; the tail's length follows decay |
+| fn layer: the width triangles (top right) | white with fn (width) | apart by up to 14 units each way |
+| fn layer: the motion marks | (pencil) | still: motion is fixed at 9830 in this build |
+
+While fn is held the fn layer replaces the plain turns' parts (the hall stays, dimmed to its body tone; the mix bar
+gives way to the width marks), as kennel's page 2 did.
+
+What changed from kennel's screen:
+- **Inputs**: the four turns from `view->knobs` (kennel's `op1_fx_knobs_live`); predelay / early / width from
+  `view->words[0..2]` (kennel's `ScreenWord(5..7)`); freeze from `view->latches` bit 0 (kennel's `Pressed(pos, 3)`).
+  Kennel's screen read nothing from the DSP (only the constant `kHallInfinite`), so the render publishes nothing and
+  the state is unchanged (no `Display` words, scratch unchanged).
+- **Kennel's page 2 is fn held** (`view->mods` bit 1; kennel: `AnyPage2(pos, 0x7)`, any of the three page knobs
+  pressed). Kennel's page indicators (`page1ind`, `page2ind`: two squares top left) are gone: fn is held, not a page,
+  and the layer is its own mark.
+- **Width moves at every position** (kennel moved its marks at the master only: coop's stereo render has width
+  everywhere).
+- **Colours**: coop's brights (blue 698EFF, green 00ED95, white FFFFFF, orange FF3A5D). Colour is the knob: damp is
+  white (kennel: its pencil DED7FF), width is white (fn + white; kennel: orange), the freeze star lights orange
+  (orange's click; kennel lit it in decay's green). One body tone 38354D (kennel's second dim 514959, used for the
+  wall mark, the reflection path, the dimmed hall and the unlit star, is folded into it); the motion marks pencil
+  DFD9FF (no encoder owns motion). A hidden palette line (`palorange`) carries the star's lit colour.
+- **The motion marks are still art**: kennel scaled them by the motion word every frame; motion is fixed (9830), so
+  the generator draws them at that scale (0.3 about their centre lines) with no ids.
+- **The width triangles are paths** (`M L L Z`, filled), kennel's polygons not being in R246's renderer subset
+  (guidelines §5.3). The infinity sign stays kennel's path (`M C Z`, one contour).
+- No numeric readouts to drop (kennel's hall had none): the core's popup names each control and its value.
+- SVG 3,927 bytes (kennel's 4,047), checked by `tools/plugin/pack.py` (R246's parser rules) and by the generator.
+
+Not done (open for the owner): the screen brief's "names and values listed" on the held layer (the e9 path has no
+text calls; the core's popup shows the one being turned); freeze is shown by the star and by the decay going infinite,
+not by the envelope "held flat".
 
 ## Memory, L1, cost
+- **e9 (2026-11-11, 0.2, the screen):** file 23,184 bytes (SVG 3,927), `.text` 12,268, `.rodata` 5,248, `.bss` 100
+  (the five buffer pointers and the screen's node table and colours); load 17,616 once, +1,396 over e8 (16,220 with
+  e9's new `coop_fx_t` field). The state and `"scratch"` are unchanged (nothing published). Audio bit-identical, host
+  and simulator (host test below).
 - **e8 (2026-11-11):** the hall and the half-rate path (at most the declared 86,752 bytes, static_assert) are in the slot's position buffer (plugin.json `"scratch": 86752`, `coop_fx_scratch`), as kennel's `op1_fx_scratch` had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). The tank is cleared on every (re)start now, a fresh selection included (~30 ms dry). File 17,060 bytes, load 16,216 once.
 
 - File 17,712 bytes; `.text` 11,168, `.rodata` 5,024, `.data` 0, `.bss` 86,740: load size 102,932 bytes, so five
