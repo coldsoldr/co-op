@@ -267,7 +267,9 @@ a second bank (chorus, plate, outatime, amp). coop settles it per encoder:
 - One detent is a core delta of 1024 [C on kennel hardware; coop P3a].
 - Continuous parameters default to 1 % of the range per detent on turn, and 1/16 of that on fine. For the declared
   controls (e4 / e6) that is 328 Q15 a detent on fn + turn and 20.5 (20 and 21 alternately) on its `"fine"` shift +
-  fn + turn [C op1emu, e6].
+  fn + turn [C op1emu, e6]. A continuous control may declare its own `"step"` (Q15 a detent) and, with `"fine"`,
+  `"fine_step"` (e6, the owner 2026-11-11): an input gain over +-6 dB steps 0.5 dB (1365) and 0.1 dB fine (273), as
+  kennel did. Declare `"random": false` on a gain.
 - `steps` parameters move one step per detent.
   - A selector with many steps may declare `detents` per step (`plugin.json` "controls", e4; Nostromo used 2).
   - A selector whose steps form a cycle (models, voice counts) may declare `"wrap": true` (e5): a turn past the last

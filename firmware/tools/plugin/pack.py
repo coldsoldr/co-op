@@ -288,7 +288,7 @@ def control_lines(meta, kind):
         if not isinstance(c, dict):
             raise PackError('each control is an object')
         unknown = set(c) - {'id', 'name', 'action', 'encoder', 'word', 'kind', 'steps', 'default', 'random', 'detents', 'wrap',
-                            'fine', 'bit'}
+                            'fine', 'bit', 'step', 'fine_step'}
         if unknown:
             raise PackError(f'control {c.get("id")!r}: unknown fields {sorted(unknown)}')
         cid = c.get('id')
@@ -368,6 +368,14 @@ def control_lines(meta, kind):
             raise PackError(f'control {cid}: fine must be true or false')
         if fine and (ckind != 'continuous' or c['action'] != 'fn_turn'):
             raise PackError(f'control {cid}: fine is for a continuous fn_turn control')
+        step, fine_step = c.get('step'), c.get('fine_step')   # coop e6: Q15 a detent (default 328) and its fine (default step/16)
+        if step is not None and (ckind != 'continuous' or type(step) is not int or not 1 <= step <= 32767):
+            raise PackError(f'control {cid}: step is 1..32767 (Q15 a detent) on a continuous control')
+        if fine_step is not None:
+            if not fine:
+                raise PackError(f'control {cid}: fine_step needs "fine": true')
+            if type(fine_step) is not int or not 1 <= fine_step <= (step if step is not None else 328):
+                raise PackError(f'control {cid}: fine_step is 1..step (Q15 a detent)')
         if fine:
             fines.add(c['encoder'])
         if c['action'] == 'shift_fn_turn':
@@ -376,8 +384,10 @@ def control_lines(meta, kind):
                   int(random), detents, name, tail]
         if wrap:
             fields.append(1)                           # an 11th field: a core before e5 skips it and clamps
-        if fine:
-            fields.append(2)                           # e6: the same 11th field (flags)
+        if fine or step is not None:
+            fields.append(2 if fine else 0)            # e6: the same 11th field (flags)
+        if step is not None or fine_step is not None:
+            fields += [step or 0, fine_step or 0]      # e6: 12th / 13th fields, 0 = the default
         lines.append('\t'.join(str(f) for f in fields))
     clash = fines & deep
     if clash:

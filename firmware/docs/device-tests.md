@@ -1844,11 +1844,11 @@ Result: (pending)
 
 The owner's decisions of 2026-11-11 (`docs/ui-features.md` §14), for the eleven kennel effect ports: effects get the
 engines' control layers at every effect position (`docs/plugins.md` "Effect controls").
-- `build/pkg/op1_246_coop_e6.op1` (sha256 `eb766c8dd7fcd1078996915154f61cbbbcf5948b5fc64f8b4a4ccb4fdc4ea788`), copy in Downloads. A **release** image as e5 (no
+- `build/pkg/op1_246_coop_e6.op1` (sha256 `724f98ba0c1fd2d76d18ce25d5b4da430d980f33f9ba36e69484a20ed7e9cb5b`), copy in Downloads. A **release** image as e5 (no
   `COOP_M1`, no gap profile, `--tape-stereo --set-word g_coop_spread=32767`), plus e6. `verify_bootloader.py` PASS,
   `pkg_check` = only `OP1_vdk.ldr` differs. Build tag `e6`.
-- `build/plugins/test_fx.coop` (sha256 `4f118ea6b9384ec0213f1d82f55ca4a4f9fbd4f6582acffc2b5e908eb7a9a223`, 420 bytes): the test effect, not a real plugin. fn + blue = gain
-  (16384 = unity, 0..2x), shift + fn + blue = the same gain in fine steps, green click = polarity (normal / invert),
+- `build/plugins/test_fx.coop` (sha256 `64e09115802e02f2d811d33655a8801d7802db4a56ecf17adea8fbb3be2e466d`, 432 bytes): the test effect, not a real plugin. fn + blue = gain
+  (16384 = unity, 0..2x; 1365 a detent as the ports' 0.5 dB), shift + fn + blue = the same gain by 273 (0.1 dB), green click = polarity (normal / invert),
   fn + white = depth (shown, does nothing), orange click = mute (a latch).
 - [C op1emu] `tests/sim/det_fx_controls.txt` then `det_fx_reload.txt` (a power cycle on the same NAND): every position
   received the words and the latch, and kept the words but not the latches (figures in the gate notes below).
@@ -1856,8 +1856,9 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
 
 **What to do** (install `test_fx.coop` with the librarian, power-cycle; play something through each effect):
 1. Synth: T3, shift + T3, pick **test_fx**, T3 (FX 1 on). Hold Help and turn blue left a few detents: the sound gets
-   quieter, "GAIN 46"-style text top left in blue. Hold Shift + Help and turn blue: the same number moves very slowly
-   (1/16). Click green: the sound inverts polarity (hard to hear alone; with FX 2 also on it may thin); "POLARITY
+   quieter, "GAIN 41"-style text top left in blue, 4 % a detent (test_fx's gain is linear; the ports' gain words
+   make the same 1365 a detent 0.5 dB). Hold Shift + Help and turn blue: 273 a detent, the percentage moves about one
+   in every 1.2 detents. Click green: the sound inverts polarity (hard to hear alone; with FX 2 also on it may thin); "POLARITY
    INVERT" in green. Click orange: silence, "MUTE ON" in red; click again: back. Help + white: "DEPTH" moves, the sound
    doesn't. Shift + Help + white: nothing (undeclared). A plain Help tap still opens help.
 2. Drop (FX 2), shift + blue to test_fx, blue push, T3 (on): repeat 1 on FX 2 (instrument).
@@ -1891,6 +1892,10 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
   ctl_cancelled 1 help_taps 1`, slot 0 knobs `[20000,8000,6000,4000,21280,1,0,1]`, as e4.
 - The e6 probe (`COOP_PROBE_ITER`): `filter_ranges [64,14528,14464] [0,24576,10485] [0,22528,32767] [8192,32767,10485]
   [0,32767,0] [0,32767,0] [0,32767,0] [0,32767,0]`: words 5..7 of the filter type accept 0..32767.
+- **Gain steps (the owner, 2026-11-11), NOT RUN YET in op1emu** (the machine was busy with other builds): test_fx's
+  gain now declares `"step": 1365, "fine_step": 273`, so `det_fx_controls.txt` expects gain 11197 (p0: 16384 - 4 x 1365
+  + 273), 19114 (p3), 15019 (p2), 17749 (p1); depth keeps the default 328 steps (8520, 8848). The figures below are
+  from the test_fx before the step fields (gain 328 / 20.5).
 - **Randomise (the owner's rule, 2026-11-11), PROVISIONAL**: these runs overlapped other agents' builds on the machine
   (the "one run at a time on an idle machine" rule was broken), to be repeated on a quiet machine. The scenario now
   randomises on the synth FX 1 page and on the instrument FX 2 page. `det_fx_controls.txt`:

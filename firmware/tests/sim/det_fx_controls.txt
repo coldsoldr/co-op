@@ -1,23 +1,24 @@
 # e6: effect controls at every position, with tests/plugins/test_fx alone on the NAND (docs/plugins.md "Effect
 # controls"). Guest-timed; op1emu: `turn ENC cw 2` = one detent (1024). Expected words 5/6/7/latch per position
-# (stats line fxctl, pN=blocks:w5/w6/w7/latch): gain 16384 +- 328 a coarse detent, 20/21 a fine one.
-#  p0 synth FX 1 (stock list, last row): fn + blue 4 detents down (15072), shift + fn + blue 1 fine up (15092),
-#     green click (polarity 1), fn + white 1 up (depth 8520), shift + fn + white (undeclared: ignored), orange click
-#     (mute latch on).                                                  -> 15092/1/8520/1 while there; the latch reads 0
-#     at the end: the stock starts the instrument effect again on the synth / drum switch (inits p0=2).
-#  p3 instrument FX 2 (drop, shift + blue 3 detents to test_fx, blue push, T3 on): fn + blue 2 up (17040), orange
-#     twice (latch on, off), green click (1); a blue push with shift pressed before its release (cancelled).
-#                                                                       -> 17040/1/8192/0
-#  p2 master FX 1 (mixer T3, shift + T3 list, last row): fn + blue 1 down (16056; saved to op1.db's master row by the
+# (stats line fxctl, pN=blocks i inits : w5/w6/w7/latch). test_fx's gain declares "step": 1365, "fine_step": 273
+# (the ports' 0.5 dB / 0.1 dB over +-6 dB); depth declares nothing (328 a detent, 20/21 fine).
+#  p0 synth FX 1 (stock list, last row): fn + blue 4 detents down (16384 - 4 x 1365 = 10924), shift + fn + blue 1 fine
+#     up (+ 273 = 11197), green click (polarity 1), fn + white 1 up (depth 8520), shift + fn + white (undeclared:
+#     ignored), orange click (mute latch on), randomise: gain kept, polarity and depth drawn.
+#     -> 11197/drawn/drawn/1 while there; the latch reads 0 at the end: the stock starts the instrument effect again on
+#     the synth / drum switch (inits p0=2).
+#  p3 instrument FX 2 (drop, shift + blue 3 detents to test_fx, blue push, T3 on): fn + blue 2 up (19114), orange
+#     twice (latch on, off), green click (1); a blue push with shift pressed before its release (cancelled); randomise:
+#     gain kept, polarity and depth drawn.                              -> 19114/drawn/drawn/0
+#  p2 master FX 1 (mixer T3, shift + T3 list, last row): fn + blue 1 down (15019; saved to op1.db's master row by the
 #     main loop, master_saves 1), orange (latch on; kept through the FX 2 filter twin's construction)
-#                                                                       -> 16056/0/8192/1
+#                                                                       -> 15019/0/8192/1
 #  p4 master FX 2 (drop, pick, push, T3): fn + white 2 up (8848)        -> 16384/0/8848/0
-#  p1 drum FX 1 (drum T3, the list): fn + blue 1 up (16712), green click -> 16712/1/8192/0
-# Randomise (synth key + right arrow) at 45.5 s on the synth FX 1 page and at 57.3 s on FX 2: gain ("random": false)
-# keeps its value, depth and polarity are drawn, latches untouched (fxctl random 2, rnd_slot2 1).
+#  p1 drum FX 1 (drum T3, the list): fn + blue 1 up (17749), green click -> 17749/1/8192/0
+# Randomise is the synth key held + right arrow, at 45.5 s (synth FX 1) and 57.3 s (FX 2): fxctl random 2, rnd_slot2 1.
 # FX 1 is off in the pristine sounds: a second T3 on each FX 1 page switches it on.
-# Then a synth chord and drum keys, and the page left on the drum's FX page. Stats: fxctl turns 6, fine 1,
-# clicks 3, latches 4, ignored 1, cancelled 1. det_fx_reload.txt (same NAND) checks what was saved.
+# Then a synth chord and drum keys. Stats: fxctl turns 11, fine 1, clicks 3, latches 4, ignored 1, cancelled 1.
+# det_fx_reload.txt (same NAND) checks what was saved.
 accel 64 -64 512
 wait-frames 1 300000
 at 26000

@@ -193,13 +193,15 @@ device test is pending (`docs/device-tests.md` "e6").
 | `steps` | `steps`: 2..16 names (1-8 glyphs) | none |
 | `detents`, `wrap` | as e4 / e5 (steps) | none |
 | `fine` | `true` on a continuous `fn_turn`: shift + fn + turn on that encoder is its fine; nothing else may sit there | none |
+| `step` | continuous only: Q15 a detent on the control's own action, 1..32767 (default 328 = 1 %) | none |
+| `fine_step` | with `fine` only: Q15 a detent on shift + fn + turn, 1..`step` (default `step` / 16, remainder carried) | none |
 | `random` | default true: randomise draws it (steps within the count, continuous 0..32767); `false` keeps it (input gain) | never drawn (`random: true` is refused) |
 
 Worked examples (what the ports declare):
 
 ```json
 {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
- "default": 16384, "fine": true}
+ "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}
 {"id": "mode", "name": "mode", "action": "click", "encoder": "green", "word": 6, "kind": "steps",
  "steps": ["shift", "ring"], "default": 0}
 {"id": "hold", "name": "hold", "action": "click", "encoder": "green", "kind": "latch", "bit": 0}
@@ -209,8 +211,17 @@ Worked examples (what the ports declare):
 (`COOP_FX_PARAMS_MIN`): `params[0..4]` as before (the four turns in the filter type's range units, the selector);
 `params[5..7]` the three words, clamped by the core to each control (step index 0..n-1; Q15 0..32767 for continuous;
 0 where nothing is declared); `params[8]` (`COOP_FX_LATCH`) the latch bits (bit b = the latch with `"bit": b`, 1 =
-on); `params[9..15]` 0. Coarse is 328 Q15 a detent (1 %), fine 1/16 of it (20.5: 20 and 21 alternately; 1,600
-detents across the range); a steps control moves one step per `detents` detents and a click steps once, wrapping.
+on); `params[9..15]` 0. A continuous control moves `step` Q15 a detent (default 328, 1 %) and its fine `fine_step`
+(default `step` / 16 with the remainder carried: 20.5 as 20 and 21 for the default; 1,600 detents across the range);
+both clamp at 0 and 32767. A steps control moves one step per `detents` detents and a click steps once, wrapping.
+
+**Input gain, the owner's steps (2026-11-11):** kennel's ~0.5 dB a detent on fn + turn and ~0.1 dB on shift + fn +
+turn. The ports' gain word is Q15 across +-6 dB (GainQ14: -6 dB at 0, 0 dB at 16384; tape_drive's (w - 16384) x 4 Q16
+octaves, also +-6 dB), 2730.7 Q15 a dB, so declare `"step": 1365` (0.4999 dB) and `"fine_step": 273` (0.09998 dB):
+88 coarse detents or 120 fine ones from the bottom to the top. `step` and `fine_step` work on engines too. A file that
+declares neither packs byte-identically to e6 before them and turns by 328 / (328 / 16) as before. They pack as a 12th
+and 13th field after the flags (`... name <empty> flags step fine_step`, 0 = the default); a core that predates them
+(an earlier e6 dev build) ignores the rest of the line.
 
 **What a port must do:**
 - Read `params[5..8]` once at the block start and use those values for the whole block (a turn or click lands between

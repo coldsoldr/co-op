@@ -49,6 +49,10 @@ typedef struct coop_fx_t {
  *                   whenever the plugin is (re)initialised at the position (selected, a sound change), never saved,
  *                   never randomised. A click flips it. The stock restarts the instrument effect on a synth / drum
  *                   switch, so a latch at positions 0-1 is off after one (accepted: docs/ui-features.md §14).
+ *   "step"          on a continuous control (engines and effects): Q15 a detent on its own action (default 328 = 1 %).
+ *   "fine_step"     with "fine": true: Q15 a detent on shift + fn + turn (default step / 16, the remainder carried
+ *                   between detents); 1..step. Kennel's gain (Q15 over +-6 dB): "step": 1365 (0.5 dB),
+ *                   "fine_step": 273 (0.1 dB).
  *   "random"        as for engines (default true): randomise on the effect page draws the control (steps within the
  *                   count, continuous 0..32767); "random": false keeps it (input gain).
  * Saved controls ("steps", "continuous") name "word": 5, 6 or 7 and a "default"; they are saved with the sound (slots

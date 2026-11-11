@@ -141,6 +141,9 @@ tape_drive, tape_echo, wavefolder, cs_hall, cs_plate, cs_clouds, cs_clouds_delay
   stock shift does (20.5 in Q15 a detent, given as 20 and 21; 1,600 detents across the range). The plugin declares it
   with `"fine": true` on the fn_turn control; that encoder then has nothing else on shift + fn + turn. New with e6: for
   engines shift + fn + turn is a separate slot unless the engine declares `"fine"` too (allowed, not used yet).
+- **Input gain steps like kennel** (the owner, 2026-11-11): about 0.5 dB a detent on fn + turn and about 0.1 dB on
+  shift + fn + turn. A continuous control (engine or effect) may declare `"step"` (Q15 a detent, default 328) and, with
+  `"fine"`, `"fine_step"` (default step / 16); the ports' gain words span +-6 dB, so `"step": 1365`, `"fine_step": 273`.
 - **click** (on release) carries switches and latches: `steps` controls that wrap and are saved with the sound, and
   `latch` controls (freeze, hold): momentary, **not saved**, off again whenever the effect starts at that position.
 - The colour follows the encoder (blue, green, white, orange); the core shows the name and value top left in that

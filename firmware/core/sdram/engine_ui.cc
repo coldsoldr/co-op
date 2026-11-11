@@ -55,6 +55,7 @@
 #define CTL_MAX      8
 #define STEP_MAX     16
 #define NAME_LEN     9
+#define COARSE_Q15 328                                                     /* 1 % of 32767 a detent (guidelines §4.2) */
 #define POPUP_CYCLES 480000000u                                            /* ~1.2 s at 400 MHz */
 
 extern "C" const coop_engine_t *coop_engine_at(int n);                    /* engine_host.cc */
@@ -65,6 +66,7 @@ enum { A_TURN, A_CLICK, A_SHIFT_TURN, A_SHIFT_CLICK, A_FN_TURN, A_FN_CLICK, A_SH
 struct ctl {
     uint8_t action, enc, word, kind, count, random, detents, wrap;     /* e5: wrap (was pad); e6: word = the bit for a latch */
     uint8_t fine, pad[3];                                              /* e6: a fn_turn continuous control's shift + fn + turn is its fine */
+    uint16_t step, fine_step;                                          /* e6: Q15 a detent (0 = 328), fine Q15 a detent (0 = step / 16) */
     int16_t def;
     char name[NAME_LEN];
     char steps[STEP_MAX][NAME_LEN];
@@ -151,6 +153,15 @@ static const char *set_controls(int n, const char *text, int fx)
                 if (!num(p, &fl) || (fl & ~2)) return "controls: a continuous control's flags must be 0 or 2 (fine)";
                 if (fl && a != A_FN_TURN) return "controls: fine is for a fn_turn control";
                 c->fine = fl ? 1 : 0;
+                if (*p == '\t') {                                          /* e6: step, then fine_step (Q15 a detent; 0 = default) */
+                    int st, fs = 0;
+                    p++;
+                    if (!num(p, &st) || st < 0 || st > 32767) return "controls: step must be 1..32767";
+                    if (*p == '\t') { p++; if (!num(p, &fs) || fs < 0 || fs > 32767) return "controls: fine_step must be 1..32767"; }
+                    if (fs && !c->fine) return "controls: fine_step needs fine";
+                    if (fs > (st ? st : COARSE_Q15)) return "controls: fine_step must not exceed step";
+                    c->step = (uint16_t)st; c->fine_step = (uint16_t)fs;
+                }
             }
         } else {
             cnt = 0; d = 0;                                                /* a latch: off at every selection, never saved */
@@ -237,7 +248,6 @@ static void touched_at(int n, const struct ctl *c, int pos)
 static void touched(int n, const struct ctl *c) { touched_at(n, c, -1); }
 
 /* ---- turns (coop_ui_knob, KeyHandler thread): 1 = consumed ---- */
-#define COARSE_Q15 328                                                     /* 1 % of 32767 a detent (guidelines §4.2) */
 #define FINE_DIV   16                                                      /* e6: the fine step, 1/16 of that (stock's shift ratio):
                                                                               328/16 = 20.5 a detent, as 20 and 21 (the remainder is kept) */
 static int s_acc[4], s_fine[4];
@@ -261,12 +271,13 @@ static int turn_value(const struct ctl *c, int enc, int cur, int steps, int fine
         return v;
     }
     if (cur < 0) cur = 0; else if (cur > 32767) cur = 32767;
-    int32_t d;
-    if (fine) {                                                            /* e6: 1/16 of the coarse step, remainder kept */
-        s_fine[enc] += steps * COARSE_Q15;
+    int32_t d, step = c->step ? c->step : COARSE_Q15;                      /* e6: the control's step, else 1 % */
+    if (fine && c->fine_step) d = steps * c->fine_step;                    /* e6: a declared fine step */
+    else if (fine) {                                                       /* e6: 1/16 of the coarse step, remainder kept */
+        s_fine[enc] += steps * step;
         d = s_fine[enc] / FINE_DIV;
         s_fine[enc] -= d * FINE_DIV;
-    } else d = steps * COARSE_Q15;
+    } else d = steps * step;
     int32_t v = cur + d;
     return v < 0 ? 0 : (v > 32767 ? 32767 : v);
 }
