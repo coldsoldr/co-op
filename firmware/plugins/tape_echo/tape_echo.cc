@@ -13,8 +13,9 @@
  *                 as kennel's op1_fx_param_q15 did (the same ranges, the same rounding).
  *   params[5]     gain (fn + blue, shift + fn + blue its fine): Q15, -6 dB at 0, 0 dB at 16384, +6 dB at 32767.
  *   params[6]     sync (fn + green): step 0 off (the blue turn sets the time), 1..11 a tempo division (1/16T .. 1/2,
- *                 kennel's tempo lock): the time follows the division at the tempo, 120 BPM until the core exports it
- *                 (docs/request-tempo-export-tape-echo.md). A division over 1.5 s at the tempo falls back to the turn.
+ *                 kennel's tempo lock): the time follows the division at the project tempo (the core's export
+ *                 coop_tempo_bpm_q16, read once a block; docs/request-tempo-export-tape-echo.md). A division over 1.5 s
+ *                 at the tempo falls back to the turn.
  *   params[7]     the head pattern (white click): step 0..3.
  *   params[8]     bit 0: hold (green click, a latch).
  *
@@ -59,19 +60,29 @@ const int32_t kClearPairs = 2048;                      /* tape pairs zeroed a bl
 const int16_t kRangeLo[4] = { 64, 0, 0, 8192 };
 const int16_t kRangeHi[4] = { 14528, 24576, 22528, 32767 };
 
-/* Sync: kennel's tempo divisions (tape_echo_knl.cc), shortest first. A 96th note in Q4 samples at 22050 Hz from the
- * tempo increment (the stock LFO's tempo-synced phase increment, bpm x 1662149.125): 16 x 22050 x 60 / 24 x
- * 1662149.125 / inc. */
-const int64_t kNinetySixthNum = 1466015528250LL;
-const uint32_t kTempo120 = 199457895u;                 /* 120 x 1662149.125 */
+/* Sync: kennel's tempo divisions (tape_echo_knl.cc), shortest first, in 96th notes. */
 const int32_t kNumDivisions = 11;                      /* 1/16T 1/16 1/8T 1/16. 1/8 1/4T 1/8. 1/4 1/2T 1/4. 1/2 */
 const int32_t kDivision96ths[kNumDivisions] = { 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48 };
 
-/* The tempo increment. coop has no tempo export yet: 120 BPM, as kennel's fallback (guidelines §2.3). */
-inline uint32_t TempoIncrement() { return kTempo120; }
+/* A 96th note in Q4 samples at 22050 Hz at the project tempo: the core's export (e10, sdk/coop_plugin.h; 120 << 16 when
+ * the tempo is unknown, kennel's fallback, guidelines §2.3), through state.h NinetySixthQ4. Kennel read the stock LFO's
+ * tempo increment at 0x01AADAD4 instead (a firmware address, §2.1). Called once a block. */
+inline int32_t NinetySixthQ4() { return coop_tape_echo::NinetySixthQ4(coop_tempo_bpm_q16()); }
 
-/* A 96th note in Q4 samples at 22050 Hz at the tempo in use. */
-inline int32_t NinetySixthQ4() { return static_cast<int32_t>(kNinetySixthNum / TempoIncrement()); }   /* folds at 120 */
+/* The render's: the same, the division redone only when the tempo moved (one word compare a block otherwise). The two
+ * words are .bss shared by the slots, which is right (one tempo), and only the audio interrupt touches them: init (which
+ * may run on the main loop) and the screen call NinetySixthQ4 above. */
+uint32_t g_tempo_q16;                                  /* 0: nothing yet */
+int32_t g_tempo_s96;
+inline int32_t RenderNinetySixthQ4()
+{
+    const uint32_t q16 = coop_tempo_bpm_q16();
+    if (q16 != g_tempo_q16) {
+        g_tempo_s96 = coop_tape_echo::NinetySixthQ4(q16);
+        g_tempo_q16 = q16;
+    }
+    return g_tempo_s96;
+}
 
 /* The time word sync gives (step 1..11), or the turn's word when off or when the division is out of range; *div the
  * division in force (0..10), -1 when the turn's word is used (the screen's display word). */
@@ -142,7 +153,7 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
     if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   /* not bound: dry */
     Instance *const g = g_inst[slot];
     /* The time in force (the sync division's or the turn's): the echo's and the screen's (published at every exit). */
-    const int32_t s96 = NinetySixthQ4();
+    const int32_t s96 = RenderNinetySixthQ4();
     int32_t div;
     const int32_t time = SyncedTime(params[6], Knob(params, 0), s96, &div);
     if (n != kBlock) {                                  /* the host's block is 64; anything else passes through */

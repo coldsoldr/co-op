@@ -8,6 +8,7 @@
  * e4 (2026-11-10): the L1 lease and scratch (sdk/coop_plugin.h, core/sdram/l1_pool.cc), the shown slot's eight words
  * and the held modifiers (sdk/coop_screen.h, core/sdram/engine_ui.cc).
  * e8 (2026-11-11): coop_fx_scratch, an effect's position buffer (sdk/coop_plugin.h, core/sdram/plugin_host.cc).
+ * e10 (2026-11-11): coop_tempo_bpm_q16, the tempo in BPM as Q16 (sdk/coop_plugin.h, core/sdram/plugin_host.cc).
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
@@ -29,6 +30,7 @@ void *coop_l1_scratch(uint32_t *bytes);
 void coop_scr_words(int16_t *out8);
 int coop_scr_mods(void);
 void *coop_fx_scratch(int slot, uint32_t *bytes);
+uint32_t coop_tempo_bpm_q16(void);
 }
 #define EXPORT(f) { "_" #f, (uint32_t)(uintptr_t)&f }
 
@@ -47,6 +49,7 @@ extern "C" const kn_export coop_exports[] = {
     EXPORT(coop_scr_words),
     EXPORT(coop_scr_mods),
     EXPORT(coop_fx_scratch),                         /* e8: the position buffers (sdk/coop_plugin.h, plugin_host.cc) */
+    EXPORT(coop_tempo_bpm_q16),                      /* e10: the tempo, Q16 BPM (sdk/coop_plugin.h, plugin_host.cc) */
     { "_coop_exports_end", 0 },                      /* a placeholder so the table is never empty */
 };
-extern "C" const int coop_exports_count = 14;         /* entries a plugin may use (the placeholder is not one) */
+extern "C" const int coop_exports_count = 15;         /* entries a plugin may use (the placeholder is not one) */

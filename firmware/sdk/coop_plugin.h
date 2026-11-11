@@ -110,6 +110,20 @@ void *coop_fx_scratch(int slot, uint32_t *bytes);
 }
 #endif
 
+/* ---- e10: the tempo (docs/fx-abi.md "Tempo", guide/plugin-guidelines.md §2.3) ----
+ * coop_tempo_bpm_q16(): the project tempo (the tempo screen's BPM, which the tape and the sequencer follow) in BPM as
+ * Q16 (120 BPM = 120 << 16 = 7,864,320). It changes live as the tempo is turned and is valid from boot. 120 << 16 when
+ * the tempo is unknown or outside 20..400 BPM. A plain word read, no lock: call it from render (once a block, never a
+ * sample), init or the screen. Divide by it once a block, not per sample. A file that imports it is refused by a core
+ * before e10 ("an import is not exported by the core"): it never plays there at a wrong tempo. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+uint32_t coop_tempo_bpm_q16(void);
+#ifdef __cplusplus
+}
+#endif
+
 /* ---- screens (E2, docs/engines.md "Screens"): a plugin that ships an SVG in its file draws it through these. Both
  * run on the GUI thread; `scr` is the screen object, handed to the sdk/coop_screen.h calls. ---- */
 typedef struct coop_screen_t {

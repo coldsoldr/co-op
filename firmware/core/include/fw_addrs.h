@@ -73,4 +73,13 @@
 /* ---- main-loop service CALL sites (safe place to do thread-context work like file writes) ---- */
 #define FW_CI_SERVICE_CALL       0x019F0A24u   /* [C] kennel: CALL tape_c::service(0) in the main loop */
 
+/* ---- the tempo (the tempo screen's BPM; docs/sequencer-interface.md section 4 in te-op1-cfw, symbols/sdram.sym) ----
+ * SetTempo(float bpm) 0x01A5E9A4 stores the BPM as an IEEE single at 0x018C1878 first (store 0x01A5E9E8), then derives
+ * the sequencer's tick period [0x01B60524] and the LFOs' tempo increment [0x01AADAD4] from it (the word kennel read,
+ * bpm x 1662149.125 rounded to a single, then truncated). The tape and the sequencer read the float through its getter
+ * 0x01A5E7A0 (13 callers). The image holds 120.0f there (0x42F00000) before any SetTempo; the increment word is .bss
+ * (0 until the first SetTempo). [C] stock_sdram disassembly, 2026-11-11. */
+#define FW_TEMPO_BPM_F32         0x018C1878u   /* [C] float BPM; 120.0f at boot; SetTempo asserts 40..220 */
+#define FW_TEMPO_LFO_INC         0x01AADAD4u   /* [C] uint32 bpm x 1662149.125 (kennel knl_fx.h TempoIncrement) */
+
 #endif  /* COOP_FW_ADDRS_H */

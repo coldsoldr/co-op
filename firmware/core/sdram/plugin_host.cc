@@ -25,6 +25,8 @@
 #include "coop_plugin_host.h"
 #include "coop_fixed.h"
 #include "coop_cost.h"
+#include "coop_tempo.h"
+#include "fw_addrs.h"
 
 #define Y_OPENDIR  ((void *(*)(const char *))0x01A9B450u)               /* kennel kn_boot.c */
 #define Y_READDIR  ((const uint8_t *(*)(void *))0x01A9B648u)             /* dirent: +0x0B d_name */
@@ -387,6 +389,15 @@ extern "C" void *coop_fx_scratch(int slot, uint32_t *bytes)
     if (slot < 0 || slot >= POSITIONS || !b) { if (bytes) *bytes = 0; return 0; }
     if (bytes) *bytes = g_fxbuf_bytes;
     return b + (uint32_t)slot * g_fxbuf_bytes;
+}
+
+/* ---- the tempo export (2026-11-11, packaged with e10; docs/fx-abi.md "Tempo", core/include/coop_tempo.h) ----
+ * The tempo screen's BPM as Q16 (120 << 16 when the word is out of 20..400 BPM). One aligned word load from the stock's
+ * float BPM (FW_TEMPO_BPM_F32, which SetTempo stores first) and a few integer ops: no lock, safe from render, init and
+ * the screen. The stock image holds 120.0f in the word, so it is valid from boot. */
+extern "C" uint32_t coop_tempo_bpm_q16(void)
+{
+    return coop_tempo_q16_from_f32(*(const volatile uint32_t *)FW_TEMPO_BPM_F32);
 }
 
 static int heap_room_ok(uint32_t cost)

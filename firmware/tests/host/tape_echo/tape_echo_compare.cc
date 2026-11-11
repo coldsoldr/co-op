@@ -18,13 +18,24 @@
 // (OP1FX_NO_ASM, OP1CLOUDS_NO_ASM), so the comparison also checks the copied .S files; and the coop build prints the
 // render's cycles a block (compute only: no cache misses or SDRAM waits, which the device stats give).
 //
-//   tape_echo_ref OUT.raw [BLOCKS]   /   tape_echo_coop OUT.raw [BLOCKS]
+// The tempo (e10): both builds run at TEMPO (tenths of a BPM, argv[3], default 1200), or with TEMPO 0 walk through
+// kWalk (a change every kWalkBlocks, sync on or off). The coop build gets the core's export through ../tempo_host.cc:
+// the IEEE single the stock would hold, through the core's own conversion (core/include/coop_tempo.h). The reference gets
+// kennel's TempoIncrement for that same tempo: the export's BPM x 1662149.125, truncated (199457895 at 120, kennel's
+// kTempo120).
+// So the 120 run is the scenario as before the export, and the others show the DSP takes the tempo as kennel did. The
+// coop build also checks NinetySixthQ4 against kennel's quotient at every tenth of a BPM from 20.0 to 400.0 (stderr).
+//
+//   tape_echo_ref OUT.raw [BLOCKS [TEMPO]]   /   tape_echo_coop OUT.raw [BLOCKS [TEMPO]]
 //
 // Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+
+#include "coop_tempo.h"   // core/include: the export's conversion (both builds)
 
 #ifdef TE_REF
 #include "fx/op1/half_rate.h"
@@ -36,7 +47,9 @@ static uint32_t& clock_now = op1::host_cycles;
 #include "coop_plugin.h"
 #include "src/tape_echo.h"   // TapeEchoTimeWord, for the division table printout
 extern "C" const coop_fx_t FX_tape_echo;
+#include "state.h"     // coop_tape_echo::NinetySixthQ4
 extern "C" long coop_fx_scratch_check(const coop_fx_t* fx, const int16_t* params, long blocks);   /* ../fx_scratch_host.cc */
+extern "C" void coop_tempo_host_set(uint32_t f32_bits);                                              /* ../tempo_host.cc */
 uint32_t g_tape_echo_host_cycles;
 static uint32_t& clock_now = g_tape_echo_host_cycles;
 #endif
@@ -47,6 +60,28 @@ const int kBlock = 64;
 const int kClearBlocks = 17;   // ceil(33217 / 2048): plugins/tape_echo/tape_echo.cc kClearPairs
 const int16_t kRangeLo[4] = { 64, 0, 0, 8192 };
 const int16_t kRangeHi[4] = { 14528, 24576, 22528, 32767 };
+
+// The tempo walk (TEMPO 0): tenths of a BPM, one every kWalkBlocks.
+const int32_t kWalk[] = { 900, 1335, 1740, 1200, 600, 2000, 450 };
+const int32_t kWalkN = sizeof(kWalk) / sizeof(kWalk[0]);
+const int kWalkBlocks = 1300;
+
+// The IEEE single the stock's SetTempo would store for the tempo (tenths / 10.0f, as its callers compute it).
+uint32_t TempoF32(int32_t t10) {
+  const float f = static_cast<float>(t10) / 10.0f;
+  uint32_t b;
+  std::memcpy(&b, &f, 4);
+  return b;
+}
+// Kennel's tempo increment for the same tempo: the export's BPM (the core's conversion of that single) x 1662149.125
+// (= q16 x 13297193 / 2^19), truncated as the stock's float-to-uint conversion does. Exact at 120: 199457895, kennel's
+// kTempo120, so the 120 run is the scenario as it was before the export.
+uint32_t KennelIncrement(int32_t t10) {
+  const uint64_t q16 = coop_tempo_q16_from_f32(TempoF32(t10));
+  return static_cast<uint32_t>(q16 * 13297193u >> 19);
+}
+// Kennel's NinetySixthQ4 (tape_echo_knl.cc) for an increment.
+int32_t KennelNinetySixth(uint32_t inc) { return static_cast<int32_t>(1466015528250LL / inc); }
 
 uint32_t rng = 12345;
 uint32_t Rand() {
@@ -79,14 +114,13 @@ int32_t GainQ14(int32_t word) {   // knl::GainQ14
 }
 
 // Kennel's tempo lock (tape_echo_knl.cc TimeLock::Word, DivisionWord, NinetySixthQ4) with the division the scenario
-// picks (coop's sync step - 1) and knl::TempoIncrement's 120 BPM fallback (the stock address isn't there to read).
-const int64_t kNinetySixthNum = 1466015528250LL;
-const uint32_t kTempo120 = 199457895u;
+// picks (coop's sync step - 1) and knl::TempoIncrement as the scenario's tempo (g_inc, set every block).
+uint32_t g_inc = 199457895u;   // knl::TempoIncrement: the scenario's tempo (kennel's kTempo120 at 120 BPM)
 const int32_t kNumDivisions = 11;
 const int32_t kDivision96ths[kNumDivisions] = { 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48 };
 int32_t LockWord(int32_t div, int32_t knob_word) {
   if (div < 0) return knob_word;
-  const int32_t s96 = static_cast<int32_t>(kNinetySixthNum / kTempo120);
+  const int32_t s96 = KennelNinetySixth(g_inc);
   const int32_t word = op1fx::TapeEchoTimeWord(s96 * kDivision96ths[div]);
   return word < 0 ? knob_word : word;
 }
@@ -156,6 +190,7 @@ int main(int argc, char** argv) {
     return 2;
   }
   const int blocks = argc > 2 ? std::atoi(argv[2]) : 20000;
+  const int32_t tempo = argc > 3 ? std::atoi(argv[3]) : 1200;   // tenths of a BPM; 0 = the walk
 #if defined(__bfin__) && !defined(TE_REF)
   {
     uint32_t s;
@@ -189,6 +224,12 @@ int main(int argc, char** argv) {
 
   for (int b = 0; b < blocks; ++b) {
     // ---- the scenario ----
+    const int32_t t10 = tempo ? tempo : kWalk[(b / kWalkBlocks) % kWalkN];   // the tempo, set every block
+#ifdef TE_REF
+    g_inc = KennelIncrement(t10);
+#else
+    coop_tempo_host_set(TempoF32(t10));
+#endif
     if (Rand() % 400 == 0) source = RandRange(0, 4);
     for (int k = 0; k < 4; ++k) {
       const uint32_t e = Rand() % 1000;
@@ -282,13 +323,54 @@ int main(int argc, char** argv) {
   }
   std::fclose(out);
   std::printf("%d of %d blocks changed by the effect, %d with sync on\n", wet_blocks, blocks, sync_blocks);
-  // The sync divisions' time words at 120 BPM (a 96th = 7350 Q4 samples at 22050 Hz), from each build's own
-  // TapeEchoTimeWord: the Makefile compares the two printouts (and kennel's table is the reference's).
-  std::printf("sync words at 120 BPM:");
+  // The sync divisions' time words at the run's tempo (each walk tempo for TEMPO 0), from each build's own 96th note
+  // (the reference kennel's quotient of the increment, coop the export through NinetySixthQ4) and TapeEchoTimeWord:
+  // the Makefile compares the two printouts. At 120 BPM a 96th is 7350 Q4 samples at 22050 Hz.
   static const int32_t k96ths[11] = { 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48 };   // kennel's kDivision96ths
-  const int32_t s96 = static_cast<int32_t>(1466015528250LL / 199457895u);
-  for (int d = 0; d < 11; ++d) std::printf(" %d", static_cast<int>(op1fx::TapeEchoTimeWord(s96 * k96ths[d])));
-  std::printf("\n");
+  for (int w = 0; w < (tempo ? 1 : kWalkN); ++w) {
+    const int32_t t10 = tempo ? tempo : kWalk[w];
+#ifdef TE_REF
+    const int32_t s96 = KennelNinetySixth(KennelIncrement(t10));
+#else
+    coop_tempo_host_set(TempoF32(t10));
+    const int32_t s96 = coop_tape_echo::NinetySixthQ4(coop_tempo_bpm_q16());
+#endif
+    std::printf("sync words at %d.%d BPM (96th %d):", static_cast<int>(t10 / 10), static_cast<int>(t10 % 10),
+                static_cast<int>(s96));
+    for (int d = 0; d < 11; ++d) std::printf(" %d", static_cast<int>(op1fx::TapeEchoTimeWord(s96 * k96ths[d])));
+    std::printf("\n");
+  }
+#ifndef TE_REF
+  {   // The export's conversion and NinetySixthQ4 against kennel's quotient at every tenth of a BPM, 20.0 .. 400.0
+      // (stderr): equal to kennel's with its increment truncated; against the increment as the stock computes it (bpm x
+      // 1662149.125 in single precision, truncated), the count that differ (by one Q4 unit: kennel's rounding error).
+    int bad = 0, stock_off = 0, n = 0;
+    for (int32_t t10 = 200; t10 <= 4000; ++t10, ++n) {
+      coop_tempo_host_set(TempoF32(t10));
+      const uint32_t q16 = coop_tempo_bpm_q16();
+      const int32_t ours = coop_tape_echo::NinetySixthQ4(q16);
+      if (ours != KennelNinetySixth(KennelIncrement(t10))) {
+        if (bad++ < 5) std::fprintf(stderr, "tempo %d: 96th %d, kennel %d\n", (int)t10, (int)ours,
+                                    (int)KennelNinetySixth(KennelIncrement(t10)));
+      }
+      float f;
+      const uint32_t fb = TempoF32(t10);
+      std::memcpy(&f, &fb, 4);
+      const uint32_t stock_inc = static_cast<uint32_t>(static_cast<float>(f * 1662149.125f));
+      if (ours != KennelNinetySixth(stock_inc)) ++stock_off;
+    }
+    coop_tempo_host_set(0);                                     // unknown: 120
+    const bool fallback_ok = coop_tempo_bpm_q16() == (120u << 16);
+    coop_tempo_host_set(TempoF32(4010));                        // over 400: 120
+    const bool over_ok = coop_tempo_bpm_q16() == (120u << 16);
+    coop_tempo_host_set(TempoF32(1335));
+    const bool q16_ok = coop_tempo_bpm_q16() == 8749056u;       // 133.5 x 65536
+    std::fprintf(stderr, "tempo export: %d of %d tempos (20.0..400.0) give kennel's 96th, %d differ by kennel's single-"
+                 "precision increment on the device; fallback %s, over 400 %s, 133.5 = %s\n", n - bad, n, stock_off,
+                 fallback_ok ? "120" : "WRONG", over_ok ? "120" : "WRONG", q16_ok ? "8749056" : "WRONG");
+    if (bad || !fallback_ok || !over_ok || !q16_ok) return 1;
+  }
+#endif
 #if defined(__bfin__) && !defined(TE_REF)
   std::printf("tape_echo render, simulator compute: avg %lu, max %lu cycles a block over %lu blocks\n",
               static_cast<unsigned long>(cyc_sum / (cyc_n ? cyc_n : 1)), static_cast<unsigned long>(cyc_max),

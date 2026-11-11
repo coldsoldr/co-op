@@ -40,7 +40,7 @@ const uint32_t kDotHzNum = 22050u << 16;     // Hz (Q16) = this / samples: one t
 const int32_t kWaveMin = 102;                // the wave at age 0: a tenth (Q10)
 const int32_t kTicks = 24;                   // 16th ticks at most (kennel's bt1..bt24)
 const int32_t kTickTop = kTapeY - 13, kTickShort = kTapeY - 10, kTickBeat = kTapeY - 7;
-const int32_t kNinetySixth120 = 7350;        // a 96th note at 120 BPM in Q4 samples (tape_echo.cc, before a render)
+const int32_t kNinetySixth120 = 7350;        // a 96th note at 120 BPM in Q4 samples (a published word out of range)
 
 const char* const kHeadIds[3] = { "hd1", "hd2", "hd3" };
 const char* const kHeadLineIds[3] = { "hp1", "hp2", "hp3" };
@@ -116,7 +116,8 @@ void ScreenUpdate(void* scr, int dt, const coop_fx_view_t* v) {
     const volatile coop_tape_echo::Instance* st = Published<coop_tape_echo::Instance>(v);
     int32_t time = st ? st->disp.time : -1;
     int32_t div = st ? st->disp.div : -1;
-    s96 = st ? st->disp.beat : kNinetySixth120;
+    // the render publishes the 96th at the project tempo every block; before one, the export directly (e10)
+    s96 = st ? st->disp.beat : coop_tape_echo::NinetySixthQ4(coop_tempo_bpm_q16());
     if (time < 0 || time > 32767) {
       time = Clamp15(v->knobs[0]);
       div = -1;
