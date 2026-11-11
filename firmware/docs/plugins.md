@@ -337,3 +337,26 @@ decimator's result. File 10,820 bytes, load 19,380 x 5. `tests/host/ensemble`: b
 host (C) and in bfin-elf-run (assembly), 12.8 k mean / 14.8 k max cycles a block in the simulator. Gate plan and the
 scenario `tests/sim/det_fx_ensemble.txt`: `plugins/ensemble/README.md`. Device test: `docs/device-tests.md`
 "ensemble 0.3".
+
+## Port: freq_shift (kennel freq_shift 0.2, 2026-11-11) [I until the gate and the device test]
+
+`plugins/freq_shift`: te-op1-cfw's frequency shifter / ring modulator after Mutable Instruments Warps (MIT,
+`ports/fx/src/shift` at 5aa314b, the kennel plugin `ports/knl/freq_shift`), self-contained (`src/` the DSP and its
+assembly, `op1/support.cc`, `LICENSE-MIT`). Contract, stereo and cost: `plugins/freq_shift/README.md`.
+- **Controls** (the owner's layout): the four turns are kennel's knobs (shift, feedback, spread, mix), normalised from
+  the filter type's ranges as kennel's `op1_fx_param_q15` did; kennel's blue page-2 gain is `fn_turn` blue word 5
+  with `"fine": true` (shift + fn + blue its fine, `"random": false`); kennel's green page-2 mode (`ClickMode(word, 2)`)
+  is the green click, steps `shift` / `ring`, word 6, saved, wrapping, randomised.
+- **Removed from the kennel glue** (`common/knl_fx.h`): the shift byte read at 0x01DD7F78 (`knl::Fine`, now the core's
+  fine), the range table read at 0x01DE5C50 (`op1_fx_param_q15`, now the constant ranges once a block), the instance
+  in `op1_fx_scratch` (now `.bss`, one per relocation), `op1_fx_page` / `op1_fx_knobs` / the screen reads, the input
+  meter, `memset` / `<cstring>` in the DSP. No `"stereo"` flag (kennel's layout; a `coop_fx_t` is stereo by ABI). The
+  screen (`shift.svg`) is not carried: effect screens aren't built.
+- **Stereo:** a Hilbert pair per channel instead of upstream's one pair on (L + R) / 2 (guidelines §2.2: no mono
+  collapse); an L == R block runs one pair. Host test: bit-identical to two upstream mono instances (L at shift +
+  spread, R at shift - spread), and with L == R to upstream's stereo path (`make -C tests/host/freq_shift`); the
+  assembly equals the host C in the GNU simulator (`make ... sim`).
+- **Cost** (GNU simulator, cycles a block): 9,762 avg / 11,013 max with L == R, 14,383 / 15,868 with L != R
+  (upstream's stereo call: 6,585 / 7,187). op1emu and device pending. File 10,300 bytes, load 14,168 (x5 = 70,840).
+- Gate plan (not run in the port): `plugins/freq_shift/README.md` "Gate plan", scenario
+  `tests/sim/det_fx_freq_shift.txt`.

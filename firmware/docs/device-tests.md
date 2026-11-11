@@ -1983,4 +1983,38 @@ still pending when this was written: run it first.
 
 Compare by ear with the kennel build on hundekraft if you still have it (master position: it should sound the same).
 
+## freq_shift 0.1: the kennel frequency shifter as a coop effect — device test (pending, 2026-11-11)
+
+`plugins/freq_shift` (`docs/plugins.md` "Port: freq_shift", `plugins/freq_shift/README.md`). Needs the e6 core
+(`op1_246_coop_e6.op1`: effect controls).
+- `build/plugins/freq_shift.coop` (10,300 bytes; sha256 at this commit
+  `7a2061f12bd3b04c48f4f6e9c9bf7e11f75a76a25cf99b32695b32840ee25f56`). Load size 14,168 bytes, five relocations.
+- [C host] bit-identical to te-op1-cfw's DSP per channel and, with L == R, to its stereo path; [C GNU simulator] the
+  assembly equals the host C; 9,762 / 14,383 cycles a block (one pair / two). op1emu gate: pending (run one at a time,
+  `plugins/freq_shift/README.md` "Gate plan").
+
+**What to do** (install `freq_shift.coop` with the librarian, power-cycle; play a sustained sound through it):
+1. Synth: T3, shift + T3, pick **freq shift**, T3 (FX 1 on). Orange up (wet). Turn blue slowly either side of the
+   middle: near the middle a slow phasing / beating, further out the chord turns clangorous, up on one side, down on
+   the other (cubic: fine near 0, ±2 kHz at the ends). No zipper noise while turning.
+2. Green up: the barber-pole (a sweep that climbs or falls without end, the way the shift points). Top feedback must
+   stay bounded and die to silence within about a second of the sound stopping.
+3. White up: L and R move apart (L up, R down): the image widens. With white at 0, L and R are the same shift.
+4. Click green: `MODE RING` (green, top left), the sound becomes ring modulation (both sidebands, quieter by about
+   6 dB, no click on the switch: a 6 ms crossfade). Click again: `MODE SHIFT`.
+5. Hold Help, turn blue: `GAIN` (blue) moves, the wet gets quieter / louder (-6 .. +6 dB), the dry part doesn't.
+   Hold Shift + Help and turn blue: the same value, 1/16 the step.
+6. Orange to 0: exactly the dry sound (compare with FX 1 off: no difference).
+7. Repeat at the drum (drum T3), the master (mixer T3), and FX 2 of the instrument and the master (drop): the same
+   behaviour; on the master the spread widens the whole mix.
+8. A panned sound (synth voices spread, or a stereo source on the master) through a small shift: the placement stays
+   (left voices stay left): the reason for a Hilbert pair per channel.
+9. Power-cycle: gain and mode as you left them at every position.
+10. Copy `/yaffs2/user/coop_stats.txt`: the `cost` line (`fx1_plugin=`, `s2_instr=`, `s2_master=`: avg / peak), the
+    `fxctl` and `plugins` lines. Expect well under 30 k a block [I: the simulator gives ~10-16 k; the device adds
+    cache and SDRAM waits].
+
+**If something is wrong:** power off; remove the file with the librarian (or recovery: hold COM at power-on and flash
+`op1_246_coop_e5.op1` or stock).
+
 Result: (pending)
