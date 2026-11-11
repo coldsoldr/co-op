@@ -1892,3 +1892,31 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
   the popup's look over the filter page (counted, not seen: op1emu screenshots are wall-timed).
 
 Result: (pending)
+
+## ensemble 0.3: the kennel ensemble as a coop effect, stereo everywhere — device test (pending, 2026-11-11)
+
+- `build/plugins/ensemble.coop` (10,820 bytes, sha256 `7f907a7977feac35aa3e993315e022d8abe93cf4a738c0e8ae0079563d988eb2`),
+  `plugins/ensemble` (`README.md` has the controls, the cost plan and the gate plan). Needs the e6 package
+  (`op1_246_coop_e6.op1`): the file declares a control, so a core before e6 refuses it ("plugin flags not supported
+  yet"). Install from the librarian, power-cycle.
+- Host and simulator: bit-identical to te-op1-cfw's kennel ensemble (`make -C tests/host/ensemble`, `sim`); coop render
+  12,801 mean / 14,823 max cycles a block in bfin-elf-run (no cache model). op1emu gate: pending (README).
+
+**What to do**:
+1. Synth: T3, shift + T3, pick **ensemble**, T3 (FX 1 on). Play a chord. Turn white (voices) from the bottom (a plain
+   chorus) to the top (three copies a side with a vibrato: the string ensemble); green (depth) and blue (rate) up and
+   down; orange (mix) from dry to wet. Listen for clicks while turning, most of all on white near the bottom (the
+   kernel switch) and on rate at the top.
+2. Hold Help and turn blue: "GAIN" top left in blue, the wet part louder or quieter (mix up to hear it; at mix 0
+   nothing changes). Shift + Help + blue: the same gain in fine steps.
+3. Headphones: the chorus is wide at the synth position too (new on coop: kennel ran it mono there).
+4. The same at drum FX 1, master FX 1 and both FX 2 slots (drop, shift + blue to ensemble, blue push, T3).
+5. Switch FX 1 off (T3) for a few seconds with notes playing and on again: no burst of old sound (the restart passes
+   one block dry).
+6. Save the sound, power-cycle: the gain comes back as left.
+7. Copy `/yaffs2/user/coop_stats.txt`: the `cost` line (`fx1_plugin=`, `s2_instr=`, `s2_master=`) from the busiest
+   moment (white at the top, a six-note chord), and `fxctl`.
+
+Compare by ear with the kennel build on hundekraft if you still have it (master position: it should sound the same).
+
+Result: (pending)

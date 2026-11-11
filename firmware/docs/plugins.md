@@ -260,3 +260,17 @@ now passes straight to the stock filter (`plugin_host.cc st_twin`).
 depth on fn + white, mute latch on the orange click; it multiplies by the gain, inverts, mutes).
 `tests/sim/det_fx_controls.txt` walks the five positions; `tests/sim/det_fx_reload.txt` power-cycles the NAND it
 leaves. Packer checks: `tests/tools/test_pack_controls.py`.
+
+## ensemble (2026-11-11): the kennel ensemble on e6
+
+`plugins/ensemble` (0.3): te-op1-cfw's kennel ensemble (`ports/knl/ensemble` 0.2) with its DSP copied into the plugin
+(`src/`: the core of `ports/fx/src/ensemble`, Clouds' halfband path, `half_rate.h`), the upstream's constexpr double
+tables turned into integers (`gen_tables.py`), C kernels host-only, the assembly kernels renamed `Ens*`. Controls: the
+four turns as kennel (rate, depth, voices, mix; normalised from the filter ranges as `op1_fx_param_q15` did, the
+ranges as constants), fn + blue the input gain (word 5) with shift + fn + blue its fine (`"fine": true`, `"random":
+false`); no latch. Kennel's `"stereo": true` is left out (coop's loader reads it as kennel's stereo layout). True
+stereo at every position; one exact saving: a block with L == R and equal decimator histories copies the left
+decimator's result. File 10,820 bytes, load 19,380 x 5. `tests/host/ensemble`: bit-identical to the upstream on the
+host (C) and in bfin-elf-run (assembly), 12.8 k mean / 14.8 k max cycles a block in the simulator. Gate plan and the
+scenario `tests/sim/det_fx_ensemble.txt`: `plugins/ensemble/README.md`. Device test: `docs/device-tests.md`
+"ensemble 0.3".
