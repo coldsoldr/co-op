@@ -78,18 +78,65 @@ No `"stereo"` flag: a `coop_fx_t` is stereo by its ABI, and coop's loader reads 
 | `op1_fx_param_q15` (the stock range table at 0x01DE5C50) | the SDK's constant filter ranges, once a block | no firmware addresses in a plugin (§2.1) |
 | the instance in the position's scratch buffer (`op1_fx_scratch`) | `.bss` (one instance per relocation, i.e. per position) | §2.3 |
 | `TapeEcho::Init` clears the 133 KB tape on every (re)start, in the audio interrupt | the clear is spread over the first 17 blocks (2,048 pairs a block, 25 ms), the dry passing through (accepted as it is by the owner, 2026-11-11: listen for it) | a slow init doesn't ship (§2.3) |
-| the screen (`tape_echo.svg`, design B "Schematic") | the stock filter page; coop shows the control's name and value top left | effect screens are not built in coop (`docs/plugins.md` "Effect controls"); brief below |
+| the screen (`tape_echo.svg`, design B "Schematic") | kennel's screen on e9, made lean (below); coop shows the control's name and value top left | e9 effect screens (`docs/plugins.md` "e9") |
 
 Time already has a fine step (shift + blue), so there is no separate delay-time fine control.
 
-## Screen
+## Screen (e9, 0.2)
 
-The stock filter page shows (effect screens are not built). Brief for later, against the manifesto (§5), from
-kennel's design B: the tape row with the record head and three play heads, their distance from the record head
-following time (blue), lit per head pattern (white, steps); a dot travelling record head to head 3 at the tape speed;
-the tape drawn as a wave whose amplitude follows age (white) and breathes with the wow; feedback as four chevrons
-(green), all four and the return path in green while hold is on (the latch shows it is engaged, §5.4); mix as a bar
-(orange). No words at rest; the gain readout (dB, tenths) only while fn is held. Kennel's art is not carried across.
+Kennel's screen (`te-op1-cfw/ports/knl/tape_echo`: `tape_echo.svg` from `gen_tape_echo_knl_svg.py`, the canvas "Tape
+echo screen" design B "Schematic", `tape_echo_knl.cc` ScreenUpdate) on the e9 effect-screen path (`docs/plugins.md`
+"e9"): `tape_echo.svg` (from `gen_tape_echo_svg.py`) and `tape_echo_screen.cc`. It shows wherever tape_echo is the
+effect on the page: FX 1 of the synth, the drum or the master, FX 2 in focus.
+
+The Space Echo's signal path, left to right on the tape row: the input arrow, the record head, the tape, the three
+play heads tapping down to a bus, the sum, the output arrow; the return path under it.
+
+| Part | Encoder | What moves it |
+|---|---|---|
+| the play heads' distance from the record head (head 3 at 32 + 130 t units) | blue (time), or green with fn (sync) | the time word in force (the render's display word) |
+| the dot on the tape, record head to head 3 | blue (time) | one trip per TIME, at most 8 a second |
+| the beat ticks over the tape (16ths, every fourth longer) | green with fn (sync) | bright green while fn is held; green's dark tone at rest while a division is in force; none otherwise |
+| the heads lit (white) or dark | white click (heads) | the pattern: 3, 2+3, 1+2+3, 1+3 |
+| the tape wave | white (age) | its height (a tenth at age 0), breathing with the wow (faster with age) |
+| the feedback chevrons | green (feedback) | a count set, 0..4 |
+| the return path, the hold glyph (top right), the input | green click (hold) | return path and glyph green, the input and record head dim while held (all four chevrons); the glyph in green's dark tone at rest |
+| the gain gauge (left) | blue with fn (gain) | the bar about the centre, -6..+6 dB; a bracket while fn is held |
+| the mix gauge (right) | orange (mix) | scaled about its foot |
+
+What changed from kennel's screen:
+- **Inputs**: the four turns from `view->knobs` (kennel's `op1_fx_knobs_live`, the stock pages' values with the LFO);
+  gain, sync and the head pattern from `view->words[0..2]` (words 5..7); hold from `view->latches` bit 0 (kennel's
+  `knl::Pressed(pos, 1)`).
+- **Display words** (`state.h` `Display`, at the end of the state; written once a block by the render after the DSP,
+  the clearing blocks included; read through `Published<>` while `view->live`): `time`, the time word the echo gets
+  (the turn's, or the sync division's: `SyncedTime`), `div`, the division in force (0..10, 1/16T .. 1/2; -1 when sync
+  is off or the division fell back to the turn), and `beat`, a 96th note at the tempo in use (Q4 samples at
+  22.05 kHz; 7350 at the fixed 120 BPM, so the ticks follow a tempo export without a screen change). Kennel's screen
+  read its `TimeLock::div[]` and recomputed the time word itself. Before the first render (`time` -1) the screen
+  shows the blue turn. `TapeEchoTimeSamplesQ4` (the word's delay, for the dot and the ticks) is back in
+  `src/tape_echo_core.cc` for the screen; the render doesn't call it.
+- **Kennel's page 2 and its time lock are fn held** (`view->mods` bit 1): fn + blue turns the gain and fn + green the
+  sync, so while fn is down the gain's bracket shows and the beat ticks are bright green (kennel showed them blue while
+  shift was held on the time page, its lock gesture). With a division in force the ticks stay at rest in green's dark
+  tone: the sync is a saved mode that takes the time away from the blue turn, and the screen says so without words
+  (guidelines §5.4).
+- **The readouts are gone**: the division names (dv0..dv10), the head patterns (pt0..pt3) and the page-2 gain in dB
+  (gs/gd/gdot/gt), about 16 KB of kennel's file. The core's popup names the control and its value on a turn or a
+  click, and the lit heads show the pattern. Kennel's white page-2 bracket round the heads (wbox) went with the page:
+  the pattern is a white click now.
+- **The beat ticks are drawn by the code** with raster lines (`coop_scr_line`, kennel's geometry: y 43..46, a beat
+  43..49) instead of 24 SVG lines.
+- **Shapes**: kennel's head polygons are closed polylines with a rect inside for the fill (lit white, or the near-black
+  occluder over the tape); the hold glyph has 24 segments (kennel 32).
+- **Colours** are coop's brights (blue 698EFF, green 00ED95, white FFFFFF, orange FF3A5D); the fixed path in the
+  pencil DFD9FF, the bus, rails and foot in the body tone 38354D, unlit heads in white's dark tone 5C5870, the hold
+  glyph at rest in green's 00573A.
+- SVG 8,118 bytes (kennel's 26,607), checked by `tools/plugin/pack.py` (R246's parser rules) and by the generator.
+
+The render's only additions are the three display stores a block and the time computed before the clearing blocks
+(it was after); the audio is bit-identical (`Tests` below). Not yet seen in op1emu or on the device: the tick
+positions and the head fills against the SVG are the gate's to confirm.
 
 ## Stereo, memory, cost
 
@@ -97,6 +144,11 @@ the tape drawn as a wave whose amplitude follows age (white) and breathes with t
   pairs, every head read serving both channels, so stereo costs about 1.56x the mono path rather than 2x (te-op1-cfw
   simulator: 9.2 MHz stereo, 5.9 MHz mono, whole effect). coop runs it at every position (synth, drum, master and both
   FX 2 slots): the instrument positions now hear the echo in stereo, and each position is a full stereo instance.
+- **e9 (2026-11-11, 0.2, the screen):** file 23,616 bytes (SVG 8,118), `.text` 8,864, `.rodata` 3,564, `.bss` 176 (the
+  screen's node tables and the five buffer pointers); load 12,604 bytes once (+3,468 over e8's 9,136 with the e9
+  `coop_fx_t.screen` field); the state 134,776 bytes (12 more: the three display words), `"scratch": 134784`
+  unchanged. No 64-bit divide in the screen (`__divdi3` would add 1.4 KB). The SVG is parsed into the stock TE heap,
+  not heap 0.
 - **Memory (e8, 2026-11-11):** the tape, the core's state, the half-rate path and the block buffers (at most the declared 134,784 bytes, static_assert) are in the slot's position buffer (plugin.json `"scratch": 134784`, `coop_fx_scratch`), as kennel's `op1_fx_scratch` had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 10,160 bytes, load 9,132 once; the core's five buffers are sized to this declaration when tape_echo is the largest installed (5 x 134,784 = 673,920 bytes for all scratch effects together).
 - **Memory:** file 10,664 bytes; `.text` 5,836, `.rodata` 3,052, `.data` 0, `.bss` 134,764 (the tape 132,868, the
   core's state, the half-rate filters, the dry buffers). Load size 143,652 bytes; five relocations: **718,260 bytes of
@@ -108,7 +160,7 @@ the tape drawn as a wave whose amplitude follows age (white) and breathes with t
   | | per block (64 samples) |
   |---|---|
   | kennel stereo, te-op1-cfw simulator (9.2 MHz / 689 blocks a second) | 13,350 |
-  | coop, GNU simulator, `make -C tests/host/tape_echo sim` (compute only, the scenario's 3,000 blocks) | 15,880 avg / 16,637 max |
+  | coop, GNU simulator, `make -C tests/host/tape_echo sim` (compute only, the scenario's 3,000 blocks) | 16,049 avg / 16,804 max (e9; e8 15,987 / 16,746 on the same build, so the display words cost ~60 a block) |
   | coop, op1emu (`fx1_plugin=`, `s2_instr=`, `s2_master=`) | gate pending |
   | **coop, device** | **pending** |
 

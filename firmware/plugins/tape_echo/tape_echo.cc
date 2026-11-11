@@ -24,6 +24,8 @@
  * (kClearPairs a block, the dry passing through meanwhile) instead of 133 KB of stores in init, which runs in the
  * audio interrupt at the stock positions (guidelines §2.3). Every selection restarts it so: the buffer holds whatever
  * the effect before left.
+ * Screen (e9): tape_echo_screen.cc, tape_echo.svg; the render publishes the time word in force, the sync division in
+ * force and the 96th note's length in the state (state.h Display), once a block.
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission. The DSP in src/ is te-op1-cfw's
  * (GPL-3.0-or-later), with Mutable Instruments Beads' wow and flutter and Clouds' output stage (Emilie Gillet, MIT,
@@ -31,8 +33,9 @@
 #include <stdint.h>
 
 #include "coop_plugin.h"
-#include "src/half_rate.h"
-#include "src/tape_echo.h"
+#include "state.h"
+
+extern "C" const coop_fx_screen_t SCREEN_tape_echo;    /* tape_echo_screen.cc (e9) */
 
 #if defined(__bfin__) && !defined(COOP_TAPE_ECHO_HOST_CLOCK)
 static inline uint32_t Cycles()
@@ -48,8 +51,8 @@ static inline uint32_t Cycles() { return g_tape_echo_host_cycles; }
 
 namespace {
 
-const int32_t kBlock = op1clouds::kFxBlockSize;        /* 64 */
-const int32_t kHalfN = op1clouds::kHalfN;              /* 32 */
+using coop_tape_echo::kBlock;
+using coop_tape_echo::kHalfN;
 const int32_t kClearPairs = 2048;                      /* tape pairs zeroed a block: 17 blocks (25 ms) for all */
 
 /* The filter type's knob ranges (sdk/coop_plugin.h): what kennel's op1_fx_param_q15 read from the stock table. */
@@ -67,22 +70,22 @@ const int32_t kDivision96ths[kNumDivisions] = { 4, 6, 8, 9, 12, 16, 18, 24, 32, 
 /* The tempo increment. coop has no tempo export yet: 120 BPM, as kennel's fallback (guidelines §2.3). */
 inline uint32_t TempoIncrement() { return kTempo120; }
 
-/* The time word sync gives (step 1..11), or the turn's word when off or when the division is out of range. */
-inline int32_t SyncedTime(int32_t sync, int32_t knob_word)
+/* A 96th note in Q4 samples at 22050 Hz at the tempo in use. */
+inline int32_t NinetySixthQ4() { return static_cast<int32_t>(kNinetySixthNum / TempoIncrement()); }   /* folds at 120 */
+
+/* The time word sync gives (step 1..11), or the turn's word when off or when the division is out of range; *div the
+ * division in force (0..10), -1 when the turn's word is used (the screen's display word). */
+inline int32_t SyncedTime(int32_t sync, int32_t knob_word, int32_t s96, int32_t *div)
 {
+    *div = -1;
     if (sync < 1 || sync > kNumDivisions) return knob_word;
-    const int32_t s96 = static_cast<int32_t>(kNinetySixthNum / TempoIncrement());   /* folds while the tempo is 120 */
     const int32_t word = op1fx::TapeEchoTimeWord(s96 * kDivision96ths[sync - 1]);
-    return word < 0 ? knob_word : word;
+    if (word < 0) return knob_word;
+    *div = sync - 1;
+    return word;
 }
 
-struct Instance {
-    op1fx::TapeEcho echo;
-    op1clouds::HalfRate half;
-    int32_t clear;                                     /* the next tape pair to zero; TE_TAPE_PAIRS = clean */
-    int16_t dry[2][kBlock];                            /* the input as int16: the mix writes the output here */
-    int16_t gained[2][kHalfN];                         /* the decimated input after the gain */
-};
+typedef coop_tape_echo::Instance Instance;
 
 #ifdef COOP_FX_SCRATCH_BYTES
 static_assert(sizeof(Instance) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
@@ -112,6 +115,14 @@ inline int32_t GainQ14(int32_t word)
     return kTable[i] + (((kTable[i + 1] - kTable[i]) * frac) / 32767);
 }
 
+/* e9: the display words (state.h Display), one store each, once a block after the DSP; the DSP never reads them. */
+inline void Publish(Instance *g, int32_t time, int32_t div, int32_t s96)
+{
+    g->disp.time = time;
+    g->disp.div = div;
+    g->disp.beat = s96;
+}
+
 int init(int slot)
 {
     if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
@@ -120,6 +131,9 @@ int init(int slot)
     g_inst[slot] = (g && bytes >= sizeof(Instance)) ? g : nullptr;
     if (!g_inst[slot]) return -1;
     g->half.Stop();                                     /* the next render restarts: core reset, tape cleared */
+    g->disp.time = -1;                                  /* e9: nothing published yet (the screen shows the turn) */
+    g->disp.div = -1;
+    g->disp.beat = NinetySixthQ4();
     return 0;
 }
 
@@ -127,7 +141,14 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
 {
     if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   /* not bound: dry */
     Instance *const g = g_inst[slot];
-    if (n != kBlock) return;                          /* the host's block is 64; anything else passes through */
+    /* The time in force (the sync division's or the turn's): the echo's and the screen's (published at every exit). */
+    const int32_t s96 = NinetySixthQ4();
+    int32_t div;
+    const int32_t time = SyncedTime(params[6], Knob(params, 0), s96, &div);
+    if (n != kBlock) {                                  /* the host's block is 64; anything else passes through */
+        Publish(g, time, div, s96);
+        return;
+    }
     if (!g->half.Begin(Cycles())) {
         g->echo.Init();
         g->clear = 0;
@@ -135,11 +156,12 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
     if (g->clear < TE_TAPE_PAIRS) {                     /* starting: clear a slice, the dry passes through */
         g->clear = g->echo.ClearTape(g->clear, kClearPairs);
         g->half.End(Cycles());
+        Publish(g, time, div, s96);
         return;
     }
 
     op1fx::TapeEchoParams q;
-    q.time = SyncedTime(params[6], Knob(params, 0));
+    q.time = time;
     q.feedback = Knob(params, 1);
     q.age = Knob(params, 2);
     const int32_t mix = Knob(params, 3);
@@ -176,8 +198,10 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
         r[i] = static_cast<int32_t>(dr[i]) << 16;
     }
     g->half.End(Cycles());
+    Publish(g, time, div, s96);
 }
 
 }  // namespace
 
-extern "C" const coop_fx_t FX_tape_echo = { COOP_FX_MAGIC, COOP_PLUGIN_API, 0, init, render };
+extern "C" const coop_fx_t FX_tape_echo = { COOP_FX_MAGIC, COOP_PLUGIN_API, COOP_FX_F_SCREEN, init, render,
+                                             &SCREEN_tape_echo };

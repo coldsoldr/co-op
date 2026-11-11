@@ -15,8 +15,12 @@ CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-
 REF_INC := -I$(TE)/fx -I$(TE) -I$(TE)/rings -I$(TE)/clouds
 REF_SRC := $(TE)/fx/src/tape_echo/tape_echo.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clouds/src/core/clouds_tables.cc \
            $(TE)/rings/src/fixed_tables.cc
-COOP_SRC := $(COOP)/tape_echo.cc $(COOP)/src/tape_echo_core.cc $(COOP)/src/halfband.cc ../fx_scratch_host.cc
-COOP_DEPS := $(wildcard $(COOP)/*.cc $(COOP)/src/*)
+# e9: the screen file compiles and links with the render it shares state with (../screen_host.cc: the core's screen
+# calls as stubs); the test compares audio only
+COOP_SRC := $(COOP)/tape_echo.cc $(COOP)/tape_echo_screen.cc $(COOP)/src/tape_echo_core.cc $(COOP)/src/halfband.cc \
+            ../fx_scratch_host.cc ../screen_host.cc
+COOP_DEPS := $(wildcard $(COOP)/*.cc $(COOP)/*.h $(COOP)/src/*) ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h \
+             ../../../sdk/coop_plugin.h
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
 SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns

@@ -54,6 +54,9 @@ const int32_t kTapeEchoMaxBlock = 64;
 // TIME's inverse, for the sync divisions: the word (0..32767) whose delay (head 3) is samples_q4 (Q4 samples at
 // 22050 Hz), -1 if the delay is outside 30 ms .. 1.5 s. Per block at most (it divides).
 int32_t TapeEchoTimeWord(int32_t samples_q4);
+// TIME's mapping for the screen (e9, ../tape_echo_screen.cc): the word's delay (head 3) in Q4 samples at 22050 Hz
+// (30 ms x 50^(word / 32767)); the word clamped to 0..32767.
+int32_t TapeEchoTimeSamplesQ4(int32_t word);
 
 // The run kernel's block (tape_echo_layout.h's TEK_ offsets).
 struct TapeEchoKernel {
