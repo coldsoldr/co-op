@@ -1892,3 +1892,30 @@ engines' control layers at every effect position (`docs/plugins.md` "Effect cont
   the popup's look over the filter page (counted, not seen: op1emu screenshots are wall-timed).
 
 Result: (pending)
+
+## cs_hall: the hall reverb port (kennel cs_hall 0.1) — device test (pending, 2026-11-11)
+
+- `build/plugins/cs_hall.coop` (17,712 bytes, sha256 `d42ced60e31706db53cd2ed55ca81cc7e29e9754e3c66ad74155001453dde0a1`),
+  `plugins/cs_hall` (README: the contract, the cost plan). Needs the e6 package (effect controls). Install it with the
+  librarian (or `tools/coop_sysex.html`) and power-cycle.
+- Host: bit-identical to te-op1-cfw's hall through kennel's glue, on the host and in `bfin-elf-run` with the assembly
+  (`make -C tests/host/cs_hall sim`): 18.2-22.0 k cycles a block avg, 26.2 k max (simulator, no cache stalls).
+- op1emu gate: pending (plan in the README; `tests/sim/det_fx_cs_hall.txt`).
+
+**What to do**:
+1. Synth: T3, shift + T3, pick **cs hall**, T3 on. Play chords: a hall tail. Turn blue (size: no click while it
+   moves), green (decay; at the top the tail never ends), white (damp: darker tails), orange (mix: dry to wet).
+2. Hold Help and turn blue (PREDELAY), green (EARLY), white (WIDTH): name and value top left in the encoder's colour;
+   shift + Help + the same encoder moves it in fine steps. Width at 0 is mono.
+3. Click orange: FREEZE ON, the tail holds while you play (nothing new goes in); click again: it decays.
+4. The same on drum FX 1, master FX 1 (mixer T3) and both FX 2 (drop): the effect is stereo at each.
+5. Change sound (or re-pick cs hall): ~30 ms dry, then the reverb starts empty (no old tail, no click).
+6. Power-cycle: predelay, early and width as you left them; freeze off.
+7. Copy `/yaffs2/user/coop_stats.txt` with cs hall on two positions and size moving: the `cost` line
+   (`fx1_plugin=`, `s2_instr=`, `s2_master=`) and `plugins` (`heap_largest`). Budget: under 30 k a block, over 60 k
+   does not ship.
+
+Listen for: crackle or dropouts with the size knob moving (the crossfade block is the peak), a frozen tail that grows
+or dies, a click at the clear.
+
+Result: (pending)

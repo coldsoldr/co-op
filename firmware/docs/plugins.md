@@ -260,3 +260,16 @@ now passes straight to the stock filter (`plugin_host.cc st_twin`).
 depth on fn + white, mute latch on the orange click; it multiplies by the gain, inverts, mutes).
 `tests/sim/det_fx_controls.txt` walks the five positions; `tests/sim/det_fx_reload.txt` power-cycles the NAND it
 leaves. Packer checks: `tests/tools/test_pack_controls.py`.
+
+## cs_hall (2026-11-11): the hall reverb from te-op1-cfw (kennel cs_hall 0.1)
+
+`plugins/cs_hall` (README: contract, glue, memory, cost plan, gate plan). The DSP is te-op1-cfw's `ports/fx/src/hall`
+with its Blackfin kernels and Clouds' halfband path, copied into the folder; its `constexpr double` tables became the
+integer literals they evaluated to. True stereo at every position (a `coop_fx_t` is stereo by ABI; kennel's
+`"stereo": true` is not carried over: coop's loader would read it as kennel's `op1_fx_stereo_t` layout and refuse
+the file). Controls: the four turns size / decay / damp / mix; fn + blue predelay, fn + green early, fn + white width,
+each with its fine on shift + fn (words 5-7, saved); freeze on the orange click (latch bit 0). The 84 KB tank is
+cleared in render, 4 KB a block (21 blocks dry), not in init (guidelines §2.3). Host test `tests/host/cs_hall`:
+bit-identical to the upstream through kennel's glue, host C and the Blackfin build in the simulator (18-22 k cycles a
+block, 26 k peak there). Load size 102,932 bytes (~515 KB for five relocations). No `format` field in the controls
+schema yet, so predelay can't be shown in ms. op1emu gate and device test pending (`docs/device-tests.md` "cs_hall").
