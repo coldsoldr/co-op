@@ -62,7 +62,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
-      - run: pnpm --filter @co-op/web exec playwright install --with-deps chromium
+      # The runner images already carry chromium's libraries; if apt can't reach the mirrors, the browser alone is enough.
+      - run: pnpm --filter @co-op/web exec playwright install --with-deps chromium || pnpm --filter @co-op/web exec playwright install chromium
       - run: pnpm --filter @co-op/web e2e
         env:
           CI: true
