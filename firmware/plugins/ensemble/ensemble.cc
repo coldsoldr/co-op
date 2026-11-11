@@ -14,8 +14,9 @@
  * Kennel -> coop: the render is stereo at every position (kennel's synth and drum positions ran it mono: one swept
  * copy set, the left side only); the instance is in the slot's position buffer as on kennel (e8: coop_fx_scratch,
  * plugin.json "scratch"; the file is relocated once, its .bss holds the five buffer pointers, init resets it all); the
- * fine step on the gain is the core's (kennel's knl::Fine read the shift byte at a firmware address); the screen is
- * the stock filter page until effect screens exist (README.md has the brief).
+ * fine step on the gain is the core's (kennel's knl::Fine read the shift byte at a firmware address).
+ * Screen (e9): ensemble_screen.cc, ensemble.svg; it reads the knobs and the gain word only, so the render publishes
+ * nothing for it (no display data).
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission. The DSP in src/ follows
  * Mutable Instruments' Rings, Plaits and Clouds (Emilie Gillet, MIT): LICENSE-MIT. */
@@ -25,6 +26,8 @@
 #include "src/cycles.h"
 #include "src/ensemble.h"
 #include "src/half_rate.h"
+
+extern "C" const coop_fx_screen_t SCREEN_ensemble;   /* ensemble_screen.cc (e9) */
 
 namespace coop_ensemble {
 
@@ -134,5 +137,5 @@ void Render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
 
 }  // namespace coop_ensemble
 
-extern "C" const coop_fx_t FX_ensemble = { COOP_FX_MAGIC, COOP_PLUGIN_API, 0, coop_ensemble::Init,
-                                           coop_ensemble::Render };
+extern "C" const coop_fx_t FX_ensemble = { COOP_FX_MAGIC, COOP_PLUGIN_API, COOP_FX_F_SCREEN, coop_ensemble::Init,
+                                           coop_ensemble::Render, &SCREEN_ensemble };

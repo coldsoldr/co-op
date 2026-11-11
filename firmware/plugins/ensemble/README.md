@@ -66,18 +66,46 @@ One addition, exact: when a block's L and R are equal and the two decimators hol
 instrument), the right decimator's output and history are copied from the left instead of computed. Everything else
 must run per side (the two sides' sweeps differ), so this saves one decimator a block (~1 k cycles [I]).
 
-## Screen
+## Screen (e9, 0.4)
 
-The stock filter page shows (effect screens aren't built: `docs/plugins.md` "Effect controls", Display); the core
-draws `GAIN` and its value top left in blue while fn + blue moves it. The upstream's own screen (`ensemble.svg`,
-"Drift": each voice a string swaying about its home mark by depth, the R lane opposite, a dot circling the dial at
-the rate, the gain gauge and readout on page 2, the mix gauge) is not carried across. Brief for when effect screens
-exist (guidelines §5): keep the Drift drawing; voices, homes and the rate dot in their encoders' colours (blue rate
-dot and bar, green depth ticks, white voice strings, orange mix gauge); the R lane always shown (coop is stereo at
-every position); the gain gauge dim at rest and lit in blue while fn is held (§5.2: no words at rest, the held layer
-lists its name and value). The SVG needs checking against the manifesto (stroke widths, no glow) before it ships.
+Kennel's screen (`te-op1-cfw/ports/knl/ensemble`: `ensemble.svg` from `gen_ensemble_knl_svg.py`, the canvas "Ensemble
+screen" design C "Drift", `ensemble_knl.cc` ScreenUpdate) on the e9 effect-screen path (`docs/plugins.md` "e9"):
+`ensemble.svg` (from `gen_ensemble_svg.py`) and `ensemble_screen.cc`. It shows wherever ensemble is the effect on the
+page: FX 1 of the synth, the drum or the master, FX 2 in focus.
+
+| Part | Encoder | What moves it |
+|---|---|---|
+| the dot circling the dial, the rate bar under it | blue (rate) | the dot at the rate (0.05..8 Hz, log), the bar scaled from its left end; both dim while fn is held |
+| the green ticks either side of each home mark | green (depth) | spread about the mark by depth (to 28 units) |
+| the strings' sway | green (depth) | each string swings about its home by depth x 28 units, the voices a third of a turn apart, the R lane opposite |
+| the strings (L lane above, R lane below) and their home marks | white (voices) | 1 + round(2 x voices) strings a lane |
+| the gain gauge (left) | blue with fn (gain) | the bar about the centre, -6..+6 dB; blue's dark tone at rest, blue with a bracket while fn is held |
+| the mix gauge (right) | orange (mix) | scaled about its foot |
+
+What changed from kennel's screen:
+- **Inputs**: the four turns from `view->knobs` (kennel's `knl::ScreenPage1`, the stock pages' values with the LFO);
+  the gain from `view->words[0]` (word 5). Kennel's screen read nothing from the DSP, so the render publishes no
+  display data and the state is unchanged (`"scratch": 10400` as before). The strings' sway is the screen's own phase
+  at the rate's frequency (kennel's `FrameClock` / `PhaseStep`, from `sdk/coop_fx_screen.h`), not the DSP's LFO
+  phase; one phase serves every position, as on kennel.
+- **Kennel's blue page 2 is fn held** (`view->mods` bit 1): fn + blue turns the gain, so while fn is down the gain's
+  bracket shows and its bar lights blue, and the rate dot and bar (blue's plain turn) dim to the body tone. At rest
+  the gain bar is blue's dark tone (2A3966: §5.1 "an encoder's dark tone marks its unused parts"; kennel drew it blue
+  always, bitcrusher brightens it with the input level, which this port has no meter for).
+- **The dB readout is gone** (kennel's page-2 "+1.5" glyph sets, 4.3 KB): the core's popup names the control and its
+  value when fn + blue turns it.
+- **The R lane is always drawn** (coop is stereo at every position; kennel hid it and the R strings on the mono synth
+  and drum positions), so its guide moved into the still drawing.
+- **Colours** are coop's brights (blue 698EFF, green 00ED95, white FFFFFF, orange FF3A5D) and one body tone 38354D for
+  the lane guides, the dial's ring, the rate bar's track, the home marks and the gauges' rails (kennel drew the ring
+  and the marks in a second grey, 514959). The palette carries only the three colours the code writes.
+- SVG 6,415 bytes (kennel's 11,306), checked by `tools/plugin/pack.py` (R246's parser rules) and by the generator.
+
+The render is unchanged apart from the new `coop_fx_t` fields (`COOP_FX_F_SCREEN`, `&SCREEN_ensemble`); the audio is
+bit-identical (Tests below).
 
 ## Memory, L1, cost
+- **e9 (2026-11-11, 0.4, the screen):** file 19,928 bytes (SVG 6,415), `.text` 7,052, `.rodata` 4,124, `.bss` 124 (the buffer pointers and the screen's node tables); load 11,300 bytes once (+2,304 over e8's 8,996 with the e9 `coop_fx_t` field); no display data, the state and `"scratch": 10400` unchanged.
 - **e8 (2026-11-11):** the lines, filters and control state are in the slot's position buffer (plugin.json `"scratch": 10400`, `coop_fx_scratch`), as kennel had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 9,736 bytes, load 8,992 once.
 
 - File 10,820 bytes (0.3); `.text` 5,236, `.rodata` 3,764 (the 1025-point sine, the rate and cap curves, the
@@ -107,7 +135,8 @@ lists its name and value). The SVG needs checking against the manifesto (stroke 
 
 | coop | te-op1-cfw | changes |
 |---|---|---|
-| `ensemble.cc` | `ports/knl/ensemble/ensemble_knl.cc`, `ports/knl/common/knl_fx.h` | the coop ABI; ranges as constants; no `knl::Fine`, no scratch buffer, no screen |
+| `ensemble.cc` | `ports/knl/ensemble/ensemble_knl.cc`, `ports/knl/common/knl_fx.h` | the coop ABI; ranges as constants; no `knl::Fine`, no scratch buffer |
+| `ensemble_screen.cc`, `gen_ensemble_svg.py` | `ports/knl/ensemble/ensemble_knl.cc` (screen), `gen_ensemble_knl_svg.py` | e9 calls; page 2 is fn held; readout glyphs dropped; coop colours |
 | `src/ensemble_core.cc`, `src/ensemble.h`, `src/ensemble_layout.h` | `ports/fx/src/ensemble/` | namespace `coop_ensemble`; tables from `src/ensemble_tables.cc`; C side kernel host-only |
 | `src/ensemble_bfin.S` | `ports/fx/src/ensemble/ensemble_bfin.S` | symbols `EnsSide3Asm` / `EnsSide1Asm` |
 | `src/halfband.h`, `src/halfband.cc`, `src/halfband_bfin.S` | `ports/clouds/src/core/halfband.*` | cut to the ensemble's use; symbols prefixed `Ens`; C host-only |

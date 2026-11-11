@@ -13,7 +13,8 @@ SIM_BLOCKS ?= 4000
 TE_INC := -I$(TE)/knl -I$(TE) -I$(TE)/fx -I$(TE)/rings -I$(TE)/clouds
 TE_SRC := $(TE)/fx/src/ensemble/ensemble.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clouds/src/core/clouds_tables.cc \
           $(TE)/rings/src/fixed_tables.cc
-COOP_SRC := $(COOP)/ensemble.cc $(COOP)/src/ensemble_core.cc $(COOP)/src/ensemble_tables.cc $(COOP)/src/halfband.cc ../fx_scratch_host.cc
+COOP_SRC := $(COOP)/ensemble.cc $(COOP)/ensemble_screen.cc $(COOP)/src/ensemble_core.cc $(COOP)/src/ensemble_tables.cc \
+            $(COOP)/src/halfband.cc ../fx_scratch_host.cc ../screen_host.cc
 COOP_ASM := $(COOP)/src/ensemble_bfin.S $(COOP)/src/halfband_bfin.S
 INC := -I$(COOP) -I../../../sdk $(TE_INC)
 # e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
@@ -26,12 +27,12 @@ SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim 
 all: $(BUILD)/ensemble_compare
 	$(BUILD)/ensemble_compare
 
-$(BUILD)/ensemble_compare: ensemble_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*)
+$(BUILD)/ensemble_compare: ensemble_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*) ../screen_host.cc ../../../sdk/coop_fx_screen.h
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -DOP1_HOST_SIM $(INC) ensemble_compare.cc $(COOP_SRC) $(TE_SRC) -o $@
 
 # The upstream's own assembly is linked only because its Side() names it under __bfin__; OP1FX_NO_ASM runs its C.
-$(BUILD)/ensemble_compare.elf: ensemble_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*)
+$(BUILD)/ensemble_compare.elf: ensemble_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*) ../screen_host.cc ../../../sdk/coop_fx_screen.h
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) $(INC) ensemble_compare.cc $(COOP_SRC) $(COOP_ASM) $(TE_SRC) \
 	  $(TE)/fx/src/ensemble/ensemble_bfin.S -o $@

@@ -4,6 +4,7 @@
   "symbol": "FX_ensemble",
   "sources": [
     "ensemble.cc",
+    "ensemble_screen.cc",
     "op1/support.cc",
     "src/ensemble_core.cc",
     "src/ensemble_tables.cc",
@@ -17,6 +18,7 @@
     "-fno-tree-loop-distribute-patterns"
   ],
   "scratch": 10400,
+  "screen": {"svg": "ensemble.svg", "symbol": "SCREEN_ensemble"},
   "defaults": [
     9830,
     16384,
@@ -28,6 +30,6 @@
      "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}
   ],
   "author": "coldsoldr",
-  "version": "0.3",
+  "version": "0.4",
   "description": "ENSEMBLE, a stereo chorus that morphs into a string ensemble: te-op1-cfw's kennel effect (ports/knl/ensemble 0.2, coldsoldr), its fixed-point core after Mutable Instruments Rings' and Plaits' ensemble and Clouds' half-rate path (Emilie Gillet, MIT), stereo at every position. Blue rate, green depth, white voices (one copy a side to three), orange mix; fn + blue the input gain of the wet path (-6..+6 dB, shift + fn + blue fine). GPL-3.0-or-later with the OP-1 firmware permission; the DSP's MIT terms in LICENSE-MIT."
 }
