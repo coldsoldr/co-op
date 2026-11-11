@@ -1,0 +1,37 @@
+# drive port: det_fx_select.txt for plugins/drive alone on the NAND. The stock FX list is alphabetical (cwo, delay,
+# grid, nitro, phone, punch, spring, then the plugins by name), so "drive" is row 2, between delay and grid, not the
+# last row the select scenario reaches (cw 96): two rows down from cwo, 8 encoder steps a row [I: row position from the
+# alphabetical order; the screenshot and the stats plugins line confirm it]. Then a chord through it, as det_fx_select.
+# Expect: no fault, `plugins seen 1 loaded 1 failed 0`, plugin_blocks counting, the cost line's fx1_plugin=.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 cw 16
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36500
+press c4
+press e4
+press g4
+at 38500
+release c4
+release e4
+release g4
+wait 33500
+screenshot /root/op1emu-work/drive2.ppm
+wait 2500
+screenshot /root/op1emu-work/drive3.ppm
+wait 8000
+quit

@@ -1,0 +1,21 @@
+{
+  "name": "drive",
+  "kind": "fx",
+  "symbol": "FX_drive",
+  "sources": [
+    "drive.cc",
+    "src/drive_dsp.cc",
+    "src/drive_bfin.S",
+    "op1/support.cc"
+  ],
+  "include_dirs": ["."],
+  "cflags": ["-DOP1FX_DRIVE_ASM_ONLY"],
+  "defaults": [11469, 16384, 0, 32767],
+  "controls": [
+    {"id": "gain", "name": "gain", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "continuous",
+     "default": 16384, "fine": true, "random": false}
+  ],
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "An oversampled soft-clip overdrive, true stereo: drive (0..+36 dB), tone (a tilt about 1 kHz, centre flat), bias (odd to even harmonics), mix; fn + blue input gain (-6..+6 dB, shift + fn + blue fine). Port of coldsoldr's te-op1-cfw drive (kennel plugin ports/knl/drive 0.2), GPL-3.0-or-later; the halfband's coefficients are Mutable Instruments Clouds' (Emilie Gillet, MIT, LICENSE-MIT)."
+}
