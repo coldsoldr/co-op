@@ -2339,7 +2339,10 @@ plugin.json declares `"scratch"`): all nine together take 758,248 bytes of heap 
 cs_hall load beside rings. **The new port files need the e8 image** (an older image refuses them: "unknown plugin
 flags"); test_fx, stereo_delay, rings and saw are unchanged.
 
-- Package: **not built yet** (`build/pkg/op1_246_coop_e8.op1`, release image as e7, build tag `e8`) [pending].
+- `build/pkg/op1_246_coop_e8.op1` sha256 `d74be2c1d981891c830ca7aef1fca5c283cb0bc582966c0f0d2ff74dc686bcda`, copy in
+  Downloads with the nine e8 port files (overwriting the e6-era copies) and rings.coop (saw.coop there is unchanged).
+  Release image as e7 (`--tape-stereo --set-word g_coop_spread=32767`, no `COOP_M1`), build tag `e8`.
+  `verify_bootloader.py` PASS, `pkg_check` = only `OP1_vdk.ldr` differs.
 - Host tests (this branch, 2026-11-11) [C host / GNU simulator]: all nine ports bit-identical to upstream on the host,
   with the position buffers filled with random bytes before init; `coop_fx_scratch_check` (the port at slots 0 and 3 at
   once, and restarted on a dirtied buffer) 0 differing blocks for each. Simulator builds: drive, ensemble, freq_shift,
