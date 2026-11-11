@@ -2084,4 +2084,27 @@ returns), or recover as for e6.
 **If something is wrong:** power off; remove the file with the librarian, or recovery: hold COM at power-on and flash
 the previous coop image (or stock).
 
+## wavefolder 0.1 (a kennel effect port) — device test (pending, 2026-11-11)
+
+Needs the e6 image (`op1_246_coop_e6.op1`, effect controls). `build/plugins/wavefolder.coop` (9,980 bytes; sha256 at
+packing `ad38fe00930b456bae51b54ed0a14d3d9ba0fbce1a9a6849bd2aca51ad1c6eb8`); contract in `plugins/wavefolder/README.md`.
+- [C host] bit-identical to te-op1-cfw's FOLD as the kennel plugin drove it (`tests/host/wavefolder`, native and
+  simulator). [I] the op1emu gate is not run yet (README "op1emu gate").
+
+**What to do** (install `wavefolder.coop` with the librarian, power-cycle; play a synth sound through it):
+1. Synth: T3, shift + T3, pick **wavefolder**, T3 (FX 1 on). Blue: more folds (brighter, buzzier) from about a third
+   up; green: the folds turn lopsided either side of the centre (even harmonics), no thump while you turn it; white:
+   darker to open; orange: dry to wet. At orange fully left the sound is exactly the dry sound.
+2. Hold Help and turn blue: "GAIN" top left in blue; up gives more folds at the same fold setting, down fewer; the
+   loudness hardly changes (the folder compresses). Shift + Help + blue: the same gain in very small steps. With
+   orange fully left the gain changes nothing.
+3. The same on the drum (T3 list), the master (mixer T3) and both FX 2 slots (drop): it is stereo everywhere; a
+   panned or spread sound keeps its width.
+4. Power-cycle: the gain is as you left it at each position.
+5. Copy `/yaffs2/user/coop_stats.txt`: the `cost` line (`fx1_plugin=` for FX 1, `s2_instr=` / `s2_master=` for FX 2)
+   with the plugin playing, and the `fxctl` line. Budget: under 30 k a block; estimate 9-15 k [I].
+
+**If something is wrong:** power off; delete the plugin with the librarian, or recover by holding COM at power-on and
+flash `op1_246_coop_e5.op1` (or stock).
+
 Result: (pending)
