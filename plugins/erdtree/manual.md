@@ -23,7 +23,7 @@ erdtree is by SammiBabe666 ([Project_Erdtree](https://github.com/SammiBabe666/Pr
 
 There are two builds, each with its own presets, and they aren't interchangeable:
 
-- **hundekraft:** erdtree.knl 0.5, for the Hundekraft Workshop 3.0. Download `erdtree-hundekraft.zip` and follow its INSTALL.txt.
+- **hundekraft:** erdtree.knl 0.5, for the Hundekraft Workshop 3.0. Install over USB from its card here (co-op fetches the file from the author's repo and checks it), or download `erdtree-hundekraft.zip` and follow its INSTALL.txt, which also brings the presets.
 - **opus:** erdtree.opmod 0.6.1, for Opus core 2.8 or later. Download `erdtree-opus.zip` and follow its INSTALL.txt. The author notes 0.6.1 hasn't been confirmed on an OP-1 yet, so keep developer mode on while you try it, and its eight presets are in the preset guide to set by hand for now.
 
 co-op lists it for reference and hosts no copy.

@@ -24,6 +24,8 @@ const SHA256 = /^[0-9a-f]{64}$/i;
 /** A file name inside a plugin folder: no separators, never `.` or `..`. */
 const FILE_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 const HTTPS = /^https:\/\/\S+$/;
+/** Where a listed build's .knl may be fetched from: its author's repo, pinned to a commit (shared/src/plugins.ts). */
+const REMOTE_FILE = /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\/\S+$/;
 
 /** True when `path` is `<id>/<name>` for a plain file name: the plugin's own folder and nothing else. */
 const inFolder = (id: string, path: unknown): boolean =>
@@ -59,7 +61,16 @@ function isBuild(value: Record<string, unknown>, id: string): boolean {
   if (!oneOf(PLUGIN_FIRMWARE, value.firmware)) return false;
   if (!(value.firmware === 'op1/hundekraft' ? HUNDEKRAFT_ID : OPUS_ID).test(id)) return false;
   if (value.link !== undefined) {
-    if (typeof value.link !== 'string' || !HTTPS.test(value.link) || value.file !== undefined) return false;
+    if (typeof value.link !== 'string' || !HTTPS.test(value.link)) return false;
+    if (value.fileUrl === undefined) {
+      if (value.file !== undefined) return false;
+    } else {
+      // A listed hundekraft build the page fetches from its author and installs: checked by hash like a hosted one.
+      if (value.firmware !== 'op1/hundekraft' || typeof value.fileUrl !== 'string' || !REMOTE_FILE.test(value.fileUrl)) return false;
+      if (typeof value.version !== 'string' || typeof value.file !== 'string' || !FILE_NAME.test(value.file)) return false;
+      if (!value.fileUrl.endsWith(`/${value.file}`)) return false;
+      if (typeof value.sizeBytes !== 'number' || typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)) return false;
+    }
   } else {
     if (typeof value.version !== 'string' || typeof value.file !== 'string' || !FILE_NAME.test(value.file)) return false;
     if (typeof value.sizeBytes !== 'number' || typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)) return false;
@@ -156,7 +167,8 @@ export async function fetchPluginBytes(
   const label = `${plugin.id}/${plugin.file}`;
   if (!FILE_NAME.test(plugin.file)) throw new CatalogueError(`${JSON.stringify(plugin.file)} is not a plugin file name`);
   if (!SHA256.test(plugin.sha256)) throw new CatalogueError(`${label} has no valid SHA-256 in the plugin index`);
-  const url = pluginFileUrl(baseUrl, label);
+  // A listed build's file comes from its author; a hosted one from co-op's plugins folder. Both are checked below.
+  const url = plugin.fileUrl ?? pluginFileUrl(baseUrl, label);
   for (const init of [undefined, { cache: 'no-cache' } as RequestInit]) {
     const buffer = await (await fetchOk(url, `download ${label}`, fetchImpl, init)).arrayBuffer();
     if (buffer.byteLength === plugin.sizeBytes && (await sha256Hex(buffer)) === plugin.sha256.toLowerCase()) {

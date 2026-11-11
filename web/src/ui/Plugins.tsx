@@ -3,6 +3,7 @@ import {
   PLUGIN_FIRMWARE,
   PLUGIN_KINDS,
   isHosted,
+  isInstallable,
   pluginBuilds,
   pluginFor,
   type HostedPluginEntry,
@@ -369,7 +370,11 @@ function PluginCard({ plugin, onOpen, focus, renderActions }: PluginCardProps) {
  * Where to get a plugin: a link out for a listed build, else Download and the install actions.
  */
 function PluginDownload({ plugin, renderActions }: { plugin: PluginIndexEntry; renderActions: PluginsProps['renderActions'] }) {
-  return isHosted(plugin) ? <HostedDownload plugin={plugin} renderActions={renderActions} /> : <ListedLink plugin={plugin} />;
+  return isHosted(plugin) ? (
+    <HostedDownload plugin={plugin} renderActions={renderActions} />
+  ) : (
+    <ListedLink plugin={plugin} renderActions={renderActions} />
+  );
 }
 
 /** The host name of a link, for its label; the link itself if it does not parse. */
@@ -382,19 +387,37 @@ function hostOf(link: string): string {
 }
 
 /**
- * A listed build: co-op hosts no file for it, so the card links to where its author offers it.
+ * A listed build: co-op hosts no file for it, so the card links to where its author offers it. A
+ * hundekraft build that names its .knl (fileUrl) also gets the install actions: the page fetches the
+ * file from the author, checks it against the index and sends it to the OP-1.
  */
-function ListedLink({ plugin }: { plugin: PluginIndexEntry }) {
+function ListedLink({ plugin, renderActions }: { plugin: PluginIndexEntry; renderActions: PluginsProps['renderActions'] }) {
+  const noteId = useId();
   if (plugin.link === undefined) return null;
+  const installable = isInstallable(plugin) && plugin.firmware === 'op1/hundekraft';
   return (
     <div className="plugin-actions">
       <div className="plugin-buttons">
-        <a className="button primary" href={plugin.link} target="_blank" rel="noopener noreferrer">
+        <a
+          className="button primary"
+          href={plugin.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-describedby={installable ? noteId : undefined}
+        >
           Get it from {hostOf(plugin.link)}
           <span className="visually-hidden"> ({plugin.name}, opens a new tab)</span>
         </a>
+        {installable && renderActions?.(plugin)}
       </div>
-      <p className="muted">Listed here for reference: co-op links to its author's page and hosts no copy.</p>
+      {installable ? (
+        <p className="notice" id={noteId}>
+          co-op hosts no copy: Install over USB fetches {plugin.file} from its author's repo, checks it, and sends it to the
+          OP-1. A plugin runs as firmware code there, so remove an older copy of it before installing a new one.
+        </p>
+      ) : (
+        <p className="muted">Listed here for reference: co-op links to its author's page and hosts no copy.</p>
+      )}
     </div>
   );
 }

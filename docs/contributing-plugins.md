@@ -111,6 +111,22 @@ install. `author` is whoever made the plugin, so it shows under their name: a po
 porter's, with the original in `credits`. The manual says what it does and links to its source
 and its full manual.
 
+A listed hundekraft build whose `.knl` its author publishes on GitHub can also be installed over
+USB from its card, still without co-op hosting a copy. Add `fileUrl`, the file's
+`raw.githubusercontent.com` link pinned to a commit (so its bytes never change), with its
+`sha256` and `sizeBytes`; `version` is then required. The link must end in `/<id>.knl`. The page
+fetches the file from the author, checks its size and SHA-256 against the index, and installs it
+like a hosted one; a file that doesn't match is refused.
+
+```json
+"fileUrl": "https://raw.githubusercontent.com/<owner>/<repo>/<40-hex commit>/build/erdtree.knl",
+"sha256": "<64 lower-case hex digits>",
+"sizeBytes": 51992
+```
+
+When the author ships a new version, point `fileUrl` at the new commit and update both facts.
+Opus builds don't take a `fileUrl` yet.
+
 ### One plugin, a file per firmware
 
 A plugin built for more than one firmware keeps one folder and one entry,

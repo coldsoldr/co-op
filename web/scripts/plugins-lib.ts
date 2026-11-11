@@ -124,7 +124,8 @@ export function formatIssues(issues: readonly PluginIssue[], noun = 'issue'): st
  * file of each build, manual and screenshot.
  */
 function publishedPaths(plugin: PluginIndexEntry): string[] {
-  const files = pluginBuilds(plugin).flatMap((b) => (b.file === undefined ? [] : [`${plugin.id}/${b.file}`]));
+  // A listed build hosts nothing: with a fileUrl, the page fetches its file from the author instead.
+  const files = pluginBuilds(plugin).flatMap((b) => (b.file === undefined || b.fileUrl !== undefined ? [] : [`${plugin.id}/${b.file}`]));
   return [`${plugin.id}/${MANIFEST_FILE}`, ...files, plugin.manual, plugin.screenshot];
 }
 

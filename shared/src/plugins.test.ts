@@ -12,6 +12,7 @@ import {
   checkOpmod,
   checkScreenshot,
   isHosted,
+  isInstallable,
   manifestBuilds,
   parsePluginManifest,
   pluginBuilds,
@@ -19,6 +20,7 @@ import {
   pluginIndexEntry,
   pluginIndexEntryOfBuilds,
   validatePluginFiles,
+  type PluginIndexEntry,
   type PluginIssue,
   type PluginManifest,
 } from './plugins';
@@ -894,5 +896,66 @@ describe('listed plugins (a link, no file)', () => {
     expect(entry).not.toHaveProperty('sizeBytes');
     expect(entry).not.toHaveProperty('sha256');
     expect(isHosted(entry)).toBe(false);
+  });
+});
+
+describe('listed plugins with a fileUrl (installed from the author over USB)', () => {
+  const commit = '0123456789abcdef0123456789abcdef01234567';
+  const url = `https://raw.githubusercontent.com/someone/Project_X/${commit}/build/moai.knl`;
+  const hash = 'ab'.repeat(32);
+  const remote = (overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+    const m: Record<string, unknown> = {
+      ...valid(),
+      id: 'moai',
+      name: 'Moai',
+      kind: 'synth',
+      author: 'someone',
+      link: 'https://github.com/someone/Project_X',
+      fileUrl: url,
+      sha256: hash,
+      sizeBytes: 51992,
+      version: '0.5',
+    };
+    delete m.file;
+    for (const [k, v] of Object.entries(overrides)) m[k] = v;
+    for (const k of Object.keys(m)) if (m[k] === undefined) delete m[k];
+    return m;
+  };
+
+  it('accepts a commit-pinned .knl with its hash and size, and indexes it as installable but not hosted', () => {
+    const { manifest, issues } = parsePluginManifest(remote(), 'moai');
+    expect(issues).toEqual([]);
+    const entry = pluginIndexEntryOfBuilds(manifest as PluginManifest, [null]);
+    expect(entry).toMatchObject({ fileUrl: url, file: 'moai.knl', sha256: hash, sizeBytes: 51992, savedName: 'moai', version: '0.5' });
+    expect(isHosted(entry)).toBe(false);
+    expect(isInstallable(entry)).toBe(true);
+  });
+
+  it('keeps a fileUrl per build, and only the hundekraft build is installable', () => {
+    const m = remote({ builds: [
+      { firmware: 'op1/hundekraft', link: 'https://github.com/someone/Project_X', fileUrl: url, sha256: hash, sizeBytes: 100, version: '0.5' },
+      { firmware: 'op1/opus', link: 'https://github.com/someone/Project_X' },
+    ] });
+    for (const k of ['firmware', 'link', 'fileUrl', 'sha256', 'sizeBytes', 'version', 'requires']) delete m[k];
+    const { manifest, issues } = parsePluginManifest(m, 'moai');
+    expect(issues).toEqual([]);
+    const entry = pluginIndexEntryOfBuilds(manifest as PluginManifest, [null, null]);
+    expect(isInstallable(pluginFor(entry, 'op1/hundekraft') as PluginIndexEntry)).toBe(true);
+    expect(isInstallable(pluginFor(entry, 'op1/opus') as PluginIndexEntry)).toBe(false);
+  });
+
+  it('refuses a branch link, another host, another name, or a missing hash or size', () => {
+    const issue = (o: Record<string, unknown>): string => messages(parsePluginManifest(remote(o), 'moai').issues);
+    expect(issue({ fileUrl: 'https://raw.githubusercontent.com/someone/Project_X/main/build/moai.knl' })).toMatch(/pinned to a commit/);
+    expect(issue({ fileUrl: `https://example.com/${commit}/moai.knl` })).toMatch(/pinned to a commit/);
+    expect(issue({ fileUrl: url.replace('moai.knl', 'other.knl') })).toMatch(/must end in \/moai\.knl/);
+    expect(issue({ sha256: undefined })).toMatch(/sha256 must be/);
+    expect(issue({ sizeBytes: 0 })).toMatch(/sizeBytes must be/);
+    expect(issue({ version: undefined })).toMatch(/version must be a string/);
+  });
+
+  it('refuses a fileUrl on a hosted build or on a non-hundekraft build', () => {
+    expect(messages(parsePluginManifest(remote({ link: undefined, file: 'moai.knl' }), 'moai').issues)).toMatch(/are for a listed build/);
+    expect(messages(parsePluginManifest(remote({ firmware: 'op1/opus' }), 'moai').issues)).toMatch(/only for op1\/hundekraft/);
   });
 });

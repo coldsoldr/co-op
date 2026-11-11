@@ -15,6 +15,9 @@
     {
       "firmware": "op1/hundekraft",
       "link": "https://github.com/SammiBabe666/Project_Erdtree/tree/main/platforms/hundekraft",
+      "fileUrl": "https://raw.githubusercontent.com/SammiBabe666/Project_Erdtree/5f6b506c6614993349fd70bb10e09754e935c3d4/platforms/hundekraft/build/erdtree.knl",
+      "sha256": "f06807a527f5f54560604f42a8574e67ae32cb9626443c4dce1fedfad4e11bcb",
+      "sizeBytes": 51992,
       "version": "0.5",
       "requires": "hundekraft workshop 3.0",
       "source": "https://github.com/SammiBabe666/Project_Erdtree/tree/main/platforms/hundekraft"

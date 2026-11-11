@@ -69,6 +69,12 @@ const OPUS_SAVED_NAME = /^opus\.[a-z0-9_.-]{1,40}$/;
 const OPMOD_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,57}\.opmod$/;
 const SCREENSHOT_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,59}\.png$/;
 const HTTPS_LINK = /^https:\/\/[^\s/?#]+\.[^\s/?#]+([/?#]\S*)?$/;
+/**
+ * A .knl in its author's GitHub repo, pinned to a commit so its bytes (and so its SHA-256) never change:
+ * raw.githubusercontent.com, which browsers may fetch from any page.
+ */
+const REMOTE_KNL = /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\/(?:[^\s?#/]+\/)*([^\s?#/]+\.knl)$/;
+const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 /**
  * The fields of one firmware's build of a plugin: at the top of a single-firmware plugin.json, or
@@ -87,7 +93,17 @@ export interface PluginBuildManifest {
    * nothing to install or download here.
    */
   link?: string;
-  /** Required for a build with a file; optional for a listed one. */
+  /**
+   * A listed hundekraft build only: the plugin's .knl where its author publishes it (REMOTE_KNL), with
+   * its sha256 and sizeBytes. co-op still hosts no copy: the page fetches the file from there, checks
+   * it against both, and installs it over USB.
+   */
+  fileUrl?: string;
+  /** With fileUrl: the file's lower-case hex SHA-256. */
+  sha256?: string;
+  /** With fileUrl: the file's size in bytes. */
+  sizeBytes?: number;
+  /** Required for a build with a file or a fileUrl; optional for a listed one. */
   version?: string;
   /** Free text such as "hundekraft 3.0.3". */
   requires?: string;
@@ -137,7 +153,7 @@ export interface PluginBuild extends Omit<PluginBuildManifest, 'savedName'> {
 
 /** The index entry fields that belong to one build. */
 const BUILD_KEYS = [
-  'firmware', 'file', 'link', 'version', 'requires', 'source', 'savedName', 'sizeBytes', 'sha256', 'headerAuthor', 'headerVersion',
+  'firmware', 'file', 'link', 'fileUrl', 'version', 'requires', 'source', 'savedName', 'sizeBytes', 'sha256', 'headerAuthor', 'headerVersion',
 ] as const satisfies readonly (keyof PluginBuild)[];
 
 export interface PluginIndexEntry
@@ -168,6 +184,21 @@ export type HostedPluginEntry = PluginIndexEntry & { file: string; version: stri
 /** True when the entry's build is a file co-op hosts; false for a listed build, which only links out. */
 export function isHosted(entry: PluginIndexEntry): entry is HostedPluginEntry {
   return entry.link === undefined && entry.file !== undefined && entry.sizeBytes !== undefined && entry.sha256 !== undefined;
+}
+
+/**
+ * True when the page can fetch the entry's plugin file and check it: a file co-op hosts, or a listed
+ * build's fileUrl. Its `file` is the name the OP-1 stores it under either way.
+ */
+export function isInstallable(entry: PluginIndexEntry): entry is HostedPluginEntry {
+  if (isHosted(entry)) return true;
+  return (
+    entry.fileUrl !== undefined &&
+    entry.file !== undefined &&
+    entry.version !== undefined &&
+    entry.sizeBytes !== undefined &&
+    entry.sha256 !== undefined
+  );
 }
 
 /** Every build of a plugin in the index: its `builds`, or the one build at the top of the entry. */
@@ -215,7 +246,7 @@ export interface PluginIssue {
 }
 
 /** The plugin.json fields of one build; with `builds`, all but source go in each build only. */
-const MANIFEST_BUILD_FIELDS = ['firmware', 'file', 'link', 'version', 'requires', 'source', 'savedName'] as const;
+const MANIFEST_BUILD_FIELDS = ['firmware', 'file', 'link', 'fileUrl', 'sha256', 'sizeBytes', 'version', 'requires', 'source', 'savedName'] as const;
 const MANIFEST_FIELDS = new Set<string>([
   'format', 'id', 'name', 'kind', 'author', 'description', 'license',
   'screenshot', 'manual', 'credits', 'video', 'tags', 'builds', ...MANIFEST_BUILD_FIELDS,
@@ -297,7 +328,29 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
       if (typeof link !== 'string' || !HTTPS_LINK.test(link)) fail(`${where}link must be an https:// link`);
       else if (link.length > MAX_SOURCE) fail(`${where}link must be at most ${MAX_SOURCE} characters`);
     }
-    const version = listed && record.version === undefined ? undefined : textIn(record, where, 'version', MAX_VERSION);
+    const fileUrl = record.fileUrl;
+    const remote = fileUrl !== undefined || record.sha256 !== undefined || record.sizeBytes !== undefined;
+    const version = listed && !remote && record.version === undefined ? undefined : textIn(record, where, 'version', MAX_VERSION);
+    if (remote) {
+      if (!listed) fail(`${where}fileUrl, sha256 and sizeBytes are for a listed build (with a link); a hosted build's file is in the folder`);
+      else if (firmware !== 'op1/hundekraft') fail(`${where}fileUrl is only for op1/hundekraft builds for now`);
+      const match = typeof fileUrl === 'string' ? REMOTE_KNL.exec(fileUrl) : null;
+      if (!match || (fileUrl as string).length > MAX_SOURCE) {
+        fail(
+          `${where}fileUrl must be a link of at most ${MAX_SOURCE} characters to the .knl, pinned to a commit: ` +
+            'https://raw.githubusercontent.com/<owner>/<repo>/<40-hex commit>/<path>/<id>.knl',
+        );
+      } else if (typeof id === 'string' && match[1] !== `${id}.knl`) {
+        fail(`${where}fileUrl must end in /${id}.knl, the name the OP-1 stores it under`);
+      }
+      if (typeof record.sha256 !== 'string' || !SHA256_HEX.test(record.sha256)) {
+        fail(`${where}sha256 must be the file's SHA-256: 64 lower-case hex digits`);
+      }
+      const size = record.sizeBytes;
+      if (typeof size !== 'number' || !Number.isInteger(size) || size < 1 || size > MAX_KNL_BYTES) {
+        fail(`${where}sizeBytes must be the file's size in bytes, 1 to ${MAX_KNL_BYTES}`);
+      }
+    }
 
     const file = record.file;
     if (listed) {
@@ -326,6 +379,9 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
     return {
       firmware: firmware as PluginFirmware,
       ...(listed ? { link: link as string } : { file: file as string }),
+      ...(remote
+        ? { fileUrl: fileUrl as string, sha256: record.sha256 as string, sizeBytes: record.sizeBytes as number }
+        : {}),
       ...(version === undefined ? {} : { version }),
       ...(requires === undefined ? {} : { requires }),
       ...(record.source === undefined ? {} : { source: record.source as string }),
@@ -413,7 +469,7 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
   }
 
   if (issues.length > 0) return { manifest: null, issues };
-  const { requires, source, savedName, link, file, version } = primary;
+  const { requires, source, savedName, link, file, version, fileUrl, sha256, sizeBytes } = primary;
   return {
     manifest: {
       format: PLUGIN_FORMAT,
@@ -427,6 +483,7 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
       ...(license === undefined ? {} : { license: license as PluginLicense }),
       ...(file === undefined ? {} : { file }),
       ...(link === undefined ? {} : { link }),
+      ...(fileUrl === undefined ? {} : { fileUrl, sha256, sizeBytes }),
       screenshot: screenshot as string,
       manual: MANUAL_FILE,
       ...(source === undefined ? {} : { source }),
@@ -881,9 +938,15 @@ export function pluginIndexEntry(
   info: PluginFileInfo,
 ): PluginIndexEntry {
   const { format: _format, savedName: ownSavedName, builds: _builds, ...fields } = manifest;
-  const savedName = manifest.firmware === 'op1/hundekraft' || manifest.firmware === 'op1/coop' ? info.savedName : ownSavedName;
+  // A fetched .knl is checked by its hash, not read here: its saved name is the id (REMOTE_KNL ends in <id>.knl).
+  const remoteName = manifest.fileUrl === undefined ? undefined : manifest.fileUrl.slice(manifest.fileUrl.lastIndexOf('/') + 1);
+  const savedName =
+    manifest.firmware === 'op1/hundekraft' || manifest.firmware === 'op1/coop'
+      ? (info.savedName ?? (remoteName === undefined ? undefined : manifest.id))
+      : ownSavedName;
   return {
     ...fields,
+    ...(remoteName === undefined ? {} : { file: remoteName }),
     screenshot: `${manifest.id}/${manifest.screenshot}`,
     manual: `${manifest.id}/${manifest.manual}`,
     ...(file === null ? {} : { sizeBytes: file.sizeBytes, sha256: file.sha256 }),

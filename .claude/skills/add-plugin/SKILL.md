@@ -38,6 +38,7 @@ From these, settle:
 | license | The SPDX id from `licenseInfo` (`GPL-3.0-or-later` if the README says "or later"). Leave it out when the repo has none: a listed plugin may. |
 | requires | The firmware version it needs, if the README says (`hundekraft 3.2.6`, `opus beta 4.1`, `coop e9`). |
 | tags | Up to 8, each 1–20 lower-case letters, digits or hyphens. Start with the kind, then what it is (`granular`, `sequencer`, `mutable-instruments`). |
+| fileUrl | hundekraft builds only, when the repo has the built `.knl` in it: lets co-op install it over USB from the card. Pin it to the last commit that touched the file: `gh api "repos/<repo>/commits?path=<path>&per_page=1" --jq '.[0].sha'`, then `https://raw.githubusercontent.com/<repo>/<sha>/<path>`. Its file name must be `<id>.knl`. Download it into a fresh scratchpad folder and add `sizeBytes` (its byte count) and `sha256` (`sha256sum`); `version` is then required. Check it is a valid kennel plugin whose saved name is the id and whose kind matches: from `web/`, a throwaway `scripts/_check.ts` that runs `checkKnl` from `../../shared/src/plugins` on it (delete it after). Skip fileUrl if the `.knl` exists only inside a zip or a release asset. |
 | video | An `.mp4` the README links or the repo ships: for a file in the repo, use `https://raw.githubusercontent.com/<repo>/<branch>/<path>.mp4`. Skip YouTube. |
 
 ## 2. Write the folder
