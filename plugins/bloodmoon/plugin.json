@@ -2,19 +2,31 @@
   "format": 1,
   "id": "bloodmoon",
   "name": "Bloodmoon",
-  "firmware": "op1/hundekraft",
   "kind": "synth",
   "author": "Nola Drift",
-  "description": "Bloodmoon by Nola Drift (SammiBabe666) is a gothic organ. Every note is a pipe with its 2nd, 3rd and 4th harmonics, and a bell strikes on top of it. The bell's two partials sit a little off the organ, close to a minor third, so it never quite agrees with the pipes. A slow vibrato fades in after the attack, with a faint wobble under it, so held notes drift like old pipes.",
+  "description": "Bloodmoon by Nola Drift is a gothic organ with a haunted bell. Every note is a pipe with its 2nd, 3rd and 4th harmonics, and a bell strikes on top of it, a little off the organ, close to a minor third. A slow vibrato fades in after the attack with a faint wobble under it, so held notes drift like old pipes. On screen, a black cathedral under a blood-red moon moves with every knob.",
   "license": "GPL-3.0-or-later",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/SammiBabe666/Project_Bloodmoon",
-  "requires": "hundekraft 3.2.6",
-  "credits": "Nola Drift's Project Bloodmoon, published by SammiBabe666, brought into kennel by Hundekraft",
-  "tags": [
-    "synth",
-    "hundekraft"
+  "video": "https://raw.githubusercontent.com/SammiBabe666/Project_Bloodmoon/main/media/bloodmoon_demo.mp4",
+  "credits": "Published by SammiBabe666; also part of hundekraft's workshop",
+  "tags": ["synth", "organ", "bell", "gothic"],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://github.com/SammiBabe666/Project_Bloodmoon/tree/main/download",
+      "fileUrl": "https://raw.githubusercontent.com/SammiBabe666/Project_Bloodmoon/662077d6cae6fd51a55d78862e2d4b9a75bc8147/download/hundekraft/bloodmoon.knl",
+      "sha256": "e8b8a691bdfbdb6322f3876a34399a1eb101859568fadb09ecdf7cd21eb41201",
+      "sizeBytes": 46148,
+      "version": "1.4",
+      "requires": "hundekraft 3.0"
+    },
+    {
+      "firmware": "op1/opus",
+      "link": "https://github.com/SammiBabe666/Project_Bloodmoon/tree/main/download",
+      "version": "1.5.2",
+      "requires": "opus core 2.6"
+    }
   ]
 }

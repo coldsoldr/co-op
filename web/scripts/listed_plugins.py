@@ -84,6 +84,15 @@ def clip(text, limit):
 
 def write(folder, manifest, manual, shot):
     d = os.path.join(PLUGINS, folder)
+    existing = os.path.join(d, 'plugin.json')
+    if os.path.exists(existing):
+        with open(existing, encoding='utf-8') as f:
+            old = json.load(f)
+        # A listing /add-plugin took over from the author's own repo (builds per firmware, or a fileUrl to
+        # install from) knows more than the workshop or opus pages: leave it alone.
+        if 'builds' in old or 'fileUrl' in old:
+            print('kept {} (listed from its author\'s repo)'.format(folder))
+            return
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, 'plugin.json'), 'w', encoding='utf-8', newline='\n') as f:
         f.write(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n')

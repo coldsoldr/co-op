@@ -3,6 +3,7 @@ name: ci
 on:
   pull_request:
     paths-ignore: ['firmware/**', '.github/workflows/firmware.yml']
+  workflow_dispatch:
   push:
     branches: [main, dev]
     paths-ignore: ['firmware/**', '.github/workflows/firmware.yml']
