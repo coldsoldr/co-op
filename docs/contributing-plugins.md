@@ -128,7 +128,11 @@ like a hosted one; a file that doesn't match is refused.
 "sizeBytes": 51992
 ```
 
-When the author ships a new version, point `fileUrl` at the new commit and update both facts.
+When the author ships a new version, point `fileUrl` at the new commit and update both facts. The daily
+`plugin-updates` workflow does this by itself: it follows each `fileUrl` to the newest commit that changed
+the file, and each other GitHub-hosted build to its latest release, and opens a pull request into dev
+(`web/scripts/plugin-updates.ts`). Authors publish so it can by the release guide,
+`docs/plugin-release-guide.md` (on the site at `#release-guide`).
 Opus builds don't take a `fileUrl` yet.
 
 ### One plugin, a file per firmware

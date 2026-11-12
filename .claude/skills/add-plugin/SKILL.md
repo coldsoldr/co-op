@@ -137,6 +137,10 @@ Ask before pushing. Then `git push -u origin plugin/<id>` and
 `gh pr create --repo coldsoldr/co-op --title "Plugin: <Name> by <author>" --body "<what it is, its repo, and that /add-plugin wrote the listing>"`.
 The pull request's check runs the validator again.
 
+After a listing exists, the daily `plugin-updates` workflow keeps its file and version current (a pull request into
+dev); re-run this skill only when the plugin's controls or description change. Point authors at
+`docs/plugin-release-guide.md` for how to publish updates it can follow.
+
 ## Report
 
 Tell the user, in a few lines: the id, name, author (and why, if it wasn't the repo owner), firmware, where the
