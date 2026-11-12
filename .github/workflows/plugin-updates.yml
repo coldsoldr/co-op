@@ -1,0 +1,58 @@
+# Daily: look for updates to listed plugins in their authors' own GitHub repos (docs/plugin-release-guide.md),
+# and open (or refresh) one pull request into dev with what passed the checks. Nothing reaches the site until
+# the owner merges it: Install over USB sends these files to people's OP-1s.
+#
+# Needs "Allow GitHub Actions to create and approve pull requests" (Settings > Actions > General). A pull
+# request opened with the workflow token does not start ci; this job validates before it opens one, and
+# ci can be started on the branch by hand (Actions > ci > Run workflow).
+name: plugin-updates
+
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: plugin-updates
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+      - uses: ./.github/actions/setup
+      - name: Check the authors' repos
+        run: pnpm --filter @co-op/web exec tsx scripts/plugin-updates.ts --summary "$RUNNER_TEMP/summary.md"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Report
+        run: cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate the updated plugins
+        run: |
+          if git diff --quiet -- plugins; then echo "Nothing changed."; exit 0; fi
+          pnpm --filter @co-op/web plugins:validate
+          pnpm --filter @co-op/web exec vitest run scripts
+      - name: Open or refresh the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- plugins; then exit 0; fi
+          branch=bot/plugin-updates
+          git config user.name coldsoldr
+          git config user.email 349275560+coldsoldr@users.noreply.github.com
+          git switch -C "$branch"
+          git commit -q -m "feat(plugins): updates from their authors' repos" -- plugins
+          git push -f origin "$branch"
+          number=$(gh pr list --head "$branch" --base dev --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --body-file "$RUNNER_TEMP/summary.md"
+          else
+            gh pr create --base dev --head "$branch" --title "Plugin updates from their authors" --body-file "$RUNNER_TEMP/summary.md"
+          fi

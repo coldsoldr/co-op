@@ -7,6 +7,8 @@ import { CoopDevice, CoopInstall } from './ui/CoopPlugins';
 import { useSiteDevice } from './ui/device-choice';
 import { DeviceMenu } from './ui/DeviceMenu';
 import { BuildFirmware } from './ui/BuildFirmware';
+import { CHANGELOG_HASH, RELEASE_GUIDE_HASH, pageOf } from './ui/pages';
+import { ReleaseGuide } from './ui/ReleaseGuide';
 import { Library } from './ui/Library';
 import { Op1FunTab } from './ui/Op1Fun';
 import { OpXy } from './ui/OpXy';
@@ -33,7 +35,6 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id'];
 
-const CHANGELOG_HASH = '#changelog';
 
 export function App() {
   const [tab, setTab] = useState<TabId>('library');
@@ -44,11 +45,12 @@ export function App() {
   const { theme, toggle } = useTheme();
   const { device: siteDevice, choose } = useSiteDevice();
   const op1 = siteDevice === 'op1';
-  const [changelog, setChangelog] = useState(() => window.location.hash === CHANGELOG_HASH);
+  const [page, setPage] = useState(() => pageOf(window.location.hash));
+  const onPage = page !== null;
 
-  // The address decides, so the section has a link of its own and the browser's Back button works.
+  // The address decides, so each page has a link of its own and the browser's Back button works.
   useEffect(() => {
-    const follow = (): void => setChangelog(window.location.hash === CHANGELOG_HASH);
+    const follow = (): void => setPage(pageOf(window.location.hash));
     window.addEventListener('hashchange', follow);
     return () => window.removeEventListener('hashchange', follow);
   }, []);
@@ -116,18 +118,23 @@ export function App() {
 
   return (
     <>
-      {changelog && (
+      {page === 'changelog' && (
         <main>
           <Changelog onClose={() => (window.location.hash = '')} />
         </main>
       )}
+      {page === 'release-guide' && (
+        <main>
+          <ReleaseGuide onClose={() => (window.location.hash = '')} />
+        </main>
+      )}
       {!op1 && (
-        <main hidden={changelog}>
+        <main hidden={onPage}>
           <OpXy brand={brand} actions={headerActions} />
         </main>
       )}
       {/* Stays mounted while another device is shown, so an open drive and its tabs survive. */}
-      <main hidden={!op1 || changelog}>
+      <main hidden={!op1 || onPage}>
         <header className="app-header">
           <div className="brand">
             {brand}
@@ -189,6 +196,7 @@ export function App() {
         </span>
         <span className="footer-links">
           <a href={CHANGELOG_HASH}>CHANGELOG</a>
+          <a href={RELEASE_GUIDE_HASH}>RELEASE GUIDE</a>
           <a href="https://github.com/coldsoldr/co-op">GITHUB ↗</a>
         </span>
       </footer>

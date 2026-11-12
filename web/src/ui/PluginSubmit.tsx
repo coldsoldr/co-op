@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { PLUGIN_PROMPT } from '../core/plugins/submission';
+import { RELEASE_GUIDE_HASH } from './pages';
 
 const REPO = 'https://github.com/coldsoldr/co-op';
 const GUIDE_URL = `${REPO}/blob/main/docs/contributing-plugins.md`;
@@ -107,6 +108,7 @@ function FromYourRepo({ firmware }: { firmware: Firmware }) {
         <li>A public GitHub repo with a README that says what the plugin does, who made it, and which {firmware.label} version it needs. For a port, credit the original.</li>
         <li>A licence file.</li>
         <li>A picture of the plugin’s screen in the README. Without one, its card gets a plain name card.</li>
+        <li>For updates: a GitHub release per version, with the built file replaced at the same path.</li>
         <li>
           The built <code>{hundekraft ? '<id>.knl' : '<name>.opmod'}</code> committed in the repo, not only inside a zip or a
           release.{' '}
@@ -137,7 +139,13 @@ function FromYourRepo({ firmware }: { firmware: Firmware }) {
       </ol>
       <p>
         No Claude Code? <a href={requestFor(firmware)}>Offer your plugin in an issue</a> with your repo’s link, and a maintainer
-        adds it. For a new version, say so in an issue or update the listing the same way.
+        adds it.
+      </p>
+
+      <h3>Updates</h3>
+      <p>
+        Once you’re listed, co-op checks your repo every day and proposes your new versions for a maintainer to merge. The{' '}
+        <a href={RELEASE_GUIDE_HASH}>release guide</a> shows how to publish them so it can.
       </p>
 
       {hundekraft && <HostedFolder />}
