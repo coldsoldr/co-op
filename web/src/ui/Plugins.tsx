@@ -161,7 +161,10 @@ export function Plugins({ active, renderActions, firmwareId, deviceSection, onOp
         <PluginList
           index={index}
           filter={filter}
-          onFilter={setFilter}
+          onFilter={(next) => {
+            setFilter(next);
+            setToggled(new Set());
+          }}
           toggled={toggled}
           onToggle={(author) =>
             setToggled((prev) => {
@@ -196,12 +199,11 @@ interface PluginListProps {
 function PluginList({ index, filter, onFilter, toggled, onToggle, onOpen, returnTo, renderActions, view }: PluginListProps) {
   const shown = filterPlugins(index, filter).map(view);
   const groups = groupByAuthor(shown);
-  // A search or filter shows what it found. Otherwise several authors start closed, and a lone
-  // author in the list as shown starts open, as a closed group would be all there is to see. The
-  // firmware is not a search: it is set from Settings for most visitors, and counting it kept every
-  // group open with its toggle disabled.
+  // Every author group starts closed, and a search or filter opens them to show what it found. Either
+  // way each group closes and opens from its button; the toggles are cleared when the filter changes
+  // (Plugins' onFilter). The firmware is not a search: it is set from Settings for most visitors.
   const filtering = filter.text !== undefined || filter.kind !== undefined || filter.tag !== undefined;
-  const startsOpen = groups.length === 1;
+  const startsOpen = filtering;
   const tags = useMemo(() => [...new Set(index.plugins.flatMap((p) => p.tags))].sort(), [index]);
   /** Sets one criterion; the empty string clears it. */
   function set<K extends keyof PluginFilter>(key: K, value: string): void {
@@ -266,11 +268,11 @@ function PluginList({ index, filter, onFilter, toggled, onToggle, onOpen, return
       </p>
       {shown.length === 0 && <p>No plugins match these filters.</p>}
       {groups.map(({ author, plugins }) => {
-        const expanded = filtering || toggled.has(author) !== startsOpen;
+        const expanded = toggled.has(author) !== startsOpen;
         return (
           <section key={author} className="author-group" aria-label={`Plugins by ${author}`}>
             <h3>
-              <button type="button" aria-expanded={expanded} disabled={filtering} onClick={() => onToggle(author)}>
+              <button type="button" aria-expanded={expanded} onClick={() => onToggle(author)}>
                 <span>{author}</span>
                 <span className="mono">{plural(plugins.length, 'plugin', 'plugins')}</span>
                 <svg aria-hidden="true" viewBox="0 0 24 24">

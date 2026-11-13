@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { hostedOnly, serveHostedOnly } from './plugin-index';
+import { hostedOnly, serveHostedOnly, openPlugins } from './plugin-index';
 
 test.beforeEach(async ({ page }) => {
   await serveHostedOnly(page);
@@ -14,7 +14,7 @@ const seedNames = SEED_IDS.map((id) => (JSON.parse(readFileSync(`${seed}${id}/pl
 test('explains how to submit a plugin, per firmware, and copies the prompt', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('./');
-  await page.getByRole('tab', { name: 'Plugins' }).click();
+  await openPlugins(page);
   await page.getByRole('button', { name: 'Submit a plugin' }).click();
   await expect(page.locator('#panel-plugins article')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Read the full guide' })).toHaveAttribute('href', /contributing-plugins\.md$/);
@@ -60,7 +60,7 @@ test('explains how to submit a plugin, per firmware, and copies the prompt', asy
   await expect(page.getByRole('button', { name: 'Submit a plugin' })).toBeFocused();
 });
 
-test('groups plugins by author, closed with several authors and open for a search', async ({ page }) => {
+test('groups plugins by author, closed at first and open for a search, closable either way', async ({ page }) => {
   await page.route('**/plugins/index.json', async (route) => {
     const response = await route.fetch();
     const index = hostedOnly((await response.json()) as { plugins: Array<{ id: string; author: string }> });
@@ -86,16 +86,32 @@ test('groups plugins by author, closed with several authors and open for a searc
   await page.getByRole('searchbox', { name: 'Search plugins' }).fill('tape');
   await expect(page.locator('#panel-plugins article')).toHaveCount(2);
   await expect(someone).toBeHidden();
+
+  // A search opens what it found, and its groups still close and open.
+  const coldsoldr = page.getByRole('button', { name: /^coldsoldr/ });
+  await expect(coldsoldr).toHaveAttribute('aria-expanded', 'true');
+  await coldsoldr.click();
+  await expect(coldsoldr).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#panel-plugins article')).toHaveCount(0);
+  await coldsoldr.click();
+  await expect(page.locator('#panel-plugins article')).toHaveCount(2);
+
+  // A new search opens its groups again.
+  await coldsoldr.click();
+  await page.getByRole('searchbox', { name: 'Search plugins' }).fill('echo');
+  await expect(page.locator('#panel-plugins article')).toHaveCount(1);
 });
 
-test('leaves a lone author open, with its buttons apart', async ({ page }) => {
+test('starts a lone author closed and opens it, with its buttons apart', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
+  const author = page.getByRole('button', { name: /^coldsoldr/ });
+  await expect(author).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#panel-plugins article')).toHaveCount(0);
+
+  await author.click();
   const rings = page.getByRole('article', { name: 'rings', exact: true });
   await expect(rings.locator('.plugin-buttons')).toHaveCSS('gap', '8px');
-
-  await page.getByRole('button', { name: /^coldsoldr/ }).click();
-  await expect(page.locator('#panel-plugins article')).toHaveCount(0);
 });
 
 test('chooses a device from the logo, remembers it and keeps the OP-1 page', async ({ page }) => {
@@ -312,7 +328,7 @@ test('auditions a synth patch on the OP-1 and puts the sound back', async ({ pag
 
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
-  await page.getByRole('tab', { name: 'Plugins' }).click();
+  await openPlugins(page);
   await expect(page.getByRole('status').filter({ hasText: '14 plugins' })).toBeVisible();
   await expect(page.locator('#panel-plugins article')).toHaveCount(14);
   for (const name of seedNames) await expect(page.getByRole('article', { name, exact: true })).toBeVisible();
@@ -347,7 +363,7 @@ test('lists the seed plugins and filters them', async ({ page }) => {
 
 test('opens a manual with its table and screenshot', async ({ page }) => {
   await page.goto('./');
-  await page.getByRole('tab', { name: 'Plugins' }).click();
+  await openPlugins(page);
   await page.getByRole('button', { name: 'Read the manual of rings' }).click();
   await expect(page.getByRole('heading', { name: 'rings', level: 3 })).toBeFocused();
 
@@ -372,7 +388,7 @@ test('opens a manual with its table and screenshot', async ({ page }) => {
 
 test('downloads a plugin file', async ({ page }) => {
   await page.goto('./');
-  await page.getByRole('tab', { name: 'Plugins' }).click();
+  await openPlugins(page);
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('article', { name: 'rings', exact: true }).getByRole('button', { name: 'Download rings.knl' }).click(),
@@ -386,7 +402,7 @@ test('downloads a plugin file', async ({ page }) => {
 test('a download that fails its check says so', async ({ page }) => {
   await page.goto('./');
   await page.route('**/plugins/rings/rings.knl', (route) => route.fulfill({ body: 'not the plugin' }));
-  await page.getByRole('tab', { name: 'Plugins' }).click();
+  await openPlugins(page);
   const rings = page.getByRole('article', { name: 'rings', exact: true });
   await rings.getByRole('button', { name: 'Download rings.knl' }).click();
   await expect(rings.getByRole('alert')).toContainText('does not match the plugin index');
