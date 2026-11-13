@@ -17,6 +17,11 @@ Instruments Beads; the saturation is the same as tape drive's.
 
 ## Before you start
 
+- **Two builds, one per firmware:** `tape_echo.knl` for hundekraft and
+  `tape_echo.coop` for coop. The Plugins tab offers the one for the firmware
+  chosen in Settings. On coop you need **coop e10** or later, and the
+  controls differ a little (see On coop, below); the rest of this section is
+  about hundekraft.
 - **An original OP-1** (the 2011 model). It does not run on the OP-1 field
   or the OP-Z.
 - **hundekraft 3.0.3** on it, from the
@@ -60,6 +65,30 @@ The repeats stay on the grid while you play; turning blue without Shift
 frees the time again. While Shift is held the screen draws a tick on the
 tape for every sixteenth that fits.
 
+## On coop
+
+The four knobs on the main page are the same as on hundekraft. Pick it from
+the effect list (shift + T3) at any position, FX 1 or FX 2. It runs in
+stereo everywhere. The extra controls are on fn (Help held) instead of a
+second page:
+
+| Encoder | fn + turn | Also |
+|---|---|---|
+| blue | **input gain**, −6 to +6 dB, 0.5 dB a click | shift + fn + blue: the same in 0.1 dB clicks |
+| green | **sync**: off, or the time follows a division of the project tempo: 1/16T, 1/16, 1/8T, dotted 1/16, 1/8, 1/4T, dotted 1/8, 1/4, 1/2T, dotted 1/4, 1/2 | click (no fn): **hold**, a latch |
+| white | | click (no fn): the **head pattern**: 3; 2+3; 1+2+3; 1+3 |
+
+- With **sync** on a division, turning blue doesn't change the time until
+  sync is back on off. Tempo changes move the time while the echo plays,
+  with a glide. Shift + blue is the OP-1's own fine adjust here, not the
+  tempo lock.
+- **hold** is momentary: it isn't saved, and it switches off whenever the
+  effect restarts (including a switch between synth and drum).
+- There is one tape loop per channel.
+
+Install `tape_echo.coop` from co-op's Plugins tab over USB with coop chosen
+in Settings. It loads at the next power cycle.
+
 ## On screen
 
 The tape runs from the record head at the left past three play heads to the
@@ -88,4 +117,5 @@ latch and is not saved.
 - The rest of the DSP, the OP-1 glue and the screen are coldsoldr's own
   work, built on hundekraft's kennel plugin SDK.
 - Licence: GPL-3.0-or-later, with the OP-1 firmware permission of the SDK.
-  Source: https://github.com/coldsoldr/te-op1-cfw
+  Source: https://github.com/coldsoldr/te-op1-cfw (hundekraft) and
+  https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/tape_echo (coop)
