@@ -6,16 +6,16 @@
 // all are busy steals the oldest: the new OP-1 voice takes over the stolen
 // voice's resonator state (copy_from) and strikes it at its own pitch, so the
 // ring carries on into the new note as on Rings, while the stolen OP-1 voice
-// fades out over ~6 ms. At most kMaxFading voices fade at once; older fades
+// fades out over ~3 ms. At most kMaxFading voices fade at once; older fades
 // are shortened to keep the CPU bounded (in polyphony 1 every fading voice
 // costs a full 60-mode voice).
 //
 // Polyphony "all" is the engine's original behaviour: every OP-1 voice keeps
 // its own resonator and nothing is stolen.
 //
-// A voice stolen before it has rendered anything (a chord in polyphony 1:
-// each note-on steals the one just before it) goes silent at once: it never
-// sounded, so there's nothing to fade, and fading it would render up to six
+// A voice stolen within kChordRenders renders of its strike (a chord in polyphony 1:
+// each note-on steals the one just before it) goes silent at once: it has
+// barely sounded and its ring goes on in the new voice, so there is nothing to fade; fading it would render up to six
 // 60-mode voices in one block.
 //
 // A voice whose fade has finished is silent (not rendered) until it's struck
@@ -33,9 +33,14 @@ namespace op1 {
 class VoiceAllocator {
  public:
   static const int32_t kNumVoices = 6;
-  static const int32_t kFadeSamples = 512;   // output samples (88.2 kHz): 5.8 ms
-  static const int32_t kShortFadeSamples = 128;
-  static const int32_t kMaxFading = 2;
+  // rings 0.7 (an Opus 2 OP-1, 2026-11-13: the heavy settings overran the audio block): fades of 2.9 ms, one at a
+  // time (were 5.8 ms, two), and a voice struck within kChordRenders renders counts as fresh (was: not rendered yet).
+  // Opus's host starts a chord's notes one a block (adapter/copa_engine.c in op1-plugins), so each note had rendered
+  // once before the next stole it: in polyphony 1 a chord faded and copied a 60-mode or eight-string voice per note.
+  static const int32_t kFadeSamples = 256;   // output samples (88.2 kHz): 2.9 ms
+  static const int32_t kShortFadeSamples = 64;
+  static const int32_t kMaxFading = 1;
+  static const uint8_t kChordRenders = 8;    // 11.6 ms: a six-note chord, one note a block, with room
   static const int32_t kFullGain = 32768;   // Q15
 
   struct NoteOnAction {
@@ -48,7 +53,7 @@ class VoiceAllocator {
     num_active_ = 0;
     for (int32_t v = 0; v < kNumVoices; ++v) {
       silent_[v] = false;
-      fresh_[v] = false;
+      young_[v] = kChordRenders;
       fade_gain_[v] = 0;
       fade_step_[v] = 0;
     }
@@ -76,7 +81,7 @@ class VoiceAllocator {
       active_[num_active_++] = v;
     }
     silent_[v] = false;
-    fresh_[v] = true;
+    young_[v] = 0;
     return action;
   }
 
@@ -87,12 +92,14 @@ class VoiceAllocator {
     Remove(v);
     fade_gain_[v] = 0;
     fade_step_[v] = 0;
-    fresh_[v] = false;
+    young_[v] = kChordRenders;
     silent_[v] = true;
   }
 
   // The engine calls this after rendering a voice.
-  void Rendered(int32_t v) { fresh_[v] = false; }
+  void Rendered(int32_t v) {
+    if (young_[v] < kChordRenders) ++young_[v];
+  }
 
   bool silent(int32_t v) const { return silent_[v]; }
   bool fading(int32_t v) const { return fade_step_[v] != 0; }
@@ -125,8 +132,8 @@ class VoiceAllocator {
   }
 
   void StartFade(int32_t v) {
-    if (fresh_[v]) {
-      silent_[v] = true;   // never rendered: nothing to fade
+    if (young_[v] < kChordRenders) {
+      silent_[v] = true;   // struck with the chord that steals it: its ring goes on in the new voice, no fade
       return;
     }
     int32_t fading_count = 0;
@@ -147,7 +154,7 @@ class VoiceAllocator {
   int32_t active_[kNumVoices];   // oldest first
   int32_t num_active_;
   bool silent_[kNumVoices];
-  bool fresh_[kNumVoices];        // struck, not rendered since
+  uint8_t young_[kNumVoices];     // renders since struck, up to kChordRenders
   int32_t fade_gain_[kNumVoices];
   int32_t fade_step_[kNumVoices];
 };

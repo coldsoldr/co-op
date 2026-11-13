@@ -83,6 +83,6 @@
     "symbol": "SCREEN_rings"
   },
   "author": "coldsoldr",
-  "version": "0.5",
+  "version": "0.9",
   "description": "Mutable Instruments Rings (Emilie Gillet, MIT) as a coop synth engine: te-op1-cfw's fixed-point port (the hundekraft kennel build, ports/knl/rings at 5aa314b), 22.05 kHz upsampled 2x to a 44.1 kHz voice. Blue structure, green brightness, white damping, orange position; fn + blue the model (modal, sympathetic strings, string, FM, quantized sympathetic strings, string and reverb), fn + green the polyphony (1, 2, 4, all); both wrap around."
 }

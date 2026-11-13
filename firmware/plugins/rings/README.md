@@ -251,6 +251,44 @@ The owner's choice after the m1c run: rings is left at 0.4's performance, with:
   4 against 0.4's 1, 2, 4, and new "all" against the build without the 4-voice cap); "all" differs from 4.
 - "all" costs the most: six voices of 14 modes, beside effects or tape recording expect crackles (0.2's device runs).
 
+## 0.6: a new model or polyphony cuts the old voices (2026-11-13)
+
+On an Opus 2 OP-1, a model change while notes were still ringing, then new notes, overran the audio block and the
+core switched rings off: each voice keeps the model and mode count it was struck with, so the old setting's rings
+(60 modes at polyphony 1) played on beside the new setting's voices. Now each voice remembers the setting it was
+struck with (`struck_setting`), and when the sound's model or polyphony changes, every voice struck with another
+one is cut off at its next render (`FollowSetting`, `allocator.Forget`: silent, out of the voice list, reset when
+next struck). The shared reverb clears itself after 50 ms without a carrier, as before.
+
+## 0.7: the heavy settings lighter (2026-11-13)
+
+On an Opus 2 OP-1, chords at polyphony 1 and 2 after a model change still overran the audio block (a voice's block
+up to 270,000 cycles, a note on 170,000: the steal's copy of an eight-string or 60-mode voice). Opus's host starts a
+chord's notes one a block, so each note had rendered once before the next stole it, and every steal faded and copied
+a full voice. `op1/voice_allocator.h` now: a voice struck within 8 renders (11.6 ms) counts as fresh, so a chord's
+steals go silent at once with no copy (the ring goes on in the new voice, as Rings' own polyphony does); one fade at
+a time (was two), 2.9 ms (was 5.8). A stolen voice's tail is shorter at polyphony 1, 2 and 4; "all" is unchanged.
+
+## 0.8: a string's line cleared as it is reached (2026-11-14)
+
+On an Opus 2 OP-1, one note of sympathetic strings at polyphony 1 took 598,000 cycles in its first block (the block
+is 580,525) and rings was switched off: the strike's `StringVoice::Configure` cleared all 2,052 words of eight
+strings' delay lines (64 KB of SDRAM). `StringFixed::Init` now clears nothing; `clean_` counts the line above the
+write position that is the string's own, and before each block `Unstale` clears what the block can reach that isn't
+(its delays, half again and 16, the block; and the line's oldest slots, which a delay under two samples reads).
+A typical note clears a few hundred words a string, spread over its first blocks. [C host] The output is the same as
+clearing the whole line at Init (a line filled with 2^27 at Init plays the same, bit for bit), except after a steal:
+the stealing string's line beyond the copied samples is now cleared instead of left with its own older note.
+
+## 0.9: the voice states in Opus's audio pool (2026-11-14)
+
+Built for Opus 2 (op1-plugins' adapter defines `COPA_OPUS`), the voice states and the shared reverb (~572 KB) are
+no longer .bss: `Init` takes them from `copa_alloc_audio` (the adapter's: `opus_alloc_audio`, else `opus_alloc`,
+zeroed as .bss is) and refuses the file without them. Opus loads a plugin's code and zero-filled data into whichever
+pool has room; on the OP-1 rings landed in the far pool (Opus's figures: bank 2), which the display shares and which
+costs about twice as much while it sends a frame, and a note of sympathetic strings at polyphony 1 took a whole
+audio block. The audio pool (1.3 MB) is not shared with the display. coop's build is unchanged.
+
 ## Building and checking
 
 ```sh
