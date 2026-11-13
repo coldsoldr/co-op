@@ -2,16 +2,30 @@
   "format": 1,
   "id": "bitcrusher",
   "name": "bitcrusher",
-  "firmware": "op1/hundekraft",
   "kind": "fx",
   "author": "coldsoldr",
-  "version": "0.1",
   "description": "Sample-rate and bit-depth reduction with a jittery clock.",
   "license": "GPL-3.0-or-later",
-  "file": "bitcrusher.knl",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/coldsoldr/te-op1-cfw",
-  "requires": "hundekraft 3.0.3",
-  "tags": ["effect", "lo-fi"]
+  "tags": [
+    "effect",
+    "lo-fi"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "file": "bitcrusher.knl",
+      "version": "0.1",
+      "requires": "hundekraft 3.0.3",
+      "source": "https://github.com/coldsoldr/te-op1-cfw"
+    },
+    {
+      "firmware": "op1/coop",
+      "file": "bitcrusher.coop",
+      "version": "0.2",
+      "requires": "coop e10",
+      "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/bitcrusher"
+    }
+  ]
 }

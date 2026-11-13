@@ -2,16 +2,31 @@
   "format": 1,
   "id": "wavefolder",
   "name": "wavefolder",
-  "firmware": "op1/hundekraft",
   "kind": "fx",
   "author": "coldsoldr",
-  "version": "0.2",
   "description": "West Coast wavefolding with symmetry and a tone control, oversampled and antialiased.",
   "license": "GPL-3.0-or-later",
-  "file": "wavefolder.knl",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/coldsoldr/te-op1-cfw",
-  "requires": "hundekraft 3.0.3",
-  "tags": ["effect", "wavefolder", "west-coast"]
+  "tags": [
+    "effect",
+    "wavefolder",
+    "west-coast"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "file": "wavefolder.knl",
+      "version": "0.2",
+      "requires": "hundekraft 3.0.3",
+      "source": "https://github.com/coldsoldr/te-op1-cfw"
+    },
+    {
+      "firmware": "op1/coop",
+      "file": "wavefolder.coop",
+      "version": "0.2",
+      "requires": "coop e10",
+      "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/wavefolder"
+    }
+  ]
 }

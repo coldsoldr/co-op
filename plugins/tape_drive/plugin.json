@@ -2,16 +2,31 @@
   "format": 1,
   "id": "tape_drive",
   "name": "tape drive",
-  "firmware": "op1/hundekraft",
   "kind": "fx",
   "author": "coldsoldr",
-  "version": "0.3",
   "description": "Tape saturation, wow and flutter, and worn-tape darkening and hiss.",
   "license": "GPL-3.0-or-later",
-  "file": "tape_drive.knl",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/coldsoldr/te-op1-cfw",
-  "requires": "hundekraft 3.0.3",
-  "tags": ["effect", "tape", "saturation"]
+  "tags": [
+    "effect",
+    "tape",
+    "saturation"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "file": "tape_drive.knl",
+      "version": "0.3",
+      "requires": "hundekraft 3.0.3",
+      "source": "https://github.com/coldsoldr/te-op1-cfw"
+    },
+    {
+      "firmware": "op1/coop",
+      "file": "tape_drive.coop",
+      "version": "0.5",
+      "requires": "coop e10",
+      "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/tape_drive"
+    }
+  ]
 }

@@ -14,6 +14,11 @@ Oversampled and antialiased.
 
 ## Before you start
 
+- **Two builds, one per firmware:** `wavefolder.knl` for hundekraft and
+  `wavefolder.coop` for coop. The Plugins tab offers the one for the
+  firmware chosen in Settings. On coop you need **coop e10** or later, and
+  the controls differ a little (see On coop, below); the rest of this
+  section is about hundekraft.
 - **An original OP-1** (the 2011 model). It does not run on the OP-1 field
   or the OP-Z.
 - **hundekraft 3.0.3** on it, from the
@@ -46,6 +51,20 @@ Oversampled and antialiased.
   main page the OP-1's own Shift fine-adjust applies as it does to the stock
   engines.
 
+## On coop
+
+The four knobs on the main page are the same as on hundekraft. Pick it from
+the effect list (shift + T3) at any position, FX 1 or FX 2. It runs in
+stereo everywhere. The extra controls are on fn (Help held) instead of a
+second page:
+
+| Encoder | fn + turn | Also |
+|---|---|---|
+| blue | **input gain**, −6 to +6 dB, 0.5 dB a click | shift + fn + blue: the same in 0.1 dB clicks |
+
+Install `wavefolder.coop` from co-op's Plugins tab over USB with coop chosen
+in Settings. It loads at the next power cycle.
+
 ## On screen
 
 One cycle of the output wave gains more and more folds as fold rises. The
@@ -68,4 +87,5 @@ knobs are.
 - The DSP, the OP-1 glue and the screen are coldsoldr's own work, built on
   hundekraft's kennel plugin SDK.
 - Licence: GPL-3.0-or-later, with the OP-1 firmware permission of the SDK.
-  Source: https://github.com/coldsoldr/te-op1-cfw
+  Source: https://github.com/coldsoldr/te-op1-cfw (hundekraft) and
+  https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/wavefolder (coop)
