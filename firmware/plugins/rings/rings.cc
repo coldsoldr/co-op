@@ -195,6 +195,13 @@ struct Hot {
 };
 Hot hot_fallback;
 Hot* hot = &hot_fallback;
+
+// rings 0.6: each voice's model and polyphony as it was struck (Setting; -1 none), and the setting the sound has now.
+// When the setting changes, every voice struck with another one is cut off at once (allocator.Forget: silent, out of
+// the voice list, reset when next struck). Left ringing, the old setting's voices kept their cost (a polyphony-1 voice
+// is 60 modes) beside the new setting's six, and on an Opus 2 OP-1 that overran the audio block (2026-11-13).
+int8_t struck_setting[op1::kNumVoices] = { -1, -1, -1, -1, -1, -1 };
+int8_t current_setting = -1;
 #define voices (hot->voices)
 #define upsamplers (hot->upsamplers)
 #define smoothers (hot->smoothers)
@@ -328,11 +335,27 @@ int Init() {
   return 0;
 }
 
+// The model and polyphony words as one number.
+inline int8_t Setting(const int16_t* params) {
+  return static_cast<int8_t>(op1::ModelSetting(params) * op1::kNumPolyStates + op1::PolySetting(params));
+}
+
+// A new model or polyphony: the voices struck with another setting stop now (rings 0.6, above).
+void FollowSetting(const int16_t* params) {
+  const int8_t setting = Setting(params);
+  if (setting == current_setting) return;
+  current_setting = setting;
+  for (int32_t u = 0; u < op1::kNumVoices; ++u) {
+    if (struck_setting[u] != setting && !allocator.silent(u)) allocator.Forget(u);
+  }
+}
+
 void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const int16_t* params) {
   (void)state;
   const int32_t v = voice;
   if (v < 0 || v >= op1::kNumVoices) return;
   BindScratch();
+  FollowSetting(params);
 #if OP1RINGS_CONTROL_HALVED
   // The block clock ticks on every render, silent voices too (the order tells the blocks apart); a new block's
   // first render runs the batch.
@@ -434,6 +457,8 @@ void NoteOn(int voice, void* state, int32_t velocity, const int16_t* params) {
   const int32_t v = voice;
   if (v < 0 || v >= op1::kNumVoices) return;
   BindScratch();
+  FollowSetting(params);
+  struck_setting[v] = current_setting;
   const int32_t model = op1::ModelSetting(params);
   op1::PolyState poly = PlayedPoly(op1::PolySetting(params));
   // String + reverb: "all" plays as Rings' polyphony 4, its maximum (op1/reverb_bus.h).

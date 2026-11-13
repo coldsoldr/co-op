@@ -251,6 +251,15 @@ The owner's choice after the m1c run: rings is left at 0.4's performance, with:
   4 against 0.4's 1, 2, 4, and new "all" against the build without the 4-voice cap); "all" differs from 4.
 - "all" costs the most: six voices of 14 modes, beside effects or tape recording expect crackles (0.2's device runs).
 
+## 0.6: a new model or polyphony cuts the old voices (2026-11-13)
+
+On an Opus 2 OP-1, a model change while notes were still ringing, then new notes, overran the audio block and the
+core switched rings off: each voice keeps the model and mode count it was struck with, so the old setting's rings
+(60 modes at polyphony 1) played on beside the new setting's voices. Now each voice remembers the setting it was
+struck with (`struck_setting`), and when the sound's model or polyphony changes, every voice struck with another
+one is cut off at its next render (`FollowSetting`, `allocator.Forget`: silent, out of the voice list, reset when
+next struck). The shared reverb clears itself after 50 ms without a carrier, as before.
+
 ## Building and checking
 
 ```sh
