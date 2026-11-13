@@ -145,8 +145,19 @@ class Upsampler {
 // The voice states and the reverb are raw .bss, as kennel's were raw SDRAM: their FFloat members have a constructor
 // (zero is m = 0 with the exponent -100000), and a coop plugin has no static constructors. The loader zeroes .bss,
 // which FFloat reads as zero too (m = 0: the exponent is ignored), and Init sets every object up before any use.
+#if defined(COPA_OPUS)
+// rings 0.9, as an Opus 2 engine (op1-plugins' adapter builds its members with COPA_OPUS): Opus loads a plugin's
+// code and zero-filled data into whichever pool has room, and on an OP-1 (2026-11-14) rings' landed in the far pool,
+// which the display shares and which costs about twice as much while it sends a frame: one note of sympathetic
+// strings took a whole audio block. The voice states and the reverb (~572 KB, read and written every sample) come
+// from the audio pool instead (copa_alloc_audio: opus_alloc_audio, else opus_alloc; zeroed, as .bss is), at Init.
+extern "C" void* copa_alloc_audio(uint32_t bytes);
+uint8_t* states_memory;
+uint8_t* reverb_memory;
+#else
 alignas(RingsVoice) uint8_t states_memory[sizeof(RingsVoice) * op1::kNumVoices];
 alignas(op1::ReverbBus) uint8_t reverb_memory[sizeof(op1::ReverbBus)];
+#endif
 #define states (reinterpret_cast<RingsVoice*>(states_memory))
 #define reverb_bus (*reinterpret_cast<op1::ReverbBus*>(reverb_memory))   // string + reverb's, shared by the voices
 // rings 0.4: the engine's own state that every render writes (the upsamplers' history, the smoothed knobs, the voice
@@ -302,6 +313,11 @@ void BindScratch() {
 inline int32_t ParamToQ31(int16_t p) { return p <= 0 ? 0 : static_cast<int32_t>(p) << 16; }
 
 int Init() {
+#if defined(COPA_OPUS)
+  if (!states_memory) states_memory = static_cast<uint8_t*>(copa_alloc_audio(sizeof(RingsVoice) * op1::kNumVoices));
+  if (!reverb_memory) reverb_memory = static_cast<uint8_t*>(copa_alloc_audio(sizeof(op1::ReverbBus)));
+  if (!states_memory || !reverb_memory) return -1;   // no room: the file is refused, as coop refuses it
+#endif
   // Into L1, most written first (each refused part stays in SDRAM, the output the same): the engine's per-render state
   // (Hot, ~0.8 KB), the modal voices' modes (6 x 10 x 24 bytes), the limiter's soft-limit table (1,028 bytes, read
   // every sample of every voice). Engines share 4,096 bytes of lease (docs/engines.md "L1"); this takes ~3.3 KB and

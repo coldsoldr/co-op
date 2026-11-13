@@ -280,6 +280,15 @@ A typical note clears a few hundred words a string, spread over its first blocks
 clearing the whole line at Init (a line filled with 2^27 at Init plays the same, bit for bit), except after a steal:
 the stealing string's line beyond the copied samples is now cleared instead of left with its own older note.
 
+## 0.9: the voice states in Opus's audio pool (2026-11-14)
+
+Built for Opus 2 (op1-plugins' adapter defines `COPA_OPUS`), the voice states and the shared reverb (~572 KB) are
+no longer .bss: `Init` takes them from `copa_alloc_audio` (the adapter's: `opus_alloc_audio`, else `opus_alloc`,
+zeroed as .bss is) and refuses the file without them. Opus loads a plugin's code and zero-filled data into whichever
+pool has room; on the OP-1 rings landed in the far pool (Opus's figures: bank 2), which the display shares and which
+costs about twice as much while it sends a frame, and a note of sympathetic strings at polyphony 1 took a whole
+audio block. The audio pool (1.3 MB) is not shared with the display. coop's build is unchanged.
+
 ## Building and checking
 
 ```sh
