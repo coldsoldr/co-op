@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 const seed = fileURLToPath(new URL('../../plugins/', import.meta.url));
-const SEED_IDS = ['audition', 'bitcrusher', 'drive', 'ensemble', 'freq_shift', 'grids', 'marbles', 'rings', 'tape_drive', 'tape_echo', 'wavefolder'];
+const SEED_IDS = ['audition', 'bitcrusher', 'cs_hall', 'cs_plate', 'drive', 'ensemble', 'freq_shift', 'grids', 'marbles', 'rings', 'tape_drive', 'tape_echo', 'wavefolder'];
 const seedNames = SEED_IDS.map((id) => (JSON.parse(readFileSync(`${seed}${id}/plugin.json`, 'utf8')) as { name: string }).name);
 
 test('explains how to submit a plugin, per firmware, and copies the prompt', async ({ page, context }) => {
@@ -56,7 +56,7 @@ test('explains how to submit a plugin, per firmware, and copies the prompt', asy
   await expect(coop).not.toContainText('/add-plugin');
 
   await page.getByRole('button', { name: 'Back to plugins' }).click();
-  await expect(page.locator('#panel-plugins article')).toHaveCount(12);
+  await expect(page.locator('#panel-plugins article')).toHaveCount(14);
   await expect(page.getByRole('button', { name: 'Submit a plugin' })).toBeFocused();
 });
 
@@ -71,7 +71,7 @@ test('groups plugins by author, closed with several authors and open for a searc
   await page.getByRole('tab', { name: 'Plugins' }).click();
 
   const someone = page.getByRole('button', { name: /^someone else/ });
-  await expect(page.getByRole('button', { name: /^coldsoldr/ })).toContainText('11 plugins');
+  await expect(page.getByRole('button', { name: /^coldsoldr/ })).toContainText('13 plugins');
   await expect(someone).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('#panel-plugins article')).toHaveCount(0);
 
@@ -313,8 +313,8 @@ test('auditions a synth patch on the OP-1 and puts the sound back', async ({ pag
 test('lists the seed plugins and filters them', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('tab', { name: 'Plugins' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '12 plugins' })).toBeVisible();
-  await expect(page.locator('#panel-plugins article')).toHaveCount(12);
+  await expect(page.getByRole('status').filter({ hasText: '14 plugins' })).toBeVisible();
+  await expect(page.locator('#panel-plugins article')).toHaveCount(14);
   for (const name of seedNames) await expect(page.getByRole('article', { name, exact: true })).toBeVisible();
 
   const rings = page.getByRole('article', { name: 'rings', exact: true });
@@ -334,11 +334,11 @@ test('lists the seed plugins and filters them', async ({ page }) => {
   await page.getByLabel('Kind').selectOption('synth');
   await expect(page.locator('#panel-plugins article')).toHaveCount(2);
   await expect(rings).toBeVisible();
-  await expect(page.getByRole('status').filter({ hasText: '2 of 12 plugins' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '2 of 14 plugins' })).toBeVisible();
   await page.getByLabel('Kind').selectOption('feature');
   await expect(page.locator('#panel-plugins article')).toHaveCount(3);
   await page.getByLabel('Kind').selectOption('fx');
-  await expect(page.locator('#panel-plugins article')).toHaveCount(7);
+  await expect(page.locator('#panel-plugins article')).toHaveCount(9);
   await page.getByRole('searchbox', { name: 'Search plugins' }).fill('tape');
   await expect(page.locator('#panel-plugins article')).toHaveCount(2);
   await page.getByRole('searchbox', { name: 'Search plugins' }).fill('no such plugin');
