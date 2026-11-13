@@ -13,11 +13,12 @@ and it sounds like it came off a worn cassette or a reel-to-reel.
 
 ## Before you start
 
-- **Two builds, one per firmware:** `tape_drive.knl` for hundekraft and
-  `tape_drive.coop` for coop. The Plugins tab offers the one for the
-  firmware chosen in Settings. On coop you need **coop e10** or later, and
-  the controls differ a little (see On coop, below); the rest of this
-  section is about hundekraft.
+- **On opus:** Opus 2 with core 2.31 or later; see On opus, below.
+- **Three builds, one per firmware:** `tape_drive.knl` for hundekraft,
+  `tape_drive.coop` for coop and `tape_drive.opmod` for opus. The Plugins tab
+  offers the one for the firmware chosen in Settings. On coop you need **coop
+  e10** or later, and the controls differ a little (see On coop, below); the
+  rest of this section is about hundekraft.
 - **An original OP-1** (the 2011 model). It does not run on the OP-1 field
   or the OP-Z.
 - **hundekraft 3.0.3** on it, from the
@@ -63,6 +64,27 @@ second page:
 
 Install `tape_drive.coop` from co-op's Plugins tab over USB with coop chosen
 in Settings. It loads at the next power cycle.
+
+## On opus
+
+`tape_drive.opmod` is the coop build ported to Opus 2 by coldsoldr's
+[op1-plugins](https://github.com/coldsoldr/op1-plugins): the same sound,
+screen and controls. It needs Opus 2 with core 2.31 or later.
+
+- Download `tape_drive.opmod` from op1-plugins'
+  [releases](https://github.com/coldsoldr/op1-plugins/releases), copy it into
+  the `mods` folder of the OP-1's disk (disk mode: shift + COM, then T3),
+  eject and restart.
+- op1-plugins also has `cs_fx.opmod`, all nine coldsoldr effects in one
+  file. Use either it or the single files, not both: the second copy of an
+  effect is refused. Switching between them later turns the effects already
+  on sounds back into the filter until you choose them again.
+- Pick it from the effect list (shift + T3) on a synth or drum sound, or on
+  the master in the mixer. Opus has no FX 2 slot for it.
+- The extra controls are those of On coop, above, with **fn** being
+  Opus's FN key.
+- At the synth and the drum it runs in mono (Opus's instrument sound is
+  mono); its stereo is heard on the master.
 
 ## On screen
 
