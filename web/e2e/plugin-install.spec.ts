@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { crc32 } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { stubOp1 } from './op1-stub';
-import { serveHostedOnly } from './plugin-index';
+import { serveHostedOnly, openPlugins } from './plugin-index';
 
 test.beforeEach(async ({ page }) => {
   await serveHostedOnly(page);
@@ -25,7 +25,7 @@ const writesOf = (page: Page): Promise<number[]> =>
 
 async function openInstall(page: Page) {
   await page.goto('./');
-  await page.getByRole('tab', { name: 'Plugins' }).click();
+  await openPlugins(page);
   await page.getByRole('article', { name: 'ensemble', exact: true }).getByRole('button', { name: 'Install ensemble.knl over USB' }).click();
   return page.getByRole('dialog', { name: 'Install ensemble over USB' });
 }
@@ -37,7 +37,7 @@ test('tries a plugin: installs it, then takes it off again after T1', async ({ p
     inventoryAfterRemove: inventoryOf(DELAY),
   });
   await page.goto('./');
-  await page.getByRole('tab', { name: 'Plugins' }).click();
+  await openPlugins(page);
   const card = page.getByRole('article', { name: 'ensemble', exact: true });
   await card.getByRole('button', { name: 'Try ensemble on my OP-1' }).click();
   const install = page.getByRole('dialog', { name: 'Install ensemble over USB' });
@@ -178,7 +178,7 @@ test('changes nothing on the OP-1 when the overwrite is declined in co-op', asyn
 
 test('offers USB install on hundekraft plugin cards and manuals', async ({ page }) => {
   await page.goto('./');
-  await page.getByRole('tab', { name: 'Plugins' }).click();
+  await openPlugins(page);
   await expect(page.getByRole('button', { name: /over USB$/ })).toHaveCount(11);
   await page.getByRole('button', { name: 'Read the manual of rings' }).click();
   await expect(page.getByRole('button', { name: 'Install rings.knl over USB' })).toBeVisible();

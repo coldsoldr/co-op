@@ -26,3 +26,16 @@ export async function serveHostedOnly(page: Page): Promise<void> {
     await route.fulfill({ response, json: hostedOnly(await response.json()) });
   });
 }
+
+/**
+ * Opens the Plugins tab and every author group in it. Groups start closed (a search or filter opens
+ * them), so tests about the cards themselves open them first.
+ */
+export async function openPlugins(page: Page): Promise<void> {
+  await page.getByRole('tab', { name: 'Plugins' }).click();
+  const buttons = page.locator('#panel-plugins .author-group h3 button');
+  await buttons.first().waitFor();
+  for (const button of await buttons.all()) {
+    if ((await button.getAttribute('aria-expanded')) === 'false') await button.click();
+  }
+}

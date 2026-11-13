@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openPlugins } from './plugin-index';
 
 test.describe('Settings: the firmware choice', () => {
   test('choosing coop filters the Plugins tab to coop plugins and shows the OP-1 panel', async ({ page }) => {
@@ -9,11 +10,11 @@ test.describe('Settings: the firmware choice', () => {
     await expect(coop).toBeChecked();
     if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/settings.png`, fullPage: true });
 
-    await page.getByRole('tab', { name: 'Plugins' }).click();
+    await openPlugins(page);
     await expect(page.getByText('Showing plugins for OP-1 (coop), the firmware chosen in Settings.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'On your OP-1' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Read plugins from the OP-1' })).toBeVisible();
-    // Filtered to coop, a lone author's group starts open.
+    // Filtered to coop: coldsoldr's group, opened, holds the coop plugins.
     await expect(page.getByRole('article', { name: 'saw', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Install on OP-1' }).first()).toBeVisible();
     if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/plugins-coop.png`, fullPage: true });

@@ -4,7 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hostedOnly } from './plugin-index';
+import { hostedOnly, openPlugins } from './plugin-index';
 
 const fixtures = fileURLToPath(new URL('../test/fixtures/', import.meta.url));
 
@@ -74,8 +74,8 @@ test('copies an opus plugin into mods/ of a dropped drive, asking before replaci
   const installed = page.getByRole('region', { name: 'Installed opus plugins' });
   await expect(installed.locator('tbody tr')).toHaveCount(1);
 
-  // The opus drive chose the opus profile: the list is filtered to opus plugins, its groups open.
-  await page.getByRole('tab', { name: 'Plugins' }).click();
+  // The opus drive chose the opus profile: the list is filtered to opus plugins; its group, opened, holds the copy button.
+  await openPlugins(page);
   await expect(page.locator('#panel-plugins').getByLabel('Firmware')).toHaveValue('op1/opus');
   const card = page.getByRole('article', { name: 'Test Mod' });
   const copy = card.getByRole('button', { name: 'Copy testmod.opmod to mods/' });
