@@ -260,6 +260,15 @@ struck with (`struck_setting`), and when the sound's model or polyphony changes,
 one is cut off at its next render (`FollowSetting`, `allocator.Forget`: silent, out of the voice list, reset when
 next struck). The shared reverb clears itself after 50 ms without a carrier, as before.
 
+## 0.7: the heavy settings lighter (2026-11-13)
+
+On an Opus 2 OP-1, chords at polyphony 1 and 2 after a model change still overran the audio block (a voice's block
+up to 270,000 cycles, a note on 170,000: the steal's copy of an eight-string or 60-mode voice). Opus's host starts a
+chord's notes one a block, so each note had rendered once before the next stole it, and every steal faded and copied
+a full voice. `op1/voice_allocator.h` now: a voice struck within 8 renders (11.6 ms) counts as fresh, so a chord's
+steals go silent at once with no copy (the ring goes on in the new voice, as Rings' own polyphony does); one fade at
+a time (was two), 2.9 ms (was 5.8). A stolen voice's tail is shorter at polyphony 1, 2 and 4; "all" is unchanged.
+
 ## Building and checking
 
 ```sh
