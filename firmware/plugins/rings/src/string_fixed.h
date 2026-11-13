@@ -187,9 +187,18 @@ class StringFixed {
   int32_t aux_sample_[2];
 
   int32_t write_ptr_;
+  // rings 0.8: line_[write_ptr_ + 1 .. write_ptr_ + clean_] (wrapping) is
+  // the string's own (written or cleared since Init); the rest may be an
+  // older note's. Init clears nothing; each block clears what it can reach
+  // first (Unstale). Clearing all 2,048 words of eight strings at a strike
+  // (sympathetic strings, polyphony 1) took a whole audio block on an
+  // Opus 2 OP-1 (2026-11-13). kStringDelaySize: the whole line is.
+  int32_t clean_;
   // The samples, then guard words mirroring the first ones
   // (src/string_kernel.h).
   int32_t line_[kStringDelaySize + 4];
+
+  void Unstale(int32_t size);
 };
 
 // Upstream Plucker: a noise burst through a comb, then a low-pass. Output in

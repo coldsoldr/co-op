@@ -118,8 +118,8 @@ void StretchLine::CopyRecentFrom(const StretchLine& other, int32_t n) {
 // --- StringFixed ------------------------------------------------------------
 
 void StringFixed::Init() {
-  for (int32_t i = 0; i < kStringDelaySize + kStringKernelGuard; ++i) line_[i] = 0;
   write_ptr_ = 0;
+  clean_ = 0;   // cleared as the string reaches back (Unstale), not here
 
   // Upstream String::Init's defaults.
   frequency_ = 21426141 /* Q(220.0 / OP1RINGS_SAMPLE_RATE, 31) */;
@@ -174,7 +174,36 @@ int32_t StringFixed::CopyRecentFrom(const StringFixed& other) {
     line_[j] = other.line_[j];
   }
   for (int32_t i = 0; i < kStringKernelGuard; ++i) line_[kStringDelaySize + i] = line_[i];
+  // The copied samples are the other's, so this string's own as far as they go and the other's were.
+  if (clean_ > reach) clean_ = reach;
   return reach;
+}
+
+// Before a block of `size` samples: the samples it can read, cleared where they aren't the string's own yet. A block
+// reads back from write_ptr_ + 1 as far as its loop and pickup delays (now and at the block's end), with the FIR's and
+// the interpolation's taps; the margin is CopyRecentFrom's (half again, and 16), and the block's own samples.
+void StringFixed::Unstale(int32_t size) {
+  int32_t delay = loop_delay_ > comb_delay_ ? loop_delay_ : comb_delay_;
+  if (target_delay_ > delay) delay = target_delay_;
+  if (delay < 0) delay = 0;
+  int32_t reach = delay >> 19;
+  reach += (reach >> 1) + 16 + size;
+  if (reach > kStringDelaySize) reach = kStringDelaySize;
+  for (int32_t i = clean_ + 1; i <= reach; ++i) {
+    const int32_t j = (write_ptr_ + i) & (kStringDelaySize - 1);
+    line_[j] = 0;
+    if (j < kStringKernelGuard) line_[kStringDelaySize + j] = 0;
+  }
+  if (reach > clean_) clean_ = reach;
+  // A delay under two samples (a high note, and the first tap of a Hermite read) reads at and just below write_ptr_:
+  // the line's oldest slots, the far end of the circle. Those the block can reach are cleared too, unless they are
+  // the string's own already (they are not counted in clean_, which runs from write_ptr_ + 1 up).
+  for (int32_t k = kStringDelaySize - size - 4; k <= kStringDelaySize; ++k) {
+    if (k <= clean_) continue;
+    const int32_t j = (write_ptr_ + k) & (kStringDelaySize - 1);
+    line_[j] = 0;
+    if (j < kStringKernelGuard) line_[kStringDelaySize + j] = 0;
+  }
 }
 
 void StringFixed::set_frequency(int32_t frequency, int32_t coefficient) {
@@ -348,6 +377,8 @@ void StringFixed::Process(const int32_t* in, int32_t* out, size_t size, StretchL
   }
   PROF_ADD(PROF_STRING_CONFIG, t_config);
   const int32_t n = static_cast<int32_t>(size);
+  const int32_t write_ptr_before = write_ptr_;
+  if (clean_ < kStringDelaySize) Unstale(n);
   int32_t shift = 0;
   while ((1 << shift) < n) ++shift;
   const bool src = src_ratio_ != kHalf;
@@ -364,6 +395,11 @@ void StringFixed::Process(const int32_t* in, int32_t* out, size_t size, StretchL
     } else {
       ProcessInternal<false, false>(in, out, n, shift, nullptr);
     }
+  }
+  if (clean_ < kStringDelaySize) {
+    // The samples written (downwards) are the string's own, ahead of the clean ones.
+    clean_ += (write_ptr_before - write_ptr_) & (kStringDelaySize - 1);
+    if (clean_ > kStringDelaySize) clean_ = kStringDelaySize;
   }
 }
 

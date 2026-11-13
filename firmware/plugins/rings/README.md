@@ -269,6 +269,17 @@ a full voice. `op1/voice_allocator.h` now: a voice struck within 8 renders (11.6
 steals go silent at once with no copy (the ring goes on in the new voice, as Rings' own polyphony does); one fade at
 a time (was two), 2.9 ms (was 5.8). A stolen voice's tail is shorter at polyphony 1, 2 and 4; "all" is unchanged.
 
+## 0.8: a string's line cleared as it is reached (2026-11-14)
+
+On an Opus 2 OP-1, one note of sympathetic strings at polyphony 1 took 598,000 cycles in its first block (the block
+is 580,525) and rings was switched off: the strike's `StringVoice::Configure` cleared all 2,052 words of eight
+strings' delay lines (64 KB of SDRAM). `StringFixed::Init` now clears nothing; `clean_` counts the line above the
+write position that is the string's own, and before each block `Unstale` clears what the block can reach that isn't
+(its delays, half again and 16, the block; and the line's oldest slots, which a delay under two samples reads).
+A typical note clears a few hundred words a string, spread over its first blocks. [C host] The output is the same as
+clearing the whole line at Init (a line filled with 2^27 at Init plays the same, bit for bit), except after a steal:
+the stealing string's line beyond the copied samples is now cleared instead of left with its own older note.
+
 ## Building and checking
 
 ```sh
