@@ -1,0 +1,42 @@
+{
+  "name": "petri",
+  "kind": "fx",
+  "symbol": "FX_petri",
+  "sources": [
+    "petri.cc",
+    "petri_screen.cc",
+    "src/petri_engine.cc",
+    "src/halfband.cc",
+    "src/halfband_bfin.S",
+    "src/voice_bfin.S",
+    "src/space_bfin.S"
+  ],
+  "cflags": [
+    "-fno-tree-loop-distribute-patterns"
+  ],
+  "include_dirs": [
+    "."
+  ],
+  "scratch": 150624,
+  "screen": {"svg": "petri.svg", "symbol": "SCREEN_petri"},
+  "defaults": [
+    16384,
+    13107,
+    13107,
+    16384
+  ],
+  "controls": [
+    {"id": "effect", "name": "effect", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "steps",
+     "steps": ["mosaic", "seq", "glide", "haze", "tunnel", "strum", "blocks", "cut", "arp", "pattern", "warp"],
+     "default": 0, "wrap": true},
+    {"id": "reverse", "name": "reverse", "action": "click", "encoder": "blue", "kind": "latch", "bit": 1},
+    {"id": "filter", "name": "filter", "action": "fn_turn", "encoder": "white", "word": 6, "kind": "continuous",
+     "default": 30000, "fine": true},
+    {"id": "space", "name": "space", "action": "fn_turn", "encoder": "orange", "word": 7, "kind": "continuous",
+     "default": 8000, "fine": true},
+    {"id": "hold", "name": "hold", "action": "click", "encoder": "orange", "kind": "latch", "bit": 0}
+  ],
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "petri: a granular micro-loop effect, inspired by the signal flow of a granular micro-loop pedal. The input is recorded continuously into a 1.49 s stereo buffer at 22.05 kHz; one of eleven effects (mosaic, seq, glide, haze, tunnel, strum, blocks, cut, arp, pattern, warp) plays it back through up to eight loop and grain voices; the wet passes a tone section (an envelope on every repeat, a gentle pitch drift, a resonant low-pass, a small space) and an equal-power mix with the untouched dry. Blue time, green activity, white repeats, orange mix; fn + blue effect, fn + white filter, fn + orange space (shift + fn for fine); blue click reverse, orange click hold (latches). The half-rate path follows Mutable Instruments Clouds (Emilie Gillet, MIT)."
+}

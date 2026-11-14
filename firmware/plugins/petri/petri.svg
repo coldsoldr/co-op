@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" x="0px" y="0px" width="320px" height="160px" viewBox="0 0 320 160">
+<g id="ffront"><rect fill="#010101" stroke="#DFD9FF" stroke-width="1.5" x="-95" y="0" width="190" height="30"></rect><circle id="pl0" fill="#698EFF" stroke="#698EFF" stroke-width="1.5" cx="-60" cy="21" r="2.5"></circle><circle id="pl1" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="-48" cy="21" r="2.5"></circle><circle id="pl2" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="-36" cy="21" r="2.5"></circle><circle id="pl3" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="-24" cy="21" r="2.5"></circle><circle id="pl4" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="-12" cy="21" r="2.5"></circle><circle id="pl5" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="0" cy="21" r="2.5"></circle><circle id="pl6" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="12" cy="21" r="2.5"></circle><circle id="pl7" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="24" cy="21" r="2.5"></circle><circle id="pl8" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="36" cy="21" r="2.5"></circle><circle id="pl9" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="48" cy="21" r="2.5"></circle><circle id="pl10" fill="#010101" stroke="#38354D" stroke-width="1.5" cx="60" cy="21" r="2.5"></circle><line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="square" x1="-60" y1="9" x2="-6" y2="9"></line><line fill="none" stroke="#38354D" stroke-width="1.5" stroke-linecap="square" x1="6" y1="9" x2="60" y2="9"></line></g>
+<g id="fside"><rect fill="#010101" stroke="#DFD9FF" stroke-width="1.5" x="-50" y="0" width="100" height="30"></rect></g>
+<g id="ftop"><rect fill="#010101" stroke="#DFD9FF" stroke-width="1.5" x="-95" y="-50" width="190" height="100"></rect><circle fill="none" stroke="#38354D" stroke-width="1.5" cx="-45" cy="5" r="36"></circle><circle fill="none" stroke="#2B3A70" stroke-width="1.5" cx="20" cy="30" r="10"></circle><circle fill="none" stroke="#00573A" stroke-width="1.5" cx="58" cy="30" r="10"></circle><circle fill="none" stroke="#5C5870" stroke-width="1.5" cx="20" cy="2" r="10"></circle><circle fill="none" stroke="#6E1A2B" stroke-width="1.5" cx="58" cy="2" r="10"></circle><circle fill="none" stroke="#38354D" stroke-width="1.5" cx="20" cy="-34" r="10"></circle><circle fill="none" stroke="#38354D" stroke-width="1.5" cx="58" cy="-34" r="10"></circle><circle id="lrev" fill="#010101" stroke="#2B3A70" stroke-width="1.5" cx="36" cy="-34" r="2.5"></circle><circle id="lhold" fill="#010101" stroke="#6E1A2B" stroke-width="1.5" cx="74" cy="-34" r="2.5"></circle></g>
+<g id="flid"><circle id="lidr" fill="#010101" stroke="#DFD9FF" stroke-width="1.5" cx="-45" cy="5" r="36"></circle><circle fill="none" stroke="#38354D" stroke-width="1.5" cx="-45" cy="5" r="31"></circle><circle fill="none" stroke="#38354D" stroke-width="1.5" cx="-45" cy="5" r="15"></circle></g>
+<g id="ks0"><rect fill="#010101" stroke="#2B3A70" stroke-width="1.5" x="-10" y="0" width="20" height="8"></rect></g>
+<g id="kt0"><circle fill="#010101" stroke="#698EFF" stroke-width="1.5" cx="0" cy="0" r="10"></circle></g>
+<g id="ks1"><rect fill="#010101" stroke="#00573A" stroke-width="1.5" x="-10" y="0" width="20" height="8"></rect></g>
+<g id="kt1"><circle fill="#010101" stroke="#00ED95" stroke-width="1.5" cx="0" cy="0" r="10"></circle></g>
+<g id="ks2"><rect fill="#010101" stroke="#5C5870" stroke-width="1.5" x="-10" y="0" width="20" height="8"></rect></g>
+<g id="kt2"><circle fill="#010101" stroke="#FFFFFF" stroke-width="1.5" cx="0" cy="0" r="10"></circle></g>
+<g id="ks3"><rect fill="#010101" stroke="#6E1A2B" stroke-width="1.5" x="-10" y="0" width="20" height="8"></rect></g>
+<g id="kt3"><circle fill="#010101" stroke="#FF3A5D" stroke-width="1.5" cx="0" cy="0" r="10"></circle></g>
+<g id="ks4"><rect fill="#010101" stroke="#2B3A70" stroke-width="1.5" x="-7" y="0" width="14" height="7"></rect></g>
+<g id="kt4"><circle fill="#010101" stroke="#698EFF" stroke-width="1.5" cx="0" cy="0" r="7"></circle></g>
+<g id="ks5"><rect fill="#010101" stroke="#6E1A2B" stroke-width="1.5" x="-7" y="0" width="14" height="7"></rect></g>
+<g id="kt5"><circle fill="#010101" stroke="#FF3A5D" stroke-width="1.5" cx="0" cy="0" r="7"></circle></g>
+<g id="vd0"><circle id="vc0" fill="#DFD9FF" stroke="none" cx="0" cy="0" r="2.5"></circle></g>
+<g id="vd1"><circle id="vc1" fill="#DFD9FF" stroke="none" cx="0" cy="0" r="2.5"></circle></g>
+<g id="vd2"><circle id="vc2" fill="#DFD9FF" stroke="none" cx="0" cy="0" r="2.5"></circle></g>
+<g id="vd3"><circle id="vc3" fill="#DFD9FF" stroke="none" cx="0" cy="0" r="2.5"></circle></g>
+<g id="vd4"><circle id="vc4" fill="#DFD9FF" stroke="none" cx="0" cy="0" r="2.5"></circle></g>
+<g id="vd5"><circle id="vc5" fill="#DFD9FF" stroke="none" cx="0" cy="0" r="2.5"></circle></g>
+<g id="vd6"><circle id="vc6" fill="#DFD9FF" stroke="none" cx="0" cy="0" r="2.5"></circle></g>
+<g id="vd7"><circle id="vc7" fill="#DFD9FF" stroke="none" cx="0" cy="0" r="2.5"></circle></g>
+</svg>
