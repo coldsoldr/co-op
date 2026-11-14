@@ -225,8 +225,10 @@ void Frame(const char* path) {
   g_px.assign(static_cast<size_t>(kWidth) * kHeight * 3, 0);
   for (const Group& g : g_groups) if (g.visible) DrawGroup(g);
   for (const RLine& l : g_lines) DrawLine(l);
-  const uint8_t dim[3] = { 0x20, 0x20, 0x28 };                        // the popup's corner (kept clear), and the 8 / 16 margins
-  for (int x = 0; x < kWidth; x += 6) { Plot(x, 140 * kScale, dim); }
+  const uint8_t dim[3] = { 0x20, 0x20, 0x28 };                        // the y 140 limit, a dotted guide; CLEAN=1 leaves
+  const char* clean = std::getenv("CLEAN");                            // it out (the catalogue's screenshots)
+  if (!clean || clean[0] != '1')
+    for (int x = 0; x < kWidth; x += 6) { Plot(x, 140 * kScale, dim); }
   if (!WritePng(path)) std::fprintf(stderr, "cannot write %s\n", path);
 }
 
