@@ -23,10 +23,10 @@ blue on coop):
 
 ## Before you start
 
-There are two builds, one per firmware: `rings.knl` for hundekraft and
-`rings.coop` for coop. The Plugins tab offers the one for the firmware chosen
-in Settings. The sound and the four knobs are the same on both; the second
-pages differ (see On coop, below).
+There are three builds, one per firmware: `rings.knl` for hundekraft,
+`rings.coop` for coop and `rings.opmod` for opus. The Plugins tab offers the
+one for the firmware chosen in Settings. The sound and the four knobs are the
+same on all three; the second pages differ (see On coop, below).
 
 - **An original OP-1** (the 2011 model). It does not run on the OP-1 field
   or the OP-Z.
@@ -34,6 +34,7 @@ pages differ (see On coop, below).
   and polyphony controls stop at the ends instead of wrapping round; a coop
   core older than m1c refuses it. Install it from co-op's Plugins tab over
   USB.
+- **On opus:** Opus 2 with core 2.31 or later; see On opus, below.
 - **On hundekraft: hundekraft 3.0.3** on it, from the
   [hundekraft workshop](https://hundekraft.github.io/op1-workshop/).
 - Install it from co-op's Plugins tab over USB, or drop `rings.knl` onto
@@ -80,6 +81,23 @@ polyphony are on fn instead of a second page:
   while recording to tape, **4** is the safe choice.
 - Needs coop e5. On an older coop core the two controls stop at the ends
   instead of wrapping; a core older than m1c does not load the plugin.
+
+## On opus
+
+`rings.opmod` is the coop build ported to Opus 2 by coldsoldr's
+[op1-plugins](https://github.com/coldsoldr/op1-plugins): the same sound,
+screen and controls. It needs Opus 2 with core 2.31 or later.
+
+- Download `rings.opmod` from op1-plugins'
+  [releases](https://github.com/coldsoldr/op1-plugins/releases), copy it into
+  the `mods` folder of the OP-1's disk (disk mode: shift + COM, then T3),
+  eject and restart.
+- Pick it as a synth engine: shift + T1 on the synth page.
+- The model and the polyphony are on fn as in On coop, above, with **fn**
+  being Opus's FN key.
+- Changing the model or the polyphony cuts the notes still ringing.
+- **symp** at polyphony **1** (eight strings a voice) is the heaviest
+  setting.
 
 ## On screen
 

@@ -2,17 +2,32 @@
   "format": 1,
   "id": "cs_hall",
   "name": "cs hall",
-  "firmware": "op1/coop",
+  "builds": [
+    {
+      "firmware": "op1/coop",
+      "file": "cs_hall.coop",
+      "version": "0.2",
+      "requires": "coop e10",
+      "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/cs_hall"
+    },
+    {
+      "firmware": "op1/opus",
+      "link": "https://github.com/coldsoldr/op1-plugins/releases",
+      "version": "2.1.0",
+      "requires": "opus core 2.31",
+      "source": "https://github.com/coldsoldr/op1-plugins"
+    }
+  ],
   "kind": "fx",
   "author": "coldsoldr",
-  "version": "0.2",
   "description": "A wide hall reverb: an eight-line feedback delay network with pre-delay, early reflections, width and a freeze.",
   "license": "GPL-3.0-or-later",
-  "file": "cs_hall.coop",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/cs_hall",
-  "requires": "coop e10",
   "credits": "Half-rate filters from Mutable Instruments Clouds and the soft limit from Rings, by Émilie Gillet (MIT)",
-  "tags": ["effect", "reverb", "hall"]
+  "tags": [
+    "effect",
+    "reverb",
+    "hall"
+  ]
 }

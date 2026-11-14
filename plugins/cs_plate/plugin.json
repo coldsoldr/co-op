@@ -2,17 +2,32 @@
   "format": 1,
   "id": "cs_plate",
   "name": "cs plate",
-  "firmware": "op1/coop",
+  "builds": [
+    {
+      "firmware": "op1/coop",
+      "file": "cs_plate.coop",
+      "version": "0.2",
+      "requires": "coop e10",
+      "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/cs_plate"
+    },
+    {
+      "firmware": "op1/opus",
+      "link": "https://github.com/coldsoldr/op1-plugins/releases",
+      "version": "2.1.0",
+      "requires": "opus core 2.31",
+      "source": "https://github.com/coldsoldr/op1-plugins"
+    }
+  ],
   "kind": "fx",
   "author": "coldsoldr",
-  "version": "0.2",
   "description": "A plate reverb after Dattorro's figure-of-eight design, with eight plate sizes, diffusion, motion and a freeze.",
   "license": "GPL-3.0-or-later",
-  "file": "cs_plate.coop",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/cs_plate",
-  "requires": "coop e10",
   "credits": "Half-rate filters from Mutable Instruments Clouds by Émilie Gillet (MIT)",
-  "tags": ["effect", "reverb", "plate"]
+  "tags": [
+    "effect",
+    "reverb",
+    "plate"
+  ]
 }

@@ -26,6 +26,13 @@
       "version": "0.2",
       "requires": "coop e10",
       "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/bitcrusher"
+    },
+    {
+      "firmware": "op1/opus",
+      "link": "https://github.com/coldsoldr/op1-plugins/releases",
+      "version": "2.1.0",
+      "requires": "opus core 2.31",
+      "source": "https://github.com/coldsoldr/op1-plugins"
     }
   ]
 }
