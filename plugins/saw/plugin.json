@@ -13,7 +13,7 @@
     {
       "firmware": "op1/opus",
       "link": "https://github.com/coldsoldr/op1-plugins/releases",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "requires": "opus core 2.31",
       "source": "https://github.com/coldsoldr/op1-plugins"
     }

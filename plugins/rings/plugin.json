@@ -9,7 +9,11 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "credits": "Port of Mutable Instruments Rings by Émilie Gillet (MIT)",
-  "tags": ["synth", "mutable-instruments", "physical-modelling"],
+  "tags": [
+    "synth",
+    "mutable-instruments",
+    "physical-modelling"
+  ],
   "builds": [
     {
       "firmware": "op1/hundekraft",
@@ -28,7 +32,7 @@
     {
       "firmware": "op1/opus",
       "link": "https://github.com/coldsoldr/op1-plugins/releases",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "requires": "opus core 2.31",
       "source": "https://github.com/coldsoldr/op1-plugins"
     }
