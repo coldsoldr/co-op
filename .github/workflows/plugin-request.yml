@@ -1,0 +1,89 @@
+# When someone offers a plugin (the Submit a plugin form on the site, or the plugin-request issue form), drafts its
+# listing from the repo the issue links and opens a pull request into dev for the owner to review. No model is used:
+# web/scripts/plugin-request-lib.ts reads only facts the repo states, and marks the description and manual as drafts
+# in plugins/log.json for the owner's /polish-plugins skill. Nothing reaches the site until the owner merges.
+#
+# The issue's text is never put into a shell command: the script reads it from the GitHub API by number.
+# Needs "Allow GitHub Actions to create and approve pull requests" (Settings > Actions > General), as plugin-updates
+# does. A pull request opened with the workflow token does not start ci; this job validates before it opens one.
+name: plugin-request
+
+on:
+  issues:
+    types: [opened, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: The plugin-request issue's number
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: plugin-request-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (contains(github.event.issue.labels.*.name, 'plugin-request') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'plugin-request'))
+    runs-on: ubuntu-24.04
+    env:
+      ISSUE: ${{ github.event.issue.number || inputs.issue }}
+    steps:
+      - name: Check the issue number
+        run: case "$ISSUE" in ''|*[!0-9]*) echo "not an issue number: $ISSUE"; exit 1;; esac
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+      - uses: ./.github/actions/setup
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet pillow
+      - name: Draft the listing
+        run: pnpm --filter @co-op/web exec tsx scripts/plugin-request.ts --issue "$ISSUE" --summary "$RUNNER_TEMP/summary.md" --ids "$RUNNER_TEMP/ids.txt"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHON: python
+      - name: Validate
+        run: |
+          if [ -z "$(git status --porcelain -- plugins)" ]; then echo "Nothing drafted."; exit 0; fi
+          pnpm --filter @co-op/web plugins:validate
+      - name: Open or refresh the pull request, and tell the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$(git status --porcelain -- plugins)" ]; then
+            gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/summary.md"
+            exit 0
+          fi
+          branch="bot/plugin-request-$ISSUE"
+          git config user.name coldsoldr
+          git config user.email 349275560+coldsoldr@users.noreply.github.com
+          git switch -C "$branch"
+          git add -- plugins
+          ids=$(paste -sd, "$RUNNER_TEMP/ids.txt" | sed 's/,/, /g')
+          git commit -q -m "feat(plugins): draft listing of $ids from #$ISSUE" -- plugins
+          git push -f origin "$branch"
+          { cat "$RUNNER_TEMP/summary.md"; echo; echo "From #$ISSUE."; } > "$RUNNER_TEMP/body.md"
+          number=$(gh pr list --head "$branch" --base dev --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --body-file "$RUNNER_TEMP/body.md"
+            gh issue comment "$ISSUE" --body "The draft is updated in #$number."
+          else
+            url=$(gh pr create --base dev --head "$branch" --title "Plugin: $ids (draft from #$ISSUE)" --body-file "$RUNNER_TEMP/body.md")
+            { echo "Thanks! co-op drafted the listing: $url"; echo; echo "A maintainer reviews it before it goes on the site."; echo; cat "$RUNNER_TEMP/summary.md"; } > "$RUNNER_TEMP/comment.md"
+            gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/comment.md"
+          fi
+      - name: Tell the issue it needs a person
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment "$ISSUE" --body "co-op couldn't draft a valid listing from this repo automatically. A maintainer will look at it."

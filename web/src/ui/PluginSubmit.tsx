@@ -1,5 +1,9 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { MAX_NOTE, MAX_REQUEST_CONTACT, parseRepo, type RequestFirmware } from '@co-op/shared/plugin-request';
+import { feedbackAvailable, buildConfig, FeedbackError } from '../core/feedback/client';
+import { requestIssueUrl, sendPluginRequest } from '../core/plugins/request';
 import { PLUGIN_PROMPT } from '../core/plugins/submission';
+import { TurnstileWidget } from './Feedback';
 import { RELEASE_GUIDE_HASH } from './pages';
 
 const REPO = 'https://github.com/coldsoldr/co-op';
@@ -125,22 +129,25 @@ function FromYourRepo({ firmware }: { firmware: Firmware }) {
 
       <h3>Send it in</h3>
       <p>
-        With <a href={CLAUDE_CODE_URL}>Claude Code</a>, the listing writes itself:
+        Paste your plugin’s GitHub link. co-op reads your repo and drafts the listing under your name, and a maintainer
+        checks it before it goes up. You get a link to follow along.
       </p>
-      <ol>
-        <li>
-          Fork <a href={REPO}>coldsoldr/co-op</a> on GitHub and clone your fork.
-        </li>
-        <li>
-          Open Claude Code in it and run <code>/add-plugin https://github.com/you/your-plugin</code>. It reads your repo and
-          writes <code>plugins/&lt;id&gt;/</code>: the listing, its manual and screenshot, under your name, and checks them.
-        </li>
-        <li>Read what it wrote against how the plugin really behaves, then push the branch and open a pull request.</li>
-      </ol>
-      <p>
-        No Claude Code? <a href={requestFor(firmware)}>Offer your plugin in an issue</a> with your repo’s link, and a maintainer
-        adds it.
-      </p>
+      <SendRepo firmware={firmware} />
+
+      <details className="submit-hosted">
+        <summary>Or write the listing yourself with Claude Code</summary>
+        <ol>
+          <li>
+            Fork <a href={REPO}>coldsoldr/co-op</a> on GitHub and clone your fork.
+          </li>
+          <li>
+            Open <a href={CLAUDE_CODE_URL}>Claude Code</a> in it and run <code>/add-plugin https://github.com/you/your-plugin</code>.
+            It reads your repo and writes <code>plugins/&lt;id&gt;/</code>: the listing, its manual and screenshot, under
+            your name, and checks them.
+          </li>
+          <li>Read what it wrote against how the plugin really behaves, then push the branch and open a pull request.</li>
+        </ol>
+      </details>
 
       <h3>Updates</h3>
       <p>
@@ -150,6 +157,156 @@ function FromYourRepo({ firmware }: { firmware: Firmware }) {
 
       {hundekraft && <HostedFolder />}
     </>
+  );
+}
+
+/** What to show for a failed send. */
+function requestErrors(error: unknown): string[] {
+  if (!(error instanceof FeedbackError)) return ['Something went wrong sending it.'];
+  if (error.status === 429) return ['Too many submissions from here just now. Try again in a minute.'];
+  return error.errors;
+}
+
+type Sent = { url: string; number: number };
+
+/**
+ * The repo link form. With the Worker it files the request itself, behind Turnstile, with no GitHub
+ * account; without it, the link opens GitHub's issue form with the repo filled in.
+ */
+function SendRepo({ firmware }: { firmware: Firmware }) {
+  const request: RequestFirmware = firmware.request === 'coop' ? 'unsure' : firmware.request;
+  const available = feedbackAvailable();
+  const [repo, setRepo] = useState('');
+  const [note, setNote] = useState('');
+  const [contact, setContact] = useState('');
+  const [token, setToken] = useState<string | null>(null);
+  const [resetKey, setResetKey] = useState(0);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<Sent | null>(null);
+  const [failed, setFailed] = useState<string[] | null>(null);
+  const hintId = useId();
+  const alertRef = useRef<HTMLDivElement>(null);
+  const parsed = parseRepo(repo);
+  const repoOk = parsed !== null && parsed.toLowerCase() !== 'coldsoldr/co-op';
+
+  useEffect(() => {
+    if (failed) alertRef.current?.focus();
+  }, [failed]);
+
+  async function send(): Promise<void> {
+    if (!token || !parsed) return;
+    setSending(true);
+    setFailed(null);
+    try {
+      const payload = { repo: parsed, firmware: request, turnstileToken: token };
+      setSent(
+        await sendPluginRequest({
+          ...payload,
+          ...(note.trim() ? { note: note.trim() } : {}),
+          ...(contact.trim() ? { contact: contact.trim() } : {}),
+        }),
+      );
+    } catch (error) {
+      setFailed(requestErrors(error));
+      setToken(null);
+      setResetKey((k) => k + 1);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (sent) {
+    return (
+      <p role="status" className="submit-sent">
+        Thank you. It is{' '}
+        <a href={sent.url} target="_blank" rel="noreferrer">
+          request #{sent.number}
+        </a>
+        : the draft listing and its pull request will be linked there in a few minutes.
+      </p>
+    );
+  }
+
+  const repoField = (
+    <>
+      <label className="submit-field">
+        Your plugin’s GitHub repo
+        <input
+          type="url"
+          inputMode="url"
+          value={repo}
+          onChange={(e) => setRepo(e.target.value)}
+          placeholder="https://github.com/you/your-plugin"
+          aria-describedby={hintId}
+          required
+        />
+      </label>
+      <p id={hintId} className="muted">
+        {repo.trim() === '' || repoOk ? 'A link to the repo, or to the folder or release the plugin is in.' : 'That isn’t a GitHub repo link.'}
+      </p>
+    </>
+  );
+
+  if (!available) {
+    return (
+      <div className="submit-form">
+        {repoField}
+        <p>
+          {repoOk ? (
+            <a className="button primary" href={requestIssueUrl(request, repo)} target="_blank" rel="noreferrer">
+              Offer your plugin in an issue
+            </a>
+          ) : (
+            <a className="button" href={requestIssueUrl(request)} target="_blank" rel="noreferrer">
+              Offer your plugin in an issue
+            </a>
+          )}
+        </p>
+        <p className="muted">This opens GitHub’s form with your link filled in. You need a GitHub account to send it.</p>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="submit-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void send();
+      }}
+    >
+      {repoField}
+      <label className="submit-field">
+        Anything we should know (optional)
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} maxLength={MAX_NOTE} />
+      </label>
+      <label className="submit-field">
+        Contact (optional, shown publicly on the issue)
+        <input type="text" value={contact} onChange={(e) => setContact(e.target.value)} maxLength={MAX_REQUEST_CONTACT} />
+      </label>
+      <p className="muted">
+        Your link, note and contact go into a public GitHub issue. The check below runs through Cloudflare Turnstile; the
+        co-op Worker uses your IP address only for rate limiting and keeps nothing.
+      </p>
+      <TurnstileWidget siteKey={buildConfig.siteKey ?? ''} onToken={setToken} resetKey={resetKey} />
+      {failed && (
+        <div role="alert" tabIndex={-1} ref={alertRef}>
+          <ul className="error">
+            {failed.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p>
+        <button type="submit" className="primary" disabled={!repoOk || !token || sending}>
+          {sending ? 'Sending…' : 'Send it in'}
+        </button>
+      </p>
+      <p className="muted">
+        No luck here? <a href={requestIssueUrl(request, repo)}>Open the GitHub form instead</a>.
+      </p>
+    </form>
   );
 }
 

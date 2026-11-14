@@ -2,6 +2,7 @@
  * The co-op Worker. Routes:
  *   OPTIONS *              CORS preflight
  *   POST /feedback         files a GitHub issue from the feedback form
+ *   POST /plugin-request   files a plugin-request issue from the Submit a plugin page
  *   POST /op1fun/patches   op1.fun upload proxy (forwards the caller's credentials, stores nothing)
  *   GET  /op1fun/file      op1.fun / S3 file proxy for patch files, previews and pack zips
  * Only origins listed in ALLOWED_ORIGINS get CORS headers; anything else is refused with 403.
@@ -11,11 +12,15 @@ import type { Env } from './env';
 import { handleFeedback } from './feedback';
 import { allowedOrigin, corsHeaders, errors } from './http';
 import { handleFile, handleUpload } from './op1fun';
+import { handlePluginRequest } from './plugin-request';
 
 async function route(request: Request, env: Env, origin: string): Promise<Response> {
   const { pathname } = new URL(request.url);
   if (request.method === 'POST' && pathname === '/feedback') {
     return handleFeedback(request, env, origin);
+  }
+  if (request.method === 'POST' && pathname === '/plugin-request') {
+    return handlePluginRequest(request, env, origin);
   }
   if (request.method === 'POST' && pathname === '/op1fun/patches') {
     return handleUpload(request, env, origin);

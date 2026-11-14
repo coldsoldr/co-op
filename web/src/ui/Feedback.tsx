@@ -74,7 +74,7 @@ const CHECK_FAILED =
   'The verification check failed. Reload the page and try again; privacy extensions and strict tracking protection can make it fail.';
 
 /** The verification widget; reports a token, or null when it expires or fails. */
-function TurnstileWidget({
+export function TurnstileWidget({
   siteKey,
   onToken,
   resetKey,

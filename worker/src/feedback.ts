@@ -11,13 +11,13 @@ export const SUBREQUEST_TIMEOUT_MS = 10_000;
 const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
 /** The body as text, or null once it passes MAX_BODY_BYTES (see readCapped). */
-async function readText(request: Request): Promise<string | null> {
+export async function readText(request: Request): Promise<string | null> {
   const bytes = await readCapped(request, MAX_BODY_BYTES);
   return bytes === null ? null : new TextDecoder().decode(bytes);
 }
 
 /** Both limiters, when bound: per client (IPv4 address or IPv6 /64), then one shared key. */
-async function rateLimited(env: Env, ip: string | null): Promise<boolean> {
+export async function rateLimited(env: Env, ip: string | null): Promise<boolean> {
   if (env.FEEDBACK_LIMIT && !(await env.FEEDBACK_LIMIT.limit({ key: clientKey(ip) })).success) return true;
   if (env.FEEDBACK_GLOBAL_LIMIT && !(await env.FEEDBACK_GLOBAL_LIMIT.limit({ key: 'global' })).success) return true;
   return false;
@@ -27,7 +27,7 @@ async function rateLimited(env: Env, ip: string | null): Promise<boolean> {
  * True only for success: true on a hostname of ALLOWED_ORIGINS. Throws when siteverify cannot
  * answer (network, timeout, non-2xx, non-JSON, internal-error, or a bad secret).
  */
-async function verifyTurnstile(token: string, ip: string | null, env: Env): Promise<boolean> {
+export async function verifyTurnstile(token: string, ip: string | null, env: Env): Promise<boolean> {
   const form = new URLSearchParams({ secret: env.TURNSTILE_SECRET, response: token });
   if (ip !== null) form.set('remoteip', ip);
   const res = await fetch(SITEVERIFY, {

@@ -179,6 +179,7 @@ use them.
 | Route | What it does |
 | --- | --- |
 | `POST /feedback` | Checks the feedback and its Turnstile token, then files a labelled issue in `GITHUB_REPO`. |
+| `POST /plugin-request` | The Submit a plugin form: checks the repo link (a public github.com `owner/repo`) and its Turnstile token under the same limits as feedback, then files a `plugin-request` issue that starts the plugin-request workflow. |
 | `POST /op1fun/patches` | Uploads a patch to op1.fun for the app: requires `X-User-Email` and `X-User-Token`, caps the body at 13 MiB, checks it is a `patches` resource with an AIFF data URI, and forwards it with only those two headers and `Content-Type` to `https://api.op1.fun/v1/patches` (redirects refused). The upstream status and body come back unchanged. |
 | `GET /op1fun/file?url=` | Fetches a patch file or MP3 preview for the app, since op1.fun's S3 bucket sends no CORS headers: `https` only, on `op1.fun`, `www.op1.fun`, `op1fun.s3[.<region>].amazonaws.com`, or `s3[.<region>].amazonaws.com/op1fun/...`, paths ending `.aif`, `.aiff` or `.mp3`. No credentials are sent, redirects are refused, the body is cut off past 20 MB, and it comes back as an attachment with an audio (or `application/octet-stream`) type and a sandboxing CSP. |
 

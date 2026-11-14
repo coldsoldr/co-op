@@ -9,6 +9,7 @@
  */
 import { resolve } from 'node:path';
 import { DEFAULT_PLUGINS_DIR, buildPlugins, formatIssues, loadPlugins, type PluginsResult } from './plugins-lib';
+import { compareLog, readLog } from './plugin-log-lib';
 
 function now(): Date {
   const fixed = process.env.PLUGINS_NOW;
@@ -32,7 +33,12 @@ function report(result: PluginsResult, verb: string): number {
 async function main(args: string[]): Promise<number> {
   const [command, outDir] = args;
   if (command === 'validate' && outDir === undefined) {
-    return report(await loadPlugins(DEFAULT_PLUGINS_DIR, { now: now() }), 'validated');
+    const result = await loadPlugins(DEFAULT_PLUGINS_DIR, { now: now() });
+    // plugins/log.json records when each plugin came and whether its text is still a draft.
+    const { missing, gone } = compareLog(await readLog(DEFAULT_PLUGINS_DIR), result.index.plugins.map((p) => p.id));
+    for (const id of missing) result.warnings.push({ plugin: id, message: 'has no entry in plugins/log.json; run pnpm --filter @co-op/web plugins:log' });
+    for (const id of gone) result.warnings.push({ plugin: id, message: 'is in plugins/log.json but has no folder; run pnpm --filter @co-op/web plugins:log' });
+    return report(result, 'validated');
   }
   if (command === 'build' && outDir !== undefined) {
     return report(await buildPlugins(DEFAULT_PLUGINS_DIR, resolve(outDir), { now: now() }), `built into ${resolve(outDir, 'plugins')}:`);
