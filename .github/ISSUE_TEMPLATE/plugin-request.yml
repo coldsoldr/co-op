@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Want to add a plugin yourself? The guide is in [docs/contributing-plugins.md](https://github.com/coldsoldr/co-op/blob/main/docs/contributing-plugins.md). A plugin runs as firmware code, so a link to its source helps a lot.
+        Offering a hundekraft or opus plugin? Put its GitHub repo in **Source**: co-op drafts the listing from your repo and links the pull request here within a few minutes, for a maintainer to review. The guide is in [docs/contributing-plugins.md](https://github.com/coldsoldr/co-op/blob/main/docs/contributing-plugins.md).
   - type: textarea
     id: idea
     attributes:
@@ -34,5 +34,5 @@ body:
     id: source
     attributes:
       label: Source
-      description: A link to the source code, if there is one.
-      placeholder: https://github.com/...
+      description: The plugin's GitHub repo, or the folder or release it is in.
+      placeholder: https://github.com/you/your-plugin

@@ -26,7 +26,14 @@ test('explains how to submit a plugin, per firmware, and copies the prompt', asy
   await expect(panel.getByRole('heading', { name: 'What your repo needs' })).toBeVisible();
   await expect(panel).toContainText('/add-plugin https://github.com/you/your-plugin');
   await expect(panel).toContainText('Install over USB');
-  await expect(panel.getByRole('link', { name: 'Offer your plugin in an issue' })).toHaveAttribute('href', /template=plugin-request\.yml&firmware=hundekraft$/);
+  // Send it in: the repo link leads. This build has no Turnstile key, so it opens GitHub's form with the link filled in.
+  const offer = panel.getByRole('link', { name: 'Offer your plugin in an issue' });
+  await expect(offer).toHaveAttribute('href', /template=plugin-request\.yml&firmware=hundekraft$/);
+  const repoLink = panel.getByLabel('Your plugin’s GitHub repo');
+  await repoLink.fill('gitlab.com/you/x');
+  await expect(panel).toContainText('That isn’t a GitHub repo link.');
+  await repoLink.fill('https://github.com/you/your-plugin');
+  await expect(offer).toHaveAttribute('href', /firmware=hundekraft&source=https%3A%2F%2Fgithub\.com%2Fyou%2Fyour-plugin$/);
 
   // The older way, the folder hosted by co-op, is still there with its prompt.
   await panel.getByText('Or send the plugin folder itself, for co-op to host').click();

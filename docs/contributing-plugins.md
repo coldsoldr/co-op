@@ -111,9 +111,24 @@ install. `author` is whoever made the plugin, so it shows under their name: a po
 porter's, with the original in `credits`. The manual says what it does and links to its source
 and its full manual.
 
-To list a hundekraft or opus plugin from its GitHub repo, open Claude Code in a clone of co-op
-(your fork, for a pull request) and run `/add-plugin <repo>`: it reads the repo and writes the
-folder, under the plugin's author.
+The easiest way to list a hundekraft or opus plugin is to paste its GitHub repo link on the
+site's Submit a plugin page (no GitHub account needed), or into the plugin-request issue form. That
+files a `plugin-request` issue, and the `plugin-request` workflow
+(`.github/workflows/plugin-request.yml`, `web/scripts/plugin-request-lib.ts`) drafts the listing
+from the repo without a model: one plugin per built `.knl`, `.opmod` or `.coop` in it, with the
+name, author, kind and Opus core from an opus `manifest.txt` or the `.knl` header, the licence,
+the link to the plugin's own folder, a pinned `fileUrl` for a committed `.knl`, and the README's
+paragraph and screen image as a draft description and screenshot. It opens a pull request into dev
+and links it on the issue. Nothing goes on the site until the owner merges it, and the owner's
+`/polish-plugins` skill later rewrites the drafted text.
+
+To write the listing yourself, open Claude Code in a clone of co-op and run `/add-plugin <repo>`:
+it reads the repo, writes the folder under the plugin's author, and, when you aren't the owner,
+forks co-op and offers the pull request.
+
+`plugins/log.json` lists every plugin with the date it was added and whether its description and
+manual are still a draft (`pnpm --filter @co-op/web plugins:log` adds missing folders, and
+`plugins:log drafts` lists the drafts). `plugins:validate` warns about a folder it doesn't list.
 
 A listed hundekraft build whose `.knl` its author publishes on GitHub can also be installed over
 USB from its card, still without co-op hosting a copy. Add `fileUrl`, the file's

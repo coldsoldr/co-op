@@ -1263,6 +1263,24 @@ table.library tbody tr.live-row.on-op1 {
 .submit-hosted {
   margin-top: 32px;
 }
+.submit-form {
+  max-width: 60ch;
+}
+.submit-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  margin-top: 12px;
+}
+.submit-field input,
+.submit-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.submit-form .muted {
+  margin-top: 4px;
+}
 .submit-hosted summary {
   cursor: pointer;
   font-weight: 500;

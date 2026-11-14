@@ -1,0 +1,775 @@
+{
+  "format": 1,
+  "plugins": [
+    {
+      "id": "bitcrusher",
+      "added": "2026-10-29",
+      "draft": false
+    },
+    {
+      "id": "drive",
+      "added": "2026-10-29",
+      "draft": false
+    },
+    {
+      "id": "ensemble",
+      "added": "2026-10-29",
+      "draft": false
+    },
+    {
+      "id": "freq_shift",
+      "added": "2026-10-29",
+      "draft": false
+    },
+    {
+      "id": "grids",
+      "added": "2026-10-29",
+      "draft": false,
+      "source": "https://github.com/coldsoldr/te-op1-cfw"
+    },
+    {
+      "id": "marbles",
+      "added": "2026-10-29",
+      "draft": false,
+      "source": "https://github.com/coldsoldr/te-op1-cfw"
+    },
+    {
+      "id": "rings",
+      "added": "2026-10-29",
+      "draft": false
+    },
+    {
+      "id": "tape_drive",
+      "added": "2026-10-29",
+      "draft": false
+    },
+    {
+      "id": "tape_echo",
+      "added": "2026-10-29",
+      "draft": false
+    },
+    {
+      "id": "wavefolder",
+      "added": "2026-10-29",
+      "draft": false
+    },
+    {
+      "id": "audition",
+      "added": "2026-10-30",
+      "draft": false,
+      "source": "https://github.com/coldsoldr/te-op1-cfw"
+    },
+    {
+      "id": "saw",
+      "added": "2026-11-09",
+      "draft": false
+    },
+    {
+      "id": "aether",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "amp",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "arc",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/ultralazr/op1-musica-obscura"
+    },
+    {
+      "id": "bloodmoon",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/SammiBabe666/Project_Bloodmoon"
+    },
+    {
+      "id": "blot",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "brassophone",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "c64arp",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "castle",
+      "added": "2026-11-11",
+      "draft": false
+    },
+    {
+      "id": "chord",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "clouds",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "composer",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "countin",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "crush",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "dddd",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "dots",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "drumplus",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "elg",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "ente",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "erdtree",
+      "added": "2026-11-11",
+      "draft": false
+    },
+    {
+      "id": "euclid",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "eva",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "fasterase",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "father",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "file",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "fmbell",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "gin",
+      "added": "2026-11-11",
+      "draft": false
+    },
+    {
+      "id": "granular",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "grids_op1r",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "hail",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "hold",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "hollowsaint",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/SammiBabe666/Project_Hollow_Saint"
+    },
+    {
+      "id": "in_a_room",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/ultralazr/op1-musica-obscura"
+    },
+    {
+      "id": "juni",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "juni_chorus",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "latch",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "lineclock",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "markers",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "mbira",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "midicc",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "midiseq",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "mixtur",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/ultralazr/op1-musica-obscura"
+    },
+    {
+      "id": "moai",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/fungiboletus/op-moai"
+    },
+    {
+      "id": "monolit",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "naming",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "nostromo",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "oblique",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "opus.amp",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.bend",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.bitcrush",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.bridge",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.chorus",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.dice",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.dimension",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.dx",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.endlesslatch",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.filter",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.halloween",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.iter",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.matrix",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.monitor",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.orbit3d",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.outatime",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.overdrive",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.plate",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.playpause",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.presettools",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.scales",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.sim",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.splash",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.stockhelp",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.tapeundo",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.triggerguard",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "opus.zoom",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "oracle",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "outatime",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "oxbow",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "palme",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/ultralazr/op1-musica-obscura"
+    },
+    {
+      "id": "peal",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "pew",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "plate",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "punch",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "quad",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "rackverb",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "randomiser",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r-src"
+    },
+    {
+      "id": "reactor",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "reverb",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "samplerplus",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "sampletools",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "scale",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "sid",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "sister",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "snap",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "snowglobe",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "steve",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "strum",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "stutter",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "supersaw",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "sysmon",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "taffy",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "tape",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "tapes",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "trail",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "undo",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "usbout",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "id": "vapora",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "vox",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "warble",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "washer",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "wavetable",
+      "added": "2026-11-11",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "cs_hall",
+      "added": "2026-11-13",
+      "draft": false
+    },
+    {
+      "id": "cs_plate",
+      "added": "2026-11-13",
+      "draft": false
+    },
+    {
+      "id": "bubbler",
+      "added": "2026-11-14",
+      "draft": false,
+      "source": "https://github.com/VolkerJunginger/OP-1"
+    },
+    {
+      "id": "delayed",
+      "added": "2026-11-14",
+      "draft": false,
+      "source": "https://github.com/VolkerJunginger/OP-1"
+    },
+    {
+      "id": "fickle",
+      "added": "2026-11-14",
+      "draft": false
+    },
+    {
+      "id": "fluke",
+      "added": "2026-11-14",
+      "draft": false,
+      "source": "https://github.com/VolkerJunginger/OP-1"
+    },
+    {
+      "id": "midireverb",
+      "added": "2026-11-14",
+      "draft": false,
+      "source": "https://github.com/VolkerJunginger/OP-1"
+    },
+    {
+      "id": "petri",
+      "added": "2026-11-14",
+      "draft": false
+    },
+    {
+      "id": "pitchdelay",
+      "added": "2026-11-14",
+      "draft": false,
+      "source": "https://github.com/VolkerJunginger/OP-1"
+    },
+    {
+      "id": "pulsesync",
+      "added": "2026-11-14",
+      "draft": false,
+      "source": "https://github.com/VolkerJunginger/OP-1"
+    }
+  ]
+}

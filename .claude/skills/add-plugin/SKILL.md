@@ -110,32 +110,54 @@ Fix every validation error. Warnings about a `.knl` header author only concern h
 listed plugin. The e2e test lists the author groups it expects: if this is a new author, the test still passes,
 since it checks for named groups, not their count.
 
-## 4. Commit
+## 4. Log it
 
-First see whose clone this is: `git remote get-url origin`.
+`plugins/log.json` records every plugin and when it came, so the owner knows which listings still need their text
+rewritten. Add this one (`pnpm --filter @co-op/web plugins:log` adds any folder missing from it, dated by git), and
+since you wrote the description and manual yourself from the repo, it is not a draft:
 
-**The co-op owner's clone** (origin is `coldsoldr/co-op`). Other Claude sessions commit on this same working tree
-and `dev` branch. Stage and commit in one command with the paths named, so nothing of theirs comes along and nothing
-of yours is left staged:
+```json
+{ "id": "<id>", "added": "<today, YYYY-MM-DD>", "source": "https://github.com/<repo>", "draft": false }
+```
+
+`plugins:validate` warns about a folder with no entry.
+
+## 5. Commit
+
+First see whose clone this is and who is signed in: `git remote get-url origin` and `gh api user --jq .login`.
+
+**The co-op owner's clone** (origin is `coldsoldr/co-op` and the login is `coldsoldr`). Other Claude sessions commit
+on this same working tree and `dev` branch. Stage and commit in one command with the paths named, so nothing of theirs
+comes along and nothing of yours is left staged:
 
 ```
-git add plugins/<id> && git commit -m "feat(plugins): list <Name> by <author>" -- plugins/<id>
+git add plugins/<id> plugins/log.json && git commit -m "feat(plugins): list <Name> by <author>" -- plugins/<id> plugins/log.json
 ```
 
 Commits are by coldsoldr only: no Co-Authored-By or Claude-Session lines. Push only when the user asks
 (`git push origin dev`); the dev site at `/co-op/dev/` updates after CI passes, in about 20 minutes.
 
-**A contributor's fork** (any other origin). They are submitting their plugin from the site's Submit a plugin page.
-Work on a branch of its own, commit as them, and offer the pull request:
+**Anyone else** (a contributor; any other login). They can't push to coldsoldr/co-op, so the listing has to come in
+as a pull request from their own fork, whether they cloned a fork or co-op itself. A local commit on `dev` alone
+reaches no one. If origin is still `coldsoldr/co-op`, make the fork first and point origin at it (this keeps
+coldsoldr/co-op as `upstream`):
 
 ```
-git switch -c plugin/<id>
-git add plugins/<id> && git commit -m "feat(plugins): list <Name> by <author>" -- plugins/<id>
+gh repo fork --remote --remote-name origin
+```
+
+Then work on a branch of its own off co-op's dev, commit as them, and offer the pull request:
+
+```
+git fetch upstream dev 2>/dev/null || git fetch origin dev
+git switch -c plugin/<id> FETCH_HEAD
+git add plugins/<id> plugins/log.json && git commit -m "feat(plugins): list <Name> by <author>" -- plugins/<id> plugins/log.json
 ```
 
 Ask before pushing. Then `git push -u origin plugin/<id>` and
-`gh pr create --repo coldsoldr/co-op --title "Plugin: <Name> by <author>" --body "<what it is, its repo, and that /add-plugin wrote the listing>"`.
-The pull request's check runs the validator again.
+`gh pr create --repo coldsoldr/co-op --base dev --title "Plugin: <Name> by <author>" --body "<what it is, its repo, and that /add-plugin wrote the listing>"`.
+Give them the pull request's link. The pull request's check runs the validator again. Without Claude Code or git,
+there is an easier way: paste the repo link into the site's Submit a plugin page, and co-op drafts the listing itself.
 
 After a listing exists, the daily `plugin-updates` workflow keeps its file and version current (a pull request into
 dev); re-run this skill only when the plugin's controls or description change. Point authors at
