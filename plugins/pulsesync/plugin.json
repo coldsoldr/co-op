@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "id": "pulsesync",
+  "name": "Pulse Sync",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "ESC_CODE",
+  "description": "Syncs the OP-1 to an analog pulse clock on its line input, so a drum machine, sequencer or modular clock can set the tempo. It reads 24, 48 or 96 PPQ, or quarter to thirty-second note pulses, turns them into the OP-1's 24 PPQ MIDI clock, and can mute the clicks from monitoring.",
+  "license": "GPL-3.0-only",
+  "link": "https://github.com/VolkerJunginger/OP-1/tree/main/Pulse-Sync",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/VolkerJunginger/OP-1/tree/main/Pulse-Sync/Source",
+  "requires": "opus 2.0",
+  "tags": ["feature", "sync", "clock", "midi", "opus"]
+}

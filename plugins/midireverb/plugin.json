@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "id": "midireverb",
+  "name": "Midi-Reverb",
+  "firmware": "op1/opus",
+  "kind": "fx",
+  "author": "ESC_CODE",
+  "description": "A mono reverb and effects unit that runs the programs of three late-80s Alesis ROMs: MidiVerb I, MidiVerb II and MidiFex. You supply your own ROM dumps; none come with it. Feedback, Cutoff, Mix and Program on the four encoders, with an Original engine and an approximate Low CPU one.",
+  "license": "GPL-3.0-only",
+  "link": "https://github.com/VolkerJunginger/OP-1/tree/main/Midi-Reverb",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/VolkerJunginger/OP-1/tree/main/Midi-Reverb/Source",
+  "requires": "opus core 2.31",
+  "credits": "Eric Brombaugh's MIDIVerb_RE (with Paul Schreiber's reverse engineering) and thement's midiverb_emulator",
+  "tags": ["fx", "reverb", "rom", "alesis", "opus"]
+}

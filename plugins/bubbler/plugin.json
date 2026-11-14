@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "id": "bubbler",
+  "name": "Bubbler",
+  "firmware": "op1/opus",
+  "kind": "fx",
+  "author": "ESC_CODE",
+  "description": "A granular delay: the input is chopped into overlapping grains that repeat with their own timing, size, pitch and direction. Density sets how many grains overlap, and a filter with resonance colours the feedback. A port of Tom Erbe's +bubbler from SoundHack's Delay Trio.",
+  "license": "GPL-3.0-or-later",
+  "link": "https://github.com/VolkerJunginger/OP-1/tree/main/Delay-Trio",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/VolkerJunginger/OP-1/tree/main/Delay-Trio/Source",
+  "requires": "opus core 2.31",
+  "credits": "Tom Erbe / SoundHack's +bubbler (BSD-style licence)",
+  "tags": ["fx", "delay", "granular", "soundhack", "opus"]
+}
