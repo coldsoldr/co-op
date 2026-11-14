@@ -1,0 +1,38 @@
+{
+  "name": "fickle",
+  "kind": "fx",
+  "symbol": "FX_fickle",
+  "sources": [
+    "fickle.cc",
+    "fickle_screen.cc"
+  ],
+  "cflags": [
+    "-fno-tree-loop-distribute-patterns"
+  ],
+  "include_dirs": [
+    "."
+  ],
+  "scratch": 171936,
+  "screen": {"svg": "fickle.svg", "symbol": "SCREEN_fickle"},
+  "defaults": [
+    14000,
+    12000,
+    29372,
+    16384
+  ],
+  "controls": [
+    {"id": "freeze", "name": "freeze", "action": "click", "encoder": "orange", "kind": "latch", "bit": 0},
+    {"id": "loop", "name": "loop", "action": "click", "encoder": "white", "kind": "latch", "bit": 1},
+    {"id": "dub", "name": "dub", "action": "click", "encoder": "green", "kind": "latch", "bit": 2},
+    {"id": "wet", "name": "wet", "action": "fn_turn", "encoder": "blue", "word": 5, "kind": "steps",
+     "steps": ["reverb", "delay", "slip"], "default": 0, "wrap": true},
+    {"id": "routing", "name": "routing", "action": "fn_turn", "encoder": "green", "word": 6, "kind": "steps",
+     "steps": ["in", "both", "loop"], "default": 1},
+    {"id": "loopmode", "name": "loopmode", "action": "fn_turn", "encoder": "white", "word": 7, "kind": "steps",
+     "steps": ["tape 1", "tape 2", "tape .5", "tape 1.5", "rev 1", "rev 2", "rev .5", "ping", "env soft",
+               "env hard", "stretch", "str slow", "str rev"], "default": 0, "wrap": true}
+  ],
+  "author": "coldsoldr",
+  "version": "0.1",
+  "description": "fickle: two processors that feed each other on one clock, inspired by the signal flow of a two-channel micro-looper pedal (coldsoldr, GPL-3.0-or-later). A wet channel (reverb, delay or slip, with a freeze) and an always-listening micro-looper (tape speeds, reverse, ping-pong, envelope retrigger, granular stretch; overdub), both at a clock from 32 kHz down to 2 kHz: lower is longer, darker and grittier. Stereo at every position. Blue time, green modify, white clock, orange mix; orange click freeze, white click loop, green click dub; fn + blue the wet mode, fn + green routing (in, both, loop), fn + white the loop mode."
+}
