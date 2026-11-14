@@ -37,7 +37,8 @@ jobs:
       ISSUE: ${{ github.event.issue.number || inputs.issue }}
     steps:
       - name: Check the issue number
-        run: case "$ISSUE" in ''|*[!0-9]*) echo "not an issue number: $ISSUE"; exit 1;; esac
+        run: |
+          case "$ISSUE" in ''|*[!0-9]*) echo "not an issue number: $ISSUE"; exit 1;; esac
       - uses: actions/checkout@v5
         with:
           ref: dev
