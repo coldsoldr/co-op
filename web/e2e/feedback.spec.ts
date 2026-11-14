@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+/** The newest release is the site's own version, so a release never has to edit this test. */
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
 
 test('shows the site version in the footer', async ({ page }) => {
   await page.goto('./');
@@ -11,7 +15,7 @@ test('opens the changelog from the footer, newest first, and has a link of its o
   await expect(page.getByRole('heading', { name: 'Changelog' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Library' })).toBeHidden();
   const releases = page.locator('.release summary h3');
-  await expect(releases.first()).toHaveText('V0.9.0');
+  await expect(releases.first()).toHaveText(`V${version}`);
   await expect(page.locator('.release').first()).toHaveAttribute('open', '');
   await expect(page.locator('.release').nth(1)).not.toHaveAttribute('open', '');
   await page.getByText('V0.8.0', { exact: true }).click();
