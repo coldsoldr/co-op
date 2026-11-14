@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "id": "pitchdelay",
+  "name": "Pitch Delay",
+  "firmware": "op1/opus",
+  "kind": "fx",
+  "author": "ESC_CODE",
+  "description": "A delay that shifts the pitch of its repeats, with an octave control and feedback up to 200%, so echoes can climb or fall with each pass. Loop Depth sets how much of the buffer the shifter reads. A port of Tom Erbe's +pitchdelay from SoundHack's Delay Trio.",
+  "license": "GPL-3.0-or-later",
+  "link": "https://github.com/VolkerJunginger/OP-1/tree/main/Delay-Trio",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/VolkerJunginger/OP-1/tree/main/Delay-Trio/Source",
+  "requires": "opus core 2.31",
+  "credits": "Tom Erbe / SoundHack's +pitchdelay (BSD-style licence)",
+  "tags": ["fx", "delay", "pitch-shift", "soundhack", "opus"]
+}
