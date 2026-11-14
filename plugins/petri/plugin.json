@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "id": "petri",
+  "name": "petri",
+  "builds": [
+    {
+      "firmware": "op1/coop",
+      "file": "petri.coop",
+      "version": "0.1",
+      "requires": "coop e10",
+      "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/petri"
+    },
+    {
+      "firmware": "op1/opus",
+      "link": "https://github.com/coldsoldr/op1-plugins/releases",
+      "version": "2.2.5",
+      "requires": "opus core 2.31",
+      "source": "https://github.com/coldsoldr/op1-plugins"
+    }
+  ],
+  "kind": "fx",
+  "author": "coldsoldr",
+  "description": "A granular micro-loop effect: eleven ways to replay a constantly recorded stereo buffer as loops, grains, glitches, arpeggios and tap patterns, with a filter, a small space, hold and reverse.",
+  "license": "GPL-3.0-or-later",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "credits": "Half-rate filters from Mutable Instruments Clouds by Émilie Gillet (MIT)",
+  "tags": [
+    "effect",
+    "granular",
+    "looper",
+    "glitch",
+    "ambient"
+  ]
+}
