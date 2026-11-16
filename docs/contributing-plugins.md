@@ -126,6 +126,12 @@ To write the listing yourself, open Claude Code in a clone of co-op and run `/ad
 it reads the repo, writes the folder under the plugin's author, and, when you aren't the owner,
 forks co-op and offers the pull request.
 
+Once one of your plugins is listed, a new plugin you add to the same repo is picked up by itself: the
+daily `plugin-updates` workflow also looks in every listed repo for built plugin files co-op doesn't
+list yet, drafts them the same way, and opens a pull request into dev. A draft the owner turns down
+goes in the `ignore` list of `plugins/log.json` (`owner/repo/path/to/file.opmod`, or `owner/repo`
+for a whole repo), so it doesn't come back.
+
 `plugins/log.json` lists every plugin with the date it was added and whether its description and
 manual are still a draft (`pnpm --filter @co-op/web plugins:log` adds missing folders, and
 `plugins:log drafts` lists the drafts). `plugins:validate` warns about a folder it doesn't list.

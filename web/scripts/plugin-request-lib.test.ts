@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  aboutName,
   clip,
+  embeddedManifest,
+  imageNamed,
   draftListings,
   findPluginFiles,
   firstParagraph,
@@ -24,7 +27,7 @@ const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
 function repo(
   name: string,
   files: Record<string, string | Uint8Array>,
-  extra: { license?: string; release?: string; description?: string } = {},
+  extra: { license?: string; release?: string; description?: string; pages?: string } = {},
 ): Remote {
   const raw = (p: string) => `https://raw.githubusercontent.com/${name}/main/${p.split('/').map(encodeURIComponent).join('/')}`;
   const byUrl = new Map(Object.entries(files).map(([p, v]) => [raw(p), typeof v === 'string' ? enc(v) : v]));
@@ -36,6 +39,7 @@ function repo(
       if (path === `repos/${name}/git/trees/main?recursive=1`) return { tree: Object.keys(files).map((p) => ({ path: p, type: 'blob' })) };
       if (path === `repos/${name}/releases/latest`) return extra.release ? { tag_name: extra.release } : null;
       if (path.startsWith(`repos/${name}/commits?path=`)) return [{ sha: 'f'.repeat(40) }];
+      if (path === `repos/${name}/pages`) return extra.pages ? { html_url: extra.pages, source: { path: '/docs' } } : null;
       return null;
     },
     download: async (url) => byUrl.get(url) ?? null,
@@ -173,5 +177,74 @@ describe('drafting listings', () => {
   it('says so for a repo it cannot read', async () => {
     const r = await draftListings('a/missing', null, repo('a/other', {}), new Map());
     expect(r.problems[0]).toMatch(/isn't a public repo/);
+  });
+});
+
+describe('new plugins in a listed author’s repo', () => {
+  const opmod = (manifest: string): Uint8Array => {
+    const body = enc(`\0\0binary\0opmod     1\n${manifest}\0more`);
+    const out = new Uint8Array(4 + body.length);
+    out.set(enc('OPMD'));
+    out.set(body, 4);
+    return out;
+  };
+  const readme = '# OP-1\n\n## FLUKE, HITS and GRIP\n\n**FLUKE 2.0.0** is a sequencer. **HITS 1.0.0** is a 24-pad drum engine, and **GRIP 1.0.0** is a compressor. The set needs Opus core 2.57.\n';
+  const esc = repo(
+    'esc/OP-1',
+    {
+      'README.md': readme,
+      'Fluke/README.md': '# Fluke\n\nA generative sequencer for the OP-1 and its synths.\n',
+      'Fluke/fluke.opmod': opmod('id esc.fluke\nname Fluke\nauthor Volker\nadds synth sequencer fluke\n'),
+      'docs/downloads/fluke.opmod': opmod('id esc.fluke\nname Fluke\n'),
+      'docs/downloads/hits.opmod': opmod('id esc.braidslive\nname Hits\nauthor esc\nversion 1.0.0\ncore 2.57\nadds engine hits\n'),
+      'docs/downloads/grip.opmod': opmod('id op1lab.cleancomp\nname GRIP\nauthor op1lab\ncore 2.34\nneeds esc.braidslive 1.0.0\nadds effect grip\n'),
+      'docs/screens/hits.png': 'png',
+      'docs/index.html': '<html>',
+    },
+    { pages: 'https://esc.github.io/OP-1/' },
+  );
+  const listed = new Map<string, Record<string, unknown>>([['fluke', { name: 'Fluke', author: 'ESC_CODE', source: 'https://github.com/esc/OP-1' }]]);
+
+  it('reads the manifest an .opmod carries', () => {
+    expect(embeddedManifest(opmod('id esc.braidslive\nname Hits\nadds engine hits\n'))).toMatchObject({ id: 'esc.braidslive', name: 'Hits', adds: 'engine hits' });
+    expect(embeddedManifest(enc('not an opmod'))).toBeNull();
+  });
+
+  it('takes the clause about one plugin from a paragraph about several', () => {
+    const p = 'FLUKE 2.0.0 is a sequencer. HITS 1.0.0 is a 24-pad drum engine, FLUX 1.0.0 adds two LFOs per HITS pad, and GRIP 1.0.0 is a compressor.';
+    expect(aboutName(p, ['hits'])).toBe('HITS is a 24-pad drum engine.');
+    expect(aboutName(p, ['flux'])).toBe('FLUX adds two LFOs per HITS pad.');
+    expect(aboutName(p, ['grip'])).toBe('GRIP is a compressor.');
+    expect(aboutName(p, ['nope'])).toBeNull();
+  });
+
+  it('finds an image named after the plugin, a screens folder first', () => {
+    expect(imageNamed(['art/hits.png', 'docs/screens/hits.png', 'docs/screens/flux.png'], ['Hits'])).toBe('docs/screens/hits.png');
+    expect(imageNamed(['docs/screens/flux.png'], ['hits'])).toBeNull();
+  });
+
+  it('drafts only the new ones, under the repo’s listed author, linked to its Pages site', async () => {
+    const r = await draftListings('esc/OP-1', null, esc, listed, { onlyFiles: true });
+    expect(r.skipped).toEqual(['fluke']);
+    expect(r.drafts.map((d) => d.id)).toEqual(['grip', 'hits']);
+    const hits = r.drafts.find((d) => d.id === 'hits');
+    expect(hits?.manifest).toMatchObject({
+      name: 'Hits',
+      kind: 'synth',
+      author: 'ESC_CODE',
+      link: 'https://esc.github.io/OP-1/',
+      requires: 'opus 2.57',
+      description: 'HITS is a 24-pad drum engine.',
+    });
+    expect(hits?.screenshot).toBe('https://raw.githubusercontent.com/esc/OP-1/main/docs/screens/hits.png');
+    expect(hits?.notes.join(' ')).toMatch(/its own manifest says `esc`/);
+    expect(r.drafts.find((d) => d.id === 'grip')?.notes.join(' ')).toMatch(/needs Hits/);
+  });
+
+  it('skips ignored files, and a repo with no plugin file at all', async () => {
+    const r = await draftListings('esc/OP-1', null, esc, listed, { onlyFiles: true, ignore: (p) => p === 'docs/downloads/grip.opmod' });
+    expect(r.drafts.map((d) => d.id)).toEqual(['hits']);
+    const bare = repo('a/tool', { 'README.md': '# Tool\n\nA sequencer for opus that plays chords in time.\n' });
+    expect((await draftListings('a/tool', null, bare, new Map(), { onlyFiles: true })).drafts).toHaveLength(0);
   });
 });
