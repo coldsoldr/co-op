@@ -4,6 +4,10 @@
  *
  *   tsx scripts/plugin-request.ts --issue 12 [--summary FILE] [--ids FILE]
  *   tsx scripts/plugin-request.ts --repo owner/repo [--firmware opus] [--summary FILE] [--ids FILE]
+ *   tsx scripts/plugin-request.ts --watch [--dry] [--summary FILE] [--ids FILE]
+ *
+ * --watch looks in every repo plugins/log.json names for built plugin files not listed yet (the daily
+ * plugin-updates workflow's new-plugins job); --dry only reports them.
  *
  * --summary writes the markdown for the pull request and the issue comment; --ids writes the drafted ids,
  * one per line. GH_TOKEN (or GITHUB_TOKEN) authenticates the GitHub API. Screenshots are made with
@@ -117,7 +121,7 @@ function summary(result: DraftResult, shots: Map<string, 'image' | 'card'>, issu
       lines.push(`- ${String(b.firmware).slice(4)}${b.version ? ` ${safe(b.version)}` : ''}${b.requires ? ` (needs ${safe(b.requires)})` : ''}: ${String(b.link)}`);
       if (b.fileUrl) lines.push(`  - installs over USB from ${String(b.fileUrl)}`);
     }
-    lines.push(`- screenshot: ${shots.get(d.id) === 'image' ? 'from the README' : 'a name card'}`);
+    if (shots.size > 0) lines.push(`- screenshot: ${shots.get(d.id) === 'image' ? 'from the repo' : 'a name card'}`);
     for (const n of d.notes) lines.push(`- ${neutraliseMentions(n)}`);
     lines.push('');
   }
@@ -129,15 +133,8 @@ function summary(result: DraftResult, shots: Map<string, 'image' | 'card'>, issu
   return `${lines.join('\n').trim()}\n`;
 }
 
-const found = await target();
-const summaryFile = opt('--summary');
-const idsFile = opt('--ids');
-if (typeof found === 'string') {
-  console.log(found);
-  if (summaryFile) await writeFile(summaryFile, `${found}\n`);
-  if (idsFile) await writeFile(idsFile, '');
-} else {
-  const result = await draftListings(found.repo, found.firmware, remote, await existing());
+/** Writes the drafts into plugins/ with their log entries; returns how each screenshot was made. */
+async function writeDrafts(result: DraftResult, issue: number | undefined): Promise<Map<string, 'image' | 'card'>> {
   const scratch = await mkdtemp(join(tmpdir(), 'co-op-request-'));
   const shots = new Map<string, 'image' | 'card'>();
   let log = await readLog(pluginsDir);
@@ -152,7 +149,7 @@ if (typeof found === 'string') {
         id: d.id,
         added: today,
         source: `https://github.com/${result.repo}`,
-        ...(found.issue === undefined ? {} : { issue: found.issue }),
+        ...(issue === undefined ? {} : { issue }),
         draft: true,
       });
     }
@@ -160,8 +157,71 @@ if (typeof found === 'string') {
     await rm(scratch, { recursive: true, force: true });
   }
   if (result.drafts.length > 0) await writeLog(pluginsDir, log);
-  const text = summary(result, shots, found.issue);
+  return shots;
+}
+
+/** Repos the workshop and opus refresher (listed_plugins.py) keeps; the watch leaves them to it. */
+const REFRESHED_REPOS = ['hundekraft/op1-workshop', 'lizardman245/opus'];
+
+/**
+ * --watch: every repo plugins/log.json names, looked at for plugin files that aren't listed yet. A repo or file
+ * in the log's ignore list is skipped, so a draft the owner turned down doesn't come back.
+ */
+async function watch(dry: boolean): Promise<{ text: string; ids: string[] }> {
+  const log = await readLog(pluginsDir);
+  const ignore = new Set((log.ignore ?? []).map((i) => i.toLowerCase()));
+  const repos = [
+    ...new Set(log.plugins.map((e) => (e.source === undefined ? null : parseRepo(e.source))).filter((r): r is string => r !== null)),
+  ].filter((r) => !REFRESHED_REPOS.includes(r.toLowerCase()) && !ignore.has(r.toLowerCase()));
+  const sections: string[] = [];
+  const ids: string[] = [];
+  const known = await existing();
+  for (const repo of repos.sort((a, b) => a.localeCompare(b))) {
+    let result: DraftResult;
+    try {
+      result = await draftListings(repo, null, remote, known, { onlyFiles: true, ignore: (path) => ignore.has(`${repo}/${path}`.toLowerCase()) });
+    } catch (e) {
+      sections.push(`${repo}: the check failed: ${e instanceof Error ? e.message : String(e)}`);
+      continue;
+    }
+    console.log(`${repo}: ${result.drafts.length} new, ${result.skipped.length} listed`);
+    if (result.drafts.length === 0) continue;
+    const shots = dry ? new Map<string, 'image' | 'card'>() : await writeDrafts(result, undefined);
+    for (const d of result.drafts) {
+      ids.push(d.id);
+      known.set(d.id, d.manifest);
+    }
+    const ignoreHow = result.drafts.map((d) => `\`${result.repo}/${d.path}\``).join(', ');
+    sections.push(
+      `${summary({ ...result, skipped: [], problems: [] }, shots, undefined).trim()}\n\nTo turn one down for good, close this or drop its folder, and add its path to \`ignore\` in plugins/log.json: ${ignoreHow}.`,
+    );
+  }
+  const text =
+    sections.length === 0
+      ? 'No new plugins in the listed authors’ repos.\n'
+      : `New plugins in repos co-op already lists, drafted the way a submission is.\n\n${sections.join('\n\n---\n\n')}\n`;
+  return { text, ids };
+}
+
+const summaryFile = opt('--summary');
+const idsFile = opt('--ids');
+if (args.includes('--watch')) {
+  const { text, ids } = await watch(args.includes('--dry'));
   console.log(text);
   if (summaryFile) await writeFile(summaryFile, text);
-  if (idsFile) await writeFile(idsFile, result.drafts.map((d) => d.id).join('\n'));
+  if (idsFile) await writeFile(idsFile, ids.join('\n'));
+} else {
+  const found = await target();
+  if (typeof found === 'string') {
+    console.log(found);
+    if (summaryFile) await writeFile(summaryFile, `${found}\n`);
+    if (idsFile) await writeFile(idsFile, '');
+  } else {
+    const result = await draftListings(found.repo, found.firmware, remote, await existing());
+    const shots = await writeDrafts(result, found.issue);
+    const text = summary(result, shots, found.issue);
+    console.log(text);
+    if (summaryFile) await writeFile(summaryFile, text);
+    if (idsFile) await writeFile(idsFile, result.drafts.map((d) => d.id).join('\n'));
+  }
 }

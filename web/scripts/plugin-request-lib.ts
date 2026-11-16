@@ -32,6 +32,8 @@ export interface Draft {
   notes: string[];
   /** The plugin file's name, for joining one plugin's builds for several firmwares. */
   base: string;
+  /** The plugin file's path in the repo ('' for a repo with none). */
+  path: string;
 }
 
 export interface DraftResult {
@@ -84,6 +86,8 @@ interface OpusManifest {
   version?: string;
   core?: string;
   adds?: string;
+  /** Another plugin it needs, as `<plugin id> <version>`. */
+  needs?: string;
 }
 
 interface Found {
@@ -119,10 +123,40 @@ export function findPluginFiles(paths: readonly string[]): Found[] {
 export function parseOpusManifest(source: string): OpusManifest {
   const out: OpusManifest = {};
   for (const line of source.split(/\r?\n/)) {
-    const m = /^\s*(id|name|author|version|core|adds)\s+(.+?)\s*$/.exec(line);
+    const m = /^\s*(id|name|author|version|core|adds|needs)\s+(.+?)\s*$/.exec(line);
     if (m?.[1] && m[2] && out[m[1] as keyof OpusManifest] === undefined) out[m[1] as keyof OpusManifest] = m[2];
   }
   return out;
+}
+
+/** The manifest an .opmod carries as text after its `opmod 1` line, or null when it has none. */
+export function embeddedManifest(bytes: Uint8Array): OpusManifest | null {
+  if (bytes.length < 4 || String.fromCharCode(...bytes.subarray(0, 4)) !== 'OPMD') return null;
+  let latin = '';
+  for (let i = 0; i < bytes.length; i += 8192) latin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  const at = latin.search(/(^|[\n\0])opmod[ \t]+1[ \t]*\r?\n/);
+  if (at < 0) return null;
+  const block = latin.slice(at, at + 8192).replace(/^[\n\0]/, '').split('\0')[0] ?? '';
+  const m = parseOpusManifest(block);
+  return m.id === undefined && m.name === undefined ? null : m;
+}
+
+/**
+ * From a paragraph about several plugins, the clause about this one, as a sentence without its version:
+ * "HITS 1.0.0 is a 24-pad drum engine, FLUX 1.0.0 adds two LFOs" gives "HITS is a 24-pad drum engine."
+ */
+export function aboutName(paragraph: string, names: readonly string[]): string | null {
+  const wanted = names.map(norm).filter(Boolean);
+  for (const sentence of paragraph.split(/(?<=[.!?])\s+/)) {
+    for (const clause of sentence.replace(/[.!?]$/, '').split(/,\s+(?:and\s+)?|;\s+/)) {
+      const words = clause.trim().split(/\s+/);
+      if (!wanted.includes(norm(words[0] ?? ''))) continue;
+      const rest = words.slice(1).filter((w, i) => !(i === 0 && /^v?\d+(\.\d+)+$/.test(w)));
+      if (rest.length < 2) continue;
+      return `${[words[0], ...rest].join(' ')}.`;
+    }
+  }
+  return null;
 }
 
 /** The kind an opus manifest's `adds` line names. */
@@ -225,6 +259,14 @@ export function tableRowFor(markdown: string, names: readonly string[]): string 
     if (best.length >= 20 && /[a-z]{3}/i.test(best)) return /[.!?]$/.test(best) ? best : `${best}.`;
   }
   return null;
+}
+
+/** An image in the repo named after the plugin (docs/screens/hits.png), a screen folder's first. */
+export function imageNamed(paths: readonly string[], names: readonly string[]): string | null {
+  const wanted = names.map(norm).filter(Boolean);
+  const images = paths.filter((p) => /\.(png|jpe?g|gif|webp)$/i.test(p) && !SKIP_DIR.test(dirOf(p)) && wanted.includes(norm(baseOf(p).replace(/\.[^.]+$/, ''))));
+  const score = (p: string): number => (/screen|shot/i.test(p) ? 0 : 1) * 100 + p.split('/').length;
+  return images.sort((a, b) => score(a) - score(b))[0] ?? null;
 }
 
 /** The first image in some markdown that shows something: not a badge, shield or SVG logo. */
@@ -401,6 +443,7 @@ export async function draftListings(
   hint: RequestFirmware | null,
   remote: Remote,
   existing: ReadonlyMap<string, Record<string, unknown>>,
+  options: { onlyFiles?: boolean; ignore?: (path: string) => boolean } = {},
 ): Promise<DraftResult> {
   const result: DraftResult = { repo, drafts: [], skipped: [], problems: [] };
   const meta = (await remote.api(`repos/${repo}`)) as {
@@ -432,12 +475,14 @@ export async function draftListings(
   const rootReadmePath = nearestReadme(tree.paths, '');
   const rootReadme = (await readme(rootReadmePath)) ?? '';
 
-  let found = findPluginFiles(tree.paths);
+  let found = findPluginFiles(tree.paths).filter((f) => !options.ignore?.(f.path));
   if (found.length > MAX_PLUGINS) {
     result.problems.push(`The repo has ${found.length} plugin files; only the first ${MAX_PLUGINS} were drafted.`);
     found = found.slice(0, MAX_PLUGINS);
   }
   const fileless = found.length === 0;
+  // Watching a listed author's repo, only a new built file is a new plugin.
+  if (fileless && options.onlyFiles) return result;
   if (fileless) {
     const firmware = firmwareFromProse(rootReadme, hint);
     if (firmware === null) {
@@ -450,7 +495,7 @@ export async function draftListings(
   const manifests: OpusManifest[] = [];
   if (found.some((f) => f.firmware === 'op1/opus')) {
     // Its own folders first; a manifest under a build kit still counts when it names one of the repo's files.
-    const all = tree.paths.filter((p) => baseOf(p) === 'manifest.txt');
+    const all = tree.paths.filter((p) => /(^|-)manifest\.txt$/i.test(baseOf(p)));
     const ordered = [...all.filter((p) => !SKIP_DIR.test(dirOf(p))), ...all.filter((p) => SKIP_DIR.test(dirOf(p)))];
     for (const path of ordered.slice(0, 60)) {
       const source = text(await remote.download(raw(fullName, branch, path)));
@@ -464,13 +509,29 @@ export async function draftListings(
   const sharing = new Map<string | null, Set<string>>();
   for (const f of found) sharing.set(homeOf(f), new Set([...(sharing.get(homeOf(f)) ?? []), norm(f.base)]));
 
+  // The plugins already listed from this repo, by every name they go by, and who they are listed under.
+  const fromRepo = [...existing.entries()].filter(([, m]) =>
+    [m.source, m.link].some((u) => typeof u === 'string' && u.toLowerCase().startsWith(`https://github.com/${fullName.toLowerCase()}`)),
+  );
+  const listedNames = new Set(
+    fromRepo.flatMap(([id, m]) => [id, id.replace(/^opus\./, ''), m.name, m.savedName].filter((v): v is string => typeof v === 'string').map(norm)),
+  );
+  const listedAuthors = [...new Set(fromRepo.map(([, m]) => m.author).filter((a): a is string => typeof a === 'string'))];
+  const repoAuthor = listedAuthors.length === 1 ? listedAuthors[0] : undefined;
+  const pages = (await remote.api(`repos/${fullName}/pages`)) as { html_url?: string; source?: { path?: string } } | null;
+
   const authors: string[] = [];
   const taken = new Set(existing.keys());
   /** Ids this run gave out, with the plugin they went to: another firmware's build of it shares the id. */
   const given = new Map<string, string>();
   const pending: { f: Found; manifest: OpusManifest | null; knl: Uint8Array | null }[] = [];
   for (const f of found) {
-    const manifest = f.firmware === 'op1/opus' ? (manifests.find((m) => manifestMatches(m, f.base)) ?? null) : null;
+    // An .opmod carries its own manifest; a manifest.txt in the repo is the fallback.
+    let manifest: OpusManifest | null = null;
+    if (f.firmware === 'op1/opus') {
+      const bytes = f.path ? await remote.download(raw(fullName, branch, f.path)) : null;
+      manifest = (bytes && bytes.length <= 2 * 1024 * 1024 ? embeddedManifest(bytes) : null) ?? manifests.find((m) => manifestMatches(m, f.base)) ?? null;
+    }
     let knl: Uint8Array | null = null;
     if (f.firmware === 'op1/hundekraft' && f.path) {
       knl = await remote.download(raw(fullName, branch, f.path));
@@ -501,10 +562,25 @@ export async function draftListings(
     const kind: PluginKind = opusKind(manifest?.adds) ?? knlInfo?.kind ?? kindFromProse(prose);
     if (!manifest?.adds && !knlInfo?.kind) notes.push(`kind \`${kind}\` is a guess from the README`);
 
-    let author = manifest?.author ?? knlInfo?.author ?? usual ?? owner;
+    if ([f.base, name, manifest?.id ?? '', manifest?.id?.replace(/^opus\./, '') ?? ''].some((n) => n !== '' && listedNames.has(norm(n)))) {
+      result.skipped.push(idFrom(f.base, f.firmware));
+      continue;
+    }
+
+    const credited = manifest?.author ?? knlInfo?.author;
+    let author = repoAuthor ?? credited ?? usual ?? owner;
     if (/\s\/\s|\bby\b/i.test(author)) author = usual ?? owner;
     author = author.slice(0, 60);
-    if (!manifest?.author && !knlInfo?.author) notes.push(`author \`${author}\` is the repo owner; check the README's credits`);
+    if (repoAuthor !== undefined && credited !== undefined && norm(credited) !== norm(repoAuthor)) {
+      notes.push(`listed under \`${repoAuthor}\` like the repo's other plugins; its own manifest says \`${credited}\``);
+    } else if (credited === undefined && repoAuthor === undefined) {
+      notes.push(`author \`${author}\` is the repo owner; check the README's credits`);
+    }
+    if (manifest?.needs) {
+      const [needId] = manifest.needs.split(/\s+/);
+      const needed = pending.find((p) => p.manifest?.id === needId)?.manifest?.name ?? existing.get(needId ?? '')?.name ?? needId;
+      notes.push(`it needs ${String(needed)} (\`${manifest.needs}\`): say so in the manual`);
+    }
 
     let id: string;
     let savedName: string | undefined;
@@ -539,12 +615,17 @@ export async function draftListings(
 
     // Its own folder, or the repo's release page, or the repo.
     const singleRelease = found.length === 1 && release?.tag_name !== undefined;
+    // A file the repo's GitHub Pages site publishes (docs/downloads/x.opmod under a /docs site) is got from that site.
+    const pagesDir = pages?.source?.path?.replace(/^\/+|\/+$/g, '');
+    const onPages = pages?.html_url?.startsWith('https://') === true && pagesDir !== undefined && pagesDir !== '' && f.path.startsWith(`${pagesDir}/`);
     const link =
       homeDir !== '' && !fileless
         ? `https://github.com/${fullName}/tree/${encodeURIComponent(branch)}/${encodePath(homeDir)}`
-        : singleRelease
-          ? `https://github.com/${fullName}/releases/latest`
-          : `https://github.com/${fullName}`;
+        : onPages && pages?.html_url
+          ? pages.html_url
+          : singleRelease
+            ? `https://github.com/${fullName}/releases/latest`
+            : `https://github.com/${fullName}`;
     // The repo's release stream is one plugin's only when it holds one plugin (plugin-updates follows it).
     const version = found.length === 1 && release?.tag_name && /^v?\d+(\.\d+)*$/.test(release.tag_name) ? release.tag_name.replace(/^v/, '') : undefined;
 
@@ -558,7 +639,9 @@ export async function draftListings(
     if (license === null) notes.push('no licence co-op recognises, so none is listed');
 
     const row = shared ? tableRowFor(homeText, [name, f.base]) : null;
-    const paragraph = row ?? firstParagraph(prose) ?? (shared ? null : firstParagraph(rootReadme)) ?? meta.description ?? null;
+    const first = firstParagraph(prose);
+    const about = shared && first !== null ? aboutName(first, [name, f.base]) : null;
+    const paragraph = row ?? about ?? first ?? (shared ? null : firstParagraph(rootReadme)) ?? meta.description ?? null;
     const description = clip(paragraph ?? `${name} is a ${kind === 'fx' ? 'effect' : kind} for ${FIRMWARE_LABEL[f.firmware]} on the original OP-1.`);
     const requires = requiresFrom(f.firmware, prose, manifest?.core) ?? requiresFrom(f.firmware, `${homeText} ${rootReadme}`, undefined);
 
@@ -595,13 +678,15 @@ export async function draftListings(
     }
 
     const src = firstScreen(section ?? homeText, [name, f.base]);
-    const screenshot = src === null || homePath === null ? null : imageUrl(src, fullName, branch, homePath);
+    const named = src === null ? imageNamed(tree.paths, [name, f.base]) : null;
+    const screenshot = named !== null ? raw(fullName, branch, named) : src === null || homePath === null ? null : imageUrl(src, fullName, branch, homePath);
     if (screenshot === null) notes.push('no screen image in the README, so the card is a name card');
+    else if (named !== null) notes.push(`screenshot from \`${named}\`, an image named after it`);
 
     const homeUrl = homePath === null ? null : `https://github.com/${fullName}/blob/${encodeURIComponent(branch)}/${encodePath(homePath)}`;
     const manual = draftManual({ name, tagline: tagline(description, `A${kind === 'fx' ? 'n effect' : kind === 'synth' ? ' synth' : ' plugin'} for ${FIRMWARE_LABEL[f.firmware]}`), description, author, repo: fullName, license, firmware: f.firmware, requires, link, home: homeUrl });
     notes.push('the description and manual are drafts from the README');
-    result.drafts.push({ id, manifest: manifestOut, manual, screenshot, notes, base: f.base });
+    result.drafts.push({ id, manifest: manifestOut, manual, screenshot, notes, base: f.base, path: f.path });
   }
   result.drafts = joinBuilds(result.drafts);
   return result;

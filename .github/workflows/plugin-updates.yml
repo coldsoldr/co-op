@@ -2,6 +2,8 @@
 # and open (or refresh) one pull request into dev with what passed the checks. Nothing reaches the site until
 # the owner merges it: Install over USB sends these files to people's OP-1s.
 #
+# A second job looks in those same repos for plugins that are new, and drafts their listings.
+#
 # Needs "Allow GitHub Actions to create and approve pull requests" (Settings > Actions > General). A pull
 # request opened with the workflow token does not start ci; this job validates before it opens one, and
 # ci can be started on the branch by hand (Actions > ci > Run workflow).
@@ -55,4 +57,49 @@ jobs:
             gh pr edit "$number" --body-file "$RUNNER_TEMP/summary.md"
           else
             gh pr create --base dev --head "$branch" --title "Plugin updates from their authors" --body-file "$RUNNER_TEMP/summary.md"
+          fi
+
+  # New plugins in repos co-op already lists (an author publishes another one next to theirs): drafted the way a
+  # submission is (web/scripts/plugin-request-lib.ts, no model), into their own pull request into dev. A draft the
+  # owner turns down goes in plugins/log.json's ignore list, so it doesn't come back.
+  new-plugins:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+      - uses: ./.github/actions/setup
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet pillow
+      - name: Look for new plugins in the listed authors' repos
+        run: pnpm --filter @co-op/web exec tsx scripts/plugin-request.ts --watch --summary "$RUNNER_TEMP/new.md" --ids "$RUNNER_TEMP/new-ids.txt"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHON: python
+      - name: Report
+        run: cat "$RUNNER_TEMP/new.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate the drafts
+        run: |
+          if [ -z "$(git status --porcelain -- plugins)" ]; then echo "Nothing new."; exit 0; fi
+          pnpm --filter @co-op/web plugins:validate
+      - name: Open or refresh the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(git status --porcelain -- plugins)" ]; then exit 0; fi
+          branch=bot/plugin-new
+          ids=$(paste -sd, "$RUNNER_TEMP/new-ids.txt" | sed 's/,/, /g')
+          git config user.name coldsoldr
+          git config user.email 349275560+coldsoldr@users.noreply.github.com
+          git switch -C "$branch"
+          git add -- plugins
+          git commit -q -m "feat(plugins): draft listings of $ids, new in their authors' repos" -- plugins
+          git push -f origin "$branch"
+          number=$(gh pr list --head "$branch" --base dev --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "New plugins: $ids" --body-file "$RUNNER_TEMP/new.md"
+          else
+            gh pr create --base dev --head "$branch" --title "New plugins: $ids" --body-file "$RUNNER_TEMP/new.md"
           fi

@@ -36,6 +36,11 @@ export interface LogEntry {
 export interface PluginLog {
   format: number;
   plugins: LogEntry[];
+  /**
+   * What the daily watch for new plugins must not draft again: `owner/repo` for a whole repo, or
+   * `owner/repo/path/to/file.opmod` for one plugin file (one the owner turned down).
+   */
+  ignore?: string[];
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -51,6 +56,9 @@ export async function readLog(pluginsDir: string): Promise<PluginLog> {
   }
   const log = JSON.parse(text.replace(/^\uFEFF/, '')) as PluginLog;
   if (log.format !== LOG_FORMAT || !Array.isArray(log.plugins)) throw new Error(`${LOG_FILE}: not a format ${LOG_FORMAT} log`);
+  if (log.ignore !== undefined && (!Array.isArray(log.ignore) || log.ignore.some((i) => typeof i !== 'string'))) {
+    throw new Error(`${LOG_FILE}: ignore must be a list of owner/repo or owner/repo/path strings`);
+  }
   for (const e of log.plugins) {
     if (typeof e.id !== 'string' || typeof e.added !== 'string' || !DATE.test(e.added) || typeof e.draft !== 'boolean') {
       throw new Error(`${LOG_FILE}: a bad entry: ${JSON.stringify(e)}`);
@@ -62,7 +70,7 @@ export async function readLog(pluginsDir: string): Promise<PluginLog> {
 /** Sorted by date added, then id, so new plugins land at the end and the diff stays small. */
 export function sortLog(log: PluginLog): PluginLog {
   const plugins = [...log.plugins].sort((a, b) => a.added.localeCompare(b.added) || a.id.localeCompare(b.id));
-  return { format: LOG_FORMAT, plugins };
+  return { format: LOG_FORMAT, plugins, ...(log.ignore && log.ignore.length > 0 ? { ignore: [...new Set(log.ignore)].sort() } : {}) };
 }
 
 export async function writeLog(pluginsDir: string, log: PluginLog): Promise<void> {
@@ -71,7 +79,7 @@ export async function writeLog(pluginsDir: string, log: PluginLog): Promise<void
 
 /** Adds or replaces the entry with this id. */
 export function upsert(log: PluginLog, entry: LogEntry): PluginLog {
-  return { format: LOG_FORMAT, plugins: [...log.plugins.filter((e) => e.id !== entry.id), entry] };
+  return { ...log, format: LOG_FORMAT, plugins: [...log.plugins.filter((e) => e.id !== entry.id), entry] };
 }
 
 /** Folders with no entry, and entries with no folder. */

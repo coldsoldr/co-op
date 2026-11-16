@@ -5,7 +5,8 @@ description: Rewrite the draft listings that co-op's plugin-request workflow mad
 
 # /polish-plugins: rewrite the drafted listings
 
-People submit plugins by pasting their repo link on the site's Submit a plugin page (or in the plugin-request issue
+Drafts come two ways: the daily `plugin-updates` workflow finds a new plugin file in a repo co-op already lists
+(a `bot/plugin-new` pull request), or people submit plugins by pasting their repo link on the site's Submit a plugin page (or in the plugin-request issue
 form). The `plugin-request` workflow drafts the listing from the repo without a model and opens a pull request into
 `dev`; the owner merges it. Its description and manual are rough: the first paragraph of the README and a plain
 manual with no controls. `plugins/log.json` marks those with `"draft": true`. This skill rewrites them properly.
