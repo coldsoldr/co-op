@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "flux",
+  "name": "FLUX",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "ESC_CODE",
+  "description": "FLUX adds two LFOs per HITS pad.",
+  "link": "https://volkerjunginger.github.io/OP-1/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/VolkerJunginger/OP-1",
+  "requires": "opus 2.33",
+  "tags": [
+    "feature",
+    "opus"
+  ]
+}
