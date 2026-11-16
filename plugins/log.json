@@ -770,6 +770,24 @@
       "added": "2026-11-14",
       "draft": false,
       "source": "https://github.com/VolkerJunginger/OP-1"
+    },
+    {
+      "id": "flux",
+      "added": "2026-11-16",
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "draft": true
+    },
+    {
+      "id": "grip",
+      "added": "2026-11-16",
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "draft": true
+    },
+    {
+      "id": "hits",
+      "added": "2026-11-16",
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "draft": true
     }
   ]
 }

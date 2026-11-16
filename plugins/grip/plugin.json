@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "grip",
+  "name": "GRIP",
+  "firmware": "op1/opus",
+  "kind": "fx",
+  "author": "ESC_CODE",
+  "description": "GRIP is a compressor.",
+  "link": "https://volkerjunginger.github.io/OP-1/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/VolkerJunginger/OP-1",
+  "requires": "opus 2.34",
+  "tags": [
+    "fx",
+    "opus"
+  ]
+}
