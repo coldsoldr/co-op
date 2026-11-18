@@ -6,10 +6,10 @@
   "kind": "synth",
   "author": "ESC_CODE",
   "description": "A synthesized drum kit: 24 pads, each playing one of 17 models adapted from Mutable Instruments Braids, from kicks and metal to plucks and noise. Shape each pad's pitch, timbre and length, make pads choke each other, and add grit with Decimate.",
-  "link": "https://github.com/VolkerJunginger/OP-1/tree/main/Fluke",
+  "link": "https://volkerjunginger.github.io/OP-1/#hits",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/VolkerJunginger/OP-1",
+  "source": "https://github.com/VolkerJunginger/OP-1/tree/main/Fluke/Source",
   "requires": "opus core 2.57",
   "tags": [
     "synth",

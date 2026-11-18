@@ -23,10 +23,10 @@ FLUX is by ESC_CODE (Volker Junginger) ([VolkerJunginger/OP-1](https://github.co
 
 ## Get it
 
-FLUKE, HITS, FLUX and GRIP come as a set from the [device page](https://volkerjunginger.github.io/OP-1/), one `.opmod` each or all four in a zip, for Opus core 2.57 or later on the original OP-1 (firmware 246). Copy the files to the `mods` folder on the OP-1's disk, eject and restart; replace older copies by file name and remove an old `hitsfluke.opmod`. co-op lists it for reference and hosts no copy. FLUX needs HITS 1.0.0 or later, and shows “needs HITS” without it.
+FLUKE, HITS and FLUX come as a set from the [device page](https://volkerjunginger.github.io/OP-1/), one `.opmod` each or together in a zip, for Opus core 2.57 or later on the original OP-1 (firmware 246). Copy the files to the `mods` folder on the OP-1's disk, eject and restart; replace older copies by file name and remove an old `hitsfluke.opmod`. co-op lists it for reference and hosts no copy. FLUX needs HITS 1.0.0 or later, and shows “needs HITS” without it.
 
 ## Links
 
-- [Device page](https://volkerjunginger.github.io/OP-1/): downloads and every device
+- [Device page](https://volkerjunginger.github.io/OP-1/#flux): downloads and every device
 - [Install, credits and source](https://github.com/VolkerJunginger/OP-1/tree/main/Fluke)
 - [Illustrated manual (PDF)](https://github.com/VolkerJunginger/OP-1/blob/main/docs/manuals/FLUKE%20v.2.0.0%20Manual.pdf)

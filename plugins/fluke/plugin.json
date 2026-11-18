@@ -7,7 +7,7 @@
   "author": "ESC_CODE",
   "description": "A generative sequencer that plays the current synth, or up to six drum lanes. In Synth it writes a melody in one of six scales and ten styles; in Drum it builds a groove across the lanes in one of 14 styles, from Straight and Clave to Funk and Shuffle. Shape it live with Length, Density or Euclidean Pulses, Rotate, Rate and Swing, and Lift a pattern to Drop back to it.",
   "license": "GPL-3.0-only",
-  "link": "https://github.com/VolkerJunginger/OP-1/tree/main/Fluke",
+  "link": "https://volkerjunginger.github.io/OP-1/#fluke",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/VolkerJunginger/OP-1/tree/main/Fluke/Source",
