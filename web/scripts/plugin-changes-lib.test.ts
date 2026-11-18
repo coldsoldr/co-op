@@ -42,6 +42,7 @@ describe('listings whose plugin changed in its repo', () => {
   it('reads the folder a listing links, else the whole repo', () => {
     expect(scopeOf('https://github.com/o/r/tree/main/Delay%20Trio/', undefined)).toEqual({ repo: 'o/r', path: 'Delay Trio' });
     expect(scopeOf('https://o.github.io/r/', 'https://github.com/o/r')).toEqual({ repo: 'o/r', path: '' });
+    expect(scopeOf('https://o.github.io/r/#fluke', 'https://github.com/o/r/tree/main/Fluke/Source')).toEqual({ repo: 'o/r', path: 'Fluke/Source' });
     expect(scopeOf('https://example.com', undefined)).toBeNull();
   });
 

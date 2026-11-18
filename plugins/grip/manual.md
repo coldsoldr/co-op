@@ -18,6 +18,6 @@ FLUKE, HITS, FLUX and GRIP come as a set from the [device page](https://volkerju
 
 ## Links
 
-- [Device page](https://volkerjunginger.github.io/OP-1/): downloads and every device
+- [Device page](https://volkerjunginger.github.io/OP-1/#grip): downloads and every device
 - [Install, credits and source](https://github.com/VolkerJunginger/OP-1/tree/main/Fluke)
 - [Illustrated manual (PDF)](https://github.com/VolkerJunginger/OP-1/blob/main/docs/manuals/FLUKE%20v.2.0.0%20Manual.pdf)

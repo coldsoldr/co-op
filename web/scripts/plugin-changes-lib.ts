@@ -31,10 +31,15 @@ export interface Changed {
   commits: Commit[];
 }
 
-/** owner/repo and the folder a listing's link points at: /tree/<branch>/<folder>, else the whole repo. */
+/**
+ * owner/repo and the folder a listing's link points at (/tree/<branch>/<folder>), else the folder its source
+ * points at (a link to the author's own page), else the whole repo.
+ */
 export function scopeOf(link: string | undefined, source: string | undefined): { repo: string; path: string } | null {
-  const tree = link === undefined ? null : /^https:\/\/github\.com\/([^/]+\/[^/]+)\/tree\/[^/]+\/(.+?)\/?$/.exec(link);
-  if (tree?.[1] && tree[2]) return { repo: tree[1], path: decodeURIComponent(tree[2]) };
+  for (const url of [link, source]) {
+    const tree = url === undefined ? null : /^https:\/\/github\.com\/([^/]+\/[^/]+)\/tree\/[^/]+\/(.+?)\/?$/.exec(url);
+    if (tree?.[1] && tree[2]) return { repo: tree[1], path: decodeURIComponent(tree[2]) };
+  }
   for (const url of [source, link]) {
     const repo = url === undefined ? null : /^https:\/\/github\.com\/([^/]+\/[^/?#]+)/.exec(url);
     if (repo?.[1]) return { repo: repo[1].replace(/\.git$/, ''), path: '' };
