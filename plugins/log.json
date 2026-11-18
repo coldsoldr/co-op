@@ -785,6 +785,13 @@
       "polished": "2026-11-18"
     },
     {
+      "id": "grip",
+      "added": "2026-11-16",
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "draft": false,
+      "polished": "2026-11-18"
+    },
+    {
       "id": "hits",
       "added": "2026-11-16",
       "source": "https://github.com/VolkerJunginger/OP-1",
@@ -875,8 +882,5 @@
       "draft": false,
       "source": "https://github.com/Hundekraft/op1-workshop"
     }
-  ],
-  "ignore": [
-    "VolkerJunginger/OP-1/docs/downloads/grip.opmod"
   ]
 }
