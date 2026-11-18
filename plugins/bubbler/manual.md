@@ -12,7 +12,9 @@ A granular delay: the input is chopped into overlapping grains that repeat with 
 | Shift, page 2 | Time Var | Start Var | Size | Size Var |
 | Shift, page 3 | Pitch | Pitch Var | Filter (press for Reso) | Reverse |
 
-Hold shift and use left and right to move between pages 2 and 3; letting go of shift goes back to Main, and the last page is remembered. Pitch steps through −12, −7, −5, −3, off, key (follows MIDI notes), +3, +5, +7 and +12. Pitch Var is the chance a grain jumps by an octave. The longest base delay is one second.
+Hold shift and use left and right to move between pages 2 and 3; letting go of shift goes back to Main, and the last page is remembered (1.5.2 brought this back after it broke). Pitch steps through −12, −7, −5, −3, off, key (follows MIDI notes), +3, +5, +7 and +12. Pitch Var is the chance a grain jumps by an octave. The longest base delay is one second.
+
+Turning an encoder faster moves its value further, so long sweeps take fewer turns.
 
 ## Who made it
 
@@ -20,7 +22,7 @@ Bubbler is by ESC_CODE (Volker Junginger) ([VolkerJunginger/OP-1](https://github
 
 ## Get it
 
-Bubbler 1.5.0 is one of the three ESC Delay Trio effects for Opus core 2.31 or later on the original OP-1 (firmware 246). Download its `.opmod`, or all three with the illustrated manual, from the [Delay Trio folder](https://github.com/VolkerJunginger/OP-1/tree/main/Delay-Trio), copy it to the `mods` folder on the OP-1's disk and restart. It is an instrument effect: on the master it passes audio through dry. co-op lists it for reference and hosts no copy.
+Bubbler 1.5.2 is one of the three ESC Delay Trio effects for Opus core 2.31 or later on the original OP-1 (firmware 246). Download its `.opmod`, or all three with the illustrated manual, from the [Delay Trio folder](https://github.com/VolkerJunginger/OP-1/tree/main/Delay-Trio), copy it to the `mods` folder on the OP-1's disk and restart. It is an instrument effect: on the master it passes audio through dry. co-op lists it for reference and hosts no copy.
 
 ## Links
 

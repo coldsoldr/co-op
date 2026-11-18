@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "ludwig",
+  "name": "LUDWIG",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "LUDWIG is a grand piano rebuilt from a real one. Every key of a concert grand was measured: how loud each overtone is, and how it fades over the first seconds. LUDWIG puts that sound back together live while you play, so it can do what a recording can't. Stretch the overtones until the piano turns into bells, let the notes ring four times longer, make it darker or brighter at the same level, or retune the whole instrument to the temperaments of Bach's day.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "drift",
+  "name": "DRIFT",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "DRIFT has no oscillator in the usual sense. A small neural net, trained on real instruments and classic synths, draws every waveform while you play, hundreds of times a second, right on the OP-1. The four encoders don't set a filter or an envelope. They move you through what the net learned, so one turn can bend a flute towards a bell, or land somewhere between a choir and a bass that nobody ever recorded.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.2.6",
+  "requires": "hundekraft 3.3",
   "credits": "Written from Eric Brombaugh's and thement's published Midiverb research; no Alesis ROM data",
   "tags": [
     "effect",

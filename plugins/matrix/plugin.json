@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "matrix",
+  "name": "Matrix LFO",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "LizardMan",
+  "description": "MATRIX is an LFO type by LizardMan. It has up to eight rows, and each row is an LFO or an envelope with an amount and a target. Pick it on the LFO page with Shift + T4.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "him",
+  "name": "HIM",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "LizardMan",
+  "description": "HIM is a synthesized drum kit by LizardMan. Every hit throws a solid into a glass box on the screen: low sounds are big, long decays bounce more, and metal sounds turn into sharp shapes. Pick HIM as the drum type. The drum preset list has four HIM kits.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3",
+  "tags": [
+    "drums",
+    "hundekraft"
+  ]
+}

@@ -10,7 +10,7 @@ Filter after Open303's TB-303 filter by Robin Schmidt (MIT); from op1r, ported t
 
 ## Get it
 
-blot is part of hundekraft 3.2.6, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+blot is part of hundekraft 3.3, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

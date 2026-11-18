@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "trigguard",
+  "name": "Trigger guard",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "A worn key can bounce: one press reaches the OP-1 as press, release, press, and the note plays twice. The trigger guard catches that. It's on from the start and only watches the 24 note keys; the other keys work as before. The synth, the drums, the sequencers and USB MIDI out all get the keys after the guard. Its settings are on the TRIGGER GUARD page of the settings.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3",
+  "credits": "The idea is u/Andromax_sussybaka's",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

@@ -5,13 +5,21 @@
   "firmware": "op1/opus",
   "kind": "feature",
   "author": "ESC_CODE",
-  "description": "A generative sequencer that plays the current synth or sampler. It writes a melody in one of six scales and ten styles, which you shape live with Length, Density or Euclidean Pulses, Rotate, Rate, Direction and Swing. Lift saves a pattern so you can wander off and Drop back to it.",
+  "description": "A generative sequencer that plays the current synth, or up to six drum lanes. In Synth it writes a melody in one of six scales and ten styles; in Drum it builds a groove across the lanes in one of 14 styles, from Straight and Clave to Funk and Shuffle. Shape it live with Length, Density or Euclidean Pulses, Rotate, Rate and Swing, and Lift a pattern to Drop back to it.",
   "license": "GPL-3.0-only",
   "link": "https://github.com/VolkerJunginger/OP-1/tree/main/Fluke",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/VolkerJunginger/OP-1/tree/main/Fluke/Source",
-  "requires": "opus 2.8",
-  "credits": "an integer adaptation of Mutable Instruments Marbles by Emilie Gillet (MIT)",
-  "tags": ["feature", "sequencer", "generative", "euclidean", "mutable-instruments", "opus"]
+  "requires": "opus core 2.57",
+  "credits": "Note generation and quantising after Mutable Instruments Marbles, groove design after Grids, by Emilie Gillet (MIT)",
+  "tags": [
+    "feature",
+    "sequencer",
+    "generative",
+    "euclidean",
+    "drum",
+    "mutable-instruments",
+    "opus"
+  ]
 }

@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "keyvel",
+  "name": "Key velocity",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "The OP-1's keys don't sense how hard you press them, but its accelerometer feels each key hit the case. With VELOCITY on, a harder hit plays a louder note. It starts off, and while it's off nothing changes. Only the keys use it: notes from MIDI and from the sequencers keep their own velocity.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

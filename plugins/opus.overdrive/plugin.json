@@ -11,7 +11,7 @@
   "link": "https://github.com/LizardMan245/opus/releases",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "requires": "opus 2.0 beta 4.1",
+  "requires": "opus 2.0 beta 4.2",
   "savedName": "opus.overdrive",
   "tags": [
     "effect",

@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.2.6",
+  "requires": "hundekraft 3.3",
   "credits": "Port of OberVave by zvenson (GPL-3.0)",
   "tags": [
     "synth",

@@ -6,11 +6,11 @@ Every voice plays three oscillators, the flux capacitor's three arms. Year picks
 
 ## Who made it
 
-outatime is by LizardMan245. Hundekraft ported it to the OP-1.
+outatime is by LizardMan245. Kennel port by hundekraft.
 
 ## Get it
 
-outatime is part of hundekraft 3.2.6, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+outatime is part of hundekraft 3.3, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

@@ -4,11 +4,11 @@
 
 ## Who made it
 
-Rebuilt by hundekraft from how Maiko Pruett's #249 and #250 work; none of Maiko's code is used.
+A deleted preset is kept in a .deleted folder next to your presets, the newest 16 of them, so it can be brought back by hand in disk mode.
 
 ## Get it
 
-Snapshot naming is part of hundekraft 3.2.6, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+Snapshot naming is part of hundekraft 3.3, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

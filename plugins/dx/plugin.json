@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "dx",
+  "name": "DX",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "LizardMan",
+  "description": "DX is a six-operator FM synth that plays DX7 voices. It's LizardMan's voice player, and the FM is built on Google's Music Synthesizer for Android. It has 32 algorithms and reads voice banks, the .syx files that DX7 libraries and editors use: a bank of 32 voices, or a single voice. It always has eight voices of its own, ahead of any banks you load: DX EP, DX BASS, DX BELL, DX BRASS, DX ORGAN, DX PAD, DX PLUCK and INIT VOICE.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

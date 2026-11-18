@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "pinboard",
+  "name": "PINBOARD",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "PINBOARD is a synth built around a pin board, inspired by the EMS VCS3: its pin matrix, its diode-ladder filter, its ring modulator and its trapezoid envelope. It has two oscillators, a noise source, a ring modulator and a filter that squeals when you push it. A third oscillator runs slow or fast and is there to modulate the others. The board is a grid of eight sources and eight destinations.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}
