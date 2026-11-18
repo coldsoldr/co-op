@@ -29,8 +29,13 @@ export interface LogEntry {
   issue?: number;
   /** True while the description and manual are the workflow's draft. */
   draft: boolean;
-  /** YYYY-MM-DD: when the draft was last rewritten by hand. */
+  /** YYYY-MM-DD: when the description and manual were last brought up to date by hand. */
   polished?: string;
+  /**
+   * YYYY-MM-DD: the newest commit to the plugin in its repo since then, found by the daily check
+   * (plugin-changes.ts). Set together with draft: true; /polish-plugins clears it.
+   */
+  changed?: string;
 }
 
 export interface PluginLog {

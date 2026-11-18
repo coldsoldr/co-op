@@ -132,6 +132,10 @@ list yet, drafts them the same way, and opens a pull request into dev. A draft t
 goes in the `ignore` list of `plugins/log.json` (`owner/repo/path/to/file.opmod`, or `owner/repo`
 for a whole repo), so it doesn't come back.
 
+The same daily run also refreshes the workshop's and Opus's own listings (`listed_plugins.py`), and
+marks any other listing whose plugin changed in its repo since co-op wrote it, each in a pull request of
+its own.
+
 `plugins/log.json` lists every plugin with the date it was added and whether its description and
 manual are still a draft (`pnpm --filter @co-op/web plugins:log` adds missing folders, and
 `plugins:log drafts` lists the drafts). `plugins:validate` warns about a folder it doesn't list.

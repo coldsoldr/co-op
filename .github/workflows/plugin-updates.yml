@@ -2,7 +2,10 @@
 # and open (or refresh) one pull request into dev with what passed the checks. Nothing reaches the site until
 # the owner merges it: Install over USB sends these files to people's OP-1s.
 #
-# A second job looks in those same repos for plugins that are new, and drafts their listings.
+# Three more jobs, each with its own pull request: new-plugins drafts plugins that are new in those same repos;
+# refresh-listed runs the workshop and Opus refresher (listed_plugins.py); changed marks listings whose plugin
+# changed in its repo since co-op wrote them, for the owner's /polish-plugins. Scheduled runs use this file on
+# main, so a change here takes effect once it is merged there.
 #
 # Needs "Allow GitHub Actions to create and approve pull requests" (Settings > Actions > General). A pull
 # request opened with the workflow token does not start ci; this job validates before it opens one, and
@@ -102,4 +105,94 @@ jobs:
             gh pr edit "$number" --title "New plugins: $ids" --body-file "$RUNNER_TEMP/new.md"
           else
             gh pr create --base dev --head "$branch" --title "New plugins: $ids" --body-file "$RUNNER_TEMP/new.md"
+          fi
+
+  # The workshop's and Opus's own listings (web/scripts/listed_plugins.py): new firmware versions, manuals,
+  # screenshots and plugins, from the live hundekraft workshop and Opus pages, into their own pull request. Pillow
+  # is pinned to the version the listings were made with, so a name card is drawn the same each day.
+  refresh-listed:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+      - uses: ./.github/actions/setup
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet pillow==11.3.0
+      - name: Refresh the workshop and Opus listings
+        run: |
+          python -I web/scripts/listed_plugins.py | tee "$RUNNER_TEMP/refresh.log"
+          pnpm --filter @co-op/web plugins:log
+      - name: Validate and describe
+        run: |
+          if [ -z "$(git status --porcelain -- plugins)" ]; then echo "Nothing changed." | tee "$RUNNER_TEMP/refresh.md"; exit 0; fi
+          pnpm --filter @co-op/web plugins:validate
+          new=$(git status --porcelain -- plugins | sed -n 's|^?? plugins/\([^/]*\)/$|\1|p' | paste -sd' ')
+          changed=$(git status --porcelain -- plugins | sed -n 's|^ M plugins/\([^/]*\)/.*|\1|p' | sort -u | paste -sd' ')
+          {
+            echo "The hundekraft workshop and Opus pages changed; web/scripts/listed_plugins.py brought their listings up to date."
+            echo
+            if [ -n "$new" ]; then
+              echo "**New:** $new"
+              echo
+              echo "A plugin new to the workshop is listed under hundekraft until its author is set in AUTHORS (and CREDITS) in web/scripts/listed_plugins.py. Check the workshop manual's credits before merging."
+              echo
+            fi
+            if [ -n "$changed" ]; then echo "**Updated:** $changed"; echo; fi
+            echo '```'
+            git diff --stat -- plugins | tail -1
+            echo '```'
+          } > "$RUNNER_TEMP/refresh.md"
+          cat "$RUNNER_TEMP/refresh.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Open or refresh the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(git status --porcelain -- plugins)" ]; then exit 0; fi
+          branch=bot/plugin-refresh
+          git config user.name coldsoldr
+          git config user.email 349275560+coldsoldr@users.noreply.github.com
+          git switch -C "$branch"
+          git add -- plugins
+          git commit -q -m "feat(plugins): the workshop and Opus listings, refreshed" -- plugins
+          git push -f origin "$branch"
+          number=$(gh pr list --head "$branch" --base dev --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --body-file "$RUNNER_TEMP/refresh.md"
+          else
+            gh pr create --base dev --head "$branch" --title "Workshop and Opus listings, refreshed" --body-file "$RUNNER_TEMP/refresh.md"
+          fi
+
+  # Listings whose plugin changed in its author's repo since co-op last wrote them (web/scripts/plugin-changes.ts):
+  # marked in plugins/log.json for /polish-plugins, with the commits that changed them, in their own pull request.
+  changed:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+      - uses: ./.github/actions/setup
+      - name: Look for listings whose plugin changed
+        run: pnpm --filter @co-op/web exec tsx scripts/plugin-changes.ts --summary "$RUNNER_TEMP/changed.md"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Open or refresh the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat "$RUNNER_TEMP/changed.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$(git status --porcelain -- plugins)" ]; then exit 0; fi
+          branch=bot/plugin-changed
+          git config user.name coldsoldr
+          git config user.email 349275560+coldsoldr@users.noreply.github.com
+          git switch -C "$branch"
+          git commit -q -m "chore(plugins): mark listings whose plugin changed in its repo" -- plugins/log.json
+          git push -f origin "$branch"
+          number=$(gh pr list --head "$branch" --base dev --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --body-file "$RUNNER_TEMP/changed.md"
+          else
+            gh pr create --base dev --head "$branch" --title "Listings to bring up to date" --body-file "$RUNNER_TEMP/changed.md"
           fi

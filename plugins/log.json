@@ -729,13 +729,15 @@
       "id": "bubbler",
       "added": "2026-11-14",
       "draft": false,
-      "source": "https://github.com/VolkerJunginger/OP-1"
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "polished": "2026-11-18"
     },
     {
       "id": "delayed",
       "added": "2026-11-14",
       "draft": false,
-      "source": "https://github.com/VolkerJunginger/OP-1"
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "polished": "2026-11-18"
     },
     {
       "id": "fickle",
@@ -746,13 +748,15 @@
       "id": "fluke",
       "added": "2026-11-14",
       "draft": false,
-      "source": "https://github.com/VolkerJunginger/OP-1"
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "polished": "2026-11-18"
     },
     {
       "id": "midireverb",
       "added": "2026-11-14",
       "draft": false,
-      "source": "https://github.com/VolkerJunginger/OP-1"
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "polished": "2026-11-18"
     },
     {
       "id": "petri",
@@ -763,13 +767,15 @@
       "id": "pitchdelay",
       "added": "2026-11-14",
       "draft": false,
-      "source": "https://github.com/VolkerJunginger/OP-1"
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "polished": "2026-11-18"
     },
     {
       "id": "pulsesync",
       "added": "2026-11-14",
       "draft": false,
-      "source": "https://github.com/VolkerJunginger/OP-1"
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "polished": "2026-11-18"
     },
     {
       "id": "flux",
