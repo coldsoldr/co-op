@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "khorus",
+  "name": "KHORUS",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "LizardMan",
+  "description": "KHORUS, by LizardMan, is a chorus with one to three voices and a triangle or sine sweep. It's stereo as the master effect. On the screen each voice is a stack of waves in its encoder's colour.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

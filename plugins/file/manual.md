@@ -9,7 +9,7 @@ Rebuilt by hundekraft from how Maiko Pruett's #249 and #250 work; none of Maiko'
 
 ## Get it
 
-File / storage is part of hundekraft 3.2.6, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+File / storage is part of hundekraft 3.3, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

@@ -4,15 +4,19 @@
   "name": "GRIP",
   "firmware": "op1/opus",
   "kind": "fx",
-  "author": "ESC_CODE",
-  "description": "GRIP is a compressor.",
-  "link": "https://volkerjunginger.github.io/OP-1/",
+  "author": "op1lab",
+  "description": "A compressor for synths, drums or the master mix, with RMS detection and a program-dependent response after the dbx 160A. Blend the compressed sound back in with Mix, or duck an instrument under the HITS kick.",
+  "link": "https://github.com/VolkerJunginger/OP-1/tree/main/Fluke",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/VolkerJunginger/OP-1",
-  "requires": "opus 2.34",
+  "requires": "opus core 2.34",
   "tags": [
     "fx",
+    "compressor",
+    "dynamics",
     "opus"
-  ]
+  ],
+  "license": "GPL-3.0-only",
+  "credits": "Published in ESC_CODE's set with FLUKE, HITS and FLUX"
 }

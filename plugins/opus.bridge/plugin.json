@@ -11,7 +11,7 @@
   "link": "https://github.com/LizardMan245/opus/releases",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "requires": "opus 2.0 beta 4.1",
+  "requires": "opus 2.0 beta 4.2",
   "credits": "Loads op1r's .op1p files by popcorp and Hundekraft's .knl files; every bridged plugin stays its author's work",
   "savedName": "opus.bridge",
   "tags": [

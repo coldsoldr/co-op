@@ -2,7 +2,7 @@
 
 *Plays the slot's sample as grains.*
 
-A granular engine that plays a sampler recording as clouds of grains. C4 plays the recording at its original speed.
+A granular engine that plays a sampler recording as clouds of grains. C4 plays the recording at its original speed. Each grain is centred on the position and stays inside the recording.
 
 ## Who made it
 
@@ -10,7 +10,7 @@ From op1r, ported to kennel by Hundekraft.
 
 ## Get it
 
-Granular is part of hundekraft 3.2.6, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+Granular is part of hundekraft 3.3, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

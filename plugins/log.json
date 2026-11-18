@@ -775,19 +775,106 @@
       "id": "flux",
       "added": "2026-11-16",
       "source": "https://github.com/VolkerJunginger/OP-1",
-      "draft": true
+      "draft": false,
+      "polished": "2026-11-18"
     },
     {
       "id": "grip",
       "added": "2026-11-16",
       "source": "https://github.com/VolkerJunginger/OP-1",
-      "draft": true
+      "draft": false,
+      "polished": "2026-11-18"
     },
     {
       "id": "hits",
       "added": "2026-11-16",
       "source": "https://github.com/VolkerJunginger/OP-1",
-      "draft": true
+      "draft": false,
+      "polished": "2026-11-18"
+    },
+    {
+      "id": "dimension",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "drift",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "dx",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "him",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "kastle",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "keyvel",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "khorus",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "ludwig",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "matrix",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "opus.refined",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
+      "id": "pinboard",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "strip",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "trigguard",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "windwood",
+      "added": "2026-11-18",
+      "draft": false,
+      "source": "https://github.com/Hundekraft/op1-workshop"
     }
   ]
 }

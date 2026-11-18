@@ -6,11 +6,11 @@ Moai by fungiboletus is modelled on the Minimoog Model D: fat basses, singing le
 
 ## Who made it
 
-Moai is by fungiboletus ([op-moai](https://github.com/fungiboletus/op-moai), GPL-3.0-or-later). Hundekraft brought it to the OP-1.
+Moai is by fungiboletus ([op-moai](https://github.com/fungiboletus/op-moai), GPL-3.0-or-later). Kennel port by hundekraft.
 
 ## Get it
 
-Moai is part of hundekraft 3.2.6, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+Moai is part of hundekraft 3.3, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

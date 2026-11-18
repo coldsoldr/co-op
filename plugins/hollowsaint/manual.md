@@ -6,11 +6,11 @@ Hollow Saint by SammiBabe666 is a hurdy-gurdy in a cathedral. Each note is a bow
 
 ## Who made it
 
-In the synth list it's called hollowsaint. It's from Cathedral of the Hollow Saint by SammiBabe666. Hundekraft brought it to the OP-1.
+SammiBabe666's Cathedral of the Hollow Saint, brought into kennel by Hundekraft.
 
 ## Get it
 
-Hollow Saint is part of hundekraft 3.2.6, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+Hollow Saint is part of hundekraft 3.3, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

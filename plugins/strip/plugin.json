@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "strip",
+  "name": "Channel strip",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "The channel strip shapes the synth and the drums before the tape, like the channel on a mixing desk. It sits before their effect. There are two strips, one for the synth and one for the drums. They stay as they are when you change sounds or kits, and they are kept after a restart. Both start switched off, so nothing changes until you turn one on: hold Shift and turn green right.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}

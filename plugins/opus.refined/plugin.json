@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.refined",
+  "name": "Refined",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "1.0.0",
+  "description": "Audivit's palette for the whole OP-1, its own screens included (above, on the tape screen): cyan, mint, off-white and red on the encoders, neutral off-white and greys for TE's lavender whites and purple greys, teal and aubergine for the dark blues. The first palette theme: every stock screen, text, the font's coloured icons and every plugin page drawn in stock colours take its colours.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 4.2",
+  "savedName": "opus.refined",
+  "tags": [
+    "theme",
+    "opus"
+  ]
+}

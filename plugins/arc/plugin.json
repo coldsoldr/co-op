@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/ultralazr/op1-musica-obscura",
-  "requires": "hundekraft 3.2.6",
+  "requires": "hundekraft 3.3",
   "credits": "Musica Obscura by ultralazr, from op1r, ported to kennel by Hundekraft",
   "tags": [
     "synth",
