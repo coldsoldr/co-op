@@ -506,12 +506,6 @@
       "source": "https://github.com/pcppcp/op1r"
     },
     {
-      "id": "outatime",
-      "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
       "id": "oxbow",
       "added": "2026-11-11",
       "draft": false,
@@ -799,31 +793,7 @@
       "polished": "2026-11-18"
     },
     {
-      "id": "dimension",
-      "added": "2026-11-18",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
       "id": "drift",
-      "added": "2026-11-18",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
-      "id": "dx",
-      "added": "2026-11-18",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
-      "id": "him",
-      "added": "2026-11-18",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
-      "id": "kastle",
       "added": "2026-11-18",
       "draft": false,
       "source": "https://github.com/Hundekraft/op1-workshop"
@@ -835,19 +805,7 @@
       "source": "https://github.com/Hundekraft/op1-workshop"
     },
     {
-      "id": "khorus",
-      "added": "2026-11-18",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
       "id": "ludwig",
-      "added": "2026-11-18",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
-      "id": "matrix",
       "added": "2026-11-18",
       "draft": false,
       "source": "https://github.com/Hundekraft/op1-workshop"
