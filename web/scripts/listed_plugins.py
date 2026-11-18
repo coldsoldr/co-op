@@ -138,7 +138,6 @@ AUTHORS = {
     'Lewis-Clayton': ['nostromo', 'randomiser'],
     'nvmsocool': ['brassophone', 'windwood'],
     'AiAAAA': ['vapora'],
-    'LizardMan': ['outatime', 'dx', 'dimension', 'him', 'khorus', 'matrix'],
     'SammiBabe666': ['hollowsaint'],
     'Nola Drift': ['bloodmoon'],
     'fungiboletus': ['moai'],
@@ -161,7 +160,6 @@ CREDITS = {
     'moai': 'fungiboletus\'s op-moai, brought into kennel by Hundekraft',
     'hollowsaint': 'SammiBabe666\'s Cathedral of the Hollow Saint, brought into kennel by Hundekraft',
     'bloodmoon': 'Nola Drift\'s Project Bloodmoon, published by SammiBabe666, brought into kennel by Hundekraft',
-    'outatime': 'outatime by LizardMan245 (GPL-3.0), ported to kennel by Hundekraft',
     'gin': 'Based on libpo32 by Eric Lewis; factory sounds adapt CNTR RNDM\'s kits. Ported to kennel by Hundekraft',
     'mixtur': 'Musica Obscura by ultralazr, from op1r, ported to kennel by Hundekraft',
     'arc': 'Musica Obscura by ultralazr, from op1r, ported to kennel by Hundekraft',
@@ -171,7 +169,6 @@ CREDITS = {
     'randomiser': 'Algorithm, history and panel by Lewis-Clayton / pcppcp; native kennel integration by Hundekraft',
     'brassophone': 'From op1r, ported to kennel by Hundekraft',
     'vapora': 'By AiAAAA and the VAPORA contributors; from op1r, ported to kennel by Hundekraft',
-    'kastle': "displayname808's castle, rebuilt for the OP-1 by Hundekraft",
     'trigguard': "The idea is u/Andromax_sussybaka's",
     'blot': 'Filter after Open303\'s TB-303 filter by Robin Schmidt (MIT); from op1r, ported to kennel by Hundekraft',
     'grids': 'pcppcp\'s port of Mutable Instruments Grids by Émilie Gillet (GPL-3.0-or-later), ported to kennel by Hundekraft',
@@ -202,6 +199,10 @@ for i in ('supersaw', 'fmbell', 'granular', 'tape', 'drumplus', 'midiseq', 'midi
 ANCHOR = {'countin': 'count-in', 'fasterase': 'erase', 'sysmon': 'monitor', 'usbout': 'usb', 'tape': 'tape-fx',
           'hollowsaint': 'hollow-saint', 'juni_chorus': 'juni-chorus', 'in_a_room': 'in-a-room'}
 FOLDER = {'grids': 'grids_op1r'}  # co-op already has coldsoldr's grids
+# Left off co-op's hundekraft listings at their authors' request (2026-11-18): LizardMan's work and
+# plugins made from it (outatime, dx, dimension, him, khorus, matrix), and displayname808's (kastle).
+# Their Opus listings stay.
+WITHDRAWN = {'outatime', 'dx', 'dimension', 'him', 'khorus', 'matrix', 'kastle'}
 
 
 def kind_of(section, entry):
@@ -240,7 +241,7 @@ for fid, anchor in re.findall(r'data-feature="[a-z0-9]+:([^"]+)"[^>]*>\s*<h3[^>]
 made = []
 for section in ('synths', 'effects', 'utilities', 'op1r_plugins'):
     for e in catalog[section]:
-        if not e.get('file') or e.get('reserved'):
+        if not e.get('file') or e.get('reserved') or e['id'] in WITHDRAWN:
             continue
         pid = e['id']
         anchor = feature_anchor.get(pid) or ANCHOR.get(pid) or pid
