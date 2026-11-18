@@ -98,8 +98,25 @@ def write(folder, manifest, manual, shot):
         f.write(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n')
     with open(os.path.join(d, 'manual.md'), 'w', encoding='utf-8', newline='\n') as f:
         f.write(manual)
-    with open(os.path.join(d, 'screenshot.png'), 'wb') as f:
-        f.write(shot)
+    path = os.path.join(d, 'screenshot.png')
+    if not same_pixels(path, shot):
+        with open(path, 'wb') as f:
+            f.write(shot)
+
+
+def same_pixels(path, shot):
+    """True when the file on disk shows the same image: a name card drawn by another Pillow (the daily run on
+    GitHub's runner) can differ in bytes but not in pixels, and is then left alone."""
+    try:
+        with open(path, 'rb') as f:
+            old = f.read()
+        if old == shot:
+            return True
+        a = Image.open(io.BytesIO(old)).convert('RGBA')
+        b = Image.open(io.BytesIO(shot)).convert('RGBA')
+        return a.size == b.size and a.tobytes() == b.tobytes()
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------- hundekraft

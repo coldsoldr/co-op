@@ -11,6 +11,11 @@ form). The `plugin-request` workflow drafts the listing from the repo without a 
 `dev`; the owner merges it. Its description and manual are rough: the first paragraph of the README and a plain
 manual with no controls. `plugins/log.json` marks those with `"draft": true`. This skill rewrites them properly.
 
+A third kind: a listing the daily `changed` job found out of date, because its plugin changed in its repo since
+the listing was written (a `bot/plugin-changed` pull request, whose body lists the commits). Its entry is
+`"draft": true` with `"changed": "<date of the newest commit>"`. Bring that listing up to date with the repo as it
+is now: versions, `requires`, controls, links (a plugin can move to another folder or page), screenshot.
+
 Optional argument: one or more ids to polish; otherwise every draft.
 
 ## 1. Find the drafts
@@ -41,7 +46,8 @@ Keep what the workflow got from facts unless the repo says otherwise: `id`, `fir
   `tags`, `video`.
 - `screenshot.png`: if it is a name card, or the wrong image, look for a better one in the README.
 
-Then set its log entry to `"draft": false` and `"polished": "<today, YYYY-MM-DD>"`.
+Then set its log entry to `"draft": false` and `"polished": "<today, YYYY-MM-DD>"`, and remove `"changed"`. The
+next `changed` check counts commits from the day after `polished`.
 
 ## 3. Check and commit
 
