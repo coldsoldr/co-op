@@ -4,6 +4,13 @@
   "name": "petri",
   "builds": [
     {
+      "firmware": "op1/hundekraft",
+      "file": "petri.knl",
+      "version": "0.1",
+      "requires": "hundekraft 3.0.3",
+      "source": "https://github.com/coldsoldr/op1-plugins/tree/main/kennel/petri"
+    },
+    {
       "firmware": "op1/coop",
       "file": "petri.coop",
       "version": "0.1",
