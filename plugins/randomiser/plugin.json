@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/pcppcp/op1r-src/tree/7cf11afc2bade31f0fb08d3af877b9bb04f970bd/synth_sdk/rnd",
-  "requires": "hundekraft 3.3",
+  "requires": "hundekraft 3.3.1",
   "credits": "Algorithm, history and panel by Lewis-Clayton / pcppcp; native kennel integration by Hundekraft",
   "tags": [
     "tool",

@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/pcppcp/op1r",
-  "requires": "hundekraft 3.3",
+  "requires": "hundekraft 3.3.1",
   "credits": "pcppcp's port of Mutable Instruments Grids by Émilie Gillet (GPL-3.0-or-later), ported to kennel by Hundekraft",
   "tags": [
     "sequencer",

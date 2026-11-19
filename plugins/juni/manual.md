@@ -10,7 +10,7 @@ The filter and the chorus are voiced like a Juno-106, after FM-106 by PatttF, wh
 
 ## Get it
 
-JUNI is part of hundekraft 3.3, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+JUNI is part of hundekraft 3.3.1, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

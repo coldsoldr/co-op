@@ -6,7 +6,7 @@ Amp turns the OP-1's live input into the instrument. The mic, line, radio or USB
 
 ## Get it
 
-Amp is part of hundekraft 3.3, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+Amp is part of hundekraft 3.3.1, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

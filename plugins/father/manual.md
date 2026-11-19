@@ -10,7 +10,7 @@ The starting settings are about 50 for Distance, Gate off, 54 for Color and 30 f
 
 ## Get it
 
-Father is part of hundekraft 3.3, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+Father is part of hundekraft 3.3.1, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

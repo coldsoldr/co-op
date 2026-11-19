@@ -11,7 +11,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/SammiBabe666/Project_Hollow_Saint",
-  "requires": "hundekraft 3.3",
+  "requires": "hundekraft 3.3.1",
   "credits": "SammiBabe666's Cathedral of the Hollow Saint, brought into kennel by Hundekraft",
   "tags": [
     "synth",

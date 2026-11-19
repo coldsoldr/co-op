@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "matrix_o",
+  "name": "matrix",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "matrix is an LFO type with up to eight rows. Each row is an LFO or an envelope with an amount and a target. Pick it on the LFO page with Shift + T4. It's LizardMan's, and ticked from the start. A sound saved with the earlier MATRIX opens in this one, but its rows may sound different.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3.1",
+  "tags": [
+    "tool",
+    "hundekraft"
+  ]
+}
