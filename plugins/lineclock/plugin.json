@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3",
+  "requires": "hundekraft 3.3.1",
   "credits": "Port of Pulse Sync by Volker Junginger (ESC_CODE), GPL-3.0, used with the author's permission",
   "tags": [
     "tool",

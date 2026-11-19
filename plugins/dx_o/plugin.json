@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "dx_o",
+  "name": "dx",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "dx, by LizardMan, plays DX7 voices: six FM operators and 32 algorithms. It reads voice banks, the .syx files DX7 libraries and editors use, and brings eight voices of its own: OPUS EP, OPUS BASS, OPUS BELL, OPUS BRASS, OPUS ORGAN, OPUS PAD, OPUS PLUCK and INIT VOICE. Its FM is built on Google's Music Synthesizer for Android (Apache License 2.0). The licence is in the workshop's licenses/opus.dx folder.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3.1",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

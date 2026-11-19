@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "quant",
+  "name": "QUANT",
+  "firmware": "op1/hundekraft",
+  "kind": "feature",
+  "author": "hundekraft",
+  "description": "QUANT records what you play and loops it, pulled onto the beat. Pick QUANT with Shift + seq, then press seq to open its page.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3.1",
+  "tags": [
+    "sequencer",
+    "hundekraft"
+  ]
+}
