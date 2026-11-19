@@ -6,7 +6,7 @@ Choose C64arp in the sequencer browser: hold Shift and press SEQ, turn blue to c
 
 ## Get it
 
-C64 arpeggiator is part of hundekraft 3.3, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+C64 arpeggiator is part of hundekraft 3.3.1, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

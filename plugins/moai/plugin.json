@@ -11,7 +11,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/fungiboletus/op-moai",
-  "requires": "hundekraft 3.3",
+  "requires": "hundekraft 3.3.1",
   "credits": "fungiboletus's op-moai, brought into kennel by Hundekraft",
   "tags": [
     "synth",

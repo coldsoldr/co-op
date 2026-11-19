@@ -24,11 +24,16 @@ filters; the dry sound stays at the full rate.
 
 ## Before you start
 
-- **On opus:** Opus 2 with core 2.31 or later; see On opus, below.
-- **An original OP-1** (the 2011 model) running **coop e10** or later. There
-  is no hundekraft build.
+- **Three builds, one per firmware:** `petri.coop` for coop, `petri.knl` for
+  hundekraft and `petri.opmod` for opus. The Plugins tab offers the one for
+  the firmware chosen in Settings. The controls on hundekraft differ (see On
+  hundekraft, below); the rest of this section and Controls are about coop.
+- **An original OP-1** (the 2011 model) running **coop e10** or later. It
+  does not run on the OP-1 field or the OP-Z.
 - Install it from co-op's Plugins tab over USB, with coop chosen in
   Settings. It loads at the next power cycle.
+- **On hundekraft:** hundekraft 3.0.3; see On hundekraft, below.
+- **On opus:** Opus 2 with core 2.31 or later; see On opus, below.
 - A plugin runs as firmware code: back up your tape and sounds first.
 
 ## Controls
@@ -74,6 +79,47 @@ is Help held.
 
 strum, blocks and arp listen for the start of each note you play (an
 onset). A note held for a long time counts as a new onset once a second.
+
+## On hundekraft
+
+`petri.knl` is the coop build for hundekraft 3.0.3's kennel plugin core,
+made by coldsoldr's
+[op1-plugins](https://github.com/coldsoldr/op1-plugins): the same sound and
+screen. It has been tested in the OP-1 emulator but not yet on an OP-1.
+
+- Install it from co-op's Plugins tab over USB with hundekraft chosen in
+  Settings, or drop `petri.knl` onto **Your plugins** in the
+  [hundekraft workshop](https://hundekraft.github.io/op1-workshop/). Either
+  way the OP-1 asks you to press T1 to install, then restarts. If the OP-1
+  ever fails to start after you add a plugin, switch it off and on again: it
+  starts once without plugin files, and you can remove the file from the
+  workshop.
+- Pick it as any effect: hold shift and press T3 on a synth or drum sound,
+  or on the master in the mixer, and choose **petri**. There is one effect
+  slot, no FX 2.
+- It is stereo on the master and mono on a synth or drum sound.
+
+hundekraft has no fn layer. The four turns are the same as on coop; the
+extra controls are on the encoder presses instead:
+
+| Encoder | Turn | Press | On page 2, turn |
+|---|---|---|---|
+| blue | **time** | page 2 on or off | **effect**: mosaic .. warp, one a click (wraps round) |
+| green | **activity** | page 2 on or off | **filter**, 150 Hz to 10 kHz |
+| white | **repeats** | page 2 on or off | **space**, none to a wash |
+| orange | **mix** | **hold**, a latch; with shift held, **reverse** | |
+
+- A press flips only that knob to its second page; press it again to go
+  back. Each knob's page stays as you left it.
+- Note that filter and space are on green and white here, not on white and
+  orange as on coop, and reverse is shift + orange press, not a blue click.
+- On page 1, shift + turn is the OP-1's own fine adjust. On page 2, shift +
+  turn moves filter and space in quarter steps.
+- The screen tips forward to show the front panel (the effect lights and
+  the filter and space bars) while any knob is on page 2, where coop shows
+  it while fn is held.
+- The four knobs and the three page-2 controls are stored with the sound.
+  Hold and reverse are not.
 
 ## On opus
 
@@ -121,7 +167,8 @@ and hops a little each time you play a note, higher with more activity.
 - tunnel with short times turns any sound into a pitched drone; turn the
   filter down for something darker.
 - It runs in stereo at every position on coop, so the voices' spread is
-  heard on a synth or drum sound too.
+  heard on a synth or drum sound too. On hundekraft and opus the synth and
+  drum are mono.
 - CPU: in the Blackfin simulator it averages about 21,000 cycles a block
   (warp is the heaviest, about 29,000). The figure on the OP-1 itself is
   higher; if you hear crackles, try a lighter effect.
@@ -138,3 +185,5 @@ with the sound. Hold and reverse are not.
   filters of Mutable Instruments Clouds by Émilie Gillet (MIT).
 - Licence: GPL-3.0-or-later, with the OP-1 firmware permission.
   Source: https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/petri
+  (coop) and https://github.com/coldsoldr/op1-plugins/tree/main/kennel/petri
+  (hundekraft)

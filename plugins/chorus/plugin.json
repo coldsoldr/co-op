@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "chorus",
+  "name": "Chorus",
+  "firmware": "op1/hundekraft",
+  "kind": "fx",
+  "author": "hundekraft",
+  "description": "chorus, by LizardMan, has one to three voices and a triangle or sine sweep, and it's stereo as the master effect. On screen each voice is a stack of waves in its encoder's colour.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3.1",
+  "tags": [
+    "effect",
+    "hundekraft"
+  ]
+}

@@ -179,7 +179,7 @@ test('changes nothing on the OP-1 when the overwrite is declined in co-op', asyn
 test('offers USB install on hundekraft plugin cards and manuals', async ({ page }) => {
   await page.goto('./');
   await openPlugins(page);
-  await expect(page.getByRole('button', { name: /over USB$/ })).toHaveCount(11);
+  await expect(page.getByRole('button', { name: /over USB$/ })).toHaveCount(13);
   await page.getByRole('button', { name: 'Read the manual of rings' }).click();
   await expect(page.getByRole('button', { name: 'Install rings.knl over USB' })).toBeVisible();
 });

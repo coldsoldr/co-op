@@ -25,11 +25,16 @@ pedal.
 
 ## Before you start
 
-- **On opus:** Opus 2 with core 2.31 or later; see On opus, below.
-- **An original OP-1** (the 2011 model) running **coop e10** or later. There
-  is no hundekraft build.
+- **Three builds, one per firmware:** `fickle.coop` for coop, `fickle.knl` for
+  hundekraft and `fickle.opmod` for opus. The Plugins tab offers the one for
+  the firmware chosen in Settings. The controls on hundekraft differ (see On
+  hundekraft, below); the rest of this section and Controls are about coop.
+- **An original OP-1** (the 2011 model) running **coop e10** or later. It
+  does not run on the OP-1 field or the OP-Z.
 - Install it from co-op's Plugins tab over USB, with coop chosen in
   Settings. It loads at the next power cycle.
+- **On hundekraft:** hundekraft 3.0.3; see On hundekraft, below.
+- **On opus:** Opus 2 with core 2.31 or later; see On opus, below.
 - A plugin runs as firmware code: back up your tape and sounds first.
 
 ## Controls
@@ -89,6 +94,48 @@ the loop is off (listening), the wet channel always hears your playing.
 - All three are momentary: they aren't saved, and they switch off whenever
   the effect restarts (including a switch between synth and drum).
 
+## On hundekraft
+
+`fickle.knl` is the coop build for hundekraft 3.0.3's kennel plugin core,
+made by coldsoldr's
+[op1-plugins](https://github.com/coldsoldr/op1-plugins): the same sound and
+screen. It has been tested in the OP-1 emulator but not yet on an OP-1.
+
+- Install it from co-op's Plugins tab over USB with hundekraft chosen in
+  Settings, or drop `fickle.knl` onto **Your plugins** in the
+  [hundekraft workshop](https://hundekraft.github.io/op1-workshop/). Either
+  way the OP-1 asks you to press T1 to install, then restarts. If the OP-1
+  ever fails to start after you add a plugin, switch it off and on again: it
+  starts once without plugin files, and you can remove the file from the
+  workshop.
+- Pick it as any effect: hold shift and press T3 on a synth or drum sound,
+  or on the master in the mixer, and choose **fickle**. There is one effect
+  slot, no FX 2.
+- It is stereo on the master and mono on a synth or drum sound.
+
+hundekraft has no fn layer. The four turns are the same as on coop; the
+extra controls are on the encoder presses instead:
+
+| Encoder | Turn | Press | On page 2, turn |
+|---|---|---|---|
+| blue | **time** | page 2 on or off | **wet mode and routing** together, one a click (wraps round) |
+| green | **modify** | page 2 on or off | **loop mode**: tape 1 .. str rev, one a click (wraps round) |
+| white | **clock** | **loop**, a latch: off is listening, on is playing | |
+| orange | **mix** | **freeze**, a latch; with shift held, **dub** | |
+
+- A press on blue or green flips only that knob to its second page; press it
+  again to go back. Each knob's page stays as you left it.
+- Blue's second page has nine steps, the three wet modes each with the three
+  routings: reverb in, reverb both, reverb loop, delay in, delay both, delay
+  loop, slip in, slip both, slip loop. It starts on reverb both.
+- Note the differences from coop: routing shares blue with the wet mode,
+  loop mode is on green instead of white, and dub is shift + orange press
+  instead of a green click.
+- Shift + turn on page 1 is the OP-1's own fine adjust.
+- The four knobs and the two page-2 controls are stored with the sound.
+  Freeze, loop and dub are not, and a captured loop is not kept when the
+  effect restarts.
+
 ## On opus
 
 `fickle.opmod` is the coop build ported to Opus 2 by coldsoldr's
@@ -140,7 +187,8 @@ jerky steps, like a low sample rate.
 - Turn the clock down while a loop plays to drop its pitch and make it
   longer and grittier, as slowing a tape does.
 - env hard with a busy loop turns your playing into a slice trigger.
-- It runs in stereo at every position on coop.
+- It runs in stereo at every position on coop; on hundekraft and opus the
+  synth and drum are mono.
 - CPU: in the Blackfin simulator it uses about 13,000 to 28,000 cycles a
   block at the default clock, and more at the top of the clock with the
   loop playing and dubbing. The figure on the OP-1 itself is higher; if you
@@ -157,3 +205,5 @@ not kept when the effect restarts.
 - fickle is coldsoldr's own work.
 - Licence: GPL-3.0-or-later, with the OP-1 firmware permission.
   Source: https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/fickle
+  (coop) and https://github.com/coldsoldr/op1-plugins/tree/main/kennel/fickle
+  (hundekraft)

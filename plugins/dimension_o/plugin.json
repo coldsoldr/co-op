@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "dimension_o",
+  "name": "dimension",
+  "firmware": "op1/hundekraft",
+  "kind": "synth",
+  "author": "hundekraft",
+  "description": "dimension is a six-voice synth by LizardMan. One oscillator morphs from noise through pulse, square and saw to saw with a sub. It runs into a four-pole low-pass filter and a slow ensemble that thickens the sound.",
+  "link": "https://hundekraft.github.io/op1-workshop/",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/Hundekraft/op1-workshop",
+  "requires": "hundekraft 3.3.1",
+  "tags": [
+    "synth",
+    "hundekraft"
+  ]
+}

@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3",
+  "requires": "hundekraft 3.3.1",
   "credits": "Reconstructs Maiko Pruett's #250 algorithm and artwork, used with permission",
   "tags": [
     "effect",
