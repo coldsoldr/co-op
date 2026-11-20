@@ -52,23 +52,45 @@ Instance* g_inst[COOP_FX_SLOTS];         // .bss: each slot's state, in its posi
 
 inline int32_t Clamp15(int32_t v) { return v < 0 ? 0 : (v > 32767 ? 32767 : v); }
 
-// A turn's word in the filter type's range {lo..hi} -> 0..32767, as kennel's op1_fx_param_q15 (four divisions a
-// block, outside the per-sample loop).
-inline int32_t Q15(int32_t v, int32_t lo, int32_t hi) { return Clamp15((v - lo) * 32767 / (hi - lo)); }
+// A turn's word in the filter type's range {lo..hi} -> 0..32767, as kennel's op1_fx_param_q15. One software divide
+// (libgcc's ___divsi3, ~190 cycles on this CPU), only for a word that moved (Turns below).
+const int32_t kLo[4] = { 64, 0, 0, 8192 };
+const int32_t kHi[4] = { 14528, 24576, 22528, 32767 };
+inline int32_t Q15(int32_t v, int k) { return Clamp15((v - kLo[k]) * 32767 / (kHi[k] - kLo[k])); }
+
+// 0.6: the four turns as the DSP takes them, kept per slot and redone only for a word that moved (four divides a block
+// before: docs/efficiency-audit.md finding 8). The same values, so the same output bit for bit. Tiny per-slot values
+// in .bss (guidelines 2.3); init clears `valid`, so the first render after a selection computes all four.
+struct Turns {
+  int16_t raw[4];                        // params[0..3] as last seen
+  int32_t valid;
+  int32_t q[4];                          // 0..32767
+};
+Turns g_turns[COOP_FX_SLOTS];
 
 // tape_knl.cc Params(), with coop's words.
-op1fx::TapeParams Params(const int16_t* p) {
+op1fx::TapeParams Params(int slot, const int16_t* p) {
+  Turns& c = g_turns[slot];
+  const bool all = !c.valid;
+  for (int k = 0; k < 4; ++k) {
+    if (all || p[k] != c.raw[k]) {
+      c.raw[k] = p[k];
+      c.q[k] = Q15(p[k], k);
+    }
+  }
+  c.valid = 1;
   op1fx::TapeParams q;
-  q.saturate = Q15(p[0], 64, 14528);
-  q.wobble = Q15(p[1], 0, 24576);
-  q.age = 32767 - Q15(p[2], 0, 22528);      // clockwise = a newer tape
-  q.mix = Q15(p[3], 8192, 32767);
+  q.saturate = c.q[0];
+  q.wobble = c.q[1];
+  q.age = 32767 - c.q[2];                    // clockwise = a newer tape
+  q.mix = c.q[3];
   q.gain_oct = (Clamp15(p[5]) - 16384) * 4;  // Q16 octaves, -1..1 (about -6..+6 dB)
   return q;
 }
 
 int init(int slot) {
   if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+  g_turns[slot].valid = 0;               // nothing kept across a selection
   uint32_t bytes = 0;
   Instance* p = static_cast<Instance*>(coop_fx_scratch(slot, &bytes));
   g_inst[slot] = (p && bytes >= sizeof(Instance)) ? p : nullptr;
@@ -81,7 +103,7 @@ void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
   if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   // not bound: dry
   Instance& g = *g_inst[slot];
   if (n <= 0 || n > op1fx::kTapeMaxBlock || (n & 1)) return;   // the DSP takes n even, 2..64 (coop: always 64)
-  const op1fx::TapeParams q = Params(params);                   // read once, for the whole block
+  const op1fx::TapeParams q = Params(slot, params);             // read once, for the whole block
   for (int i = 0; i < n; ++i) {
     g.l[i] = static_cast<int16_t>(l[i] >> 16);
     g.r[i] = static_cast<int16_t>(r[i] >> 16);
