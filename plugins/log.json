@@ -741,9 +741,10 @@
     {
       "id": "fluke",
       "added": "2026-11-14",
-      "draft": false,
+      "draft": true,
       "source": "https://github.com/VolkerJunginger/OP-1",
-      "polished": "2026-11-18"
+      "polished": "2026-11-18",
+      "changed": "2026-11-19"
     },
     {
       "id": "midireverb",
@@ -775,22 +776,25 @@
       "id": "flux",
       "added": "2026-11-16",
       "source": "https://github.com/VolkerJunginger/OP-1",
-      "draft": false,
-      "polished": "2026-11-18"
+      "draft": true,
+      "polished": "2026-11-18",
+      "changed": "2026-11-19"
     },
     {
       "id": "grip",
       "added": "2026-11-16",
       "source": "https://github.com/VolkerJunginger/OP-1",
-      "draft": false,
-      "polished": "2026-11-18"
+      "draft": true,
+      "polished": "2026-11-18",
+      "changed": "2026-11-19"
     },
     {
       "id": "hits",
       "added": "2026-11-16",
       "source": "https://github.com/VolkerJunginger/OP-1",
-      "draft": false,
-      "polished": "2026-11-18"
+      "draft": true,
+      "polished": "2026-11-18",
+      "changed": "2026-11-19"
     },
     {
       "id": "drift",
