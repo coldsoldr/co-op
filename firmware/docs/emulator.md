@@ -238,3 +238,16 @@ own "PREPARING STEREO" first-boot step), no fault.
   one detent per notch; a click without moving is the encoder's push. Transitions go out at most four per frame,
   2 ms apart in guest time (edges sent at once would be lost by the firmware's GPIO interrupt). The volume knob drags
   and wheels too. The old click areas are replaced (their anticlockwise step also indexed out of its table).
+
+## USB over USB/IP, and the gate as one command (2026-11-20)
+
+op1emu serves the emulated OP-1's USB port over USB/IP on TCP 3240, in headless runs too (its README, "USB"): the
+device appears once the firmware has connected, as 2367:0004 with audio control, two audio streaming interfaces and
+MIDI streaming. `tools/coop_usb.py --transport usbip` attaches to it without a kernel module and speaks coop's SysEx:
+HELLO, INVENTORY, FILE_GET and RUN status answered by the e9 image [C]. "The emulator has no USB-MIDI"
+(`docs/sysex.md`) is superseded. One client at a time; a second emulator does not get the port.
+
+`tools/emu_gate.py` is the gate procedure of the sections above as one command with a JSON verdict (scratch NAND,
+run, stats, expectations, reference compare, screenshots as PNG, cleanup, the `emu.lock`). A scratch NAND on /mnt/i
+slows the emulator about five times, enough for a scenario's wall-timed `quit` to come before its events; the gate
+keeps them on WSL's disk and checks that a run reached its last `at`. `docs/test-loop.md` has both and the plan.
