@@ -7,7 +7,9 @@
 #     gate) this lands on a stock type of the master FX 2 list, not the plugin: s2_master runs, fxctl p4 stays 0]
 # then a synth chord through p0 -> p3 -> (mix) -> p4 and drum keys. Expected: no fault; plugins loaded 1; fxctl p0 and p3
 # each with blocks and inits >= 1 (p4: see above); the cost lines fx1_plugin and s2_instr rendering; plugmem
-# scratch_files 1, fxbuf = the plugin's declared bytes rounded to 32, fxbuf_mem = 5 x that + 32 with its header.
+# scratch_files 1, fxbuf = the plugin's declared bytes rounded to 32, fxbufs 4, fxbuf_mem = 4 x that (e12; e8-e11: five
+# buffers in one heap block). With an image built `--set-word g_coop_fxbuf_max=1` p0 takes the only buffer and p3 is
+# refused: `plugfx tape echo no memory for this position: slots 3`, fxctl p3 stays 0.
 accel 64 -64 512
 wait-frames 1 300000
 at 26000

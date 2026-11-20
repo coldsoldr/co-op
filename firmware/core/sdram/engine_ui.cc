@@ -47,7 +47,7 @@
 #define ENG_KNOBS(i) ((volatile int16_t *)(0xFF8013C4u + (uint32_t)(i) * 16))
 #define PATCH_S(i)   ((void *)(0x01DDD7E8u + (uint32_t)(i) * 0x38))
 #define SET_KNOBS    ((void (*)(void *, const int16_t *))0x01A00D14u)      /* Patch::SetKnobs (coop_random.cc) */
-#define MALLOC       ((void *(*)(uint32_t))0x01A9F348u)
+#include "coop_arena.h"                                                    /* e12: the control tables (heap 0 before) */
 #define ITER_SCREEN  0x14
 #define KEY_ENC0     0x3B
 #define MAGIC        0x5300
@@ -103,10 +103,9 @@ static const char *set_controls(int n, const char *text, int fx)
 {
     if (!text || !*text) return 0;
     if (n <= 0 || n >= SLOTS) return "bad engine number";
-    struct ctls *t = (struct ctls *)MALLOC(sizeof(struct ctls));
+    struct ctls *t = (struct ctls *)coop_arena_take(sizeof(struct ctls));   /* zeroed; the loader resets the arena when the
+                                                                             file is refused (plugin_host.cc) */
     if (!t) return "plugin memory full";
-    volatile uint8_t *z = (volatile uint8_t *)t;
-    for (uint32_t i = 0; i < sizeof(struct ctls); i++) z[i] = 0;
     t->fx = fx;
     const char *p = text;
     while (*p) {
@@ -183,6 +182,14 @@ static const char *set_controls(int n, const char *text, int fx)
     g_ctl[n] = t;
     if (fx) g_ctl_fx++; else g_ctl_engines++;
     return 0;
+}
+extern "C" uint32_t coop_ctl_bytes(void) { return sizeof(struct ctls); }   /* e12: the budget counts it (plugin_host.cc) */
+/* e12: a file refused after its table was parsed: the table's block goes back to the arena, so forget it */
+extern "C" void coop_ctl_drop(int n)
+{
+    if (n <= 0 || n >= SLOTS || !g_ctl[n]) return;
+    if (g_ctl[n]->fx) { if (g_ctl_fx) g_ctl_fx--; } else if (g_ctl_engines) g_ctl_engines--;
+    g_ctl[n] = 0;
 }
 extern "C" const char *coop_engine_set_controls(int n, const char *text) { return set_controls(n, text, 0); }
 extern "C" const char *coop_fx_set_controls(int n, const char *text) { return set_controls(n, text, 1); }   /* e6 */

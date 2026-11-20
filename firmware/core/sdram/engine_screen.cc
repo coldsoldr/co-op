@@ -43,7 +43,7 @@
 #define ITER_ID        0x14
 #define SYNTH_SLOT     (*(volatile int *)0xFF8016D4u)
 #define SYNTH_KNOBS(s) ((const int16_t *)(0xFF8013C4u + (uint32_t)((s) & 7) * 16u))
-#define MALLOC         ((void *(*)(uint32_t))0x01A9F348u)
+#include "coop_arena.h"                                                    /* e12: the screen objects (heap 0 before) */
 #define MAGIC          0x5300
 #define SLOTS          64
 #define OBJ_WORDS      32                                                  /* the iter screen class uses up to +0x74 */
@@ -82,6 +82,15 @@ extern "C" void coop_engine_screen_file(int n, const char *file)
 }
 extern "C" void coop_fx_screen_file(int n, const char *file) { coop_engine_screen_file(n, file); }   /* e9 */
 extern "C" uint32_t coop_screen_obj_bytes(void) { return sizeof(struct escr); }   /* e9: the budget counts it (plugin_host.cc) */
+/* e12: plugin n's screen object, taken from the arena by the loader (main thread, during the boot scan: the arena is
+ * sealed before the Gfx thread builds the screens, which only fills what was taken here). 1 = it has one. */
+static struct escr *g_es_mem[SLOTS];
+extern "C" int coop_screen_obj_reserve(int n)
+{
+    if (n <= 0 || n >= SLOTS) return 0;
+    if (!g_es_mem[n]) g_es_mem[n] = (struct escr *)coop_arena_take(sizeof(struct escr));
+    return g_es_mem[n] != 0;
+}
 
 static int engine_shown(void)
 {
@@ -217,7 +226,7 @@ extern "C" uint32_t coop_te_used(void)
 
 static struct escr *build_one(int n, int id, const char *file)
 {
-    struct escr *e = (struct escr *)MALLOC(sizeof(struct escr));
+    struct escr *e = (n > 0 && n < SLOTS) ? g_es_mem[n] : 0;               /* e12: reserved at load (coop_screen_obj_reserve) */
     if (!e) return 0;
     volatile uint32_t *w = (volatile uint32_t *)e;
     for (unsigned i = 0; i < sizeof(struct escr) / 4; i++) w[i] = 0;

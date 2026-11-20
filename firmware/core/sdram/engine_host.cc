@@ -10,7 +10,7 @@
  * Voices: the six iter voice objects sit at 0xFFB00000 + i * 0x24 (kennel op1_voice_index). The stock computes the
  * voice's per-sample pitch words (0xFF801950) before the render and writes its velocity (0xFF801064, vel << 8) around
  * the note on; the dispatchers hand both to the plugin, so a plugin never names a firmware address. The plugin's
- * per-voice state (coop_engine_t.voice_bytes, six voices) comes from heap 0 at load.
+ * per-voice state (coop_engine_t.voice_bytes, six voices) comes from coop's plugin arena at load (e12; heap 0 before).
  *
  * Threads: the dispatchers run in the audio interrupt (the voice loop); coop_engine_add runs on the main thread at
  * boot, before the engine is published (g_eng[n].e last, after an ssync).
@@ -20,12 +20,11 @@
 #include <stdint.h>
 #include "coop_plugin.h"
 #include "coop_cost.h"
+#include "coop_arena.h"
 
 #define ITER_RENDER   ((void (*)(void *, int16_t *, const int16_t *))0x019B99D4u)
 #define ITER_NOTE_ON  ((void (*)(void *, const int16_t *))0x019B9B8Au)
 #define ITER_NOTE_OFF ((void (*)(void *))0x019B996Cu)
-#define MALLOC        ((void *(*)(uint32_t))0x01A9F348u)                  /* heap 0 */
-#define FREE          ((void (*)(void *))0x01AA0040u)
 #define VOICE_BASE    0xFFB00000u
 #define VOICE_SIZE    0x24u
 #define PITCH_INC     ((const int32_t *)0xFF801950u)                     /* the voice being rendered, 128 words */
@@ -54,17 +53,16 @@ extern "C" const char *coop_engine_add(int n, const coop_engine_t *e)
     if (n <= 0 || n >= SLOTS || g_eng[n].e) return "engine number taken";
     if (e->voice_bytes > COOP_VOICE_BYTES_MAX) return "engine voice state too large";
     uint32_t stride = (e->voice_bytes + 31u) & ~31u;
-    uint8_t *raw = 0, *state = 0;
-    if (stride) {
-        raw = (uint8_t *)MALLOC(stride * COOP_VOICES + 32u);
-        if (!raw) return "plugin memory full";
-        state = (uint8_t *)(((uint32_t)(uintptr_t)raw + 31u) & ~31u);
-        for (uint32_t i = 0; i < stride * COOP_VOICES; i += 4) *(volatile uint32_t *)(state + i) = 0;
+    uint8_t *state = 0;
+    if (stride) {                                                         /* e12: the arena (32-aligned, zeroed); a caller
+                                                                             that fails resets the arena to its mark */
+        state = (uint8_t *)coop_arena_take(stride * COOP_VOICES);
+        if (!state) return "plugin memory full";
     }
     g_l1_lease_open = 1;
     int bad = e->init && e->init() != 0;
     g_l1_lease_open = 0;
-    if (bad) { if (raw) FREE(raw); return "engine init failed"; }
+    if (bad) return "engine init failed";
     g_eng[n].state = state;
     g_eng[n].stride = stride;
     g_eng[n].f44k = e->flags & COOP_ENGINE_F_44K;

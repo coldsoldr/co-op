@@ -210,9 +210,20 @@ def inventory(s):
         f = line.split('\t')
         if len(f) >= 8:
             f += [''] * (9 - len(f))
-            rows.append({'file': f[0], 'kind': f[1], 'name': f[2], 'boot': f[3], 'next': f[4], 'version': f[5],
-                         'author': f[6], 'bytes': int(f[7]) if f[7].isdigit() else None, 'reason': f[8]})
-    return {'header': head, 'build': next((h[6:] for h in head if h.startswith('build ')), None), 'plugins': rows}
+            row = {'file': f[0], 'kind': f[1], 'name': f[2], 'boot': f[3], 'next': f[4], 'version': f[5],
+                   'author': f[6], 'bytes': int(f[7]) if f[7].isdigit() else None, 'reason': f[8]}
+            if len(f) >= 11 and f[9].isdigit() and f[10].isdigit():      # e12: the file's own memory, its position buffer
+                row['need'], row['scratch'] = int(f[9]), int(f[10])
+            rows.append(row)
+    out = {'header': head, 'build': next((h[6:] for h in head if h.startswith('build ')), None), 'plugins': rows}
+    memory = {}                                                          # e12: budget, used, fxbuf, fxbufs, clip
+    for h in head[3:]:
+        k, _, v = h.partition(' ')
+        if v.isdigit():
+            memory[k] = int(v)
+    if memory:
+        out['memory'] = memory
+    return out
 
 
 def run_status(s):
