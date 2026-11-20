@@ -25,10 +25,10 @@ const BUDGET_BY_CORE: Record<string, number> = {
   e8: 1536 * 1024,
   e9: 1536 * 1024,
   e10: 1536 * 1024,
-  // TODO(e11): the core being built has a larger budget; add `e11: <bytes>` here once its number is final.
+  e11: 1728 * 1024,
 };
 /** For a core this table does not know yet: the newest budget it does know (the note under the bar says so). */
-const NEWEST_KNOWN_BUDGET = 1536 * 1024;
+const NEWEST_KNOWN_BUDGET = 1728 * 1024;
 
 /**
  * The budget of the core with this build tag ("e10", or "e10-something"), whether the table knows the core, or null

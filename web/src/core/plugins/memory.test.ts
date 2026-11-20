@@ -201,8 +201,9 @@ describe('budgetOfCore', () => {
   });
 
   it('guesses for a core it does not know', () => {
-    expect(budgetOfCore('e99')).toEqual({ bytes: BUDGET, known: false });
-    expect(budgetOfCore(null)).toEqual({ bytes: BUDGET, known: false });
+    expect(budgetOfCore('e11')).toEqual({ bytes: 1728 * 1024, known: true });
+    expect(budgetOfCore('e99')).toEqual({ bytes: 1728 * 1024, known: false });
+    expect(budgetOfCore(null)).toEqual({ bytes: 1728 * 1024, known: false });
   });
 });
 
