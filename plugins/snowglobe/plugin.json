@@ -2,17 +2,33 @@
   "format": 1,
   "id": "snowglobe",
   "name": "Snowglobe",
-  "firmware": "op1/hundekraft",
   "kind": "fx",
   "author": "hundekraft",
   "description": "A shimmer reverb whose tail climbs an octave at a time. At the top of orange the tail freezes into a pad that holds until you turn back.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3.1",
   "tags": [
     "effect",
-    "hundekraft"
+    "hundekraft",
+    "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/snowglobe.op1p",
+      "sha256": "54f5ae7e1f03ee7841fa022837f39322fac19a3f5e6e3e3f8afd13297d1bca4b",
+      "sizeBytes": 21670,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/snowglobe",
+      "savedName": "snowglobe"
+    }
   ]
 }

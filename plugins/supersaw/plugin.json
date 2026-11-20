@@ -2,19 +2,34 @@
   "format": 1,
   "id": "supersaw",
   "name": "Supersaw",
-  "firmware": "op1/hundekraft",
   "kind": "synth",
   "author": "pcppcp",
   "description": "Two detuned saws with a sub oscillator and drive. The trance lead and the hoover live here. The screen is a chainsaw: the chain teeth draw the waveform and the saw shakes with drive.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/pcppcp/op1r",
-  "requires": "hundekraft 3.3.1",
   "credits": "From op1r, ported to kennel by Hundekraft",
   "tags": [
     "synth",
     "hundekraft",
     "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/supersaw.op1p",
+      "sha256": "e68707ed97271e245b4ab2071281db704183f7817d00f5eacbfcf13f845800da",
+      "sizeBytes": 10593,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/supersaw",
+      "savedName": "supersaw"
+    }
   ]
 }

@@ -2,17 +2,33 @@
   "format": 1,
   "id": "monolit",
   "name": "MONOLIT",
-  "firmware": "op1/hundekraft",
   "kind": "synth",
   "author": "hundekraft",
   "description": "Every note plays three oscillators through a four-pole ladder filter. Each knob moves several settings at once, so every position gives you something usable. The amp envelope on T2, glide and the play modes work as on the other synths. Push blue, green or white for page 2.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3.1",
   "tags": [
     "synth",
-    "hundekraft"
+    "hundekraft",
+    "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/monolit.op1p",
+      "sha256": "7096592322a7c419a31daeac6cb90b3cf11c9aa590e36c64b34b675a0783b2d4",
+      "sizeBytes": 12062,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/monolit",
+      "savedName": "monolit"
+    }
   ]
 }

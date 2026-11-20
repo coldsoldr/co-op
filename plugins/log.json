@@ -897,6 +897,24 @@
       "added": "2026-11-19",
       "draft": false,
       "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "id": "perc",
+      "added": "2026-11-20",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r-src"
+    },
+    {
+      "id": "percsyn",
+      "added": "2026-11-20",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r-src"
+    },
+    {
+      "id": "reedie",
+      "added": "2026-11-20",
+      "draft": false,
+      "source": "https://github.com/pcppcp/op1r-src"
     }
   ]
 }

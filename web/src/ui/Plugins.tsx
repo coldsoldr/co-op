@@ -18,6 +18,7 @@ import {
   groupByAuthor,
   pluginFileUrl,
   pluginFolderUrl,
+  OP1R_PATCHER_URL,
   type PluginFilter,
 } from '../core/plugins/catalogue';
 import { getProfile } from '../core/profiles/registry';
@@ -392,12 +393,15 @@ function hostOf(link: string): string {
 /**
  * A listed build: co-op hosts no file for it, so the card links to where its author offers it. A
  * hundekraft build that names its .knl (fileUrl) also gets the install actions: the page fetches the
- * file from the author, checks it against the index and sends it to the OP-1.
+ * file from the author, checks it against the index and sends it to the OP-1. An op1r build that
+ * names its .op1p gets a download instead: op1r installs plugins with its own web patcher.
  */
 function ListedLink({ plugin, renderActions }: { plugin: PluginIndexEntry; renderActions: PluginsProps['renderActions'] }) {
   const noteId = useId();
   if (plugin.link === undefined) return null;
-  const installable = isInstallable(plugin) && plugin.firmware === 'op1/hundekraft';
+  const fetchable = isInstallable(plugin);
+  const installable = fetchable && plugin.firmware === 'op1/hundekraft';
+  const downloadable = fetchable && plugin.firmware === 'op1/op1r';
   return (
     <div className="plugin-actions">
       <div className="plugin-buttons">
@@ -406,17 +410,26 @@ function ListedLink({ plugin, renderActions }: { plugin: PluginIndexEntry; rende
           href={plugin.link}
           target="_blank"
           rel="noopener noreferrer"
-          aria-describedby={installable ? noteId : undefined}
+          aria-describedby={installable || downloadable ? noteId : undefined}
         >
           Get it from {hostOf(plugin.link)}
           <span className="visually-hidden"> ({plugin.name}, opens a new tab)</span>
         </a>
         {installable && renderActions?.(plugin)}
+        {downloadable && <DownloadButton plugin={plugin} />}
       </div>
       {installable ? (
         <p className="notice" id={noteId}>
           co-op hosts no copy: Install over USB fetches {plugin.file} from its author's repo, checks it, and sends it to the
           OP-1. A plugin runs as firmware code there, so remove an older copy of it before installing a new one.
+        </p>
+      ) : downloadable ? (
+        <p className="notice" id={noteId}>
+          co-op hosts no copy: Download fetches {plugin.file} from op1r's repo and checks it. Install it with{' '}
+          <a href={OP1R_PATCHER_URL} target="_blank" rel="noopener noreferrer">
+            op1r's web patcher
+          </a>{' '}
+          (Connect OP-1); a plugin runs as firmware code on the OP-1.
         </p>
       ) : (
         <p className="muted">Listed here for reference: co-op links to its author's page and hosts no copy.</p>
@@ -425,16 +438,10 @@ function ListedLink({ plugin, renderActions }: { plugin: PluginIndexEntry; rende
   );
 }
 
-/**
- * Download (the file checked against the index first) and the actions later phases add, with the
- * safety note for hundekraft plugins beside them.
- */
-function HostedDownload({ plugin, renderActions }: { plugin: HostedPluginEntry; renderActions: PluginsProps['renderActions'] }) {
+/** Fetches a plugin's file (co-op's copy or its author's), checks it against the index and saves it. */
+function usePluginDownload(plugin: HostedPluginEntry): { working: boolean; error: string | null; download: () => Promise<void> } {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const noteId = useId();
-  const hundekraft = plugin.firmware === 'op1/hundekraft';
-
   async function download(): Promise<void> {
     setWorking(true);
     setError(null);
@@ -447,6 +454,35 @@ function HostedDownload({ plugin, renderActions }: { plugin: HostedPluginEntry; 
       setWorking(false);
     }
   }
+  return { working, error, download };
+}
+
+/** A download button on its own, with its progress and error beside it. */
+function DownloadButton({ plugin }: { plugin: HostedPluginEntry }) {
+  const { working, error, download } = usePluginDownload(plugin);
+  return (
+    <>
+      <button type="button" onClick={() => void download()} disabled={working} aria-label={`Download ${plugin.file}`}>
+        Download {plugin.file} ({formatSize(plugin.sizeBytes)})
+      </button>
+      {working && <span role="status">Downloading…</span>}
+      {error && (
+        <span role="alert" className="error">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
+/**
+ * Download (the file checked against the index first) and the actions later phases add, with the
+ * safety note for hundekraft plugins beside them.
+ */
+function HostedDownload({ plugin, renderActions }: { plugin: HostedPluginEntry; renderActions: PluginsProps['renderActions'] }) {
+  const { working, error, download } = usePluginDownload(plugin);
+  const noteId = useId();
+  const hundekraft = plugin.firmware === 'op1/hundekraft';
 
   return (
     <div className="plugin-actions">

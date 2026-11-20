@@ -58,9 +58,10 @@ export function App() {
   const op1fun = useOp1Fun();
 
   // hundekraft and coop plugins install over USB MIDI; the inventory the OP-1 reports afterwards is shared.
-  // opus plugins are copied into mods/ on the open drive.
+  // opus plugins are copied into mods/ on the open drive. op1r plugins are only downloaded: op1r's own web
+  // patcher installs them.
   const pluginActions = (plugin: HostedPluginEntry) =>
-    plugin.firmware === 'op1/hundekraft' ? (
+    plugin.firmware === 'op1/op1r' ? null : plugin.firmware === 'op1/hundekraft' ? (
       <>
         <TryOnOp1 plugin={plugin} onInstalled={device.setInstalledPlugins} />
         <InstallOverUsb plugin={plugin} onInstalled={device.setInstalledPlugins} />

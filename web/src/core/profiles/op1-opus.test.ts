@@ -39,7 +39,7 @@ describe('op1/opus identity and layout', () => {
   });
 
   it('is registered after hundekraft, before coop', () => {
-    expect(profiles.map((p) => p.id)).toEqual(['op1/stock', 'op1/hundekraft', 'op1/opus', 'op1/coop']);
+    expect(profiles.map((p) => p.id)).toEqual(['op1/stock', 'op1/hundekraft', 'op1/opus', 'op1/coop', 'op1/op1r']);
   });
 });
 

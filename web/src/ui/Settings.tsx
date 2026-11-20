@@ -9,6 +9,8 @@ const ABOUT: Record<string, string> = {
   'op1/opus': 'opus and its .opmod plugins, copied into the mods folder in disk mode.',
   'op1/coop':
     "coop, this project's firmware: stereo tape, two effect and LFO slots, plugin synth engines and effects (.coop). Its plugins are installed, removed and switched on or off from the Plugins tab over USB; each change applies after a power cycle.",
+  'op1/op1r':
+    "pcppcp's op1r and its plugins (.op1p): synths, effects, sequencers and tools. The Plugins tab lists them and downloads the files; install them with op1r's own web patcher.",
 };
 
 interface SettingsProps {

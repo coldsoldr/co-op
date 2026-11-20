@@ -2,17 +2,33 @@
   "format": 1,
   "id": "stutter",
   "name": "STUTTER",
-  "firmware": "op1/hundekraft",
   "kind": "fx",
   "author": "hundekraft",
   "description": "STUTTER cuts time into slices on the OP-1's beat. At each slice it rolls a dice: the slice plays through, or its first part is repeated until the slice ends. Repeats always land on the grid. It follows the OP-1's tempo, MIDI clock and the tape's speed, and runs at 120 BPM when there's no clock. The four rings show Rate, Mode, Shape and Chance. Push blue and the Rate ring shows Parts; push again to return to Rate.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3.1",
   "tags": [
     "effect",
-    "hundekraft"
+    "hundekraft",
+    "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/stutter.op1p",
+      "sha256": "1ef9e6580a762d6787f4b7191f3078827d6306a20f80aaec407b780bbf62d715",
+      "sizeBytes": 84051,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/stutter",
+      "savedName": "stutter"
+    }
   ]
 }

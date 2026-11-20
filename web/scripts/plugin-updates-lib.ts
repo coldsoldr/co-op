@@ -40,8 +40,12 @@ export interface Problem {
 
 const RAW = /^https:\/\/raw\.githubusercontent\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/([0-9a-f]{40})\/(.+)$/;
 const REPO = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)(?:[/?#]|$)/;
-/** Kept by web/scripts/listed_plugins.py from the workshop's and opus's own releases. */
-const REFRESHED = ['https://hundekraft.github.io/op1-workshop/', 'https://github.com/LizardMan245/opus/releases'];
+/** Kept by web/scripts/listed_plugins.py from the workshop's, opus's and op1r's own releases. */
+const REFRESHED = [
+  'https://hundekraft.github.io/op1-workshop/',
+  'https://github.com/LizardMan245/opus/releases',
+  'https://pcppcp.github.io/op1r/web/',
+];
 const MAX_NOTES = 1500;
 
 type Build = Record<string, unknown> & { firmware: string; version?: string; link?: string; source?: string; fileUrl?: string };

@@ -2,19 +2,34 @@
   "format": 1,
   "id": "reverb",
   "name": "Reverb",
-  "firmware": "op1/hundekraft",
   "kind": "fx",
   "author": "pcppcp",
   "description": "Based on the Elements reverb from Mutable Instruments, drawn as Kali with art by DAN76. Her arms count the decay, the flames show the tone. The skulls and flames change brightness continuously.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/pcppcp/op1r",
-  "requires": "hundekraft 3.3.1",
   "credits": "After the Mutable Instruments Elements reverb by Émilie Gillet; screen art by DAN76; from op1r",
   "tags": [
     "effect",
     "hundekraft",
     "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/reverb.op1p",
+      "sha256": "089d5b49bc1e6565c2d5d11e598f7a46f01648accd3d5477ef2ac8d763e54d65",
+      "sizeBytes": 39345,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/reverb",
+      "savedName": "reverb"
+    }
   ]
 }

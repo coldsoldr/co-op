@@ -2,19 +2,34 @@
   "format": 1,
   "id": "grids_op1r",
   "name": "Grids",
-  "firmware": "op1/hundekraft",
   "kind": "feature",
   "author": "pcppcp",
   "description": "Grids plays three parts, BD, SD and HH, from a map of drum patterns. Move the point around the map with X and Y and the patterns morph from one groove into the next. Fill sets how busy each part is, and Chaos adds random variation. It's pcppcp's port of Émilie Gillet's Grids module.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/pcppcp/op1r",
-  "requires": "hundekraft 3.3.1",
   "credits": "pcppcp's port of Mutable Instruments Grids by Émilie Gillet (GPL-3.0-or-later), ported to kennel by Hundekraft",
   "tags": [
     "sequencer",
     "hundekraft",
     "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/grids.op1p",
+      "sha256": "8697b3fc9e7e4dfb240b8f8e9f66d1da286473f7b56eedbf1dee16a7aa43270b",
+      "sizeBytes": 14817,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/grids",
+      "savedName": "grids"
+    }
   ]
 }

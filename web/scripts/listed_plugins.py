@@ -1,6 +1,12 @@
 """Refreshes co-op's listed plugins: one folder in plugins/ (plugin.json with a link and no file,
-manual.md, screenshot.png) for every plugin in the live hundekraft workshop and in Opus 2's plugin
-list. co-op hosts no copy of these: each card links to where its author offers it.
+manual.md, screenshot.png) for every plugin in the live hundekraft workshop, in Opus 2's plugin
+list and in op1r's release. co-op hosts no copy of these: each card links to where its author
+offers it. op1r's builds also name their .op1p in op1r's repo, pinned to a commit (fileUrl), so the
+page can download it checked against its hash.
+
+A plugin on more than one of them is one folder with a build per firmware (hundekraft's port of an
+op1r plugin and op1r's own): hundekraft's text and picture, op1r's build beside it. A listing
+/add-plugin made from an author's repo keeps its text and builds; only its op1r build is kept here.
 
     python -I web/scripts/listed_plugins.py            # writes into the repository's plugins/
     python -I web/scripts/listed_plugins.py <plugins dir>
@@ -9,6 +15,8 @@ Needs Python 3 and Pillow. It reads, and never runs, these pages:
 
     hundekraft.github.io/op1-workshop/  catalog.json, release.json, manual.html, screenshots
     opus-op1.pages.dev/                 js/opus2-plugins.js (read as text), img/ screenshots
+    github.com/pcppcp/op1r              data/manifest.json, CHANGELOG.md, README.md, docs/images/ (the HEAD commit)
+    github.com/pcppcp/op1r-src          synth_sdk/plugins/*/plugin.json and README.md (the HEAD commit)
 
 Who made each plugin is set below (AUTHORS, CREDITS), from the workshop manual's credits and op1r's
 README: a port is its porter's, with the original in its credits. A new plugin in the workshop
@@ -21,6 +29,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.request
 
 from PIL import Image, ImageDraw, ImageFont
@@ -29,6 +38,10 @@ PLUGINS = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.
 WORKSHOP = 'https://hundekraft.github.io/op1-workshop/'
 OPUS_SITE = 'https://opus-op1.pages.dev/'
 OPUS_RELEASES = 'https://github.com/LizardMan245/opus/releases'
+OP1R_REPO = 'pcppcp/op1r'
+OP1R_SRC_REPO = 'pcppcp/op1r-src'
+OP1R_WEB = 'https://pcppcp.github.io/op1r/web/'
+REFRESHED_LINKS = (WORKSHOP, OPUS_RELEASES, OP1R_WEB)
 UA = {'User-Agent': 'co-op-catalogue-import'}
 
 # ---------------------------------------------------------------- helpers
@@ -82,26 +95,92 @@ def clip(text, limit):
     return cut[: end + 1] if end > 40 else cut[: limit - 1].rstrip() + '…'
 
 
-def write(folder, manifest, manual, shot):
-    d = os.path.join(PLUGINS, folder)
-    existing = os.path.join(d, 'plugin.json')
-    if os.path.exists(existing):
-        with open(existing, encoding='utf-8') as f:
-            old = json.load(f)
-        # A listing /add-plugin took over from the author's own repo (builds per firmware, or a fileUrl to
-        # install from) knows more than the workshop or opus pages: leave it alone.
-        if 'builds' in old or 'fileUrl' in old:
-            print('kept {} (listed from its author\'s repo)'.format(folder))
+# The fields of one firmware's build, in the order plugin.json keeps them, and the whole manifest's order.
+BUILD_FIELDS = ('firmware', 'file', 'link', 'fileUrl', 'sha256', 'sizeBytes', 'version', 'requires', 'source', 'savedName')
+ORDER = ('format', 'id', 'name', 'firmware', 'kind', 'author', 'version', 'description', 'license', 'file', 'link',
+         'fileUrl', 'sha256', 'sizeBytes', 'screenshot', 'manual', 'source', 'requires', 'credits', 'video',
+         'savedName', 'tags', 'builds')
+
+
+def read_manifest(folder):
+    path = os.path.join(PLUGINS, folder, 'plugin.json')
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def builds_of(manifest):
+    if 'builds' in manifest:
+        return manifest['builds']
+    return [{k: manifest[k] for k in BUILD_FIELDS if k in manifest}]
+
+
+def ours(manifest):
+    """True for a listing this script keeps: every build links to the workshop, Opus's releases or op1r's patcher.
+    A listing /add-plugin took over from an author's own repo links there and knows more: its text is left alone."""
+    return all(b.get('link') in REFRESHED_LINKS for b in builds_of(manifest))
+
+
+def ordered(manifest):
+    return {**{k: manifest[k] for k in ORDER if k in manifest}, **{k: v for k, v in manifest.items() if k not in ORDER}}
+
+
+def assemble(shared, builds):
+    """A plugin.json from its shared fields and its builds: the single-firmware form for one build."""
+    shared = {k: v for k, v in shared.items() if k not in BUILD_FIELDS and k != 'builds'}
+    return ordered({**shared, **builds[0]} if len(builds) == 1 else {**shared, 'builds': builds})
+
+
+def with_build(manifest, build):
+    """manifest with build in place of its build for the same firmware, or after its builds. Its other fields stay,
+    in their order: it may be a listing someone else wrote."""
+    old = builds_of(manifest)
+    if 'builds' not in manifest and old[0]['firmware'] == build['firmware']:
+        return ordered({**{k: v for k, v in manifest.items() if k not in BUILD_FIELDS}, **build})
+    builds = [b for b in old if b['firmware'] != build['firmware']]
+    at = next((i for i, b in enumerate(old) if b['firmware'] == build['firmware']), len(builds))
+    builds.insert(at, build)
+    m = {k: v for k, v in manifest.items() if k not in BUILD_FIELDS or (k == 'source' and 'builds' in manifest)}
+    m['builds'] = builds
+    return m
+
+
+def save(path, data):
+    """Writes bytes, trying again for a moment: on Windows another program (an editor, a virus scanner) can hold a
+    file it just saw change, and the write then fails with EINVAL or EACCES."""
+    for attempt in range(5):
+        try:
+            with open(path, 'wb') as f:
+                f.write(data)
             return
+        except OSError:
+            if attempt == 4:
+                raise
+            time.sleep(0.5)
+
+
+def save_json(folder, manifest):
+    d = os.path.join(PLUGINS, folder)
     os.makedirs(d, exist_ok=True)
-    with open(os.path.join(d, 'plugin.json'), 'w', encoding='utf-8', newline='\n') as f:
-        f.write(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n')
-    with open(os.path.join(d, 'manual.md'), 'w', encoding='utf-8', newline='\n') as f:
-        f.write(manual)
+    save(os.path.join(d, 'plugin.json'), (json.dumps(manifest, indent=2, ensure_ascii=False) + '\n').encode('utf-8'))
+
+
+def write(folder, manifest, manual, shot):
+    """Writes this source's listing: its text, picture and build. A listing it shares with another source (one
+    plugin on hundekraft and op1r) keeps the other's build; a listing someone else keeps is left alone."""
+    old = read_manifest(folder)
+    if old is not None and not ours(old):
+        print('kept {} (listed from its author\'s repo)'.format(folder))
+        return
+    build = {k: manifest[k] for k in BUILD_FIELDS if k in manifest}
+    others = [b for b in builds_of(old) if b['firmware'] != build['firmware']] if old else []
+    save_json(folder, assemble(manifest, [build] + others))
+    d = os.path.join(PLUGINS, folder)
+    save(os.path.join(d, 'manual.md'), manual.encode('utf-8'))
     path = os.path.join(d, 'screenshot.png')
     if not same_pixels(path, shot):
-        with open(path, 'wb') as f:
-            f.write(shot)
+        save(path, shot)
 
 
 def same_pixels(path, shot):
@@ -117,6 +196,107 @@ def same_pixels(path, shot):
         return a.size == b.size and a.tobytes() == b.tobytes()
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------- op1r (read first: the other listings name it)
+
+def raw(repo, sha, path):
+    return f'https://raw.githubusercontent.com/{repo}/{sha}/{path}'
+
+
+def head_commit(repo):
+    return json.loads(fetch(f'https://api.github.com/repos/{repo}/commits/HEAD'))['sha']
+
+
+OP1R_SHA = head_commit(OP1R_REPO)
+OP1R_SRC_SHA = head_commit(OP1R_SRC_REPO)
+op1r_manifest = json.loads(fetch(raw(OP1R_REPO, OP1R_SHA, 'data/manifest.json')))
+OP1R_RELEASE = re.search(r'^## .*\bop1r (\d+)\s*$', fetch(raw(OP1R_REPO, OP1R_SHA, 'CHANGELOG.md')).decode('utf-8'), re.M).group(1)
+op1r_readme = fetch(raw(OP1R_REPO, OP1R_SHA, 'README.md')).decode('utf-8')
+
+# op1r-src's plugin folders by the plugin name in their plugin.json (pitchdelay is "pitch delay", percdrum "perc").
+src_tree = json.loads(fetch(f'https://api.github.com/repos/{OP1R_SRC_REPO}/git/trees/{OP1R_SRC_SHA}?recursive=1'))['tree']
+src_files = {t['path'] for t in src_tree if t['type'] == 'blob'}
+OP1R_SRC_DIR = {}
+for path in sorted(src_files):
+    m = re.fullmatch(r'synth_sdk/plugins/([^/]+)/plugin\.json', path)
+    if m:
+        try:
+            OP1R_SRC_DIR.setdefault(json.loads(fetch(raw(OP1R_SRC_REPO, OP1R_SRC_SHA, path)))['name'], m.group(1))
+        except Exception:
+            pass
+
+# Folders the plugin already has: hundekraft's port of op1r's grids, and ESC_CODE's own listing of Pitch Delay.
+OP1R_FOLDER = {'grids': 'grids_op1r', 'pitch_delay': 'pitchdelay'}
+# op1r-only listings: who made each (op1r's README credits), and their credits.
+OP1R_AUTHOR = {'percsyn': 'Serhii Tonkoshkuryk', 'perc': 'Serhii Tonkoshkuryk', 'reedie': 'nvmsocool'}
+OP1R_CREDITS = {
+    'percsyn': 'PO-32 patch model after libpo32 by Eric Lewis (MIT); in op1r by pcppcp',
+    'perc': 'PO-32 patch model after libpo32 by Eric Lewis (MIT); in op1r by pcppcp',
+    'reedie': 'In op1r by pcppcp',
+}
+OP1R_KIND = {'synth': 'synth', 'fx': 'fx', 'drum': 'synth', 'seq': 'feature', 'sampler': 'feature', 'tool': 'feature'}
+OP1R_TAGS = {'synth': ['synth'], 'fx': ['effect'], 'drum': ['drums'], 'seq': ['sequencer'], 'sampler': ['sampler'],
+             'tool': ['tool']}
+
+
+def op1r_folder(name):
+    pid = name.replace(' ', '_')
+    return OP1R_FOLDER.get(pid, pid)
+
+
+def op1r_source(name):
+    d = OP1R_SRC_DIR.get(name)
+    return f'https://github.com/{OP1R_SRC_REPO}/tree/{OP1R_SRC_SHA}/synth_sdk/plugins/{d}' if d else f'https://github.com/{OP1R_SRC_REPO}'
+
+
+def op1r_build(p):
+    return {
+        'firmware': 'op1/op1r',
+        'link': OP1R_WEB,
+        'fileUrl': raw(OP1R_REPO, OP1R_SHA, 'data/plugins/' + p['file']),
+        'sha256': p['sha256'],
+        'sizeBytes': p['size'],
+        'version': OP1R_RELEASE,
+        'requires': f'op1r {OP1R_RELEASE}',
+        'source': op1r_source(p['name']),
+        'savedName': p['name'],
+    }
+
+
+def readme_bullet(name):
+    """The op1r README's bullet about a plugin: the one that starts with its bold name, else the first naming it."""
+    lines = op1r_readme.splitlines()
+    starts = [i for i, l in enumerate(lines) if re.match(r'\s*- \*\*%s\*\*' % re.escape(name), l, re.I)]
+    names = [i for i, l in enumerate(lines) if re.match(r'\s*- ', l) and re.search(r'\*\*%s\*\*' % re.escape(name), l, re.I)]
+    hits = starts or names
+    if not hits:
+        return ''
+    i = hits[0]
+    indent = len(lines[i]) - len(lines[i].lstrip())
+    text = [lines[i].strip()[2:]]
+    for l in lines[i + 1:]:
+        if not l.strip() or (len(l) - len(l.lstrip()) <= indent and l.lstrip().startswith('- ')) or l.startswith('#'):
+            break
+        if len(l) - len(l.lstrip()) > indent and l.lstrip().startswith('- '):
+            break  # a sub-list: the bullet's own text is enough
+        text.append(l.strip())
+    return re.sub(r'\s+', ' ', ' '.join(text)).strip()
+
+
+def unmark(text):
+    return re.sub(r'\*\*([^*]+)\*\*', r'\1', re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text))
+
+
+def readme_intro(path):
+    """The first paragraph of an op1r-src plugin README, and the README after its title."""
+    text = fetch(raw(OP1R_SRC_REPO, OP1R_SRC_SHA, path)).decode('utf-8')
+    body = re.sub(r'\A#[^\n]*\n+', '', text).strip()
+    first = body.split('\n\n', 1)[0]
+    return re.sub(r'\s+', ' ', first).strip(), body
+
+
+OP1R_BY_FOLDER = {op1r_folder(p['name']): p for p in op1r_manifest['plugins']}
 
 
 # ---------------------------------------------------------------- hundekraft
@@ -310,10 +490,18 @@ for section in ('synths', 'effects', 'utilities', 'op1r_plugins'):
             md += ['## Who made it', '']
             for t in extra or [CREDITS[pid] + '.']:
                 md += [t, '']
+        on_op1r = OP1R_BY_FOLDER.get(folder)
+        if on_op1r and 'op1r' not in manifest['tags'] and len(manifest['tags']) < 8:
+            manifest['tags'].append('op1r')
         md += ['## Get it', '',
                f'{e["name"]} is part of hundekraft {HK_VERSION}, a custom firmware for the original OP-1. '
                f'Tick it in the [hundekraft workshop]({WORKSHOP}) and install it from there. '
-               'co-op lists it for reference and hosts no copy.', '',
+               'co-op lists it for reference and hosts no copy.', '']
+        if on_op1r:
+            md += [f'On op1r {OP1R_RELEASE} it is the plugin file `{on_op1r["file"]}`: tick it in '
+                   f'[op1r\'s web patcher]({OP1R_WEB}) (Connect OP-1 installs it over USB), or download it here '
+                   'with op1r chosen in Settings.', '']
+        md += [
                '## Links', '',
                f'- [{e["name"]} in the hundekraft manual]({WORKSHOP}manual.html#{anchor}): every control and page',
                f'- [Source]({manifest["source"]})']
@@ -410,6 +598,96 @@ for p in opus:
         md.append(f'- [Source in the plugin kit]({OPUS_SOURCE[short]})')
     write(p['id'], manifest, '\n'.join(md) + '\n', shot)
     made.append((p['id'], 'LizardMan'))
+
+# ---------------------------------------------------------------- op1r
+# Every op1r plugin gets an op1/op1r build: its .op1p in op1r's repo, pinned to the commit read above. A plugin with
+# a listing already (hundekraft's port, or an author's own) gets the build only; an op1r-only plugin gets its own
+# listing, from op1r-src's README for it or op1r's README.
+
+def op1r_card(p, folder, build):
+    name = ' '.join(w.capitalize() for w in p['name'].split(' '))
+    src_dir = OP1R_SRC_DIR.get(p['name'])
+    readme = f'synth_sdk/plugins/{src_dir}/README.md' if src_dir else None
+    intro, body = readme_intro(readme) if readme in src_files else ('', '')
+    bullet = unmark(readme_bullet(p['name']))
+    # "perc (by …): a drum synth …" reads as "A drum synth …" on its own card.
+    lead = re.match(r'[\w +-]{1,30}(?: \([^)]{0,60}\))?:\s+', bullet)
+    if lead:
+        bullet = bullet[lead.end():]
+        bullet = bullet[:1].upper() + bullet[1:]
+    desc = clip(intro or bullet or f'{name}, an op1r {p["kind"]} plugin.', 500)
+    author = OP1R_AUTHOR.get(folder) or (p['author'] if len(p['author']) <= 60 and ';' not in p['author'] else 'pcppcp')
+    shot = None
+    for url in ([raw(OP1R_REPO, OP1R_SHA, f'docs/images/{k}_{folder}.png') for k in ('synth', 'fx', 'seq', 'drum', 'tool')]
+                + ([raw(OP1R_SRC_REPO, OP1R_SRC_SHA, f'synth_sdk/plugins/{src_dir}/{src_dir}_preview.png')] if src_dir else [])):
+        try:
+            data = fetch(url)
+        except Exception:
+            continue
+        if png_ok(data):
+            shot = data
+            break
+    manifest = {
+        'format': 1,
+        'id': folder,
+        'name': name,
+        'kind': OP1R_KIND.get(p['kind'], 'feature'),
+        'author': author,
+        'description': desc,
+        'license': 'GPL-3.0-or-later',
+        'screenshot': 'screenshot.png',
+        'manual': 'manual.md',
+        **({'credits': clip(OP1R_CREDITS[folder], 200)} if folder in OP1R_CREDITS else {}),
+        'tags': OP1R_TAGS.get(p['kind'], ['tool']) + ['op1r'],
+        **build,
+    }
+    md = [f'# {name}', '', body or bullet or desc, '']
+    if folder in OP1R_CREDITS:
+        md += ['## Who made it', '', OP1R_CREDITS[folder] + '.', '']
+    md += ['## Get it', '',
+           f'{name} is a plugin of op1r {OP1R_RELEASE}, pcppcp\'s custom firmware for the original OP-1 (R246): the file '
+           f'`{p["file"]}`. Tick it in [op1r\'s web patcher]({OP1R_WEB}) (Connect OP-1 installs it over USB), or '
+           'download it here and send it with the patcher. co-op hosts no copy: the download comes from op1r\'s repo, '
+           'checked against its hash.', '',
+           '## Links', '',
+           f'- [op1r](https://github.com/{OP1R_REPO}): every plugin and feature',
+           f'- [Source]({build["source"]})']
+    return manifest, '\n'.join(md) + '\n', shot or name_card(name)
+
+
+op1r_seen = set()
+for p in op1r_manifest['plugins']:
+    folder = op1r_folder(p['name'])
+    if folder in WITHDRAWN:
+        continue
+    op1r_seen.add(folder)
+    build = op1r_build(p)
+    old = read_manifest(folder)
+    if old is None or (ours(old) and all(b['firmware'] == 'op1/op1r' for b in builds_of(old))):
+        manifest, manual, shot = op1r_card(p, folder, build)
+        write(folder, manifest, manual, shot)
+        made.append((folder, manifest['author']))
+    else:
+        save_json(folder, with_build(old, build))
+        print(f'op1r build on {folder}')
+
+# An op1r plugin gone from op1r's list loses its build; a listing that was op1r's alone stays, for a person to check.
+for folder in sorted(os.listdir(PLUGINS)):
+    old = read_manifest(folder) if os.path.isdir(os.path.join(PLUGINS, folder)) else None
+    if old is None or folder in op1r_seen:
+        continue
+    builds = builds_of(old)
+    if not any(b['firmware'] == 'op1/op1r' and b.get('link') == OP1R_WEB for b in builds):
+        continue
+    rest = [b for b in builds if b['firmware'] != 'op1/op1r']
+    if not rest:
+        print(f'{folder} is no longer in op1r {OP1R_RELEASE}: its listing was left; remove it by hand')
+        continue
+    m = {k: v for k, v in old.items() if k != 'builds'}
+    if len(rest) == 1 and 'source' in m and 'source' not in rest[0]:
+        rest = [{**rest[0], 'source': m['source']}]
+    save_json(folder, assemble(m, rest) if len(rest) == 1 else ordered({**m, 'builds': rest}))
+    print(f'{folder}: op1r build dropped (no longer in op1r {OP1R_RELEASE})')
 
 by = {}
 for f, a in made:

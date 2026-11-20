@@ -2,17 +2,33 @@
   "format": 1,
   "id": "windwood",
   "name": "Windwood",
-  "firmware": "op1/hundekraft",
   "kind": "synth",
   "author": "nvmsocool",
   "description": "Windwood is nvmsocool's clarinet. There are no recordings in it: a reed, the air flowing past it and the tube are simulated sample by sample, and the numbers were fitted to recordings of a real clarinet. Soft notes are close to a sine and slow to speak. Loud ones are bright and reedy.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3.1",
   "tags": [
     "synth",
-    "hundekraft"
+    "hundekraft",
+    "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/windwood.op1p",
+      "sha256": "5661fb8e2aaf8065b03acd65bb3f85feb249dc737dd6b3cfdc13e5ac70d622fb",
+      "sizeBytes": 51733,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/reedophone",
+      "savedName": "windwood"
+    }
   ]
 }

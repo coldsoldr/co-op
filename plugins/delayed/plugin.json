@@ -2,16 +2,37 @@
   "format": 1,
   "id": "delayed",
   "name": "Delayed",
-  "firmware": "op1/opus",
   "kind": "fx",
   "author": "ESC_CODE",
   "description": "A modulated delay with a resonant filter in the feedback path, feedback up to 200% and a Freeze that holds what is in the buffer. An LFO with six shapes moves the delay time, with an optional Smooth setting that rounds off its edges. A port of Tom Erbe's +delay from SoundHack's Delay Trio.",
   "license": "GPL-3.0-or-later",
-  "link": "https://github.com/VolkerJunginger/OP-1/tree/main/Delay-Trio",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/VolkerJunginger/OP-1/tree/main/Delay-Trio/Source",
-  "requires": "opus core 2.31",
   "credits": "Tom Erbe / SoundHack's +delay (BSD-style licence)",
-  "tags": ["fx", "delay", "lfo", "soundhack", "opus"]
+  "tags": [
+    "fx",
+    "delay",
+    "lfo",
+    "soundhack",
+    "opus"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/opus",
+      "link": "https://github.com/VolkerJunginger/OP-1/tree/main/Delay-Trio",
+      "requires": "opus core 2.31",
+      "source": "https://github.com/VolkerJunginger/OP-1/tree/main/Delay-Trio/Source"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/delayed.op1p",
+      "sha256": "d84cc5b16d5e1dc5bd2843ed0a14a0ffde6f98ed6503af028b2d5c4c48eae32e",
+      "sizeBytes": 117589,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/delayed",
+      "savedName": "delayed"
+    }
+  ]
 }

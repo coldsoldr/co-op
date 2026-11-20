@@ -2,19 +2,35 @@
   "format": 1,
   "id": "moai",
   "name": "Moai",
-  "firmware": "op1/hundekraft",
   "kind": "synth",
   "author": "fungiboletus",
   "description": "Moai by fungiboletus is modelled on the Minimoog Model D: fat basses, singing leads and brassy stabs, with 121 sounds to start from. Every voice has three oscillators and noise, a four-pole ladder filter with emphasis, drive and saturation, and a contour that sweeps the filter. Loudness comes from the OP-1's own envelope on T2, as on the other synths.",
   "license": "GPL-3.0-or-later",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/fungiboletus/op-moai",
-  "requires": "hundekraft 3.3.1",
   "credits": "fungiboletus's op-moai, brought into kennel by Hundekraft",
   "tags": [
     "synth",
-    "hundekraft"
+    "hundekraft",
+    "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/fungiboletus/op-moai"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/moai.op1p",
+      "sha256": "f463d756b2c8e99f891ece82f78d87b1c918b0d7aa37c979179a04c37ba49ebe",
+      "sizeBytes": 66156,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/moai",
+      "savedName": "moai"
+    }
   ]
 }

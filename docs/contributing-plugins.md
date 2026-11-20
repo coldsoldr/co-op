@@ -85,13 +85,13 @@ For opus the id is 1 to 40 lower-case letters, digits, `_`, `.` or `-`, and
 | `format` | Always `1`. |
 | `id` | Equals the folder name; see above. |
 | `name` | 1 to 60 characters, as the OP-1 shows it. |
-| `firmware` | `op1/hundekraft`, `op1/coop` or `op1/opus`. |
-| `kind` | `synth`, `fx` or `feature`. For hundekraft it must match the kind in the file. An `.op1p` is a synth or an fx. |
+| `firmware` | `op1/hundekraft`, `op1/coop`, `op1/opus` or `op1/op1r`. |
+| `kind` | `synth`, `fx` or `feature`. For hundekraft and op1r it must match the kind in the file. A hundekraft `.op1p` is a synth or an fx; op1r's sequencer, drum, sampler and tool plugins are features. |
 | `author` | 1 to 60 characters. |
 | `version` | 1 to 20 characters. If the file carries a version, use the same one (a mismatch is a warning). Optional for a listed plugin. |
 | `description` | 1 to 500 characters. |
 | `license` | One of `GPL-3.0-or-later`, `GPL-3.0-only`, `GPL-2.0-or-later`, `MIT`, `BSD-3-Clause`, `Apache-2.0`, `MPL-2.0`, or `LicenseRef-Freeware` for a closed plugin that is free to use. A plugin built on an SDK must follow that SDK's licence (hundekraft's is GPL-3.0-or-later). Optional for a listed plugin. |
-| `file` | hundekraft: `<id>.knl` or `<id>.op1p`. coop: `<id>.coop`. opus: a name ending in `.opmod`. Not for a listed plugin. |
+| `file` | hundekraft: `<id>.knl` or `<id>.op1p`. coop: `<id>.coop`. opus: a name ending in `.opmod`. op1r: `<id>.op1p`. Not for a listed plugin. |
 | `link` | A listed plugin only, in place of `file`: an `https://` link to where it is got, at most 200 characters. |
 | `screenshot` | A `.png` file name in the folder, usually `screenshot.png`. |
 | `manual` | Always `manual.md`. |
@@ -100,7 +100,7 @@ For opus the id is 1 to 40 lower-case letters, digits, `_`, `.` or `-`, and
 | `credits` | Optional, up to 200 characters: whose code or algorithms it ports, with their licence. |
 | `video` | Optional: an `https://` link to an `.mp4` of the plugin with its real sound, at most 300 characters. Shown on its card. |
 | `tags` | Optional, up to 8 tags of 1 to 20 lower-case letters, digits or hyphens. |
-| `savedName` | opus only: `opus.<id>`. |
+| `savedName` | opus: `opus.<id>`. op1r: the name in the `.op1p` header (it may have spaces, as `in a room`); without it the id is taken. Not for the others. |
 
 ### A listed plugin
 
@@ -132,7 +132,7 @@ list yet, drafts them the same way, and opens a pull request into dev. A draft t
 goes in the `ignore` list of `plugins/log.json` (`owner/repo/path/to/file.opmod`, or `owner/repo`
 for a whole repo), so it doesn't come back.
 
-The same daily run also refreshes the workshop's and Opus's own listings (`listed_plugins.py`), and
+The same daily run also refreshes the workshop's, Opus's and op1r's own listings (`listed_plugins.py`), and
 marks any other listing whose plugin changed in its repo since co-op wrote it, each in a pull request of
 its own.
 
@@ -159,6 +159,12 @@ the file, and each other GitHub-hosted build to its latest release, and opens a 
 (`web/scripts/plugin-updates.ts`). Authors publish so it can by the release guide,
 `docs/plugin-release-guide.md` (on the site at `#release-guide`).
 Opus builds don't take a `fileUrl` yet.
+
+op1r builds take a `fileUrl` too, to an `.op1p` (any name op1r loads: op1r stores the file under its own
+name, so `grids_op1r` has `grids.op1p`). co-op has no USB install for op1r: the card downloads the file,
+checked the same way, and links to [op1r's web patcher](https://pcppcp.github.io/op1r/web/), which installs it.
+`listed_plugins.py` gives every plugin in op1r's release such a build, pinned to op1r's newest commit, and
+`plugin-updates` leaves those to it.
 
 ### One plugin, a file per firmware
 
