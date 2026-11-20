@@ -301,6 +301,21 @@ render (0.9: 8,548), the heaviest render 14,810 (15,726): 911 less a voice, 3.6-
 the two builds' output files are identical. [C host] the 90 s scenario's output (`rings_coop`, every model) is 0.9's
 byte for byte. File 113,816 bytes, `.text` 45,072; imports unchanged.
 
+**The reverb model's idle path (`docs/efficiency-audit.md` finding 6): not done, and why.** The core renders a voice
+for as long as its key is down, so in string + reverb the shared reverb, and each held voice's limiter and upsampler,
+run on after the string has gone to sleep. The plan was to stop them once the reverb's tail is under the voices' own
+sleep level (half a 16-bit LSB). [C host, measured with the build as it ships: a chord struck and held 24 s] the
+tail never gets there: from about 8 s on, the one voice that carries the reverb gives a steady **-52 LSB with 2 LSB
+of ripple** (the reverb's wet peak stays near 197,000 in Q27, 48 LSB), for as long as the key is held. It is the
+reverb's rounding: its 16-bit buffer floors every write (te-op1-cfw's fixed version does the same; upstream
+truncates towards zero), and the bias adds up round the loop. Cutting an offset of 52 LSB to nothing is neither under
+the idle threshold nor silent if it is done at once (a step the core's DC blocker turns into a thump), so the reverb
+is left as it is. Two ways on, both the owner's decision: (1) round the reverb's writes without the bias (not
+bit-identical to te-op1-cfw's reverb any more; the tail would then die and the idle state is one condition in
+`rings.cc`: an asleep carrier of an idle reverb renders as silence, as a sleeping voice of any other model does, the
+reverb then restarts empty with the next note exactly as after all keys were up); (2) keep the rounding and fade
+the offset out over some tens of ms when the ripple has gone, which changes the output by those 52 LSB of DC.
+
 Found while checking: `make -C tests/host/rings` (this engine against te-op1-cfw's) no longer reports bit-identical
 at HEAD before this change (the two outputs first differ at byte 3,786,753 of the 90 s scenario); 0.10 gives the
 same bytes as 0.9 there, so the difference is older than this version and is not looked into here.
