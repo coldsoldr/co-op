@@ -2554,3 +2554,110 @@ boot value (120.0f in the image bytes; every run here set the tempo first).
 COM at power-on and flash the previous coop image (or stock).
 
 Result: (pending)
+
+## fickle 0.2 / petri 0.2: both in tape_echo's buffer size, the 13-file set fits e10 — device test (pending, 2026-11-20)
+
+What changed (`plugins/fickle/README.md`, `plugins/petri/README.md` "For the owner" / "Open points"): with all 13
+catalogue plugins on e10, fickle 0.1 was refused at boot (`over the plugin memory budget`): fickle and petri declared
+position buffers larger than tape_echo's and so grew all five. 0.2 of each declares no more than tape_echo's 134,784
+bytes. **fickle**: the loop buffer is 15,288 clock samples (was 24,576): the longest loop 0.62 s at 24 kHz (was 1.00 s),
+7.4 s at 2 kHz (12.0 s). **petri**: the record is 1.36 s (was 1.49 s), pattern's longest bar 1.27 s (1.39 s); the
+space's sound is unchanged. They need core e10, as 0.1 did; the kennel builds are not touched.
+
+- `plugins/fickle/fickle.coop` 0.2 (35,596 bytes, sha256
+  `269cb27c08011cae00462824e7ee6a45f808915d9194d515c3aafa25441ad22c`), `plugins/petri/petri.coop` 0.2 (36,104 bytes,
+  sha256 `33d7bdf063d31dc98c31b5d2d5c13256fe1621d8eae4e1698b8909ffe8c980c6`); copies in Downloads.
+- [C host, GNU simulator] `make -C tests/host/fickle` (stress 60,000 blocks, holds, the e8 check: passed; `sim` within
+  1 % of 0.1's table). `make -C tests/host/petri`: passed; built with the old record length through the new mapping,
+  the 31 listening takes are byte-identical to 0.1's; `sim`: both kernels 0 differ, all effects 21,111 avg / 36,152
+  max (0.1: 20,936 / 33,416: the space's copy comes four times as often).
+
+**Gate notes (op1emu, 2026-11-20, one run at a time, fresh NAND each; the e10 image is HEAD's core before e11, its
+device LDR byte-identical to the one in `op1_246_coop_e10.op1`; gate images `--tape-stereo --set-word
+g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`)** [C op1emu]:
+
+| Run | Result |
+|---|---|
+| **the 13 catalogue files on e10** (the nine ports, rings, saw, fickle 0.2, petri 0.2), `det_fx_select.txt` | boots and plays, no fault: `plugins seen 13 loaded 13 failed 0 ... over_budget 0`, `fscr_built 11`; `plugmem budget 1572864 used 1502128 over_budget 0 heap_short 0 ... heap_free_boot 14222524 scratch_files 11 fxbuf 134784 fxbuf_mem 673960 fxbuf_short 0`; the chord through wavefolder `fx1_plugin=11295/24189`; end `heap_largest 1111444 heap_free 1205596` |
+| the same NAND, second boot | 13 loaded, the same `plugmem` (`heap_free_boot 14552700`); end `heap_largest 1444172 heap_free 1535772` |
+| **fickle alone on e10**, `det_fx_fickle.txt` (every position, a chord, loop / dub / freeze, the fn layers) | no fault, 125.9 s of audio; `plugmem ... used 698344 ... scratch_files 1 fxbuf 134784`; `fxctl fx 1 turns 6 ... latches 10 ... p0=41009i2:1/2/4/0 p1=18275i2:0/1/0/0 p2=35612i2:0/1/0/0 p3=46528i1:0/1/0/0 p4=29301i1:0/1/0/0` (all five positions rendered it; wet mode delay, routing loop, loop mode rev 1 at p0); `fx1_plugin=18102/32204 s2_instr=20630/31083 s2_master=20624/22237`; `fscr_built 1` |
+| **petri alone on e10**, `det_fx_petri.txt` (every position, a chord, reverse / hold, the fn layers) | no fault, 113.5 s; `plugmem ... used 701112 ... scratch_files 1 fxbuf 134752 fxbuf_mem 673800`; `fxctl fx 1 turns 18 ... latches 8 ... p0=40444i2:10/28688/9312/0 p1=8052i2:0/30000/8000/0 p2=25390i2:0/30000/8000/0 p3=36526i1:0/30000/8000/0 p4=19298i1:0/30000/8000/0` (effect warp, filter and space moved at p0); `fx1_plugin=25913/35414 s2_instr=18815/24417 s2_master=18869/24440`; `fscr_built 1` |
+| the same two on e11 | as on e10: fickle `p0=41010i2:1/2/4/0`, `fx1_plugin=17870/32298`; petri `p0=40445i2:10/28688/9312/0`, `fx1_plugin=25915/35414`; no fault |
+
+Not shown in op1emu [I]: how the shorter loop and record sound (a listening test), the screens' look, the device's
+`cost` figures (expect 10-35 % over these; petri's warp and fickle's loop + dub at a high clock are the heavy cases).
+
+**What to do** (the OP-1 on e10 as it is today):
+1. Install `fickle.coop` 0.2 and `petri.coop` 0.2 with the librarian over the 0.1 files, with the other eleven
+   catalogue plugins present. Power-cycle. It must boot to the tape.
+2. The librarian's plugin list: all 13 loaded, none failed. Or copy `/yaffs2/user/coop_stats.txt`: `plugins seen 13
+   loaded 13 failed 0`, `plugmem budget 1572864 used` about `1502128`, `fxbuf 134784`, no `plugfile` line.
+3. **fickle** at synth FX 1: play, white click (loop): the last 0.6 s comes back as a loop; green click (dub) and
+   play over it; white click again (off). Turn the clock (white) down: the loop gets longer and darker (1 s at about
+   15 kHz). Orange click: freeze. fn + blue / green / white: the wet mode, the routing, the loop mode.
+4. **petri** at synth FX 1: each of the eleven effects (fn + blue) with a few notes; pattern with time at the top (the
+   bar is now 1.27 s); orange click (hold), blue click (reverse); fn + white filter, fn + orange space. Listen for
+   clicks or crackle when a long loop wraps: there should be none.
+5. Both at FX 2 and on the master once. Then copy the stats again after a few minutes: the `plugins` line's
+   `heap_free` / `heap_largest` and the `cost` line (`fx1_plugin`, `s2_instr`, `s2_master`).
+
+**If something is wrong:** remove the file with the librarian (or put 0.1 back: then one of the 13 is refused at boot,
+as before). Nothing here touches the firmware.
+
+Result: (pending)
+
+## e11: the plugin memory budget 1,728 KiB — device test (pending, 2026-11-20)
+
+What changed (`docs/plugins.md` "e11"): all plugins together may take 1,728 KiB of heap 0 (1,769,472 bytes), was
+1,536 KiB. Nothing else in the core; build tag `e11`, the boot picture's line `coop e11 - 246`. Why that figure, in
+short: a first boot without plugins ends with 2,729,484 bytes of heap 0 free; after the boot coop takes at most
+742,024 more (the two FX 2 slots' delay / cwo lines, spring tanks and the master's grid tank, each of which may fail
+harmlessly) and the stock took nothing more in the gate's runs, so a full budget leaves ~0.2 MB on a first boot and
+~0.5 MB on any later one for what the stock was not seen to take.
+
+- `build/pkg/op1_246_coop_e11.op1` sha256 `34c78ca1e4297d46f25b5e9f86da49273660cf0540933e296e3e843bcbc37739`, copy in
+  Downloads. Release image as e10 (`tools/build_device_package.sh ... --tape-stereo --set-word g_coop_spread=32767`):
+  `verify_bootloader.py` PASS (no te-boot.ldr), `pkg_check` = only `OP1_vdk.ldr` differs. The ELF holds the tag `e11`
+  (and no `e10`), the package's LDR the line `coop e11 - 246`. Against the e10 core: six immediates (the budget's five
+  loads and the inventory text's 1536 -> 1728) and the tag, by disassembly.
+- The site does not offer e11 yet (no web delta made): it follows the owner's device result.
+
+**Gate notes (op1emu, 2026-11-20, one run at a time, fresh NAND each; images `--tape-stereo --set-word
+g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`; e10 = the core before this change)** [C op1emu]:
+
+| Run | Result |
+|---|---|
+| (a) **the 13 catalogue files on e11**, `det_fx_select.txt` | boots and plays, no fault: `plugins seen 13 loaded 13 failed 0 ... over_budget 0`, `fscr_built 11`; `plugmem budget 1769472 used 1502128 over_budget 0 heap_short 0 skipped 0 badname 0 tape_node 524288 heap_free_boot 14222524 scratch_files 11 fxbuf 134784 fxbuf_mem 673960 fxbuf_short 0`; `fx1_plugin=11296/24189`; end `heap_largest 1111444 heap_free 1205596` |
+| (a) the same NAND, second boot | 13 loaded, the same `plugmem` (`heap_free_boot 14552700`); end `heap_largest 1444172 heap_free 1535772` |
+| (b) the 13 files on e10 | the entry above: `used 1502128` of 1,572,864, the heap figures equal to e11's to the byte |
+| (c) fickle alone, petri alone on e11 (`det_fx_fickle.txt`, `det_fx_petri.txt`) | the entry above: every position, latches and fn layers, no fault |
+| (d) pristine `det_chord.txt`, e11 vs e10 | **identical over 2,263,660 frames** (from 5 s; rms 151.7 / 116.7, width 0.2327), first run of each; `plugmem budget 1769472 used 0`, end `heap_free 2729484` on both |
+| late use, pristine, `det_heap_late.txt` (every FX 2 type at both slots; sounds, kits, a tape recording, lift and drops) | no fault, 234 s; `s2_changes 42 tanks 118 tank_short 0`; end `heap_largest 1987028 heap_free 1987460`: 742,024 bytes below (d), all of it coop's own late allocations; the same figure on e10 with a shorter version of the run |
+| (e) **the budget full**: the 13 files + two test engines (204,804 and 57,348 bytes of `.bss`), fresh NAND, `det_heap_late.txt` | **boots** (the tape's cache got its 24 nodes: no halt) and plays 210 s, no fault: `plugins seen 15 loaded 15 failed 0`, `plugmem budget 1769472 used 1764688 over_budget 0 heap_short 0 ... heap_free_boot 13959964`; every late allocation given (`tanks 118 tank_short 0`); end **`heap_largest 167220 heap_free 201012`** |
+| (e) the same NAND, second boot, `det_chord.txt` | 15 loaded; `heap_free_boot 14290140`; end `heap_largest 1181468 heap_free 1272180` |
+| over the budget: the same and a third test engine (16,388 bytes), SysEx self-test image | boots, no fault: `plugins seen 16 loaded 15 failed 1 ... over_budget 1`, `plugmem budget 1769472 used 1756848`, `plugfile fickle.coop failed needs 24384: over the plugin memory budget`; inventory: `fickle.coop fx fickle failed on 0.2 coldsoldr 35596 over the plugin memory budget (needs 24 KB, 12 KB of 1728 KB left)` |
+
+The stock's USB disk heap (96 KiB, e7 kept room for it) is taken during the boot: its base word `0x018C1EA8` held
+`0x00104030` at the end of a pristine `det_chord.txt` run [C op1emu]. Not shown in op1emu [I]: the device's own heap
+figures (they decide whether the margin is what the emulator says); the sampler's recording, the album, the radio and
+USB disk mode with a full budget; whether the tape lift really landed in the synth and drum samplers in
+`det_heap_late.txt` (no screenshot was taken).
+
+**What to do:**
+1. Flash `op1_246_coop_e11.op1` (keep your plugins). The boot picture's line reads `coop e11 - 246`. It boots to
+   the tape as e10.
+2. With the 13 catalogue plugins (fickle 0.2 and petri 0.2 among them): copy `/yaffs2/user/coop_stats.txt`. Expected:
+   `coop_stats 3 build e11`, `plugins seen 13 loaded 13 failed 0`, `plugmem budget 1769472 used` about `1502128`, no
+   `plugfile` line. Note the `plugins` line's `heap_free` and `heap_largest`: the emulator said 1,535,772 / 1,444,172
+   on a normal boot. **These two numbers from your device are the main result.**
+3. The librarian's plugin list: all loaded; its memory bar may still show 1,536 KB until the site knows e11.
+4. Put a delay or cwo at instrument FX 2 and at master FX 2, a spring at each, a grid on the master FX 2, play a few
+   minutes; sample something into the synth and the drum, record on the tape, open USB disk mode (Shift + COM) and
+   leave it. Copy the stats again: `heap_free` / `heap_largest` once more and `tank_short` (expected 0).
+5. If you have more plugins than the 13, add them until the bar is nearly full, power-cycle and repeat 2 and 4: a file
+   past the budget is named in the stats and the list (`... KB of 1728 KB left`), the OP-1 must always boot.
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e10.op1` (or stock). The
+13 files fit e10 too (the entry above); a set over 1,536 KiB has a file refused there, named in the stats.
+
+Result: (pending)

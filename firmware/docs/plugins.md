@@ -822,3 +822,64 @@ te_sig`. Build tag `e9`. Scenarios: `tests/sim/det_fx_screen.txt` (FX 1, fn, FX 
   1,395,120 in both; rms 154.7 / 118.7, width 0.2339, as e8's gate). Other runs of either image start the chord at
   another frame (1,395,122, 1,395,130) and differ from it by up to ~3,400 LSB after `--align 200` with equal levels: the
   run-to-run spread is wider than e8's notes say (it is not a one-block shift every time), but the same for both images.
+
+## e11 (2026-11-20): the plugin memory budget raised to 1,728 KiB
+
+The owner's request after the 13-file catalogue set ran out of budget on e10 (fickle refused at boot): shrink fickle
+and petri to tape_echo's buffer size (their 0.2, below) and raise the budget as far as is safe. Built and gated in
+op1emu; the device test is pending (`docs/device-tests.md` "e11").
+
+**What changed** (`core/sdram/plugin_host.cc`): `PLUG_BUDGET_DEFAULT` is 1,728 KiB (1,769,472 bytes), was 1,536 KiB
+(1,572,864). Nothing else: the charging rules (e7, e8, e9), the second guard (`heap_room_ok`: the tape's 24 nodes, one
+spare and 512 KiB) and the stats are e10's. The stats `plugmem budget` and the inventory's reason text (`... KB of 1728
+KB left`) follow the constant [C: the e10 and e11 cores differ in six immediates and the build tag, by disassembly].
+Build tag `e11`.
+
+**Why this number.** e7's reasoning, with its three inputs measured again (op1emu, e10 / e11 cores, the first boot of
+a fresh NAND: the worst case, it has 0.32 MB less than any later boot):
+- **Free after the boot with no plugin files: 2,729,484 bytes** (`heap_largest 2729052`), as e7 [C op1emu].
+- **What coop takes after the boot: 742,024 bytes at most** [C op1emu, `tests/sim/det_heap_late.txt`: every type put
+  at both FX 2 slots, `tanks 118 tank_short 0`, `heap_free 1987460`]. It is the two FX 2 slots' objects (1,024 each),
+  delay / cwo lines (176,460 each), spring tanks (58,272 + 16 each) and the master's grid tank (270,400 + 16), each
+  taken once and kept: e7's "~0.75 MiB". **Every one of them may fail** [C in the code]: the pick is refused
+  (`coop_slot2_set` returns 0) or the object keeps the stock's shared tank (`tank_short`); none is needed to boot.
+- **What the stock takes after the boot: nothing seen** [C op1emu, the same run: the eight synth sounds and the eight
+  drum kits with notes, a tape recording played back, a tape lift dropped into the synth, the drum and the tape: the
+  free figure is 2,729,484 - 742,024 to the byte]. e7 set 96 KiB aside for the stock's USB disk heap: it is taken
+  during the boot (its base word `0x018C1EA8` holds `0x00104030` at the end of a run that never touched USB) and so
+  is already inside the 2,729,484 [C op1emu]. [I: what the sampler's own recording, the album, the radio and disk
+  mode do was not run; the sampler drops' success was not checked on the screen.]
+- So with the budget full, the first boot ends with about 2,729,484 - 1,769,472 - 22 KB (blocks the budget does not
+  count: the engines' control tables, alignment) = ~0.94 MB free, and with every late allocation of coop's taken,
+  **~0.2 MB is left for what the stock was not seen to take**; any later boot has 0.32 MB more. Measured with the
+  budget 99.7 % full (below): 201,012 bytes free, the largest block 167,220.
+- Not higher, because that last figure is the only margin for the unknown: at 1,792 KiB it would be ~135 KB, at
+  1,856 KiB ~70 KB. Not lower, because e7's 1,536 KiB kept ~0.4 MB for it, 96 KiB of that for a USB heap that turned
+  out to be taken already. The second guard does not come into it: it starts refusing at about 2.6 MB on a first boot.
+- [I] All of it assumes the device's heap 0 matches op1emu's, as e7 did. A device whose stock holds more of heap 0
+  before the scan is covered by the second guard; one that takes more after the boot has the ~0.2 MB (0.5 MB after
+  the first boot). The owner's stats file gives the device's own figures (`heap_free`, `heap_largest` on the `plugins`
+  line): asked for in the device test.
+
+**fickle 0.2 and petri 0.2** (their READMEs; they need e10, not e11): both now declare no more than tape_echo's
+134,784 bytes (fickle 134,784, was 171,936: the loop buffer 15,288 pairs, was 24,576; petri 134,752, was 150,624:
+the record a ring of 30,048 frames, was 32,768, and the space's slide 1,024 entries), so neither grows the five
+position buffers and each costs the budget its image and screen object (~26-27 KB).
+
+| Set (op1emu, fresh NAND) | Core | `plugmem` |
+|---|---|---|
+| the 13 catalogue files (the nine ports, rings, saw, fickle 0.2, petri 0.2) | e10 | `budget 1572864 used 1502128`: all 13 load, 70,736 bytes left |
+| the same | e11 | `budget 1769472 used 1502128`: 267,344 bytes left |
+| the same with fickle 0.1 and petri 0.1 (computed: the buffers at 171,936, +185,760) | e10 | ~1,687,900: over by ~115 KB, fickle refused (what the owner's device showed) |
+
+**Gate** (op1emu, one run at a time; `docs/device-tests.md` "e11" and "fickle 0.2 / petri 0.2") [C op1emu]:
+- e11 with the 13 files: first and second boot, 13 loaded, `over_budget 0 heap_short 0`; end of run
+  `heap_largest 1111444 heap_free 1205596` (first), `1444172 / 1535772` (second). The same on e10, to the byte.
+- **The budget full**: the 13 files and two test engines of 204,804 and 57,348 bytes of `.bss` (`used 1764688` of
+  1,769,472), fresh NAND, `det_heap_late.txt`: boots (the tape's 24 nodes fit: no `tape_c.cpp:62` halt), all 15 load,
+  `heap_short 0`, every late allocation given (`tanks 118 tank_short 0`), 210 s of audio, no fault; end
+  `heap_largest 167220 heap_free 201012`. Its second boot: `heap_largest 1181468 heap_free 1272180`.
+- Pristine `det_chord.txt`, e11 vs e10: identical over 2,263,660 frames.
+
+New scenarios: `tests/sim/det_heap_late.txt` (above), `det_fx_fickle.txt`, `det_fx_petri.txt` (each plugin alone at
+every position with its latches and fn layers).

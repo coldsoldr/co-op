@@ -71,7 +71,7 @@ loop like every command; capabilities bits 4 and 5 say they are there.
     settings list, `new`: the file came after the boot), next (`on` or `off`: what the next boot does), version,
     author, size in bytes, reason (the loader's text for a failed file, else empty). e7: up to 48 files (8 KB of text);
     a file the boot refused for the plugin memory budget or skipped past the 32-file limit is `failed` with the reason
-    (`over the plugin memory budget (needs N KB, M KB of 1536 KB left)`, `not enough memory left for the tape`,
+    (`over the plugin memory budget (needs N KB, M KB of 1536 KB left)` (1728 KB from e11), `not enough memory left for the tape`,
     `more than 32 plugin files`).
 - `0x29 PLUGIN_SET`: payload enable byte (1 on, 0 off) + the file name (no directory). Puts the file on or off the
   settings file's disabled list and writes `/yaffs2/user/coop_settings.bin` at once. Reply: status, the enable byte.

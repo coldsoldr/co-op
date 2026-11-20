@@ -322,7 +322,12 @@ static void code_sync(uint32_t lo, uint32_t hi)
 #define HEAP_LIST     (*(volatile uint32_t *)0x01DFFC40u)
 #define TAPE_NODE_OP  (*(volatile uint16_t *)0x01A54172u)                  /* tape_c: BITSET (R0, n), the node data size */
 #define TAPE_NODES    24                                                    /* the node loop's bound (0x01A54200: R4 < 0x18) */
-#define PLUG_BUDGET_DEFAULT (1536u * 1024u)                                 /* heap bytes all plugins may take (docs/plugins.md e7) */
+/* Heap bytes all plugins may take. e7: 1536 KiB. e11: 1728 KiB (docs/plugins.md "e11"): a first boot without plugin
+ * files ends with 2,729,484 bytes of heap 0 free (op1emu); after the boot coop takes at most 742,024 more (both FX 2
+ * slots' delay / cwo lines and spring tanks, the master's grid tank; every one of them may fail and is then done
+ * without), the stock took nothing more in the gate's runs (its USB heap is taken at boot), so 1728 KiB leaves about
+ * 200 KB for what the stock was not seen to take (0.5 MB on any later boot). */
+#define PLUG_BUDGET_DEFAULT (1728u * 1024u)
 /* Image-time test switch (--set-word g_coop_plug_budget=N): another budget, so a gate can show the heap check (below)
  * refusing what the budget would have let through. 0 = the default. */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_plug_budget = 0; }
