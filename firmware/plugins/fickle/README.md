@@ -100,10 +100,10 @@ Licence: coldsoldr's GPL-3.0-or-later with the OP-1 firmware permission. The plu
   | 12 | `str rev` | grains read backwards, the scan at x0.5 |
 
 - **loop** (white click, latch bit 1 of `params[8]`).
-  - Off is *listening*: the looper records input + wet at -3 dB round its 24,576-sample buffer (1.02 s at 24 kHz,
-    12.3 s at 2 kHz).
-  - On is *capture and play*: the last loop's worth becomes the loop. That is at most 24,064 clock samples, the buffer
-    less the seam's pre-roll.
+  - Off is *listening*: the looper records input + wet at -3 dB round its 15,288-sample buffer (0.64 s at 24 kHz,
+    7.6 s at 2 kHz; 0.1 had 24,576 samples, 1.02 s and 12.3 s).
+  - On is *capture and play*: the last loop's worth becomes the loop. That is at most 14,776 clock samples (0.62 s at
+    24 kHz, 0.46 s at 32 kHz, 7.4 s at 2 kHz), the buffer less the seam's pre-roll.
     - The loop's end crossfades into the 256 samples before its start (baked over two blocks), so it wraps without a
       click in either direction.
     - Playback fades in over 128 clock samples.
@@ -211,11 +211,13 @@ the clearing blocks included. The screen reads them through `Published<>` while 
   - Every buffer holds L | R int16 pairs, so one 32-bit load reads both channels.
   - The reverb's feedback crosses over, and its taps have different signs on L and R, so a mono input comes out wide.
   - It runs in stereo at every position.
-- **Memory (e8)**: `"scratch": 171936` (the state is 171,920 bytes; static_assert):
+- **Memory (e8)**: `"scratch": 134784` (the state is 134,768 bytes; static_assert). **0.2**: the same declaration
+  as tape_echo's, so fickle no longer grows the five position buffers (0.1 declared 171,936 with a 24,576-pair loop
+  buffer):
 
   | Part | Bytes |
   |---|---|
-  | the loop buffer (24,576 pairs) | 98,304 |
+  | the loop buffer (15,288 pairs) | 61,152 |
   | the wet line (16,384 pairs) | 65,536 |
   | the four diffusers | 4,608 |
   | this block's clock-sample buffers | 3,148 |
@@ -227,11 +229,11 @@ the clearing blocks included. The screen reads them through `Published<>` while 
     passing.
   - `init` only resets the small fields and binds the buffer. The `.bss` holds the five pointers; the screen's node
     tables take the rest of its 276 bytes.
-  - File 35,616 bytes: `.text` 22,036 (render 14.4 KB with everything inlined, screen 5 KB), `.rodata` 1,686,
+  - File 35,596 bytes: `.text` 22,016 (render 14.4 KB with everything inlined, screen 5 KB), `.rodata` 1,686,
     `.data` 4, `.bss` 276.
-  - **The position buffers grow** to this declaration if fickle is the largest installed scratch effect: 5 x 171,936
-    against tape_echo's 5 x 134,784, i.e. **+185,760 bytes of heap 0**. That is under `COOP_FX_SCRATCH_MAX`, but it
-    counts against the e7 budget (see "For the owner").
+  - **The position buffers do not grow** with fickle installed beside tape_echo (both declare 134,784): fickle then
+    costs the e7 budget only its image block and screen object, about 26 KB. Without tape_echo it is the largest
+    declaration and sets the buffers' size itself (5 x 134,784 = 673,920 bytes).
 - **L1**: none (effects have no lease yet).
 - **Cost** (GNU simulator, compute only, `make -C tests/host/fickle sim`, cycles a block of 64):
 
@@ -253,8 +255,9 @@ the clearing blocks included. The screen reads them through `Published<>` while 
   - **Over the 30 k SHOULD:** the loop playing with the dub on and the clock above about 26 kHz (to ~35 k at 32 kHz
     with env or stretch). The reason: two full processors at once, at up to 32 kHz each. Listening, freezing, or the
     default clock stay under 30 k. Every scene stays under the 60 k line.
-  - The device is typically 10-35 % above the simulator, more with SDRAM misses. The heads walk the 160 KB of
+  - The device is typically 10-35 % above the simulator, more with SDRAM misses. The heads walk the 131 KB of
     buffers sequentially, so a cache line serves 8 clock samples.
+  - 0.2 (the shorter loop buffer) reruns within 1 % of this table.
   - **Device figures: pending.**
 - **How it got there** (`make -C tests/host/fickle prof`: each pass's cycles):
   - Every product in a per-sample loop is a single 16 x 16 multiply. GCC drops `int16` casts once it can prove the
@@ -302,7 +305,7 @@ the clearing blocks included. The screen reads them through `Published<>` while 
 - `python3 gen_fickle_tables.py fickle_tables.h` regenerates the tables. `python3 gen_fickle_svg.py fickle.svg`
   regenerates the SVG.
 
-**op1emu gate (not run: gate runs go one at a time):**
+**op1emu gate** (0.2 on e10 and e11, 2026-11-20: `docs/device-tests.md` "fickle 0.2 / petri 0.2"):
 1. fickle at each position, with a chord through it.
 2. The latches: loop on and off, dub, freeze.
 3. The fn layers.
@@ -311,10 +314,14 @@ the clearing blocks included. The screen reads them through `Published<>` while 
 
 ## For the owner
 
-- **The heap budget:** fickle's 171,936-byte position buffers would be the largest declaration and grow all five by
-  185,760 bytes.
-  - A smaller loop would bring it to tape_echo's 134,784 or under: 16,384 pairs is 0.68 s at 24 kHz and saves 32 KiB.
-    One constant, `kLoopPairs`.
+- **The heap budget (0.2, 2026-11-20):** with all 13 catalogue plugins on core e10, fickle 0.1 was refused at boot
+  ("over the plugin memory budget"): its 171,936-byte declaration grew all five position buffers by 185,760 bytes.
+  - 0.2 cuts the loop buffer from 24,576 to 15,288 pairs (`kLoopPairs`), which makes the state exactly tape_echo's
+    134,784 bytes. 16,384 pairs, the round figure, would have left it 4,368 bytes over.
+  - **What you hear:** the longest loop is 0.62 s at 24 kHz (was 1.00 s), 0.46 s at 32 kHz (0.75 s) and 7.4 s at
+    2 kHz (12.0 s). Nothing else changed: the wet channel, the loop modes and the clock are as 0.1.
+  - To get a 1 s loop back, turn the clock down: 14.8 kHz gives it (darker, as any lower clock).
+  - The kennel build (`fickle.knl`) keeps the 24,576-pair buffer: kennel's arena is 6 MiB.
 - **The 30 k line:** see Cost. It is crossed only with the loop playing and dubbing above ~26 kHz.
   - A lower top clock (for example 28 kHz) would bring every scene under it.
   - So would dropping the reverb to three diffusers.

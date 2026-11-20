@@ -9,7 +9,8 @@
 namespace fickle {
 
 const int32_t kBlock = 64;
-const int32_t kLoopPairs = 24576;                      /* the micro-looper's buffer: L | R int16 pairs (96 KiB) */
+const int32_t kLoopPairs = 15288;                      /* the micro-looper's buffer: L | R int16 pairs (59.7 KiB; 0.2:
+                                                        * sized so the state is tape_echo's 134,784 bytes) */
 const int32_t kWetPairs = 16384;                       /* the wet channel's line (64 KiB), a power of two */
 const int32_t kWetMask = kWetPairs - 1;
 const int32_t kApPairs = 1152;                         /* the reverb's four diffusers: 128 + 256 + 256 + 512 pairs */
