@@ -159,8 +159,9 @@ not by the envelope "held flat".
   18,142 (18,632), 18,169 (18,639), 18,501 (18,991); the turns held 18,027 (18,517): about 490 less a block. With
   every turn and word moving every block 21,725 (21,383): 340 more, the compares and stores beside the four divides;
   max 26,548 (26,206, a size crossfade in that stretch). Bit-identical to te-op1-cfw, host and simulator (the script
-  below plus 800 blocks with every turn and word moving every block and jumps between, 300 held). File 23,492 bytes,
-  `.text` 12,424, `.rodata` 5,280, `.bss` 240; imports unchanged.
+  below plus 800 blocks with every turn and word moving every block and jumps between, 300 held). With this change
+  alone: file 23,492 bytes, `.text` 12,424, `.rodata` 5,280, `.bss` 240. 0.3 also has the idle path ("Idle" below,
+  with the file as it ships and its figures).
 - **e9 (2026-11-11, 0.2, the screen):** file 23,184 bytes (SVG 3,927), `.text` 12,268, `.rodata` 5,248, `.bss` 100
   (the five buffer pointers and the screen's node table and colours); load 17,616 once, +1,396 over e8 (16,220 with
   e9's new `coop_fx_t` field). The state and `"scratch"` are unchanged (nothing published). Audio bit-identical, host
@@ -186,6 +187,51 @@ not by the envelope "held flat".
   1. measure the split hall / glue in the simulator; 2. fuse the int32 ↔ int16 conversions into the decimators' input
   copy and the mix's output store; 3. one `MixSoftLimit` pass for both sides (the products in the dual MAC);
   4. decimator / interpolator kernels that keep their history in place instead of copying it each block.
+
+## Idle (0.3)
+
+A hall left on a position used to compute its whole block on silence. 0.3 stops when its output has been silence for
+long enough (`docs/efficiency-audit.md` finding 6; the code is in `cs_hall.cc`, "The idle path").
+
+- **When.** The input block is exact silence (every sample's top 16 bits 0), freeze is off, the decay turn is under
+  infinite, and for 732 blocks in a row (1.06 s: the tank's ring once round and the pre-delay's) the wet signal the
+  hall made was exact zeros. The level is zero, not an LSB or two: the hall's dithered rounding lets a tail die to
+  nothing, a few seconds after it is inaudible.
+- **Idle.** The render leaves the silent input as it came and runs only the control: the smoothers, a size change's
+  count and the two modulation LFOs (in phase).
+- **Waking.** The check is at the top of the render, before any DSP: the first block with a non-zero sample, freeze
+  or infinite decay is rendered in full, on the tank as it was left. Nothing is faded and no sample is skipped.
+- **Never idle:** freeze; infinite decay (the decay turn at its top); any input; a tail that still sounds.
+- **While idle the output is the hall's own: zeros.** In the lockstep test the idle hall and the one that never idles
+  give the same samples up to the wake's first block.
+- **After waking it is not the same sample for sample**, and cannot be: the three input allpasses keep a +-1 LSB
+  pattern going round for ever (their rounding; it reaches the lines as nothing, so the output is zero). The idle
+  hall meets the next note with that pattern where it stopped, the other with the pattern where it turned to, and the
+  dithered rounding then takes different turns: the two tails differ by the hall's own rounding noise. The same
+  happens between two halls that never idle when what they played before the silence differed by 1 %: the test runs
+  that beside it (the table's last column).
+
+| A note, silence, a soft note (40 LSB), a loud one | idle after the input | difference while idle | after the wake: soft / loud / the tail | two that never idle, the earlier notes 1 % apart |
+|---|---|---|---|---|
+| defaults | 7.1 s (output zero from 6.0 s) | 0 LSB | 5 / 4 / 4 LSB | 4 / 4 / 4 LSB |
+| largest size, decay 30,000, pre-delay 200 ms, full wet | 40.2 s (39.2 s) | 0 | 6 / 8 / 10 | 6 / 8 / 10 |
+| smallest size, short, full wet | 1.1 s (0.02 s) | 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+
+(16-bit output LSB, the largest sample difference; the wake's first block is 0 in every row. `make -C
+tests/host/idle FX=cs_hall`.) The same run: 20,000 blocks that never go silent and 20,000 of notes with 150 ms gaps:
+identical, 0 idle blocks. Freeze and infinite decay: a minute of silence, 0 idle blocks, 0 LSB; engaged while idle:
+awake on that block. Every turn walking and jumping through 1,500 idle blocks: 0 LSB.
+
+| Simulator, cycles a block (`make -C tests/host/idle sim FX=cs_hall`) | 0.3 without the idle path | 0.3 |
+|---|---|---|
+| playing | 17,638 | 17,720 |
+| silent, not yet idle | 17,700 | 18,263 (the input read through, the wet block tested) |
+| idle | | **1,084** |
+| the block that wakes | | 18,113 |
+
+`tests/host/cs_hall` builds the plugin with `-DCOOP_FX_NO_IDLE` (its script has silences longer than the hold, and
+it compares with te-op1-cfw's hall sample for sample): bit-identical as before, host and simulator.
+File 23,936 bytes, `.text` 12,796, `.bss` 280; imports unchanged.
 
 ## Host test
 
