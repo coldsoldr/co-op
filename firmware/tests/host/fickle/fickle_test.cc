@@ -166,10 +166,25 @@ int32_t Peak(const int32_t* l, const int32_t* r) {
   return p;
 }
 
+// Every rendered block's output and display words folded into one number (FNV-1a), printed at the end: two builds of
+// the plugin that print the same digest gave the same samples in every check of the run (the bit-exactness proof of a
+// change that must not alter the sound: build the old sources with COOP=<their folder> and compare the lines).
+uint64_t g_digest = 1469598103934665603ull;
+void Digest(const void* p, size_t n) {
+  const uint8_t* b = static_cast<const uint8_t*>(p);
+  for (size_t i = 0; i < n; ++i) g_digest = (g_digest ^ b[i]) * 1099511628211ull;
+}
+void DigestBlock(int slot, const int32_t* l, const int32_t* r) {
+  Digest(l, kBlock * sizeof(int32_t));
+  Digest(r, kBlock * sizeof(int32_t));
+  Digest(Disp(slot), sizeof(fickle::Display));
+}
+
 void Render(int slot, const Ctl& c, int32_t* l, int32_t* r) {
   int16_t p[16];
   Params(c, p);
   FX_fickle.render(slot, l, r, p, kBlock);
+  DigestBlock(slot, l, r);
 }
 
 void Silence(int32_t* l, int32_t* r) { for (int i = 0; i < kBlock; ++i) l[i] = r[i] = 0; }
@@ -488,6 +503,7 @@ void Measure(const char* label, Ctl c, long blocks, bool play, bool dub) {
     const uint32_t t0 = Cycles();
     FX_fickle.render(0, l, r, p, kBlock);
     const uint32_t dt = Cycles() - t0;
+    DigestBlock(0, l, r);
     sum += dt;
     if (dt > mx) { mx = dt; mx_at = b; }
   }
@@ -637,6 +653,8 @@ int main(int argc, char** argv) {
   } else {
     return 2;
   }
+  printf("output digest %08lx%08lx\n", static_cast<unsigned long>(g_digest >> 32),
+         static_cast<unsigned long>(g_digest & 0xffffffffu));
   if (g_fail) { printf("fickle: %d checks FAILED\n", g_fail); return 1; }
   printf("fickle: all checks passed\n");
   return 0;

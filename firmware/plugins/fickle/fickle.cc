@@ -161,11 +161,40 @@ inline int32_t Ramp(int32_t v, int32_t target, int32_t step)
     return v < target ? Min(v + step, target) : Max(v - step, target);
 }
 
-/* A turn's word in the filter range -> 0..32767 (per block). */
-inline int32_t Knob(const int16_t *p, int k)
+/* A turn's word in the filter range -> 0..32767. One software divide (libgcc's ___divsi3, ~190 cycles on this CPU),
+ * only for a word that moved (Kept below). */
+inline int32_t Knob(int32_t word, int k)
 {
     const int32_t lo = kRangeLo[k], hi = kRangeHi[k];
-    return Clamp15((p[k] - lo) * 32767 / (hi - lo));
+    return Clamp15((word - lo) * 32767 / (hi - lo));
+}
+
+/* 0.3: what the block's controls give the DSP, kept per slot and redone only when their inputs moved: the four turns
+ * (four divides a block before) and the reverb's decay (ReverbDecay: two more, every block in the reverb mode;
+ * docs/efficiency-audit.md finding 8). The same values, so the same output bit for bit. Tiny per-slot values in .bss
+ * (guidelines 2.3: the state has no room, it is sized to the position buffers' 134,784 bytes); init clears `valid`, so
+ * the first render after a selection computes everything. */
+struct Kept {
+    int16_t raw[4];                                    /* params[0..3] as last seen */
+    int32_t valid;
+    int32_t q[4];                                      /* the turns, 0..32767 */
+    int32_t rv_size, rv_time, rv_decay;                /* ReverbDecay(rv_size, rv_time); rv_size 0: nothing kept */
+};
+Kept g_kept[COOP_FX_SLOTS];
+
+inline Kept &ReadKnobs(int slot, const int16_t *p)
+{
+    Kept &c = g_kept[slot];
+    const bool all = !c.valid;
+    for (int k = 0; k < 4; ++k) {
+        if (all || p[k] != c.raw[k]) {
+            c.raw[k] = p[k];
+            c.q[k] = Knob(p[k], k);
+        }
+    }
+    if (all) c.rv_size = 0;                            /* a size is at least 512 */
+    c.valid = 1;
+    return c;
 }
 
 inline int32_t ClampStep(int32_t v, int32_t n) { return v < 0 ? 0 : (v >= n ? n - 1 : v); }
@@ -610,7 +639,8 @@ inline void TapPair(const uint32_t *wet, uint32_t ia, uint32_t ib, int32_t gal, 
     }
 }
 
-void Reverb(State *s, const int32_t *inl, const int32_t *inr, int32_t ticks, int32_t time, int32_t modv, bool freeze)
+void Reverb(State *s, Kept *kept, const int32_t *inl, const int32_t *inr, int32_t ticks, int32_t time, int32_t modv,
+            bool freeze)
 {
     /* time: the size (512 .. 16300 clock samples, exponential, eased) and the RT60 (ReverbDecay: 0.5 .. 10.6 s at 24 kHz);
      * modify: the diffusers' gain (0 .. 0.72: from a clean multi-tap to a wash). The input and the crossed-over
@@ -620,7 +650,12 @@ void Reverb(State *s, const int32_t *inl, const int32_t *inr, int32_t ticks, int
     if (!freeze) s->size = Ramp(s->size, ReverbSize(time), (ticks >> 2) + 1);
     const int32_t S = s->size;
     const int32_t g = M16(modv, 23593) >> 15;
-    const int32_t decay = ReverbDecay(S, time);
+    if (S != kept->rv_size || time != kept->rv_time) {  /* the size or the turn moved: the decay again (0.3) */
+        kept->rv_decay = ReverbDecay(S, time);
+        kept->rv_size = S;
+        kept->rv_time = time;
+    }
+    const int32_t decay = kept->rv_decay;
     const int32_t damp = 22000;
     uint32_t *wet = s->wet, *tp = s->tp;
     const uint32_t n0 = s->n;
@@ -781,7 +816,15 @@ void Publish(State *s, int32_t in_pk, int32_t wet_pk, int32_t loop_pk, bool dub)
     if (s->lstate == S_LISTEN) {
         len = Min(s->filled - kSeam, kLoopPairs - kLoopMargin);
         if (len < kMinLoop) len = 0;
-        pos = (s->w * 32767) / kLoopPairs;
+        /* (w x 32767) / kLoopPairs without the divide (0.3: it ran every block while listening): the reciprocal
+         * rounded up in Q16 gives the quotient or one more (w < 15288: its error stays under 0.17), which the product
+         * back tells apart. tests/host/fickle checks every w. */
+        static_assert(kLoopPairs == 15288, "kPosRecip is 32767 x 65536 / kLoopPairs, rounded up");
+        const uint32_t kPosRecip = 140465u;
+        const uint32_t w = static_cast<uint32_t>(s->w);
+        uint32_t q = (w * kPosRecip) >> 16;
+        if (q * static_cast<uint32_t>(kLoopPairs) > w * 32767u) --q;
+        pos = static_cast<int32_t>(q);
     } else if (s->len > 0) {
         len = s->len;
         pos = ((s->p >> 16) * 32767) / s->len;
@@ -810,6 +853,7 @@ void Publish(State *s, int32_t in_pk, int32_t wet_pk, int32_t loop_pk, bool dub)
 int init(int slot)
 {
     if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+    g_kept[slot].valid = 0;                            /* nothing kept across a selection */
     uint32_t bytes = 0;
     State *s = static_cast<State *>(coop_fx_scratch(slot, &bytes));
     g_st[slot] = (s && bytes >= sizeof(State)) ? s : nullptr;
@@ -887,7 +931,8 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int nsamp)
     }
     PROF_START;
 
-    const int32_t time = Knob(params, 0), modv = Knob(params, 1), clk = Knob(params, 2), mixk = Knob(params, 3);
+    Kept &kept = ReadKnobs(slot, params);
+    const int32_t time = kept.q[0], modv = kept.q[1], clk = kept.q[2], mixk = kept.q[3];
     const int32_t wwant = ClampStep(params[5], W_MODES);
     const int32_t route = ClampStep(params[6], R_ROUTES);
     s->lmode_want = ClampStep(params[7], L_MODES);
@@ -1002,7 +1047,7 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int nsamp)
     switch (s->wmode) {
     case W_DELAY: Delay(s, inl, inr, ticks, time, modv, freeze); break;
     case W_SLIP: Slip(s, inl, inr, ticks, time, modv, freeze); break;
-    default: Reverb(s, inl, inr, ticks, time, modv, freeze); break;
+    default: Reverb(s, &kept, inl, inr, ticks, time, modv, freeze); break;
     }
     PROF(3);
     {                                                  /* the mode switch's fade */

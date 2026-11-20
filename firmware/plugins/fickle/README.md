@@ -258,6 +258,17 @@ the clearing blocks included. The screen reads them through `Published<>` while 
   - The device is typically 10-35 % above the simulator, more with SDRAM misses. The heads walk the 131 KB of
     buffers sequentially, so a cache line serves 8 clock samples.
   - 0.2 (the shorter loop buffer) reruns within 1 % of this table.
+  - **0.3 (2026-11-20, `docs/efficiency-audit.md` finding 8):** the divides out of the steady block. The four turns'
+    values and the reverb's decay (`ReverbDecay`: two more divides, every block in the reverb mode) are kept per slot
+    (`.bss`, 40 bytes a slot, cleared by `init`) and redone only when a word, the size or the time moves; the
+    display's loop position while listening (a divide by the buffer's length every block) is a multiply and a
+    correction, checked for every position. About 0.8-1.2 k less a block than the table. Default clock, avg / max:
+    reverb listening 19,275 / 19,789, frozen 13,879 / 14,554; delay 12,195 / 14,237; slip 13,626 / 15,981; reverb +
+    loop tape_1 + dub 24,621 / 36,950. Top clock: reverb listening 22,837 / 23,617, delay 13,587 / 16,142, slip
+    15,351 / 18,577, reverb + loop tape_1 + dub 29,330 / 42,593. Still dividing: the loop's position and envelope bin
+    while a loop plays (by its length), slip's head display (by its refresh).
+    The output and the display words are 0.2's bit for bit: the test's digest (below) over the whole stress run and
+    in the simulator, 0.2's sources against 0.3's. File 36,124 bytes, `.text` 22,312, `.bss` 476; imports unchanged.
   - **Device figures: pending.**
 - **How it got there** (`make -C tests/host/fickle prof`: each pass's cycles):
   - Every product in a per-sample loop is a single 16 x 16 multiply. GCC drops `int16` casts once it can prove the
@@ -300,6 +311,11 @@ the clearing blocks included. The screen reads them through `Published<>` while 
   - `wet_<mode>.wav` (10 s): notes, a clock sweep 24 -> 2 -> 32 kHz, then freeze over silence.
   - `loop_<mode>.wav` (11 s): notes while listening, then the loop on over silence (noise hits for the env modes), a
     clock sweep while it plays, a dub with new notes, then the loop off.
+- **The digest (0.3):** every rendered block's output and display words are folded into one number, printed last
+  (`output digest ...`). Two builds of the plugin that print the same digest for the same `BLOCKS` and `SEED` gave the
+  same samples in every check: `make -C tests/host/fickle COOP=<the older sources' folder> BUILD=<another>` builds an
+  older version under the same test. 0.2 and 0.3: `efcf17611b46da51` (host, 60,000 blocks, seed 1) and
+  `3959750b0ea1de10` (`sim`). In the stress run the turns walk every block in half the segments and jump in the rest.
 - `make -C tests/host/fickle sim` gives the cycles above in `bfin-elf-run`. `prof` gives the same per pass.
 - `make -C tests/host/fickle screens` writes the screen PNGs (above).
 - `python3 gen_fickle_tables.py fickle_tables.h` regenerates the tables. `python3 gen_fickle_svg.py fickle.svg`

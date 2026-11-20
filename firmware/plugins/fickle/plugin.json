@@ -33,6 +33,6 @@
                "env hard", "stretch", "str slow", "str rev"], "default": 0, "wrap": true}
   ],
   "author": "coldsoldr",
-  "version": "0.2",
+  "version": "0.3",
   "description": "fickle: two processors that feed each other on one clock, inspired by the signal flow of a two-channel micro-looper pedal (coldsoldr, GPL-3.0-or-later). A wet channel (reverb, delay or slip, with a freeze) and an always-listening micro-looper (tape speeds, reverse, ping-pong, envelope retrigger, granular stretch; overdub), both at a clock from 32 kHz down to 2 kHz: lower is longer, darker and grittier. Stereo at every position. Blue time, green modify, white clock, orange mix; orange click freeze, white click loop, green click dub; fn + blue the wet mode, fn + green routing (in, both, loop), fn + white the loop mode."
 }
