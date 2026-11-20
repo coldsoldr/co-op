@@ -2747,3 +2747,103 @@ watch); a NAND read landing in region B on the device (the staging block; in op1
 Your plugin files are untouched by either; e11 loads the same files under its 1,728 KiB budget.
 
 Result: (pending)
+
+## Plugin idle paths and the divides out of the steady block: tape_echo 0.4, cs_hall 0.3, cs_plate 0.3, fickle 0.3, petri 0.3; tape_drive 0.6, bitcrusher 0.3, rings 0.10 — device test (pending, 2026-11-20)
+
+Two changes to the plugins, `docs/efficiency-audit.md` findings 8 and 6. Core unchanged: the files load on e10, e11
+and e12 as their versions before did (no new import). **Not in the catalogue yet**: the eight files are in
+`firmware/build/plugins-next/` (the e12 gates were reading `build/plugins/` and `plugins/` while these were built).
+**No op1emu gate has been run on them** (op1emu was in use for e12): everything below is host and GNU simulator.
+
+**1. No divide in a steady block (finding 8), bit-exact.** The knob scaling `(word - lo) x 32767 / (hi - lo)` and its
+kin ran as libgcc divides every block (~190 cycles each). Each plugin now keeps the values per slot and redoes one
+only when its word moves; rings FM's five divides a render are the constant's shifts.
+
+| Plugin | divides a block before | simulator, cycles a block: before -> after (the plugin's own test scenario) | proof it is the same output |
+|---|---|---|---|
+| tape_echo 0.4 | 6 (7 and a table walk with sync on) | 16,079 -> 15,039 | te-op1-cfw's echo, 5 tempo runs x 20,000 blocks host, 3,000 simulator: bit-identical |
+| cs_hall 0.3 | 4 | 17,753-21,942 -> 17,277-21,486 by scenario; the turns held 18,517 -> 18,027 | te-op1-cfw's hall, host and simulator: bit-identical |
+| cs_plate 0.3 | 4 | 17,873 -> 17,379; still knobs 17,419 -> 16,788 | te-op1-cfw's plate, 52,309 blocks host, 10,835 simulator: bit-identical |
+| tape_drive 0.6 | 4 | 9,197 -> 8,689 | te-op1-cfw's tape, 20,000 blocks host and simulator: bit-identical |
+| bitcrusher 0.3 | 7 and a 64-bit multiply | 6,507 -> 5,426 (the test moves each word in 3 blocks of 10) | te-op1-cfw's crusher, 2 x 40,000 blocks: 0 mismatching samples |
+| fickle 0.3 | 4, + 2 in the reverb mode, + 1 for the display while listening | reverb 20,299 -> 19,275, delay 13,304 -> 12,195, slip 14,590 -> 13,626 (default clock) | the test's digest of every output and display word, 0.2's sources against 0.3's: equal, host (60,000 blocks) and simulator |
+| petri 0.3 | 4 | all effects 21,111 -> 20,488 | the digest, as fickle: equal, host and simulator |
+| rings 0.10 | 5 a voice render in FM | the FM render 15,726 -> 14,810 (the fm stage 8,548 -> 7,637) | 0.9's output byte for byte: the 90 s scenario on the host, 6,000 FM blocks in the simulator |
+
+In every one of these tests the controls also move every block for stretches and jump at arbitrary blocks, and the
+effect is re-initialised mid-run. A block in which all four turns move at once costs 150-340 cycles more than before
+(the compares and stores beside the same divides).
+
+**2. Idle paths (finding 6).** An effect that is on, with exact silence at its input and nothing left to play,
+stops computing: tape_echo, cs_hall, cs_plate, fickle, petri. (When an effect is off or not selected its render is
+not called at all; that was already so.) The check is at the top of the render: the first block with any input is
+rendered in full. Each README has an "Idle" section with the conditions and the test figures.
+
+| Effect | idle when (input exact silence, and) | hold | never idle | while idle against the same effect without the path | after waking | simulator: playing -> idle, cycles a block |
+|---|---|---|---|---|---|---|
+| tape_echo | every pair written to the tape is zero | 1.52 s (the tape once round) | hold; feedback 0.97 and up; a ghost the loop's rounding keeps (high feedback, new tape) | identical | identical (0 LSB in every test) | 14,371 -> 1,382 |
+| cs_hall | its wet output is exact zeros | 1.06 s | freeze; infinite decay | identical | 0 on the first block, then 4-10 LSB under a loud tail: the hall's own rounding noise, the same as between two halls that never idle | 17,720 -> 1,084 |
+| cs_plate | its wet output is exact zeros | 0.93 s | freeze | identical | 0 on the first block, then 4 LSB (defaults) to 29 LSB (longest decay, full wet): the same as between two plates that never idle | 16,869 -> 1,113 |
+| fickle | the wet channel took in, gave and wrote only zeros, every small state at rest, the looper listening | 16,448 clock samples (0.69 s at 24 kHz, 8.2 s at 2 kHz) | freeze; a loop playing or dubbing; the delay's modify from 31,000 up | identical | identical (bit-exact: its digest test runs with the path on) | 19,190 -> 1,887 (reverb), 12,128 -> 1,927 (delay), 13,171 -> 2,889 (slip) |
+| petri | only zeros written to the record and given as wet | 1.37 s (the record once round) | hold; warp with a bus not at rest | identical | 0 on the first block, then 0-3 LSB (defaults), up to 9 LSB (repeats and space at the top): the same as between two that never idle; the grains are the same grains | 16,565-29,359 -> 2,043-3,316 |
+
+A playing block costs 50-180 cycles more than before for the path (a six-sample silence test and the state's flags);
+a silent block that is not idle yet 400-900 more (the input read through, the check). fickle's slip is 280 cheaper.
+Thresholds: none. Every level in the conditions is zero, which each effect does reach (the hall's dithered rounding,
+the plate's tap gain, fickle's and petri's rounding towards zero, the echo's tape); where one does not (the echo's
+ghost) the effect stays awake.
+
+**rings' reverb model is not idled**, and it shows something to hear for: with a key of string + reverb held, the
+voice that carries the reverb gives a steady -52 LSB (2 LSB of ripple) for as long as the key is down [C host, the
+build as it ships: `plugins/rings/README.md` "0.10"]. It was always so (the reverb's rounding); it is why its tail
+never gets under any idle level.
+
+**What to do** (headphones, the volume well up; each effect once at an instrument's FX and once at master FX):
+
+1. Install the eight files from `firmware/build/plugins-next/` (or wait for the catalogue swap). The librarian shows
+   tape_echo 0.4, cs_hall 0.3, cs_plate 0.3, fickle 0.3, petri 0.3, tape_drive 0.6, bitcrusher 0.3, rings 0.10.
+2. **The tails into silence.** For each of the five: one loud note or chord, then hands off. Listen to the tail to its
+   very end and a few seconds past it. Expected: the tail ends as it always did, and nothing happens when the effect
+   goes idle (tape_echo about 4 s after the note at its defaults, cs_hall 7 s, cs_plate 11 s, fickle 1.5 s, petri 4 s):
+   no tick, no step, no change in the hiss. If you hear anything at that moment, that is a fault: note the effect,
+   the position and the settings.
+   - cs_hall: also with decay near the top and the mix full wet (idle about 40 s after the note).
+   - cs_plate: also with decay at the top, size 8, full wet (a tail of a minute and a half).
+   - tape_echo: also with feedback at about 3 o'clock on a worn tape (age up).
+3. **The wake on a soft note.** After at least ten seconds of silence, play one note as softly as the engine allows
+   (low velocity, a soft sound), then a normal one. Expected: the first note has its effect from its first instant,
+   the echo's first repeat, the reverb's onset, petri's first grain, at the usual level; no click at the note's start
+   and no dip. Try it a few times with different waits (10 s, a minute).
+4. **The turns while silent.** In silence (idle), turn each knob through its range and the fn layers, then play.
+   Expected: as if the effect had been running: tape_echo's time glides to where the knob is, the hall's size change
+   has happened, fickle's clock is where you left it. No burst of old sound from any turn.
+5. **The states that hold a sound, left for a minute.** Each must still be sounding, unchanged, after a minute with
+   no input:
+   - tape_echo: hold (green click) on a phrase; feedback at the top (it howls on).
+   - cs_hall: freeze (orange click) on a chord; decay at the top (infinite).
+   - cs_plate: freeze.
+   - fickle: freeze in reverb, in delay and in slip; a loop playing (white click), in a tape mode and in stretch; a
+     loop with dub on; the delay with modify at the top.
+   - petri: hold (green click) in mosaic, tunnel, pattern and warp.
+   Then release each: the sound decays as before and the effect goes quiet.
+6. **fickle's looper after a silence.** Play, wait ten seconds in silence, press loop. Expected: the loop holds that
+   silence (the looper kept listening), as in 0.2; play again with loop off, press loop: the last phrase, as ever.
+7. **petri, warp and back.** In warp while it sounds, switch to another effect, wait in silence, switch back to warp.
+   Expected: as in 0.2 (whatever it did there).
+8. **tape_echo's ghost.** Longest time, feedback at about 2-3 o'clock, age at minimum: one note, then wait two
+   minutes with the volume up. You may hear a very faint repeat going on and on (it was there in 0.3 too). It is why
+   this echo never goes idle at those settings; say whether you would rather have it cut.
+9. **rings.** FM: play as usual; nothing should have changed. String + reverb: hold a chord for half a minute; nothing
+   has changed there either (the reverb is as it was).
+10. **The cost.** With one of the five at instrument FX 1 and nothing playing for ten seconds, copy
+   `/yaffs2/user/coop_stats.txt` twice five seconds apart, then once more while playing. Expected: `fx1_plugin=` (or
+   `s2_instr=` / `s2_master=` at FX 2) drops from its playing figure to about 3-6 k in the silent windows (the
+   plugin's 1-3 k and the wrap's conversions, which still run around an idle plugin: audit finding 9). These two
+   figures per effect are the result that matters most.
+11. tape_drive, bitcrusher: play them; they must sound as before. Their `fx1_plugin=` figure should be about 0.5 k
+   and 1 k lower than their last recorded one.
+
+**If something is wrong:** reinstall the plugin's previous file from the catalogue (the versions before these); note
+which effect, where, and what you did just before.
+
+Result: (pending)
