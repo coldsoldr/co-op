@@ -9,6 +9,7 @@ import {
   parseCoopHello,
   parseCoopInventory,
   readCoopInventory,
+  readCoopMemoryReport,
 } from './coop';
 import { NoAnswerError, createSession } from './session';
 
@@ -121,5 +122,46 @@ describe('coop plugin files', () => {
     const device = twoPlugins();
     device.menuOpen = true;
     await expect(coopSetPlugin(createSession(device), 'saw.coop', false)).rejects.toThrow(/settings menu is open/);
+  });
+});
+
+describe('the memory figure of the OP-1 itself', () => {
+  const counters = (n: number): string => `coop-stats 3 build e10\n${'cb_max 12345 cb_sum 678901 blocks 4321\n'.repeat(n)}plugins seen 3 loaded 2 failed 1\n`;
+  const plugmem =
+    'plugmem budget 1572864 used 683152 over_budget 1 heap_short 0 skipped 0 badname 0 tape_node 524288 heap_free_boot 15058684 scratch_files 1 fxbuf 134784 fxbuf_mem 673960 fxbuf_short 0\n' +
+    'plugfile cs_hall.coop failed needs 514880: over the plugin memory budget\n';
+  const windows = 'top seq 4 blocks 100\nwin seq 5 blocks 90\n';
+  const expected = { budget: 1572864, used: 683152, exact: true, needs: { 'cs_hall.coop': 514880 } };
+
+  it('reads the plugmem line of the statistics file, twice', async () => {
+    const device = new FakeCoop({ stats: counters(20) + plugmem + windows });
+    expect(await readCoopMemoryReport(createSession(device))).toEqual(expected);
+    const first = device.requests.length;
+    // The next look starts where the line was found.
+    expect(await readCoopMemoryReport(createSession(device))).toEqual(expected);
+    expect(device.requests.length - first).toBeLessThan(first);
+  });
+
+  it('finds the line again after the file has grown or shrunk', async () => {
+    let n = 30;
+    const device = new FakeCoop({ stats: () => counters(n) + plugmem + windows });
+    expect(await readCoopMemoryReport(createSession(device))).toEqual(expected);
+    n = 2;
+    expect(await readCoopMemoryReport(createSession(device))).toEqual(expected);
+  });
+
+  it('reads a block that ends the file', async () => {
+    expect(await readCoopMemoryReport(createSession(new FakeCoop({ stats: counters(1) + plugmem })))).toEqual(expected);
+  });
+
+  it('does not trust a figure the second pass does not repeat', async () => {
+    // The figure differs on every pass, as if the passes kept mixing two versions of the file.
+    const device = new FakeCoop({ stats: (i) => counters(1) + plugmem.replace('used 683152', `used ${683152 + (i >> 2)}`) + windows });
+    expect(await readCoopMemoryReport(createSession(device))).toBeNull();
+  });
+
+  it('is null on a core without the file or without the line', async () => {
+    expect(await readCoopMemoryReport(createSession(new FakeCoop()))).toBeNull();
+    expect(await readCoopMemoryReport(createSession(new FakeCoop({ stats: counters(3) + windows })))).toBeNull();
   });
 });

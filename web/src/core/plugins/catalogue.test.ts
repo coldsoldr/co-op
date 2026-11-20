@@ -2,7 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import type { HostedPluginEntry, PluginBuild, PluginIndex, PluginIndexEntry } from '@co-op/shared/plugins';
 import { CatalogueError } from '../catalogue/catalogue';
-import { fetchManual, fetchPluginBytes, fetchPluginIndex, filterPlugins, groupByAuthor, pluginFileUrl, pluginFolderUrl } from './catalogue';
+import {
+  coopFilesOf,
+  fetchManual,
+  fetchPluginBytes,
+  fetchPluginIndex,
+  filterPlugins,
+  groupByAuthor,
+  pluginFileUrl,
+  pluginFolderUrl,
+} from './catalogue';
 
 const knl = new Uint8Array([0x4b, 0x4e, 0x4c, 0x00, 1, 2, 3, 4]);
 const sha = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
@@ -106,6 +115,16 @@ describe('fetchPluginIndex', () => {
     ).rejects.toThrow(/unsupported plugin index/);
   });
 
+  it('lists the coop files that carry their share of the plugin memory', async () => {
+    const memory = { kind: 'synth' as const, image: 666064, scratch: 0, voices: 0, screen: 248 };
+    const both = ringsBoth();
+    const withMemory = { ...both, builds: [(both.builds as PluginBuild[])[0] as PluginBuild, { ...coopBuild, memory }] };
+    const { impl } = fakeFetch({ [INDEX_URL]: JSON.stringify(index([withMemory, plugin({ id: 'grids', screenshot: 'grids/s.png', manual: 'grids/manual.md' })])) });
+    expect(coopFilesOf(await fetchPluginIndex('/co-op/', impl))).toEqual([{ file: 'rings.coop', sizeBytes: 4, memory }]);
+    // An index from before the field, or a file the build could not read: nothing to add up.
+    expect(coopFilesOf(index([ringsBoth()]))).toEqual([]);
+  });
+
   it('refuses malformed entries', async () => {
     const bad: unknown[] = [
       { ...plugin(), name: 3 },
@@ -131,6 +150,10 @@ describe('fetchPluginIndex', () => {
       { ...plugin(), builds: [{ ...coopBuild, sha256: 'abc' }] },
       { ...plugin(), builds: [{ ...coopBuild, firmware: 'op1/stock' }] },
       { ...plugin(), builds: [{ ...coopBuild, source: 'http://x.org' }] },
+      // A coop build's memory: a kind and four byte counts.
+      { ...plugin(), builds: [{ ...coopBuild, memory: 'big' }] },
+      { ...plugin(), builds: [{ ...coopBuild, memory: { kind: 'fx', image: -8, scratch: 0, voices: 0, screen: 0 } }] },
+      { ...plugin(), builds: [{ ...coopBuild, memory: { kind: 'fx', image: 8, scratch: 0, voices: 0 } }] },
     ];
     for (const entry of bad) {
       const { impl } = fakeFetch({ [INDEX_URL]: JSON.stringify({ ...index(), plugins: [entry] }) });

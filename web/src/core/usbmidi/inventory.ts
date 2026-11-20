@@ -53,6 +53,8 @@ export interface Inventory {
   /** The user synth preset count and the cap of the save gate; null on older cores. */
   presets: { count: number; cap: number } | null;
   records: InventoryRecord[];
+  /** coop only: the core's build tag, such as "e10" (coop.ts). */
+  build?: string | null;
 }
 
 const MAGIC = 'kennel-inventory 1';

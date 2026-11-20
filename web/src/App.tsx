@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { HostedPluginEntry } from '@co-op/shared/plugins';
 import { Changelog } from './ui/Changelog';
 import { Feedback } from './ui/Feedback';
 import { CopyToMods } from './ui/CopyToMods';
+import { coopFilesOf } from './core/plugins/catalogue';
 import { CoopDevice, CoopInstall } from './ui/CoopPlugins';
 import { useSiteDevice } from './ui/device-choice';
 import { DeviceMenu } from './ui/DeviceMenu';
@@ -60,6 +61,8 @@ export function App() {
   // hundekraft and coop plugins install over USB MIDI; the inventory the OP-1 reports afterwards is shared.
   // opus plugins are copied into mods/ on the open drive. op1r plugins are only downloaded: op1r's own web
   // patcher installs them.
+  // What each coop file of the catalogue takes of the OP-1's plugin memory, for the bar on the Plugins tab.
+  const coopFiles = useMemo(() => (device.pluginIndex ? coopFilesOf(device.pluginIndex) : []), [device.pluginIndex]);
   const pluginActions = (plugin: HostedPluginEntry) =>
     plugin.firmware === 'op1/op1r' ? null : plugin.firmware === 'op1/hundekraft' ? (
       <>
@@ -67,13 +70,15 @@ export function App() {
         <InstallOverUsb plugin={plugin} onInstalled={device.setInstalledPlugins} />
       </>
     ) : plugin.firmware === 'op1/coop' ? (
-      <CoopInstall plugin={plugin} onInventory={device.setInstalledPlugins} />
+      <CoopInstall plugin={plugin} known={coopFiles} onInventory={device.setInstalledPlugins} />
     ) : (
       <CopyToMods plugin={plugin} device={device} />
     );
   // A coop OP-1's plugins are managed from the Plugins tab (firmware/docs/sysex.md, e3).
   const pluginDevice =
-    device.profile.id === 'op1/coop' ? <CoopDevice inventory={device.installedPlugins} onInventory={device.setInstalledPlugins} /> : null;
+    device.profile.id === 'op1/coop' ? (
+      <CoopDevice inventory={device.installedPlugins} known={coopFiles} onInventory={device.setInstalledPlugins} />
+    ) : null;
   const buttons = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
 
   function openLibrary(): void {

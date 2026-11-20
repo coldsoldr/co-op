@@ -159,11 +159,30 @@ export interface PluginBuild extends Omit<PluginBuildManifest, 'savedName'> {
   /** Author and version from a .knl or .coop extension table, when it has them. */
   headerAuthor?: string;
   headerVersion?: string;
+  /** A .coop file's share of the coop firmware's plugin memory, from its header (web/src/core/plugins/memory.ts). */
+  memory?: CoopMemory;
+}
+
+/**
+ * What a .coop file takes of the coop firmware's plugin memory at boot, in heap bytes (blocks with their headers;
+ * firmware/core/sdram/plugin_host.cc). A set of files takes the sum of image, voices and screen, and one block of
+ * five position buffers sized by the largest `scratch` among them.
+ */
+export interface CoopMemory {
+  kind: 'fx' | 'synth';
+  /** The relocated image: one block for an engine or a scratch effect, five for an old-model effect. */
+  image: number;
+  /** A scratch effect's position buffer, rounded up to 32 bytes; 0 for any other file. */
+  scratch: number;
+  /** An engine's state for its six voices; 0 for an effect. */
+  voices: number;
+  /** The core's screen object, for a file that ships a screen; else 0. */
+  screen: number;
 }
 
 /** The index entry fields that belong to one build. */
 const BUILD_KEYS = [
-  'firmware', 'file', 'link', 'fileUrl', 'version', 'requires', 'source', 'savedName', 'sizeBytes', 'sha256', 'headerAuthor', 'headerVersion',
+  'firmware', 'file', 'link', 'fileUrl', 'version', 'requires', 'source', 'savedName', 'sizeBytes', 'sha256', 'headerAuthor', 'headerVersion', 'memory',
 ] as const satisfies readonly (keyof PluginBuild)[];
 
 export interface PluginIndexEntry
@@ -982,7 +1001,7 @@ export async function validatePluginFiles(
  */
 export function pluginIndexEntry(
   manifest: PluginManifest,
-  file: { sizeBytes: number; sha256: string } | null,
+  file: { sizeBytes: number; sha256: string; memory?: CoopMemory } | null,
   info: PluginFileInfo,
 ): PluginIndexEntry {
   const { format: _format, savedName: ownSavedName, builds: _builds, ...fields } = manifest;
@@ -1005,6 +1024,7 @@ export function pluginIndexEntry(
     ...(savedName === undefined ? {} : { savedName }),
     ...(info.author === undefined ? {} : { headerAuthor: info.author }),
     ...(info.version === undefined ? {} : { headerVersion: info.version }),
+    ...(file?.memory === undefined ? {} : { memory: file.memory }),
   };
 }
 
@@ -1015,7 +1035,7 @@ export function pluginIndexEntry(
  */
 export function pluginIndexEntryOfBuilds(
   manifest: PluginManifest,
-  files: readonly ({ sizeBytes: number; sha256: string; info: PluginFileInfo } | null)[],
+  files: readonly ({ sizeBytes: number; sha256: string; info: PluginFileInfo; memory?: CoopMemory } | null)[],
 ): PluginIndexEntry {
   const entries = manifestBuilds(manifest).map((build, i) => {
     const file = files[i];

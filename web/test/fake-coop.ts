@@ -30,6 +30,11 @@ export interface FakeCoopOptions {
   menuOpen?: boolean;
   /** Answer nothing (a kennel or stock OP-1). */
   silent?: boolean;
+  /**
+   * /yaffs2/user/coop_stats.txt, served by FILE_GET. A function is asked on every request (with how many FILE_GETs
+   * came before), as the core rewrites the file every few seconds.
+   */
+  stats?: string | ((request: number) => string);
 }
 
 const OK = 0;
@@ -117,6 +122,14 @@ export class FakeCoop implements MidiPort {
 
   private answer(cmd: number, p: Uint8Array): number[] {
     switch (cmd) {
+      case 0x20: {
+        if (p.length < 5) return [FORMAT];
+        const stats = this.options.stats;
+        if (stats === undefined || dec.decode(p.subarray(4)) !== '/yaffs2/user/coop_stats.txt') return [PATH];
+        const all = enc.encode(typeof stats === 'string' ? stats : stats(this.requests.filter((r) => r.cmd === 0x20).length - 1));
+        const off = u32(p);
+        return [OK, ...le(all.length), ...all.subarray(off, off + 64)];
+      }
       case 0x21:
         return [OK, ...enc.encode('coop'), 1, 0, this.options.caps ?? 0x3f, ...enc.encode(this.options.build ?? 'e3')];
       case 0x28: {

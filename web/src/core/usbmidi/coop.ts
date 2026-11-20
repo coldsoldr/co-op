@@ -7,6 +7,7 @@
 import { crc32, readU32le, u32le } from './framing';
 import type { Inventory, InventoryKind, InventoryRecord, InventoryState } from './inventory';
 import type { Session } from './session';
+import { reportFromStats, type DeviceMemoryReport } from '../plugins/memory';
 
 /** coop's status codes (firmware/docs/sysex.md). */
 const COOP_STATUS: Record<number, string> = {
@@ -137,6 +138,74 @@ export async function readCoopInventory(session: Session): Promise<Inventory & {
     at += p.length;
   }
   return parseCoopInventory(decoder.decode(all));
+}
+
+/** The core's statistics file: rewritten every few seconds, with the `plugmem` line (firmware/docs/plugins.md "e7"). */
+export const COOP_STATS_PATH = '/yaffs2/user/coop_stats.txt';
+/** The most of the statistics file one pass reads (the core writes at most 16 KiB). */
+const STATS_MAX = 32 * 1024;
+/** Where the plugmem line was last found, so the next look starts there instead of at the top of the file. */
+let plugmemHint: number | null = null;
+
+/** What starts at "plugmem " in `text`: the line and its plugfile lines, once the text holds them whole. */
+function plugmemBlock(text: string, atEnd: boolean): { at: number; block: string } | null {
+  const at = text.indexOf('\nplugmem ');
+  if (at < 0) return null;
+  const lines = text.slice(at + 1).split('\n');
+  lines.pop(); // what follows the last newline: an unfinished line, or nothing
+  const stop = lines.findIndex((line, i) => i > 0 && !line.startsWith('plugfile'));
+  if (stop >= 0) return { at: at + 1, block: lines.slice(0, stop).join('\n') };
+  // Every whole line so far belongs to the block, so only the end of the file closes it.
+  return atEnd && lines.length > 0 ? { at: at + 1, block: lines.join('\n') } : null;
+}
+
+/** Reads the statistics file from `from` in 64-byte steps until the plugmem block is whole, or the file ends. */
+async function scanForPlugmem(session: Session, from: number): Promise<{ at: number; report: DeviceMemoryReport } | null> {
+  const path = encoder.encode(COOP_STATS_PATH);
+  let text = '';
+  for (let offset = from; offset - from < STATS_MAX; ) {
+    const payload = new Uint8Array(4 + path.length);
+    payload.set(u32le(offset), 0);
+    payload.set(path, 4);
+    const reply = await session.ask(CoopCommand.FILE_GET, payload);
+    if (reply.status !== STATUS_OK) return null;
+    const total = readU32le(reply.payload);
+    const piece = reply.payload.subarray(4);
+    text += decoder.decode(piece);
+    offset += piece.length;
+    const atEnd = piece.length === 0 || offset >= total;
+    const found = plugmemBlock(text, atEnd);
+    if (found) {
+      const report = reportFromStats(found.block);
+      return report ? { at: from + found.at, report } : null;
+    }
+    if (atEnd) return null;
+  }
+  return null;
+}
+
+/**
+ * The OP-1's own account of its plugin memory: the budget, the bytes the loaded plugins hold and what each refused
+ * file needs, from the `plugmem` line of the statistics file. Null when the core has no such file or line (before
+ * e7) or the device does not serve files.
+ *
+ * The core rewrites the file every few seconds and a read goes 64 bytes a message, so one pass can mix two versions
+ * of the file. The line is therefore read twice, the second time straight from where it was found, and only a
+ * figure both passes agree on is returned.
+ */
+export async function readCoopMemoryReport(session: Session): Promise<DeviceMemoryReport | null> {
+  const near = (at: number): number => Math.max(0, at - 128);
+  let first = plugmemHint === null ? null : await scanForPlugmem(session, near(plugmemHint));
+  first ??= await scanForPlugmem(session, 0);
+  for (let tries = 0; first && tries < 2; tries++) {
+    const again = await scanForPlugmem(session, near(first.at));
+    if (again && JSON.stringify(again.report) === JSON.stringify(first.report)) {
+      plugmemHint = again.at;
+      return again.report;
+    }
+    first = again;
+  }
+  return null;
 }
 
 export interface PutOptions {
