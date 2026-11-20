@@ -17,8 +17,10 @@ INC := -I$(COOP) -I../../../sdk -I$(TE) -I$(TE)/fx -I$(TE)/clouds -I$(TE)/rings
 WARN := -Wall -Wno-unused-variable -Wno-unused-function -Wno-class-memaccess
 # e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
 SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
-HOST_FLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 $(WARN) -DOP1_HOST_SIM
-SIM_FLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns $(WARN) \
+# 0.3: the plate is compared sample for sample, so its idle path is off here (COOP_FX_NO_IDLE: the segments have
+# silences longer than the hold); ../idle tests that path against this build
+HOST_FLAGS := -DCOOP_FX_NO_IDLE -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 $(WARN) -DOP1_HOST_SIM
+SIM_FLAGS := -DCOOP_FX_NO_IDLE -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns $(WARN) \
              -DOP1_HOST_SIM -DOP1FX_NO_ASM -DOP1CLOUDS_NO_ASM
 COOP_SRC := $(COOP)/cs_plate.cc $(COOP)/cs_plate_screen.cc $(COOP)/plate.cc $(COOP)/halfband.cc ../fx_scratch_host.cc \
             ../screen_host.cc

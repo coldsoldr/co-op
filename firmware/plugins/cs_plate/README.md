@@ -188,6 +188,49 @@ What changed from kennel's screen:
 - SVG 4,507 bytes (kennel's 4,861), checked by the generator and by `tools/plugin/pack.py`.
 - Nothing animates, so the screen keeps no per-position state.
 
+## Idle (0.3)
+
+A plate left on a position used to compute its whole block on silence. 0.3 stops when its output has been silence for
+long enough (`docs/efficiency-audit.md` finding 6; the code is in `cs_plate.cc`, "The idle path").
+
+- **When.** The input block is exact silence (every sample's top 16 bits 0), freeze is off, and for 640 blocks in a
+  row (0.93 s: the tank's ring once round and the pre-delay's) the wet signal the plate made was exact zeros (the
+  taps' gain of 0.6 rounds the tank's last LSBs to nothing: the output does reach zero).
+- **Idle.** The render leaves the silent input as it came and runs only the control: the smoothers, a size change's
+  fades and the modulation LFO (in phase).
+- **Waking.** The check is at the top of the render, before any DSP: the first block with a non-zero sample, or
+  freeze, is rendered in full, on the tank as it was left. Nothing is faded and no sample is skipped.
+- **Never idle:** freeze; any input; a tail that still sounds (at the longest decay that is over a minute and a half).
+- **While idle the output is the plate's own: zeros.** In the lockstep test the idle plate and the one that never
+  idles give the same samples up to the wake's first block.
+- **After waking it is not the same sample for sample**: the allpasses and the tank keep their last LSBs going round
+  for ever under a silent output (the rounding's dead band, wider the longer the decay). The idle plate meets the
+  next note with that pattern where it stopped, the other with the pattern where it turned to. The same difference
+  shows between two plates that never idle when what they played before the silence differed by 1 % (the last
+  column): what a plate gives after a silence depends that much on what it played before it.
+
+| A note, silence, a soft note (40 LSB), a loud one | idle after the input | difference while idle | after the wake: soft / loud / the tail | two that never idle, the earlier notes 1 % apart |
+|---|---|---|---|---|
+| defaults | 11.3 s (output zero from 10.4 s) | 0 LSB | 4 / 4 / 4 LSB | 3 / 5 / 5 LSB |
+| longest decay, largest size, full wet | 100.2 s (99.3 s) | 0 | 12 / 18 / 29 | 10 / 14 / 32 |
+| shortest decay, smallest size, full wet | 1.6 s (0.6 s) | 0 | 4 / 0 / 0 | 3 / 0 / 0 |
+
+(16-bit output LSB, the largest sample difference; the wake's first block is 0 in every row. `make -C
+tests/host/idle FX=cs_plate`.) The same run: 20,000 blocks that never go silent and 20,000 of notes with 150 ms gaps:
+identical, 0 idle blocks. Freeze: a minute of silence, 0 idle blocks, 0 LSB; engaged while idle: awake on that block.
+Every turn walking and jumping through 1,500 idle blocks: 0 LSB.
+
+| Simulator, cycles a block (`make -C tests/host/idle sim FX=cs_plate`) | 0.3 without the idle path | 0.3 |
+|---|---|---|
+| playing | 16,795 | 16,869 |
+| silent, not yet idle | 16,792 | 17,357 |
+| idle | | **1,113** |
+| the block that wakes | | 16,870 |
+
+`tests/host/cs_plate` builds the plugin with `-DCOOP_FX_NO_IDLE` (its segments have silences longer than the hold,
+and it compares with te-op1-cfw's plate sample for sample): bit-identical as before, host and simulator.
+File 19,956 bytes, `.text` 10,040, `.bss` 344; imports unchanged.
+
 ## Tests
 
 - **Host** (`make -C tests/host/cs_plate`; from a worktree add `TE=/mnt/i/GitHub/coldsoldr/te-op1-cfw/ports`).
@@ -207,8 +250,9 @@ What changed from kennel's screen:
   19,792 cycles.
 - **0.3 (2026-11-20)**: the turns' values kept per slot (`.bss`, 28 bytes a slot, cleared by `init`). The same test
   with stretches where every turn moves every block: host 40 segments, 52,309 blocks, 237 size changes, 68 freeze
-  toggles, **bit-identical**; simulator 6 segments, 10,835 blocks, bit-identical. File 19,580 bytes, `.text` 9,688,
-  `.bss` 304; imports unchanged.
+  toggles, **bit-identical**; simulator 6 segments, 10,835 blocks, bit-identical. With this change alone: file 19,580
+  bytes, `.text` 9,688, `.bss` 304. 0.3 also has the idle path ("Idle" above, with the file as it ships; the test
+  builds the plugin with that path off).
 - **op1emu gate**: not run in this port (gate runs go one at a time). The plan:
   1. `make -C plugins`, then a NAND with `build/plugins/cs_plate.coop` alone in `/yaffs2/plugins`
      (`tools/make_nand.py ... --overlay`, `docs/plugins.md` "Building and testing"). The stock FX list is
