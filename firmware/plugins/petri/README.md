@@ -1,7 +1,7 @@
 # petri
 
 A granular micro-loop effect, inspired by the signal flow of a granular micro-loop pedal. The input is recorded all the
-time into a 1.49 s stereo buffer at 22.05 kHz; one of eleven effects plays that buffer back through up to eight voices
+time into a 1.36 s stereo buffer at 22.05 kHz (0.2; 0.1 had 1.49 s); one of eleven effects plays that buffer back through up to eight voices
 (loops, grains, slices, taps), each with its own start, rate and direction, length, envelope, gain and pan; the wet
 goes through a shared tone section (the effect's envelope on every repeat or grain, a gentle pitch drift fixed per
 effect, a resonant low-pass, a small space) and is mixed, equal power, with the untouched dry signal. **Hold** stops
@@ -88,7 +88,7 @@ it), and nothing older than the buffer holds is started.
 | blocks | block 10 .. 243 ms | glitch: 2x, 0.5x, 1.5x or reversed stutters, jumps inside the block, accelerating stutters | stutters 2..16 a burst | gate | none | 4 |
 | cut | burst 20 .. 393 ms | the intervals drawn from: +12, then -12, +7, +19, -5, +24; up to 4 stutters | how often: a burst every ~4 s .. 0.2 s (+-30 %) | gate | none | 4 |
 | arp | step 60 .. 591 ms | steps 1..8 of 0, 7, 12, 19, 24, 19, 12, 7 semitones over the last 3 onsets (or the newest audio) | note length 0.4..2.4 steps | perc | 4 ct, 5 Hz (vibrato) | 4 |
-| pattern | bar 0.1 .. 1.39 s | taps 1..6 at 16, 8, 12, 6, 14, 3 sixteenths of the bar, panned | feedback 0..0.85 (loop gain, whatever the taps) | flat (taps; gate chunks reversed or held) | 3 ct, 0.4 Hz | 6 |
+| pattern | bar 0.1 .. 1.27 s (0.1: 1.39 s) | taps 1..6 at 16, 8, 12, 6, 14, 3 sixteenths of the bar, panned | feedback 0..0.85 (loop gain, whatever the taps) | flat (taps; gate chunks reversed or held) | 3 ct, 0.4 Hz | 6 |
 | warp | longest tap 60 ms .. 1.1 s | three taps at 1/3, 2/3, 1 of it pitched by 0..+12, 0..-12, 0..+7 semitones, each low-passed (bright, dark, mid) | feedback 0..0.8 (pitched taps feed back: cascades) | hann (two grains a tap) | 10 ct, 0.25 Hz | 6 |
 
 - **Onsets** (strum, blocks, arp): a peak follower on the decimated input, once a block: an onset when a block's peak
@@ -101,8 +101,8 @@ it), and nothing older than the buffer holds is started.
 - **The makeup** (Q12, per effect) brings the wets near the dry's level at the defaults (`tests/host/petri` takes):
   mosaic 1.59, seq 1.27, glide 1.83, haze 1.76, tunnel 1.39, strum 1.15, blocks 0.66, cut 1.37, arp 1.71, pattern 1.22,
   warp 1.56.
-- **Starting**: after a (re)start the record (128 KiB) and the space (16 KiB) are cleared over the next 18 calls (26 ms,
-  the dry passing through), then the record fades in over 32 calls (46 ms) so no read across its start meets a step.
+- **Starting**: after a (re)start the record (118.5 KiB) and the space (9.8 KiB) are cleared over the next 17 calls
+  (25 ms, the dry passing through), then the record fades in over 32 calls (46 ms) so no read across its start meets a step.
 
 ## Display (e9)
 
@@ -159,12 +159,20 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
 
 ## Memory, numbers, cost
 
-- **State** (`state.h`, in the position buffer, e8): `"scratch": 150624` (`sizeof(Instance)` 150,604, 32-rounded;
-  `petri.cc` asserts both). The record: 32,769 words (32,768 stereo frames, L low / R high, plus a mirror of frame 0
-  for the interpolation) = 131,076 bytes; the space's window 8,080 int16 = 16,160 bytes; voices, schedulers, filter,
-  half-rate path, onsets and display ~3.4 KB. `.bss`: 324 bytes (the five slot pointers, the screen's node pointers and
+- **State** (`state.h`, in the position buffer, e8): `"scratch": 134752` (`sizeof(Instance)` 134,732, 32-rounded;
+  `petri.cc` asserts both). **0.2**: under tape_echo's 134,784, so petri no longer grows the five position buffers
+  (0.1 declared 150,624). The record: 30,336 words (a ring of 30,048 stereo frames, L low / R high, plus a mirror of
+  its first 288 frames after its end) = 121,344 bytes; the space's window 5,008 int16 = 10,016 bytes; voices,
+  schedulers, filter, half-rate path, onsets and display ~3.4 KB.
+  - **The ring** (`src/petri_engine.h` `kRecLen`): positions still count modulo 32,768 frames (a voice's Q17 position,
+    the onsets, the display words: nothing in the schedulers or the screen changed), but a frame is stored by its age
+    behind the write head, at `(hp - age) mod 30,048`. `RenderVoices` works that out once a voice a call and hands the
+    kernel a base pointer and a position that cannot wrap in 32 samples; the mirror covers a call's reach (a rate is
+    held to 8x: 258 frames; the effects reach 4x). The kernels (`voice_bfin.S`, `space_bfin.S`) are unchanged.
+  - Checked: built with `-DCOOP_PETRI_REC_LEN=32768` (the old length through the new mapping, and the space's new
+    slide), the 31 listening takes are byte-identical to 0.1's and the stress run changes the same 3,505,395 samples. `.bss`: 324 bytes (the five slot pointers, the screen's node pointers and
   its per-position animation).
-- **File**: 35,856 bytes packed; `.text` 22,228, `.rodata` 4,108, `.bss` 324 (load ~26.7 KB, relocated once). The SVG
+- **File**: 36,104 bytes packed; `.text` 22,476, `.rodata` 4,108, `.bss` 324 (load ~26.9 KB, relocated once). The SVG
   is in the TE heap at e9, not heap 0. Core imports: `coop_fx_scratch` and the E2 screen calls only.
 - **Numbers**: fixed point throughout. Two kernels in Blackfin assembly with bit-exact C references (single-issue
   instructions only, no parallel packets; `tools/asm_lint.py`: 0 flagged): `src/voice_bfin.S` (one voice, 32 samples,
@@ -173,28 +181,32 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
   Blackfin does by default (ASTAT RND_MOD 0, ties to even): a core that set RND_MOD would differ from the C reference
   by an LSB on exact ties, inaudibly. The voice kernel's interpolation uses (T) truncation and does not depend on it.
   The halfband kernels are tape_echo's (`src/halfband_bfin.S`, unchanged). The space's buffer is read through a
-  pointer stepping down with constant offsets (no masking); every 256 calls its live 7.9 KB window is copied up once
-  (1,984 word copies in that call: inside the max above).
+  pointer stepping down with constant offsets (no masking); every 64 calls (93 ms; 0.1: every 256) its live 7.9 KB
+  window is copied up once (1,984 word copies in that call, about 2.4 k cycles: inside the max below).
 - **Cost** (GNU simulator, compute only: no cache misses or SDRAM waits; `make -C tests/host/petri sim`, 1,500 blocks
   per effect, the riff, knobs, filter and space walking, activity at the top for the second half, hold and reverse
   toggling):
 
 | Effect | avg | max |
 |---|---|---|
-| mosaic | 20,409 | 25,206 |
-| seq | 17,949 | 22,020 |
-| glide | 20,232 | 25,215 |
-| haze | 22,718 | 28,068 |
-| tunnel | 22,103 | 27,464 |
-| strum | 20,081 | 25,153 |
-| blocks | 18,095 | 22,102 |
-| cut | 17,361 | 22,021 |
-| arp | 18,288 | 23,012 |
-| pattern | 23,706 | 27,729 |
-| warp | 29,355 | 33,416 |
-| all | 20,936 | 33,416 |
+| mosaic | 19,939 | 25,514 |
+| seq | 18,224 | 22,171 |
+| glide | 20,499 | 27,959 |
+| haze | 22,628 | 29,457 |
+| tunnel | 22,418 | 27,666 |
+| strum | 21,316 | 28,562 |
+| blocks | 18,269 | 23,301 |
+| cut | 17,162 | 22,166 |
+| arp | 18,250 | 25,828 |
+| pattern | 23,814 | 30,144 |
+| warp | 29,697 | 36,152 |
+| all | 21,111 | 36,152 |
 
-  The clearing blocks after a start: 21,683 at most. Fixed per block: the half-rate path ~8 k (decimate 2.1 k, the
+  0.2's figures (0.1: all 20,936 / 33,416). The averages moved with the material (the ring's mapping is about 40
+  cycles a voice); the maxima are up to 2.8 k higher where the space's copy now falls in an effect's busiest block
+  (it comes four times as often). **Over the 30 k SHOULD** (guidelines section 2.4): warp, as in 0.1 (three filtered
+  buses beside six voices), and pattern by 144 cycles in the copy's block; every effect is far under the 60 k line.
+  The clearing blocks after a start: 21,895 at most. Fixed per block: the half-rate path ~8 k (decimate 2.1 k, the
   interpolate-mix-soft-limit 5.9 k), the filter ~3 k, the space ~2.2 k; each voice ~0.6 k. The device figure (stats
   `cost` line) is pending: expect 10-35 % more, more where the voices read far apart in SDRAM (each voice touches about
   4 cache lines a block). **Device: not run.**
@@ -220,13 +232,27 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
   with `gen_petri_tables.py`; `python3 gen_petri_svg.py petri.svg` the screen.
 - `tools/asm_lint.py plugins/petri/src/*.S`: 0 packets flagged.
 
-**Not done yet** (guidelines §7.4 steps 8-9): the op1emu gate (the plugin at every position, a chord through it, the
-stats line clean) and the device run with the `cost` figures and `docs/device-tests.md`.
+**op1emu gate** (0.2 on e10 and e11, 2026-11-20): `docs/device-tests.md` "fickle 0.2 / petri 0.2". **Not done yet**
+(guidelines §7.4 step 9): the device run with the `cost` figures.
 
 ## Open points for the owner
 
+- **The heap budget (0.2, 2026-11-20):** with all 13 catalogue plugins on core e10 the plugin memory budget ran out
+  (fickle was refused at boot); petri 0.1's 150,624-byte declaration grew the five position buffers by 79,200 bytes
+  over tape_echo's. 0.2 declares 134,752, under tape_echo's 134,784, so petri costs the budget only its image and
+  screen object (~27 KB).
+  - **What you hear:** the record is 1.36 s (30,048 frames), was 1.49 s. Pattern's longest bar is 1.27 s (was
+    1.39 s). At long times an effect takes fresh material a little sooner: a mosaic or glide layer whose slice would
+    be overwritten, haze's oldest grains (its spread reaches 0.9 s back plus the grain), the oldest onsets of strum,
+    arp and blocks (kept while they are less than 1.36 s old). Everything else, every other range in the table above
+    included, is as 0.1.
+  - How the 15,872 bytes were found: 6,144 from the space's buffer (its slide 1,024 entries instead of 4,096: no
+    change in sound, a copy every 93 ms instead of every 372 ms) and 9,728 from the record (2,720 frames less, after
+    288 for the mirror). Putting the slide back to 4,096 would lower the worst block by ~2.4 k cycles and cost another
+    70 ms of record (1.29 s): `kSpaceSlide` and `COOP_PETRI_REC_LEN` in `src/petri_engine.h`.
+  - The kennel build (`petri.knl`) keeps the 1.49 s record: kennel's arena is 6 MiB.
 - The time ranges are per effect (table above) rather than one 30 ms .. 1.5 s for all: a seq step of 1.5 s or a
-  tunnel period of 1 s would not do what the names say, and a loop that must repeat inside a 1.49 s buffer has to be
+  tunnel period of 1 s would not do what the names say, and a loop that must repeat inside a 1.36 s buffer has to be
   shorter than it.
 - Repeats means a different thing per effect (decay, passes, strums, stutters, how often, note length, feedback). It
   is always "how long things come back", but a player will hear the difference.

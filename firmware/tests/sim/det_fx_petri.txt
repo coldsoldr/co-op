@@ -1,0 +1,215 @@
+# petri 0.2 (plugins/petri/README.md "Tests"): petri alone on the NAND, at every position, a chord through it, the
+# latches and the fn layers. The stock FX list is alphabetical with the plugin sorted in: cwo, delay, grid, nitro,
+# petri (row 4): `ccw 96` clamps at the top, then 8 encoder steps a row. Guest-timed; `turn ENC cw 2` = one detent.
+#  p0 synth FX 1: a chord (mosaic); blue click (reverse) and two notes; orange click (hold) and a note, orange (hold
+#     off), blue (reverse off); fn + blue three detents (effect haze), fn + white four down (filter), fn + orange four
+#     up (space); a chord; fn + blue seven more (warp), a chord, hold on and off.
+#     -> fxctl p0 = .../10/<filter>/<space>/0, latches 6, turns 4
+#  p3 instrument FX 2 (drop, shift + blue 3 detents, blue push, T3 on): a chord, orange click (hold), two notes,
+#     orange (hold off), lift
+#  p2 master FX 1 (mixer T3, the list), p4 master FX 2 (drop, the pick, T3) [I: in op1emu the master FX 2 pick has
+#     landed on a stock type, det_fx_two_pos.txt], p1 drum FX 1 (drum T3, the list)
+#  then two synth chords through p0 -> p3 -> p2 (-> p4) and two drum keys through p1.
+# Expected: no fault; plugins loaded 1; plugmem scratch_files 1 fxbuf 134752; fxctl p0..p3 with blocks and inits >= 1;
+# cost fx1_plugin and s2_instr rendering.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 ccw 96
+at 33200
+turn enc1 cw 32
+at 35000
+tap seq 200
+at 36000
+tap synth 200
+at 37000
+tap t3 200
+at 38000
+tap t3 200
+at 39000
+press c4
+press e4
+press g4
+at 40500
+release c4
+release e4
+release g4
+at 41000
+tap enc1 200
+at 41500
+press c4
+press g4
+at 42500
+release c4
+release g4
+at 43000
+tap enc4 200
+at 43500
+press e4
+at 44500
+release e4
+at 45000
+tap enc4 200
+at 45700
+tap enc1 200
+at 46500
+press help
+at 46800
+turn enc1 cw 6
+at 47400
+turn enc3 ccw 8
+at 48000
+turn enc4 cw 8
+at 48600
+release help
+at 49000
+press c4
+press e4
+press g4
+at 50000
+release c4
+release e4
+release g4
+at 50500
+press help
+at 50800
+turn enc1 cw 14
+at 51500
+release help
+at 52000
+press c4
+press e4
+at 53000
+release c4
+release e4
+at 53500
+tap enc4 200
+at 55000
+tap enc4 200
+at 56500
+tap drop 200
+at 58000
+press shift
+at 58200
+turn enc1 cw 6
+at 58800
+release shift
+at 59500
+tap enc1 200
+at 61000
+tap t3 200
+at 62000
+press c4
+press e4
+press g4
+at 63500
+release c4
+release e4
+release g4
+at 64000
+tap enc4 200
+at 65000
+press c4
+press g4
+at 66000
+release c4
+release g4
+at 66500
+tap enc4 200
+at 67500
+tap lift 200
+at 68500
+tap mixer 200
+at 70000
+tap t3 200
+at 71500
+press shift
+at 71700
+tap t3 200
+at 72200
+release shift
+at 73500
+turn enc1 ccw 96
+at 75700
+turn enc1 cw 32
+at 77500
+tap seq 200
+at 78500
+tap mixer 200
+at 79500
+tap t3 200
+at 80500
+tap t3 200
+at 81500
+tap drop 200
+at 83000
+press shift
+at 83200
+turn enc1 cw 6
+at 83800
+release shift
+at 84500
+tap enc1 200
+at 86000
+tap t3 200
+at 87000
+tap lift 200
+at 88000
+tap drum 200
+at 89500
+tap t3 200
+at 91000
+press shift
+at 91200
+tap t3 200
+at 91700
+release shift
+at 93000
+turn enc1 ccw 96
+at 95200
+turn enc1 cw 32
+at 97000
+tap seq 200
+at 98000
+tap drum 200
+at 99000
+tap t3 200
+at 100000
+tap t3 200
+at 101000
+tap synth 200
+at 102000
+press c4
+press e4
+press g4
+at 104000
+release c4
+release e4
+release g4
+at 105000
+press c4
+press g4
+at 106000
+release c4
+release g4
+at 106500
+tap drum 200
+at 107500
+press c4
+at 108000
+release c4
+press d4
+at 108500
+release d4
+wait 140500
+quit

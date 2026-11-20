@@ -1,5 +1,5 @@
 /* petri: a granular micro-loop effect (inspired by the signal flow of a granular micro-loop pedal) as a coop effect.
- * The input is recorded continuously into a 1.49 s stereo buffer at 22.05 kHz; one of eleven effects plays it back
+ * The input is recorded continuously into a 1.36 s stereo buffer at 22.05 kHz; one of eleven effects plays it back
  * through up to eight voices (loops, grains, slices, taps); the wet goes through a shared tone section (the effect's
  * envelope on every repeat, a gentle pitch modulation, a resonant low-pass, a small space) and is mixed with the
  * untouched dry signal. Hold stops the recording (the effect keeps working on the held slice); reverse plays it
@@ -17,7 +17,7 @@
  *   params[8]     bit 0 hold (orange click), bit 1 reverse (blue click): latches.
  *
  * Memory (e8): the instance is in the slot's position buffer (coop_fx_scratch, plugin.json "scratch"); the .bss holds
- * only the five pointers. The record (128 KiB) and the space (16 KiB) are cleared over the first blocks after a
+ * only the five pointers. The record (118.5 KiB) and the space (9.8 KiB) are cleared over the first blocks after a
  * (re)start (kClearWords a block, the dry passing through), not in init (guidelines §2.3).
  * Screen (e9): petri_screen.cc, petri.svg; the render publishes the voices, the write head, the input level and
  * onsets and the latches in the state (state.h Display), once a block.
@@ -47,7 +47,7 @@ namespace {
 
 using coop_petri::kBlock;
 using coop_petri::kHalfN;
-const int32_t kClearWords = 2048;                      /* words zeroed a block: 18 blocks (26 ms) for all */
+const int32_t kClearWords = 2048;                      /* words zeroed a block: 17 blocks (25 ms) for all */
 
 /* The filter type's knob ranges (sdk/coop_plugin.h). */
 const int16_t kRangeLo[4] = { 64, 0, 0, 8192 };

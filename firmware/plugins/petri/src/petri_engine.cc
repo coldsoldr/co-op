@@ -71,8 +71,8 @@ void KillAll(Engine* e) {
 inline bool Safe(const Engine* e, uint32_t start, int32_t blocks) {
   if (e->hold) return true;
   const uint32_t age = e->head - start;
-  return age < static_cast<uint32_t>(kRecFrames) &&
-         age + static_cast<uint32_t>(blocks) * kN + kMargin < static_cast<uint32_t>(kRecFrames);
+  return age < static_cast<uint32_t>(kRecLen) &&
+         age + static_cast<uint32_t>(blocks) * kN + kMargin < static_cast<uint32_t>(kRecLen);
 }
 
 void Spawn(Engine* e, int32_t vi, uint32_t start, int32_t rate, int32_t blocks, int32_t shape, int32_t gain,
@@ -137,7 +137,7 @@ int32_t RecentOnsets(const Engine* e, uint32_t* out, int32_t max, int32_t blocks
   int32_t n = 0;
   for (int32_t k = avail - 1; k >= 0; --k) {   // oldest of the `avail` most recent first
     const uint32_t f = e->onsets[(e->onset_count - 1 - k) & 7];
-    if (Safe(e, f, blocks) && (e->head - f) < static_cast<uint32_t>(kRecFrames)) out[n++] = f;
+    if (Safe(e, f, blocks) && (e->head - f) < static_cast<uint32_t>(kRecLen)) out[n++] = f;
   }
   return n;
 }
@@ -252,11 +252,20 @@ __attribute__((noinline)) bool RenderVoices(Engine* e, int32_t mod_q24) {
     const int32_t gl1 = (g * v.pl) >> 15, gr1 = (g * v.pr) >> 15;
     // the effect's gentle pitch modulation, opposite on odd voices
     const int32_t off = (((v.rate >> 3) * (mod_q24 >> 9)) >> 12) * v.mod;
-    const int32_t rate = v.rate + off;
+    const int32_t rate = Clamp(v.rate + off, -kRateMax, kRateMax);
+    // Where the voice's frame is in the ring: its age behind the write head, back from hp. Forwards the call reads up
+    // to kRecGuard past it (the mirror after the ring's end); backwards from a frame near the ring's start, the same
+    // frames in the mirror.
+    int32_t at = e->hp - static_cast<int32_t>((e->head - (v.pos >> kPosShift)) & kRecMask);
+    while (at < 0) at += kRecLen;
+    if (rate < 0 && at < kRecGuard - 2) at += kRecLen;
+    const uint32_t* const rec = reinterpret_cast<const uint32_t*>(
+        reinterpret_cast<uintptr_t>(e->rec) + static_cast<uintptr_t>(static_cast<intptr_t>(at - kRebase) * 4));
+    const uint32_t kpos = (static_cast<uint32_t>(kRebase) << kPosShift) | (v.pos & (static_cast<uint32_t>(kRateOne) - 1));
     if (v.bus > 0) bus = true;
     int32_t* const ol = v.bus > 0 ? e->bus[v.bus - 1][0] : e->wl;
     int32_t* const orr = v.bus > 0 ? e->bus[v.bus - 1][1] : e->wr;
-    VoiceLoop(e->rec, v.pos, rate, ol, orr, Pack(v.gl, v.gr), Pack((gl1 - v.gl) >> 5, (gr1 - v.gr) >> 5));
+    VoiceLoop(rec, kpos, rate, ol, orr, Pack(v.gl, v.gr), Pack((gl1 - v.gl) >> 5, (gr1 - v.gr) >> 5));
     v.pos += static_cast<uint32_t>(rate) * kN;
     v.gl = gl1;
     v.gr = gr1;
@@ -662,7 +671,7 @@ void Pattern(Engine* e, const Controls& c) {
   static const int32_t kTap16[6] = { 16, 8, 12, 6, 14, 3 };
   static const int32_t kGain[6] = { 20000, 15000, 14000, 12000, 11000, 10000 };
   static const int32_t kPan[6] = { 0, -20000, 20000, -11000, 11000, 0 };
-  const int32_t b = Clamp(KnobFrames(c.time, 2205, 973), 2205, kRecFrames - 2048);   // the bar: 0.1 .. 1.3 s
+  const int32_t b = Clamp(KnobFrames(c.time, 2205, 973), 2205, kRecLen - 2048);    // the bar: 0.1 .. 1.27 s
   const int32_t n = 1 + ((c.activity * 5 + 16383) >> 15);              // 1..6 taps
   int32_t sum = 0;
   for (int32_t k = 0; k < n; ++k) sum += kGain[k];
@@ -795,6 +804,10 @@ __attribute__((noinline)) void FilterRun(Engine* e, int32_t knob) {
 // (damping, allpass, delay), at 11.025 kHz (every other sample: a wash needs no more; its output is interpolated
 // back), in one int16 buffer read through a pointer that steps down (no wrap: petri_engine.h kSpaceSlide).
 static_assert(SP_USED_BYTES <= 2 * kSpaceSpan, "the space's lines fit its window");
+static_assert(kSpaceSlide % (kN / 2) == 0 && kSpaceSlide % 2 == 0, "the pointer steps kN / 2 a call; word copies");
+static_assert(kRecLen % kN == 0 && kRecGuard % kN == 0 && kRecLen <= kRecFrames && 2 * kRecLen > kRecFrames,
+              "the ring: whole calls, inside a position's span, an age wraps it at most once");
+static_assert((kRateMax >> 12) + 2 <= kRecGuard - 2, "a call's reach fits the mirror");
 
 inline int32_t M15(int32_t x, int32_t g) { return (x * g) >> 15; }
 
@@ -807,7 +820,7 @@ __attribute__((noinline)) void SpaceRun(Engine* e, int32_t knob) {
   const int32_t ret = (a * 3) >> 1;                                     // the tank's
   if (sp.q < kN / 2) {                                                  // slide the live window up
     uint32_t* const w = reinterpret_cast<uint32_t*>(sp.buf + sp.q);
-    for (int32_t i = 0; i < kSpaceSpan / 2; ++i) w[i + kSpaceSlide / 2] = w[i];
+    for (int32_t i = kSpaceSpan / 2 - 1; i >= 0; --i) w[i + kSpaceSlide / 2] = w[i];   // from the top: they overlap
     sp.q += kSpaceSlide;
   }
   int16_t xin[kN / 2];
@@ -901,6 +914,7 @@ void Reset(Engine* e) {
   for (int32_t b = 0; b < kBuses; ++b) e->bus_c[b] = e->bus_z[b][0] = e->bus_z[b][1] = 0;
   e->filt.knob = 32767 << 8;
   e->head = 0;
+  e->hp = 0;
   e->effect = -1;
   e->rng = 0x9E3779B9u;
   e->lfo = 0;
@@ -917,11 +931,11 @@ void Reset(Engine* e) {
 int32_t ClearStep(Engine* e, int32_t at, int32_t words) {
   int32_t end = at + words;
   if (end > kClearEnd) end = kClearEnd;
-  const int32_t rec_end = end < kRecFrames + 1 ? end : kRecFrames + 1;
+  const int32_t rec_end = end < kRecWords ? end : kRecWords;
   for (int32_t i = at; i < rec_end; ++i) e->rec[i] = 0;
   uint32_t* const sp = reinterpret_cast<uint32_t*>(e->space.buf);
-  const int32_t from = at > kRecFrames + 1 ? at : kRecFrames + 1;
-  for (int32_t i = from; i < end; ++i) sp[i - (kRecFrames + 1)] = 0;
+  const int32_t from = at > kRecWords ? at : kRecWords;
+  for (int32_t i = from; i < end; ++i) sp[i - kRecWords] = 0;
   return end;
 }
 
@@ -961,7 +975,7 @@ void Process(Engine* e, const int16_t* in_l, const int16_t* in_r, int16_t* out_l
 
   // The record: the input (and, for the effects that have it, the wet fed back), unless held.
   if (!e->hold) {
-    const uint32_t at = e->head & kRecMask;
+    const int32_t at = e->hp;
     uint32_t* const rec = e->rec + at;
     const int32_t fb = e->fb;
     int16_t fl[kN], fr[kN];
@@ -1004,8 +1018,10 @@ void Process(Engine* e, const int16_t* in_l, const int16_t* in_r, int16_t* out_l
       for (int32_t i = 0; i < kN; ++i)
         rec[i] = (static_cast<uint32_t>(in_l[i]) & 0xffff) | (static_cast<uint32_t>(in_r[i]) << 16);
     }
-    if (at == 0) e->rec[kRecFrames] = e->rec[0];
+    if (at < kRecGuard)                                                 // the mirror after the ring's end
+      for (int32_t i = 0; i < kN; ++i) rec[kRecLen + i] = rec[i];
     e->head += kN;
+    e->hp = at + kN < kRecLen ? at + kN : 0;
   }
 
   // The tone section: makeup, the filter, the space; out as int16.
