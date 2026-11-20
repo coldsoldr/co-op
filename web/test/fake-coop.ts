@@ -19,10 +19,18 @@ export interface CoopBootRecord {
   version?: string;
   author?: string;
   reason?: string;
+  /** e12: the row's need and scratch columns (default 0). */
+  need?: number;
+  scratch?: number;
 }
 
 export interface FakeCoopOptions {
   build?: string;
+  /**
+   * e12's inventory: the header's budget, used, fxbuf, fxbufs and clip fields, and the need and scratch columns on
+   * every row. Without it the inventory is as e3..e11 gave it.
+   */
+  memory?: { budget: number; used: number; fxbuf?: number; fxbufs?: number; clip?: number };
   caps?: number;
   /** Plugin files on the device, by file name. */
   files?: Record<string, Uint8Array>;
@@ -160,6 +168,7 @@ export class FakeCoop implements MidiPort {
 
   private inventoryText(): string {
     const boot = this.options.boot ?? {};
+    const memory = this.options.memory;
     const rows = [...this.files.keys()].sort().map((file) => {
       const b = boot[file];
       const fields = [
@@ -172,10 +181,14 @@ export class FakeCoop implements MidiPort {
         b?.author ?? '',
         String(this.files.get(file)?.length ?? 0),
         b?.reason ?? '',
+        ...(memory ? [String(b?.need ?? 0), String(b?.scratch ?? 0)] : []),
       ];
       return `${fields.join('\t')}\n`;
     });
-    return `coop-inventory 1\tbuild ${this.options.build ?? 'e3'}\tprotocol 1\n${rows.join('')}`;
+    const more = memory
+      ? `\tbudget ${memory.budget}\tused ${memory.used}\tfxbuf ${memory.fxbuf ?? 0}\tfxbufs ${memory.fxbufs ?? 0}\tclip ${memory.clip ?? 4194304}`
+      : '';
+    return `coop-inventory 1\tbuild ${this.options.build ?? 'e3'}\tprotocol 1${more}\n${rows.join('')}`;
   }
 
   private answer(cmd: number, p: Uint8Array): number[] {

@@ -164,20 +164,22 @@ export interface PluginBuild extends Omit<PluginBuildManifest, 'savedName'> {
 }
 
 /**
- * What a .coop file takes of the coop firmware's plugin memory at boot, in heap bytes (blocks with their headers;
- * firmware/core/sdram/plugin_host.cc). A set of files takes the sum of image, voices and screen, and one block of
- * five position buffers sized by the largest `scratch` among them.
+ * The facts of a .coop file that decide what it takes of the coop firmware's plugin memory at boot
+ * (firmware/core/sdram/plugin_host.cc). The cores count them by two rules (heap blocks on e7..e11, arena blocks from
+ * e12), so the index carries the facts and web/src/core/plugins/memory.ts does the sums.
  */
 export interface CoopMemory {
   kind: 'fx' | 'synth';
-  /** The relocated image: one block for an engine or a scratch effect, five for an old-model effect. */
-  image: number;
-  /** A scratch effect's position buffer, rounded up to 32 bytes; 0 for any other file. */
+  /** The image as loaded, before any rounding: bss_offset + bss_size + 3 + 12 bytes for each import. */
+  cap: number;
+  /** A scratch effect's position buffer, rounded up to 32 bytes; 0 for an engine or an old-model effect (which is relocated five times). */
   scratch: number;
-  /** An engine's state for its six voices; 0 for an effect. */
-  voices: number;
-  /** The core's screen object, for a file that ships a screen; else 0. */
-  screen: number;
+  /** An engine's state for one voice, rounded up to 32 bytes; 0 for an effect. */
+  voice: number;
+  /** The file ships a screen the core builds a screen object for. */
+  screen: boolean;
+  /** The file declares controls (a non-empty extension 6); e12 counts their table. */
+  controls: boolean;
 }
 
 /** The index entry fields that belong to one build. */

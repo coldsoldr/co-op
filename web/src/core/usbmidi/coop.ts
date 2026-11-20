@@ -102,17 +102,30 @@ const BOOT_STATES: Record<string, InventoryState> = { loaded: 'loaded', failed: 
 
 /**
  * The text INVENTORY serves, as an Inventory (inventory.ts): a header `coop-inventory 1<TAB>build ...`, then one line
- * per file: file, kind, name, boot, next, version, author, size, reason. `name` is the plugin id (the file without
- * `.coop`), as kennel's records name plugins.
+ * per file: file, kind, name, boot, next, version, author, size, reason, and from e12 need and scratch. `name` is the
+ * plugin id (the file without `.coop`), as kennel's records name plugins. An e12 header also gives the plugin memory's
+ * budget and what is in use (`memory`).
  */
 export function parseCoopInventory(text: string): Inventory & { build: string | null } {
   const lines = text.split('\n').filter((l) => l.length > 0);
   const header = lines.shift() ?? '';
   if (!header.startsWith('coop-inventory 1')) throw new Error('not a coop inventory');
-  const build = header.split('\t').find((f) => f.startsWith('build '))?.slice(6) ?? null;
+  // Header fields are found by name; e12 appended budget, used, fxbuf, fxbufs and clip (firmware/docs/sysex.md).
+  const field = (name: string): string | null => header.split('\t').find((f) => f.startsWith(`${name} `))?.slice(name.length + 1) ?? null;
+  const count = (name: string): number | null => (/^\d+$/.test(field(name) ?? '') ? Number(field(name)) : null);
+  const build = field('build');
+  const budget = count('budget');
+  const used = count('used');
+  const memory =
+    budget !== null && budget > 0 && used !== null
+      ? { budget, used, fxbuf: count('fxbuf') ?? 0, fxbufs: count('fxbufs') ?? 0, clip: count('clip') }
+      : null;
   const records = lines.map((line): InventoryRecord => {
-    const [file = '', kind = '', , boot = '', next = '', version = '', author = '', size = '', reason = ''] = line.split('\t');
+    // e12 appended need and scratch after the reason; before it a row ends there.
+    const [file = '', kind = '', , boot = '', next = '', version = '', author = '', size = '', reason = '', need = '', scratch = ''] =
+      line.split('\t');
     return {
+      ...(/^\d+$/.test(need) ? { need: Number(need), scratch: /^\d+$/.test(scratch) ? Number(scratch) : 0 } : {}),
       kind: KINDS[kind] ?? null,
       name: file.replace(/\.coop$/, ''),
       source: 'coop',
@@ -127,7 +140,7 @@ export function parseCoopInventory(text: string): Inventory & { build: string | 
       enabled: next !== 'off',
     };
   });
-  return { core: null, presets: null, records, build };
+  return { core: null, presets: null, records, build, ...(memory ? { memory } : {}) };
 }
 
 /** Reads the inventory page by page (64 bytes a reply). */

@@ -87,10 +87,11 @@ function isBuild(value: Record<string, unknown>, id: string): boolean {
   return value.source === undefined || (typeof value.source === 'string' && HTTPS.test(value.source));
 }
 
-/** A coop build's share of the plugin memory (memory.ts): a kind and four byte counts. */
+/** What a coop build's file takes of the plugin memory (memory.ts): a kind, three byte counts and two flags. */
 function isMemory(value: unknown): boolean {
   if (!isRecord(value) || (value.kind !== 'fx' && value.kind !== 'synth')) return false;
-  return ['image', 'scratch', 'voices', 'screen'].every((k) => Number.isSafeInteger(value[k]) && (value[k] as number) >= 0);
+  if (typeof value.screen !== 'boolean' || typeof value.controls !== 'boolean') return false;
+  return ['cap', 'scratch', 'voice'].every((k) => Number.isSafeInteger(value[k]) && (value[k] as number) >= 0);
 }
 
 /**

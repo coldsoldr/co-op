@@ -63,6 +63,50 @@ describe('coop inventory', () => {
       author: 'coldsoldr',
     });
     expect(inv.records[1]).toMatchObject({ kind: null, name: 'new_one', state: 'pending', enabled: true });
+    // Before e12 the inventory has no memory figures: none are made up.
+    expect(inv.memory).toBeUndefined();
+    expect(inv.records[0]).not.toHaveProperty('need');
+    expect(inv.records[0]).not.toHaveProperty('scratch');
+  });
+
+  it('reads the budget, the bytes in use and each file’s need and buffer from an e12 inventory', () => {
+    // firmware/docs/sysex.md "INVENTORY on e12": the header's five fields, and columns 10 and 11 on every row.
+    const inv = parseCoopInventory(
+      'coop-inventory 1\tbuild e12\tprotocol 1\tbudget 5898240\tused 980992\tfxbuf 134784\tfxbufs 4\tclip 4194304\n' +
+        'rings.coop\tsynth\trings\tloaded\ton\t0.5\tcoldsoldr\t113048\t\t667712\t0\n' +
+        'tape_echo.coop\tfx\ttape echo\tloaded\ton\t0.3\tcoldsoldr\t23892\tno memory for this position\t14592\t134784\n' +
+        'zzover.coop\t?\t\tnew\ton\t\t\t428\t\t0\t0\n',
+    );
+    expect(inv.build).toBe('e12');
+    expect(inv.memory).toEqual({ budget: 5898240, used: 980992, fxbuf: 134784, fxbufs: 4, clip: 4194304 });
+    expect(inv.records.map((r) => [r.name, r.state, r.size, r.need, r.scratch, r.reason])).toEqual([
+      ['rings', 'loaded', 113048, 667712, 0, ''],
+      ['tape_echo', 'loaded', 23892, 14592, 134784, 'no memory for this position'],
+      ['zzover', 'pending', 428, 0, 0, ''],
+    ]);
+  });
+
+  it('takes header fields by name, in any order, and ignores ones it does not know', () => {
+    const inv = parseCoopInventory('coop-inventory 1\tbuild e13\tused 64\tlater 9\tprotocol 1\tbudget 6000000\n');
+    expect(inv.build).toBe('e13');
+    expect(inv.memory).toEqual({ budget: 6000000, used: 64, fxbuf: 0, fxbufs: 0, clip: null });
+    // A budget without what is in use is no account of the memory.
+    expect(parseCoopInventory('coop-inventory 1\tbuild e12\tprotocol 1\tbudget 5898240\n').memory).toBeUndefined();
+  });
+
+  it('serves the e12 fields page by page from the fake device', async () => {
+    const device = new FakeCoop({
+      build: 'e12',
+      files: { 'saw.coop': bytes(2996), 'late.coop': bytes(428) },
+      boot: { 'saw.coop': { kind: 'synth', name: 'saw', state: 'loaded', need: 3968 } },
+      memory: { budget: 5898240, used: 3968 },
+    });
+    const inv = await readCoopInventory(createSession(device));
+    expect(inv.memory).toEqual({ budget: 5898240, used: 3968, fxbuf: 0, fxbufs: 0, clip: 4194304 });
+    expect(inv.records.map((r) => [r.name, r.size, r.need, r.scratch])).toEqual([
+      ['late', 428, 0, 0],
+      ['saw', 2996, 3968, 0],
+    ]);
   });
 
   it('refuses text that is not a coop inventory', () => {

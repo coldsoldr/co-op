@@ -7,6 +7,11 @@ export interface CoopStubOptions {
   rows: string[];
   /** /yaffs2/user/coop_stats.txt, served by FILE_GET; without it the file is not there. */
   stats?: string;
+  /**
+   * e12's inventory: the header's budget, used, fxbuf, fxbufs and clip fields. The rows then carry need and scratch
+   * (coopRow), and a file written after the boot is listed with its real size. Without it the inventory is e3..e11's.
+   */
+  memory?: { budget: number; used: number; fxbuf?: number; fxbufs?: number; clip?: number };
 }
 
 /** What a test can read from the stub, as `window.coopStub` in the page. */
@@ -27,7 +32,10 @@ declare global {
   }
 }
 
-/** One inventory row: file, kind, name, boot, next, version, author, size, reason (firmware/docs/sysex.md). */
+/**
+ * One inventory row: file, kind, name, boot, next, version, author, size, reason, and with `need` e12's two columns
+ * after them, need and scratch (firmware/docs/sysex.md).
+ */
 export function coopRow(o: {
   file: string;
   kind?: 'fx' | 'synth' | '?';
@@ -36,9 +44,11 @@ export function coopRow(o: {
   version?: string;
   size?: number;
   reason?: string;
+  need?: number;
+  scratch?: number;
 }): string {
   const name = o.file.replace(/\.coop$/, '').replaceAll('_', ' ');
-  return [o.file, o.kind ?? 'fx', name, o.boot ?? 'loaded', o.next ?? 'on', o.version ?? '0.1', 'coldsoldr', String(o.size ?? 0), o.reason ?? ''].join('\t');
+  return [o.file, o.kind ?? 'fx', name, o.boot ?? 'loaded', o.next ?? 'on', o.version ?? '0.1', 'coldsoldr', String(o.size ?? 0), o.reason ?? '', ...(o.need === undefined ? [] : [String(o.need), String(o.scratch ?? 0)])].join('\t');
 }
 
 /**
@@ -50,7 +60,7 @@ export function coopRow(o: {
  */
 export async function stubCoop(page: Page, options: CoopStubOptions): Promise<void> {
   await page.addInitScript(
-    ({ build, rows, stats }) => {
+    ({ build, rows, stats, memory }) => {
       const HEADER = [0xf0, 0x00, 0x20, 0x76, 0x7d];
       const pack7 = (raw: number[]): number[] => {
         const out: number[] = [];
@@ -92,7 +102,12 @@ export async function stubCoop(page: Page, options: CoopStubOptions): Promise<vo
           case 0x21:
             return [0, ...text('coop'), 1, 0, 0x3f, ...text(build)];
           case 0x28:
-            return pageOf(text(`coop-inventory 1\tbuild ${build}\tprotocol 1\n${list.map((r) => `${r}\n`).join('')}`), rd32(p));
+          {
+            const more = memory
+              ? `\tbudget ${memory.budget}\tused ${memory.used}\tfxbuf ${memory.fxbuf ?? 0}\tfxbufs ${memory.fxbufs ?? 0}\tclip ${memory.clip ?? 4194304}`
+              : '';
+            return pageOf(text(`coop-inventory 1\tbuild ${build}\tprotocol 1${more}\n${list.map((r) => `${r}\n`).join('')}`), rd32(p));
+          }
           case 0x20:
             return stats === null ? [3] : pageOf(text(stats), rd32(p));
           case 0x22: {
@@ -115,7 +130,7 @@ export async function stubCoop(page: Page, options: CoopStubOptions): Promise<vo
             if (rd32(p.slice(4)) !== crc) return [6];
             stub.puts.push(file);
             stub.files[file] = { size: bytes.length, crc };
-            list = [...list.filter((r) => !r.startsWith(`${file}\t`)), `${file}\t?\t\tnew\ton\t\t\t0\t`];
+            list = [...list.filter((r) => !r.startsWith(`${file}\t`)), `${file}\t?\t\tnew\ton\t\t\t${memory ? `${bytes.length}\t\t0\t0` : `0\t`}`];
             return [0];
           }
           default:
@@ -168,6 +183,6 @@ export async function stubCoop(page: Page, options: CoopStubOptions): Promise<vo
       };
       Object.defineProperty(navigator, 'requestMIDIAccess', { configurable: true, value: () => Promise.resolve(access) });
     },
-    { build: options.build ?? 'e10', rows: options.rows, stats: options.stats ?? null },
+    { build: options.build ?? 'e10', rows: options.rows, stats: options.stats ?? null, memory: options.memory ?? null },
   );
 }

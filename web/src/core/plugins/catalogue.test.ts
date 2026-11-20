@@ -116,7 +116,7 @@ describe('fetchPluginIndex', () => {
   });
 
   it('lists the coop files that carry their share of the plugin memory', async () => {
-    const memory = { kind: 'synth' as const, image: 666064, scratch: 0, voices: 0, screen: 248 };
+    const memory = { kind: 'synth' as const, cap: 666019, scratch: 0, voice: 0, screen: true, controls: true };
     const both = ringsBoth();
     const withMemory = { ...both, builds: [(both.builds as PluginBuild[])[0] as PluginBuild, { ...coopBuild, memory }] };
     const { impl } = fakeFetch({ [INDEX_URL]: JSON.stringify(index([withMemory, plugin({ id: 'grids', screenshot: 'grids/s.png', manual: 'grids/manual.md' })])) });
@@ -150,10 +150,12 @@ describe('fetchPluginIndex', () => {
       { ...plugin(), builds: [{ ...coopBuild, sha256: 'abc' }] },
       { ...plugin(), builds: [{ ...coopBuild, firmware: 'op1/stock' }] },
       { ...plugin(), builds: [{ ...coopBuild, source: 'http://x.org' }] },
-      // A coop build's memory: a kind and four byte counts.
+      // A coop build's memory: a kind, three byte counts and two flags.
       { ...plugin(), builds: [{ ...coopBuild, memory: 'big' }] },
-      { ...plugin(), builds: [{ ...coopBuild, memory: { kind: 'fx', image: -8, scratch: 0, voices: 0, screen: 0 } }] },
-      { ...plugin(), builds: [{ ...coopBuild, memory: { kind: 'fx', image: 8, scratch: 0, voices: 0 } }] },
+      { ...plugin(), builds: [{ ...coopBuild, memory: { kind: 'fx', cap: -8, scratch: 0, voice: 0, screen: false, controls: false } }] },
+      { ...plugin(), builds: [{ ...coopBuild, memory: { kind: 'fx', cap: 8, scratch: 0, voice: 0, screen: false } }] },
+      // The record of before e12 (sums, not facts): an index and a page from two deploys do not mix.
+      { ...plugin(), builds: [{ ...coopBuild, memory: { kind: 'fx', image: 8, scratch: 0, voices: 0, screen: 0 } }] },
     ];
     for (const entry of bad) {
       const { impl } = fakeFetch({ [INDEX_URL]: JSON.stringify({ ...index(), plugins: [entry] }) });

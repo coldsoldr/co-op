@@ -126,8 +126,8 @@ describe('loadPlugins', () => {
     expect(index.plugins[0]?.builds).toEqual([
       { firmware: 'op1/hundekraft', file: 'rings.knl', version: '0.1', sizeBytes: ringsKnl.length, sha256: sha(ringsKnl), savedName: 'rings' },
       { firmware: 'op1/coop', file: 'rings.coop', version: '0.5', sizeBytes: ringsCoop.length, sha256: sha(ringsCoop), savedName: 'rings',
-        // A coop build carries its share of the plugin memory (src/core/plugins/memory.ts); this file's header is empty.
-        memory: { kind: 'synth', image: 48, scratch: 0, voices: 0, screen: 0 } },
+        // A coop build carries what its file takes of the plugin memory (src/core/plugins/memory.ts); this file's header is empty.
+        memory: { kind: 'synth', cap: 3, scratch: 0, voice: 0, screen: false, controls: false } },
     ]);
 
     // Every build's file must be there.

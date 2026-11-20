@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { checkCoop, idFromSavedName, type HostedPluginEntry } from '@co-op/shared/plugins';
 import { fetchPluginBytes } from '../core/plugins/catalogue';
 import {
+  clipSeconds,
   coopMemoryOf,
   formatKb,
   largestRows,
@@ -68,7 +69,17 @@ export const deviceFilesOf = (inventory: Inventory | null): DeviceCoopFile[] =>
       loaded: r.state === 'loaded',
       enabled: r.enabled !== false,
       reason: r.reason,
+      ...(r.need === undefined ? {} : { need: r.need, scratch: r.scratch ?? 0 }),
     }));
+
+/** The plugin memory by the OP-1's own count, from an e12 inventory's header; null before e12. */
+export function deviceReportOf(inventory: Inventory | null): DeviceMemoryReport | null {
+  const m = inventory?.memory;
+  if (!m) return null;
+  return { budget: m.budget, used: m.used, exact: true, needs: {}, fxbuf: m.fxbuf, fxbufs: m.fxbufs, ...(m.clip === null ? {} : { clip: m.clip }) };
+}
+
+const listOf = (files: readonly string[]): string => files.map(titleOf).join(', ');
 
 /** `add` with its share of the plugin memory, or null for bytes the sum cannot read (the OP-1 judges those itself). */
 function knownFile(file: string, bytes: Uint8Array): KnownCoopFile | null {
@@ -87,7 +98,7 @@ const about = (plan: MemoryPlan): string => (plan.approximate ? 'about ' : '');
  */
 export function overBudgetQuestion(name: string, inventory: Inventory, known: readonly KnownCoopFile[], add: KnownCoopFile | null): string | null {
   if (!add) return null;
-  const plan = planMemory(deviceFilesOf(inventory), known, { build: inventory.build, add });
+  const plan = planMemory(deviceFilesOf(inventory), known, { build: inventory.build, report: deviceReportOf(inventory), add });
   if (!plan || plan.level !== 'over') return null;
   const others = largestRows(plan, 4)
     .filter((r) => r.file !== add.file)
@@ -95,7 +106,9 @@ export function overBudgetQuestion(name: string, inventory: Inventory, known: re
     .map((r) => `${titleOf(r.file)} (${formatKb(r.frees)})`);
   return [
     `${name} does not fit in the OP-1’s plugin memory. With it, the plugins switched on need ${about(plan)}${formatKb(plan.used)}; the OP-1 has ${formatKb(plan.budget)}.`,
-    'At the next power cycle the OP-1 would leave out at least one plugin, and not always the new one.',
+    plan.refused.length > 0
+      ? `At the next power cycle the OP-1 would leave out ${listOf(plan.refused)}: it loads the plugins in name order.`
+      : 'At the next power cycle the OP-1 would leave out at least one plugin, and not always the new one.',
     ...(others.length > 0 ? [`The largest on the OP-1: ${others.join(', ')}. Remove or switch off one to make room.`] : []),
     'Install anyway? The file does no harm; it loads once there is room.',
   ].join('\n\n');
@@ -169,6 +182,8 @@ const LEVEL_NOTE = {
 
 interface PluginMemoryProps {
   plan: MemoryPlan;
+  /** The stereo clipboard's pool in bytes, where the OP-1 reports it (e12). */
+  clip?: number | undefined;
   busy: boolean;
   /** Asks the OP-1 for its own figure. */
   onAsk: () => void;
@@ -178,7 +193,7 @@ interface PluginMemoryProps {
  * The plugin memory of the files the next power cycle loads: how full, in three states, with what is loaded now
  * when that differs and what co-op could only guess.
  */
-function PluginMemory({ plan, busy, onAsk }: PluginMemoryProps) {
+function PluginMemory({ plan, clip, busy, onAsk }: PluginMemoryProps) {
   const percent = Math.round((100 * plan.used) / plan.budget);
   const guessed = plan.rows.filter((r) => r.counted && !r.exact);
   const largest = plan.level === 'over' ? largestRows(plan) : [];
@@ -208,6 +223,7 @@ function PluginMemory({ plan, busy, onAsk }: PluginMemoryProps) {
       {LEVEL_NOTE[plan.level] && (
         <p className="memory-note">
           {LEVEL_NOTE[plan.level]}
+          {plan.refused.length > 0 && <> The OP-1 loads them in name order, so it will leave out {listOf(plan.refused)}.</>}
           {largest.length > 0 && <> The largest: {largest.map((r) => `${titleOf(r.file)} (${formatKb(r.frees)})`).join(', ')}.</>}
         </p>
       )}
@@ -233,7 +249,14 @@ function PluginMemory({ plan, busy, onAsk }: PluginMemoryProps) {
             co-op does not have {guessed.map((r) => r.file).join(', ')}, so what {guessed.length === 1 ? 'it takes' : 'they take'} is an estimate.
           </>
         )}
-        {!plan.budgetKnown && <> co-op does not know this build’s limit yet; the bar uses coop e10’s.</>}{' '}
+        {plan.level !== 'over' && plan.positions !== null && plan.positions < 4 && (
+          <>
+            {' '}
+            With this much loaded, only {plan.positions} of the 4 effect positions can run such an effect at once.
+          </>
+        )}
+        {clip !== undefined && <> Stereo tape lift: {clipSeconds(clip)} s.</>}
+        {!plan.budgetKnown && <> co-op does not know this build’s limit yet; the bar uses the newest it knows.</>}{' '}
         {!(loaded.fromDevice && loaded.exact) && (
           <button type="button" className="link" disabled={busy} onClick={onAsk}>
             Ask the OP-1 for its own figure
@@ -267,7 +290,9 @@ export function CoopDevice({ inventory, known, onInventory }: CoopDeviceProps) {
   const [report, setReport] = useState<DeviceMemoryReport | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const records = (inventory?.records ?? []).filter((r) => r.source === 'coop');
-  const plan = inventory ? planMemory(deviceFilesOf(inventory), [...sent, ...known], { build: inventory.build ?? build, report }) : null;
+  // An e12 inventory carries the OP-1's own figures; before it they come from the statistics file, when asked for.
+  const own = deviceReportOf(inventory) ?? report;
+  const plan = inventory ? planMemory(deviceFilesOf(inventory), [...sent, ...known], { build: inventory.build ?? build, report: own }) : null;
   const memoryOf = new Map(plan?.rows.map((r) => [r.file, r]));
 
   /** `work` returns a note to show, null for none, or false when nothing was changed after all. */
@@ -354,13 +379,14 @@ export function CoopDevice({ inventory, known, onInventory }: CoopDeviceProps) {
       {plan && records.length > 0 && (
         <PluginMemory
           plan={plan}
+          clip={own?.clip}
           busy={busy !== null}
           onAsk={() =>
             void run(
               async (session) => {
-                const own = await readCoopMemoryReport(session);
-                setReport(own);
-                return own ? null : NO_MEMORY_REPORT;
+                const asked = await readCoopMemoryReport(session);
+                setReport(asked);
+                return asked ? null : NO_MEMORY_REPORT;
               },
               false,
               'Asking the OP-1 for its memory figure. This can take ten seconds…',

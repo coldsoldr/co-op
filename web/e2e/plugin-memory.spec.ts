@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
+import { ownBytes, type CoopMemory } from '../src/core/plugins/memory';
 import { crc32 } from '../src/core/usbmidi/framing';
 import { coopRow, stubCoop } from './coop-stub';
 
@@ -165,5 +166,100 @@ test.describe('Plugins: the coop plugin memory', () => {
     // The one file co-op does not have holds what the others do not: nothing is estimated any more.
     await expect(memory).not.toContainText('estimate');
     await expect(memory.getByRole('button', { name: 'Ask the OP-1 for its own figure' })).toHaveCount(0);
+  });
+});
+
+test.describe('Plugins: the coop plugin memory on e12', () => {
+  /** Every coop plugin of the catalogue as an e12 OP-1 lists it once loaded, with the need and scratch the core counts. */
+  async function e12Rows(page: Page): Promise<{ rows: string[]; need: number; buffer: number }> {
+    const index = (await (await page.request.get('plugins/index.json')).json()) as {
+      plugins: (IndexBuild & { kind: string; memory?: CoopMemory; builds?: (IndexBuild & { memory?: CoopMemory })[] })[];
+    };
+    const rows: string[] = [];
+    let need = 0;
+    let buffer = 0;
+    for (const plugin of index.plugins) {
+      const build = (plugin.builds ?? [plugin]).find((b) => b.firmware === 'op1/coop' && b.file && b.memory);
+      if (!build?.file || !build.memory) continue;
+      const own = ownBytes(build.memory, 'arena');
+      need += own;
+      buffer = Math.max(buffer, build.memory.scratch);
+      rows.push(coopRow({ file: build.file, kind: build.memory.kind, version: build.version ?? '', size: build.sizeBytes ?? 0, need: own, scratch: build.memory.scratch }));
+    }
+    return { rows, need, buffer };
+  }
+
+  test('shows the OP-1’s own figures: its budget, what is in use and each file’s need', async ({ page }) => {
+    const { rows, need, buffer } = await e12Rows(page);
+    // A file co-op does not have: the OP-1 sizes it, so nothing is estimated.
+    const mine = coopRow({ file: 'my_synth.coop', kind: 'synth', size: 90_000, need: 700_000, scratch: 0 });
+    const used = need + 700_000 + buffer;
+    await stubCoop(page, { build: 'e12', rows: [...rows, mine], memory: { budget: 5_898_240, used, fxbuf: buffer, fxbufs: 4 } });
+    await readPlugins(page);
+
+    const memory = page.locator('.plugin-memory');
+    await expect(memory).toHaveAttribute('data-level', 'fits');
+    const kb = (bytes: number): string => `${Math.round(bytes / 1024).toLocaleString('en-US')} KB`;
+    await expect(page.getByRole('meter', { name: 'Plugin memory' })).toContainText(`${kb(used).replace(' KB', '')} of 5,760 KB`);
+    await expect(memory).toContainText(`Loaded now: ${kb(used)}, by the OP-1’s own count.`);
+    await expect(memory).toContainText(`${kb(buffer)} of it is working memory the effects share`);
+    await expect(memory).toContainText('Stereo tape lift: 47 s.');
+    await expect(memory).not.toContainText('about');
+    await expect(memory).not.toContainText('estimate');
+    await expect(memory).not.toContainText('effect positions');
+    // The inventory has the figures: no slow read of the statistics file is offered.
+    await expect(memory.getByRole('button', { name: 'Ask the OP-1 for its own figure' })).toHaveCount(0);
+    await expect(page.getByRole('row', { name: /my_synth\.coop/ })).toContainText('684 KB');
+    await expect(page.getByRole('row', { name: /my_synth\.coop/ })).not.toContainText('about');
+    await expect(page.getByRole('row', { name: /Working memory the effects share/ })).toContainText(kb(buffer));
+    await shot(page, 'plugin-memory-e12');
+  });
+
+  test('names the plugin the OP-1 will leave out, by name order, and how many positions run a buffered effect', async ({ page }) => {
+    // A core built with a small budget (the firmware's test switch), so three files decide it.
+    const rows = [
+      coopRow({ file: 'c_echo.coop', size: 20_000, need: 200_000, scratch: 100_000 }),
+      coopRow({ file: 'a_verb.coop', size: 20_000, need: 600_000, scratch: 100_000 }),
+      coopRow({ file: 'b_synth.coop', kind: 'synth', boot: 'failed', size: 20_000, need: 500_000, reason: 'over the plugin memory budget (needs 489 KB, 97 KB of 977 KB left)' }),
+    ];
+    await stubCoop(page, { build: 'e12', rows, memory: { budget: 1_000_000, used: 900_000, fxbuf: 100_000, fxbufs: 1, clip: 1_572_864 } });
+    await readPlugins(page);
+
+    const memory = page.locator('.plugin-memory');
+    await expect(memory).toHaveAttribute('data-level', 'over');
+    await expect(memory).toContainText('The OP-1 loads them in name order, so it will leave out b synth.');
+    await expect(memory).toContainText('Loaded now: 879 KB, by the OP-1’s own count.');
+    await expect(memory).toContainText('Stereo tape lift: 17 s.');
+    await shot(page, 'plugin-memory-e12-over');
+  });
+
+  test('says when not every effect position gets working memory', async ({ page }) => {
+    const rows = [coopRow({ file: 'a_verb.coop', size: 20_000, need: 600_000, scratch: 150_000 })];
+    await stubCoop(page, { build: 'e12', rows, memory: { budget: 1_000_000, used: 750_000, fxbuf: 150_000, fxbufs: 2 } });
+    await readPlugins(page);
+    const memory = page.locator('.plugin-memory');
+    await expect(memory).toHaveAttribute('data-level', 'fits');
+    await expect(memory).toContainText('With this much loaded, only 2 of the 4 effect positions can run such an effect at once.');
+  });
+
+  test('asks before sending a file that does not fit and says which plugin would be left out', async ({ page }) => {
+    const rows = [
+      coopRow({ file: 'a_verb.coop', size: 20_000, need: 300_000, scratch: 100_000 }),
+      coopRow({ file: 'z_synth.coop', kind: 'synth', size: 20_000, need: 300_000 }),
+    ];
+    await stubCoop(page, { build: 'e12', rows, memory: { budget: 1_200_000, used: 700_000, fxbuf: 100_000, fxbufs: 4 } });
+    await readPlugins(page);
+    const questions: string[] = [];
+    page.once('dialog', (dialog) => {
+      questions.push(dialog.message());
+      void dialog.dismiss();
+    });
+    // rings needs 652 KB; by name it loads before z synth, which then no longer fits.
+    await page.locator('.coop-device input[type=file]').setInputFiles(fileURLToPath(new URL('../../plugins/rings/rings.coop', import.meta.url)));
+    await expect(page.getByText('Nothing was sent.')).toBeVisible();
+    expect(questions[0]).toContain('rings.coop does not fit in the OP-1’s plugin memory.');
+    expect(questions[0]).toContain('the OP-1 has 1,172 KB');
+    expect(questions[0]).toContain('At the next power cycle the OP-1 would leave out z synth: it loads the plugins in name order.');
+    expect(await page.evaluate(() => window.coopStub.puts)).toEqual([]);
   });
 });
