@@ -58,13 +58,38 @@ const int16_t kHi[4] = { 14528, 24576, 22528, 32767 };
 
 inline int32_t Clamp(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-/* op1_fx_param_q15 with the constant ranges: (v - lo) x 32767 / (hi - lo), clamped. Four divides a block. */
-inline int32_t Turn(const int16_t* p, int k) {
-    return Clamp((p[k] - kLo[k]) * 32767 / (kHi[k] - kLo[k]), 0, 32767);
+/* op1_fx_param_q15 with the constant ranges: (v - lo) x 32767 / (hi - lo), clamped. One software divide (libgcc's
+ * ___divsi3, ~190 cycles on this CPU), only for a word that moved (Turns below). */
+inline int32_t Turn(int32_t word, int k) {
+    return Clamp((word - kLo[k]) * 32767 / (kHi[k] - kLo[k]), 0, 32767);
+}
+
+/* 0.3: the four turns as the DSP takes them, kept per slot and redone only for a word that moved (four divides a block
+ * before: docs/efficiency-audit.md finding 8). The same values, so the same output bit for bit. Tiny per-slot values
+ * in .bss (guidelines 2.3); init clears `valid`, so the first render after a selection computes all four. */
+struct Turns {
+    int16_t raw[4];                                    /* params[0..3] as last seen */
+    int32_t valid;
+    int32_t q[4];                                      /* 0..32767 */
+};
+Turns g_turns[COOP_FX_SLOTS];
+
+inline const Turns& ReadTurns(int slot, const int16_t* p) {
+    Turns& c = g_turns[slot];
+    const bool all = !c.valid;
+    for (int k = 0; k < 4; ++k) {
+        if (all || p[k] != c.raw[k]) {
+            c.raw[k] = p[k];
+            c.q[k] = Turn(p[k], k);
+        }
+    }
+    c.valid = 1;
+    return c;
 }
 
 int init(int slot) {
     if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+    g_turns[slot].valid = 0;                           /* nothing kept across a selection */
     uint32_t bytes = 0;
     Slot* s = static_cast<Slot*>(coop_fx_scratch(slot, &bytes));
     g_slot[slot] = (s && bytes >= sizeof(Slot)) ? s : nullptr;
@@ -94,10 +119,11 @@ void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
     }
 
     PlateParams q;                                     /* read once a block, clamped (docs/plugins.md e6) */
-    q.decay = Turn(params, 0);
-    q.damp = Turn(params, 1);
-    q.predelay = Turn(params, 2);
-    const int32_t mix = Turn(params, 3);
+    const Turns& tn = ReadTurns(slot, params);
+    q.decay = tn.q[0];
+    q.damp = tn.q[1];
+    q.predelay = tn.q[2];
+    const int32_t mix = tn.q[3];
     q.size = Clamp(params[5], 0, kPlateNumSizes - 1);
     q.diffusion = Clamp(params[6], 0, 32767);
     q.motion = Clamp(params[7], 0, 32767);

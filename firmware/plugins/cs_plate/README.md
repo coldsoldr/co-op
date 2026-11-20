@@ -88,7 +88,7 @@ so it is kept as it is: **a §2.2 exception, accepted by the owner (2026-11-11)*
 | the screen (`op1_find_node`, `op1_fx_knobs_live`, page-2 state) | firmware screen nodes and globals | e9: the coop effect-screen calls and `coop_fx_view_t` ("Screen" below) |
 
 No libc, no static constructors (the state objects have trivial constructors and live in `.bss`), no division in a
-per-sample loop (four divides a block for the turns). The C reference kernels are compiled for the host only. The
+per-sample loop (one divide for a turn whose word moved: 0.3 keeps the four values per slot; none in a steady block). The C reference kernels are compiled for the host only. The
 Blackfin always runs the assembly (`plate_bfin.S`, `halfband_bfin.S`, unchanged from upstream but for an include path;
 `tools/asm_lint.py`: 0 packets flagged). `PlateTankRunMonoAsm` stays in `plate_bfin.S` unused.
 
@@ -118,6 +118,8 @@ Blackfin always runs the assembly (`plate_bfin.S`, `halfband_bfin.S`, unchanged 
 | upstream, bfin-elf-run, stereo, 32-sample call at 22.05 kHz (`docs/plate-port.md`) | 7,994 avg, 8,123 max (plate only) |
 | this port, GNU simulator, the whole render, still knobs | **17,456**: decimate 2,054, plate 7,956, interpolate + mix 5,456, the two int16 / int32 passes ~780, the turns and the rest ~1,200 |
 | this port, GNU simulator, 11,352 random blocks (moving controls, size changes, freezes) | 17,912 avg, 19,828 max; the first block after a clear 18,178; a clear block 2,152 |
+| **0.3** (2026-11-20, `docs/efficiency-audit.md` finding 8: the turns' four divides only when a word moves), still knobs | **16,788** (0.2 on the same script: 17,419) |
+| **0.3**, 10,829 random blocks (moving controls, stretches with every turn moving every block, size changes, freezes) | 17,379 avg, 19,935 max (0.2 on the same script: 17,873 / 19,780); the first block after a clear 18,324; a clear block 2,167 |
 | op1emu (`fx1_plugin=`) | pending (gate) |
 | device | pending |
 
@@ -203,6 +205,10 @@ What changed from kennel's screen:
   calls as no-ops). Host, 40 segments: 69,532 blocks, 400 clear blocks, 351 size changes, 100 freeze toggles,
   bit-identical; scratch check 0 differ. Simulator, 6 segments: 11,358 blocks, bit-identical; render avg 17,876, max
   19,792 cycles.
+- **0.3 (2026-11-20)**: the turns' values kept per slot (`.bss`, 28 bytes a slot, cleared by `init`). The same test
+  with stretches where every turn moves every block: host 40 segments, 52,309 blocks, 237 size changes, 68 freeze
+  toggles, **bit-identical**; simulator 6 segments, 10,835 blocks, bit-identical. File 19,580 bytes, `.text` 9,688,
+  `.bss` 304; imports unchanged.
 - **op1emu gate**: not run in this port (gate runs go one at a time). The plan:
   1. `make -C plugins`, then a NAND with `build/plugins/cs_plate.coop` alone in `/yaffs2/plugins`
      (`tools/make_nand.py ... --overlay`, `docs/plugins.md` "Building and testing"). The stock FX list is
