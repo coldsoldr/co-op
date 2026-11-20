@@ -42,6 +42,8 @@ extern volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g
 extern volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g_tape_io_flush_cycles_win, g_tape_io_gap_cycles_win;
 extern volatile uint32_t g_tape_io_steps_win;
 extern volatile uint32_t g_edit_lifts, g_edit_drops, g_edit_erases, g_edit_errors, g_edit_mono_fallbacks;
+extern volatile uint32_t g_edit_pool_used, g_edit_pool_moves;          /* tape_edit.cc (e12) */
+extern "C" uint32_t coop_clip_pool_bytes(void);                         /* coop_arena.cc (e12) */
 extern volatile uint32_t g_master_cycles;
 extern volatile uint32_t g_l1_state, g_l1_used, g_l1_refused, g_l1_sine_copied;
 extern volatile uint32_t g_l1_leased, g_l1_leases, g_l1_lease_refused;   /* l1_pool.cc (e4) */
@@ -655,7 +657,8 @@ static void write_file(void)
     kv("step_max", g_tape_io_step_cycles_max); kv("gap_max", g_tape_io_gap_cycles_max);
     kv("load_max", g_tape_io_load_cycles_max); kv("flush_max", g_tape_io_flush_cycles_max); put("\n");
     put("edits"); kv("lifts", g_edit_lifts); kv("drops", g_edit_drops); kv("erases", g_edit_erases); kv("errors", g_edit_errors);
-    kv("mono_fallbacks", g_edit_mono_fallbacks); put("\n");
+    kv("mono_fallbacks", g_edit_mono_fallbacks);
+    kv("pool", coop_clip_pool_bytes() >> 1); kv("pool_used", g_edit_pool_used); kv("pool_moves", g_edit_pool_moves); put("\n");   /* e12: samples */
     put("stats"); kv("writes", g_stats_writes); kv("errors", g_stats_errors); kv("tail_writes", g_stats_tail_writes);
     kv("tail_errors", g_stats_tail_errors); kv("windows", g_stats_windows); kv("ticks", g_stats_ticks); put("\n");
     for (uint32_t i = 0; i < TOP; i++) {                               /* the heaviest windows, any order */
