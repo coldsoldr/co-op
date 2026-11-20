@@ -2,10 +2,12 @@
  * The coop firmware's USB channel (firmware/docs/sysex.md): the same SysEx header and 7-bit framing as kennel's, its
  * own command numbers. Files go straight to the OP-1's internal disk; there is no commit and no restart command, so
  * every change to the plugins takes effect at the next power cycle. Built on the kennel session (one message in
- * flight, replies matched by command and seq, resends), so only the payloads differ.
+ * flight, replies matched by command and seq, resends), so only the payloads differ. The one exception is a file's
+ * PUT_DATA, which goes with a few chunks in flight (COOP_WINDOW).
  */
 import { crc32, readU32le, u32le } from './framing';
 import type { Inventory, InventoryKind, InventoryRecord, InventoryState } from './inventory';
+import type { Reply } from './framing';
 import type { Session } from './session';
 import { reportFromStats, type DeviceMemoryReport } from '../plugins/memory';
 
@@ -49,9 +51,20 @@ export const CoopCaps = { FILE_READ: 1, FILE_WRITE: 2, SLOT2: 4, RUN: 8, INVENTO
 export const COOP_PLUGIN_DIR = '/yaffs2/plugins/';
 /** The bytes of one PUT_DATA; the firmware takes up to 72, the host keeps every message under 96 bytes. */
 export const COOP_CHUNK = 64;
+/**
+ * How many messages the core queues between two passes of its main loop (`QN`, firmware/core/sdram/coop_sysex.cc);
+ * one more is dropped without a reply. Every core that writes files (P1b to e11) has this queue.
+ */
+export const COOP_QUEUE = 4;
+/**
+ * The PUT_DATA chunks in flight at once. One under the queue: the slot of the chunk being answered is free only
+ * after its reply has left, so the chunk that reply releases can arrive while that slot still counts.
+ */
+export const COOP_WINDOW = 3;
 
 const STATUS_OK = 0;
 const STATUS_OFFSET = 5;
+const STATUS_IO = 7;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -209,34 +222,85 @@ export async function readCoopMemoryReport(session: Session): Promise<DeviceMemo
 }
 
 export interface PutOptions {
-  /** Called after every chunk with the bytes written so far. */
+  /** Called with the bytes the OP-1 has confirmed so far, each time that count grows. */
   onProgress?: (written: number, total: number) => void;
+  /** The chunks in flight at once: COOP_WINDOW unless given, never more than COOP_QUEUE - 1; 1 sends one at a time. */
+  window?: number;
+}
+
+/** One PUT_DATA: the offset, then up to COOP_CHUNK bytes from it. */
+function dataPayload(bytes: Uint8Array, offset: number): Uint8Array {
+  const chunk = bytes.subarray(offset, offset + COOP_CHUNK);
+  const payload = new Uint8Array(4 + chunk.length);
+  payload.set(u32le(offset), 0);
+  payload.set(chunk, 4);
+  return payload;
+}
+
+/** The offset a PUT_DATA reply names: the next byte the OP-1 expects. */
+const nextOffset = (reply: Reply): number => (reply.payload.length >= 4 ? readU32le(reply.payload) : -1);
+
+/**
+ * Sends chunks with up to `window` unanswered and returns the count the OP-1 confirmed when the run ended: all of
+ * the file, or less after anything but a plain ok (a reply that did not come in time, a chunk the OP-1 did not take),
+ * which the caller then sends one at a time. The OP-1 writes a chunk only at the offset it expects, so an ok that
+ * names the end of a chunk confirms every byte before it, also those whose own reply was lost. A write error closes
+ * the file on the OP-1 and is thrown here, where its status is known.
+ */
+async function putWindowed(
+  session: Session,
+  file: string,
+  bytes: Uint8Array,
+  window: number,
+  progress: (written: number) => void,
+): Promise<number> {
+  let acked = 0;
+  await session.pipeline(async (send) => {
+    let flights: { end: number; reply: Promise<Reply | null> }[] = [];
+    let sent = 0;
+    for (;;) {
+      while (flights.length < window && sent < bytes.length) {
+        const end = Math.min(sent + COOP_CHUNK, bytes.length);
+        flights.push({ end, reply: send(CoopCommand.PUT_DATA, dataPayload(bytes, sent)) });
+        sent = end;
+      }
+      if (flights.length === 0) return;
+      const { flight, reply } = await Promise.race(flights.map((f) => f.reply.then((r) => ({ flight: f, reply: r }))));
+      if (!reply) return;
+      if (reply.status === STATUS_IO) throw new CoopRefusedError(reply.cmd, reply.status, `writing ${file} near byte ${acked}`);
+      if (reply.status !== STATUS_OK || nextOffset(reply) !== flight.end) return;
+      acked = flight.end;
+      flights = flights.filter((f) => f.end > acked);
+      progress(acked);
+    }
+  });
+  return acked;
 }
 
 /**
  * Writes a plugin file to /yaffs2/plugins: PUT_BEGIN (create, truncate), PUT_DATA in order, PUT_END with the size and
- * the zlib CRC-32, which the firmware checks. A resent chunk the OP-1 had already written comes back as an offset
- * mismatch that names the next offset; that counts as written.
+ * the zlib CRC-32, which the firmware checks.
+ *
+ * The chunks go COOP_WINDOW at a time (the core queues COOP_QUEUE messages and answers each in turn). When that run
+ * stops short, the rest of the file goes as before, one chunk in flight with resends, from the last confirmed byte.
+ * There a reply that names an offset further on, with ok or as an offset mismatch, means the OP-1 had already
+ * written up to it (chunks whose replies were lost): that counts as written.
  */
 export async function coopPutPlugin(session: Session, file: string, bytes: Uint8Array, options: PutOptions = {}): Promise<void> {
   checkFile(file);
+  const window = Math.max(1, Math.min(Math.floor(options.window ?? COOP_WINDOW), COOP_QUEUE - 1));
   const begin = await session.ask(CoopCommand.PUT_BEGIN, encoder.encode(COOP_PLUGIN_DIR + file));
   if (begin.status !== STATUS_OK) throw new CoopRefusedError(begin.cmd, begin.status, `writing ${file}`);
-  let offset = 0;
+  const progress = (written: number): void => options.onProgress?.(written, bytes.length);
+  let offset = window > 1 ? await putWindowed(session, file, bytes, window, progress) : 0;
   while (offset < bytes.length) {
-    const chunk = bytes.subarray(offset, offset + COOP_CHUNK);
-    const payload = new Uint8Array(4 + chunk.length);
-    payload.set(u32le(offset), 0);
-    payload.set(chunk, 4);
-    const reply = await session.ask(CoopCommand.PUT_DATA, payload);
-    const next = reply.payload.length >= 4 ? readU32le(reply.payload) : -1;
-    const done = offset + chunk.length;
-    if (reply.status === STATUS_OK || (reply.status === STATUS_OFFSET && next === done)) {
-      offset = done;
-      options.onProgress?.(offset, bytes.length);
-      continue;
-    }
-    throw new CoopRefusedError(reply.cmd, reply.status, `writing ${file} at byte ${offset}`);
+    const reply = await session.ask(CoopCommand.PUT_DATA, dataPayload(bytes, offset));
+    const next = nextOffset(reply);
+    // Only bytes of this file, in order, are ever on the OP-1, so its count is taken as it is; PUT_END checks them.
+    const written = (reply.status === STATUS_OK || reply.status === STATUS_OFFSET) && next > offset && next <= bytes.length;
+    if (!written) throw new CoopRefusedError(reply.cmd, reply.status, `writing ${file} at byte ${offset}`);
+    offset = next;
+    progress(offset);
   }
   const end = new Uint8Array(8);
   end.set(u32le(bytes.length), 0);

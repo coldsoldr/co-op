@@ -1,5 +1,7 @@
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
+import { crc32 } from '../src/core/usbmidi/framing';
 import { coopRow, stubCoop } from './coop-stub';
 
 interface IndexBuild {
@@ -136,7 +138,13 @@ test.describe('Plugins: the coop plugin memory', () => {
     page.once('dialog', (dialog) => void dialog.accept());
     await page.locator('.coop-device input[type=file]').setInputFiles(rings);
     await expect(page.getByText(/^Installed rings\.coop/)).toBeVisible({ timeout: 60_000 });
-    expect(await page.evaluate(() => window.coopStub.puts)).toEqual(['rings.coop']);
+    const stub = await page.evaluate(() => window.coopStub);
+    expect(stub.puts).toEqual(['rings.coop']);
+    // The file went with three chunks in flight, none was dropped, and every byte arrived.
+    const sentBytes = new Uint8Array(await readFile(rings));
+    expect(stub.files['rings.coop']).toEqual({ size: sentBytes.length, crc: crc32(sentBytes) });
+    expect(stub.deepest).toBe(3);
+    expect(stub.drops).toBe(0);
     await expect(page.locator('.plugin-memory')).toHaveAttribute('data-level', 'over');
     await expect(page.getByRole('row', { name: /rings\.coop/ })).toContainText(/\d KB/);
     await expect(page.getByRole('row', { name: /rings\.coop/ })).not.toContainText('about');

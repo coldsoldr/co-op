@@ -13,6 +13,12 @@ export interface CoopStubOptions {
 export interface CoopStub {
   /** The files written, by name. */
   puts: string[];
+  /** What arrived of each file written: its size and zlib CRC-32, counted by the stub from the chunks it took. */
+  files: Record<string, { size: number; crc: number }>;
+  /** The most messages that waited in the receive queue at once. */
+  deepest: number;
+  /** Messages dropped because the queue of four was full. */
+  drops: number;
 }
 
 declare global {
@@ -38,7 +44,9 @@ export function coopRow(o: {
 /**
  * Replaces Web MIDI in the page with a fake OP-1 that answers the coop firmware's USB channel
  * (firmware/docs/sysex.md): HELLO, INVENTORY in 64-byte pages, FILE_GET for the statistics file, and PUT_BEGIN,
- * PUT_DATA and PUT_END, after which the file is in the inventory as new.
+ * PUT_DATA and PUT_END, after which the file is in the inventory as new. As on the core, up to four messages wait in
+ * a queue and are answered in turn, a fifth is dropped, a chunk is taken only at the offset the file has reached, and
+ * PUT_END checks the size and the CRC-32.
  */
 export async function stubCoop(page: Page, options: CoopStubOptions): Promise<void> {
   await page.addInitScript(
@@ -65,10 +73,19 @@ export async function stubCoop(page: Page, options: CoopStubOptions): Promise<vo
       const text = (s: string): number[] => [...new TextEncoder().encode(s)];
       const pageOf = (all: number[], offset: number): number[] => [0, ...le(all.length), ...all.slice(offset, offset + 64)];
 
-      const stub: CoopStub = { puts: [] };
+      const crc32 = (data: number[]): number => {
+        let c = 0xffffffff;
+        for (const b of data) {
+          c ^= b;
+          for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+        }
+        return ~c >>> 0;
+      };
+
+      const stub: CoopStub = { puts: [], files: {}, deepest: 0, drops: 0 };
       window.coopStub = stub;
       let list = rows;
-      let writing: { file: string; got: number } | null = null;
+      let writing: { file: string; bytes: number[] } | null = null;
 
       const handle = (cmd: number, p: number[]): number[] => {
         switch (cmd) {
@@ -80,24 +97,42 @@ export async function stubCoop(page: Page, options: CoopStubOptions): Promise<vo
             return stats === null ? [3] : pageOf(text(stats), rd32(p));
           case 0x22: {
             const path = new TextDecoder().decode(Uint8Array.from(p));
-            writing = { file: path.slice(path.lastIndexOf('/') + 1), got: 0 };
+            writing = { file: path.slice(path.lastIndexOf('/') + 1), bytes: [] };
             return [0];
           }
-          case 0x23:
+          case 0x23: {
             if (!writing) return [2];
-            writing.got += p.length - 4;
-            return [0, ...le(writing.got)];
+            if (rd32(p) !== writing.bytes.length) return [5, ...le(writing.bytes.length)];
+            for (const b of p.slice(4)) writing.bytes.push(b);
+            return [0, ...le(writing.bytes.length)];
+          }
           case 0x24: {
             if (!writing) return [2];
-            const { file } = writing;
+            const { file, bytes } = writing;
             writing = null;
+            const crc = crc32(bytes);
+            if (rd32(p) !== bytes.length) return [4];
+            if (rd32(p.slice(4)) !== crc) return [6];
             stub.puts.push(file);
+            stub.files[file] = { size: bytes.length, crc };
             list = [...list.filter((r) => !r.startsWith(`${file}\t`)), `${file}\t?\t\tnew\ton\t\t\t0\t`];
             return [0];
           }
           default:
             return [1];
         }
+      };
+
+      /** The messages waiting, oldest first; each keeps its place until its reply has left. */
+      const queue: number[][] = [];
+      const serve = (): void => {
+        const bytes = queue[0];
+        if (!bytes) return;
+        const cmd = bytes[5] as number;
+        const reply = [...HEADER, cmd | 0x40, bytes[6] as number, bytes[7] as number, ...pack7(handle(cmd, unpack7(bytes.slice(8, -1)))), 0xf7];
+        input.onmidimessage?.({ data: Uint8Array.from(reply) });
+        queue.shift();
+        if (queue.length > 0) setTimeout(serve, 1);
       };
 
       const input: { name: string; state: string; onmidimessage: ((e: { data: Uint8Array }) => void) | null; open: () => Promise<void>; close: () => Promise<void> } = {
@@ -115,9 +150,13 @@ export async function stubCoop(page: Page, options: CoopStubOptions): Promise<vo
         send(data: Uint8Array) {
           const bytes = [...data];
           if (bytes.length > 96) throw new Error('a SysEx over 96 bytes stops the OP-1’s MIDI input');
-          const cmd = bytes[5] as number;
-          const reply = [...HEADER, cmd | 0x40, bytes[6] as number, bytes[7] as number, ...pack7(handle(cmd, unpack7(bytes.slice(8, -1)))), 0xf7];
-          setTimeout(() => input.onmidimessage?.({ data: Uint8Array.from(reply) }), 1);
+          if (queue.length >= 4) {
+            stub.drops++;
+            return;
+          }
+          queue.push(bytes);
+          stub.deepest = Math.max(stub.deepest, queue.length);
+          if (queue.length === 1) setTimeout(serve, 1);
         },
       };
       const access = {

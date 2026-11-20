@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Command, HEADER, pack7, u32le } from './framing';
 import { NoAnswerError, RefusedError, createSession } from './session';
+import { FakeCoop } from '../../../test/fake-coop';
 import { FakeOp1 } from '../../../test/fake-op1';
 
 /** Short waits keep the timeout and retry tests fast. */
@@ -205,5 +206,40 @@ describe('readOff', () => {
   it('drops spaces and a trailing line end around ids', async () => {
     const session = createSession(new FakeOp1({ off: 'drive, tape_echo,\n' }), fast);
     expect(await session.readOff('stored')).toEqual(['drive', 'tape_echo']);
+  });
+});
+
+describe('pipeline', () => {
+  it('puts messages in flight side by side and matches each reply by its seq', async () => {
+    const device = new FakeCoop({ queue: 4 });
+    const session = createSession(device, fast);
+    const replies = await session.pipeline((send) => Promise.all([send(0x21), send(0x28, Uint8Array.from(u32le(0))), send(0x21)]));
+    expect(replies.map((r) => r?.cmd)).toEqual([0x21, 0x28, 0x21]);
+    expect(device.requests.map((r) => r.queued)).toEqual([1, 2, 3]);
+  });
+
+  it('gives null for a reply that does not come, without sending again', async () => {
+    const device = new FakeCoop({ queue: 4 });
+    device.loseReplyOf = { cmd: 0x21, nth: 1 };
+    const session = createSession(device, fast);
+    const replies = await session.pipeline((send) => Promise.all([send(0x21), send(0x21)]));
+    expect(replies.map((r) => r?.status)).toEqual([undefined, 0]);
+    expect(device.requests).toHaveLength(2);
+  });
+
+  it('takes a turn like an ask, and gives up the replies still due when it ends', async () => {
+    const device = new FakeCoop({ queue: 4, serviceMs: 5 });
+    const session = createSession(device, fast);
+    let late: Promise<unknown> = Promise.resolve();
+    const piped = session.pipeline((send) => {
+      late = send(0x21);
+      return Promise.resolve('left early');
+    });
+    const asked = session.ask(0x21);
+    expect(await piped).toBe('left early');
+    expect(await late).toBeNull();
+    // The ask went out only after the pipeline, and the pipeline's late reply is not taken for its own.
+    expect((await asked).seq).toBe(2);
+    expect(device.requests).toHaveLength(2);
   });
 });

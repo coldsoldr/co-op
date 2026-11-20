@@ -1,6 +1,8 @@
 /**
  * A conversation with a hundekraft 3.x OP-1 over its USB MIDI port: one message in flight, each
  * reply matched to its request by command and seq, a resend with a fresh seq after a timeout.
+ * `pipeline` is the one exception: a caller that knows the device queues messages may keep a few
+ * in flight, and judges every reply itself.
  * Pure: the port comes from the caller (Web MIDI in the app, a fake device in tests).
  */
 import {
@@ -89,12 +91,24 @@ export function parseHello(reply: Reply): Hello {
 /** Which switched-off list OFF_GET reads. */
 export type OffList = 'stored' | 'boot';
 
+/**
+ * Sends one message at once, without waiting for the replies still due, and resolves with its
+ * reply, or null when none came in time. Never resends.
+ */
+export type PipelineSend = (cmd: number, payload?: Uint8Array) => Promise<Reply | null>;
+
 export interface Session {
   /**
    * Sends one command and resolves with its reply, whatever the status. Calls wait their turn, so
    * only one message is ever in flight. Rejects with NoAnswerError after the last try.
    */
   ask(cmd: number, payload?: Uint8Array, options?: AskOptions): Promise<Reply>;
+  /**
+   * Takes a turn, as one ask does, and hands `run` a send that puts messages in flight side by
+   * side. How many, and what a late or missing reply means, is the caller's to decide: the device
+   * drops what its queue cannot hold. Replies still due when `run` settles are given up.
+   */
+  pipeline<T>(run: (send: PipelineSend) => Promise<T>, options?: Pick<AskOptions, 'timeoutMs'>): Promise<T>;
   /** HELLO, asked once per session. */
   hello(): Promise<Hello>;
   /** The whole inventory text, read in LIST pages. */
@@ -122,8 +136,8 @@ export function createSession(port: MidiPort, options: SessionOptions = {}): Ses
   const { signal } = options;
   const assembler = new SysexAssembler();
   let seq = 0;
-  /** The reply the message in flight waits for. */
-  let waiting: { cmd: number; seq: number; resolve: (reply: Reply) => void } | null = null;
+  /** The replies the messages in flight wait for, by seq: one, or a pipeline's few. */
+  const waiting = new Map<number, { cmd: number; settle: (reply: Reply | null) => void }>();
   /** Settles after the previous ask, so the next one starts only then. */
   let turn: Promise<unknown> = Promise.resolve();
   let hello: Promise<Hello> | null = null;
@@ -132,7 +146,8 @@ export function createSession(port: MidiPort, options: SessionOptions = {}): Ses
     for (const message of assembler.push(bytes)) {
       const reply = parseReply(message);
       // Anything else is a stale reply to an earlier try, or not for us.
-      if (reply && waiting && reply.cmd === waiting.cmd && reply.seq === waiting.seq) waiting.resolve(reply);
+      const waiter = reply ? waiting.get(reply.seq) : undefined;
+      if (reply && waiter?.cmd === reply.cmd) waiter.settle(reply);
     }
   });
 
@@ -142,7 +157,7 @@ export function createSession(port: MidiPort, options: SessionOptions = {}): Ses
       const finish = (reply: Reply | null, error?: unknown): void => {
         clearTimeout(timer);
         signal?.removeEventListener('abort', onAbort);
-        waiting = null;
+        waiting.delete(want);
         if (error === undefined) resolve(reply);
         else reject(error);
       };
@@ -150,7 +165,7 @@ export function createSession(port: MidiPort, options: SessionOptions = {}): Ses
       const timer = setTimeout(() => finish(null), timeoutMs);
       signal?.addEventListener('abort', onAbort, { once: true });
       // Set before sending, so a reply that arrives at once is not missed.
-      waiting = { cmd, seq: want, resolve: (reply) => finish(reply) };
+      waiting.set(want, { cmd, settle: (reply) => finish(reply) });
       try {
         port.send(message);
       } catch (e) {
@@ -173,6 +188,32 @@ export function createSession(port: MidiPort, options: SessionOptions = {}): Ses
 
   function ask(cmd: number, payload: Uint8Array = new Uint8Array(0), askOptions: AskOptions = {}): Promise<Reply> {
     const result = turn.then(() => askNow(cmd, payload, askOptions));
+    turn = result.catch(() => undefined);
+    return result;
+  }
+
+  function pipeline<T>(run: (send: PipelineSend) => Promise<T>, pipeOptions: Pick<AskOptions, 'timeoutMs'> = {}): Promise<T> {
+    const timeoutMs = pipeOptions.timeoutMs ?? options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const result = turn.then(async () => {
+      signal?.throwIfAborted();
+      const sent: number[] = [];
+      let open = true;
+      const send: PipelineSend = (cmd, payload = new Uint8Array(0)) => {
+        if (!open) return Promise.reject(new Error('the pipeline has ended'));
+        seq = (seq + 1) & SEQ_MASK;
+        sent.push(seq);
+        const reply = exchange(buildMessage(cmd, seq, payload), cmd, seq, timeoutMs);
+        // The caller may stop listening (a fallback, an error on another message): not an unhandled rejection.
+        reply.catch(() => undefined);
+        return reply;
+      };
+      try {
+        return await run(send);
+      } finally {
+        open = false;
+        for (const s of sent) waiting.get(s)?.settle(null);
+      }
+    });
     turn = result.catch(() => undefined);
     return result;
   }
@@ -203,6 +244,7 @@ export function createSession(port: MidiPort, options: SessionOptions = {}): Ses
 
   return {
     ask,
+    pipeline,
     hello() {
       hello ??= ask(Command.HELLO).then(parseHello);
       // A failed HELLO may be asked again.

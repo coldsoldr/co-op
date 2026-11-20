@@ -4,6 +4,10 @@
  * check, DELETE, PLUGIN_SET. Files live in a map; what the boot scan found is given up front, as on the device,
  * where a file written after the boot reads as `new` until the next power cycle. A reply can be lost once
  * (`loseReplyOf`), to test the resend of a chunk the OP-1 had already written.
+ *
+ * Without `queue` every message is answered at once, inside `send`. With it the fake keeps the core's receive queue
+ * (`QN` 4 there): a message waits its turn, is answered `serviceMs` after the one before, holds its place until its
+ * reply has left, and one that finds the queue full is dropped without a reply (`drops`), as `rx_byte` does.
  */
 import { HEADER, MAX_MESSAGE, crc32, pack7, unpack7 } from '../src/core/usbmidi/framing';
 import type { MidiPort } from '../src/core/usbmidi/session';
@@ -35,6 +39,10 @@ export interface FakeCoopOptions {
    * came before), as the core rewrites the file every few seconds.
    */
   stats?: string | ((request: number) => string);
+  /** The depth of the receive queue; without it every message is answered at once. 1: a device with one in flight. */
+  queue?: number;
+  /** How long the device takes over each queued message (default 1 ms). */
+  serviceMs?: number;
 }
 
 const OK = 0;
@@ -44,6 +52,7 @@ const PATH = 3;
 const SIZE = 4;
 const OFFSET = 5;
 const CRC = 6;
+const IO = 7;
 const dec = new TextDecoder();
 const enc = new TextEncoder();
 const u32 = (b: Uint8Array, at = 0): number =>
@@ -53,14 +62,24 @@ const le = (v: number): number[] => [v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0x
 export class FakeCoop implements MidiPort {
   readonly files: Map<string, Uint8Array>;
   readonly disabled: Set<string>;
-  readonly requests: { cmd: number; payload: Uint8Array }[] = [];
+  /** Every message sent; `queued` is how many the queue held once this one was in it (none: lost, dropped, or no queue). */
+  readonly requests: { cmd: number; payload: Uint8Array; queued?: number }[] = [];
   menuOpen: boolean;
-  /** The reply to the n-th request of this command is lost once. */
-  loseReplyOf: { cmd: number; nth: number } | null = null;
+  /** The reply to the n-th request of this command is lost once, and those of the `count` - 1 after it. */
+  loseReplyOf: { cmd: number; nth: number; count?: number } | null = null;
+  /** The n-th request of this command never reaches the device, once. */
+  loseRequestOf: { cmd: number; nth: number } | null = null;
+  /** The n-th chunk the device writes fails, once: status 7, and the file is closed. */
+  failWriteOf: number | null = null;
+  /** Messages dropped because the queue was full. */
+  drops = 0;
   closed = false;
   private listener: ((bytes: Uint8Array) => void) | null = null;
   private put: { path: string; bytes: number[] } | null = null;
   private inventory = '';
+  private readonly queue: { cmd: number; seq: number; payload: Uint8Array; nth: number }[] = [];
+  private serving = false;
+  private dataWrites = 0;
 
   constructor(private readonly options: FakeCoopOptions = {}) {
     this.files = new Map(Object.entries(options.files ?? {}));
@@ -74,17 +93,56 @@ export class FakeCoop implements MidiPort {
     const cmd = bytes[5] as number;
     const seq = (bytes[6] as number) | ((bytes[7] as number) << 7);
     const payload = unpack7(bytes.subarray(8, bytes.length - 1));
-    this.requests.push({ cmd, payload });
+    const request: (typeof this.requests)[number] = { cmd, payload };
+    this.requests.push(request);
     if (this.options.silent) return;
-    const body = this.answer(cmd, payload);
     const nth = this.requests.filter((r) => r.cmd === cmd).length;
-    if (this.loseReplyOf && this.loseReplyOf.cmd === cmd && this.loseReplyOf.nth === nth) {
-      this.loseReplyOf = null;
+    if (this.loseRequestOf && this.loseRequestOf.cmd === cmd && this.loseRequestOf.nth === nth) {
+      this.loseRequestOf = null;
+      return;
+    }
+    const message = { cmd, seq, payload, nth };
+    const depth = this.options.queue;
+    if (depth === undefined) {
+      this.serve(message);
+      return;
+    }
+    if (this.queue.length >= depth) {
+      this.drops++;
+      return;
+    }
+    this.queue.push(message);
+    request.queued = this.queue.length;
+    void this.drain();
+  }
+
+  /** The main loop's pass: every queued message in turn, each leaving the queue once it is answered. */
+  private async drain(): Promise<void> {
+    if (this.serving) return;
+    this.serving = true;
+    for (let head = this.queue[0]; head; head = this.queue[0]) {
+      await new Promise((resolve) => setTimeout(resolve, this.options.serviceMs ?? 1));
+      this.serve(head);
+      this.queue.shift();
+    }
+    this.serving = false;
+  }
+
+  private serve({ cmd, seq, payload, nth }: { cmd: number; seq: number; payload: Uint8Array; nth: number }): void {
+    const body = this.answer(cmd, payload);
+    const lose = this.loseReplyOf;
+    if (lose && lose.cmd === cmd && nth >= lose.nth) {
+      if (nth >= lose.nth + (lose.count ?? 1) - 1) this.loseReplyOf = null;
       return;
     }
     const message = [...HEADER, cmd | 0x40, seq & 0x7f, seq >> 7, ...pack7(Uint8Array.from(body)), 0xf7];
     if (message.length > MAX_MESSAGE) throw new Error(`fake coop: reply of ${message.length} bytes`);
     this.listener?.(Uint8Array.from(message));
+  }
+
+  /** The bytes of the file being written that the device holds. */
+  get written(): number {
+    return this.put?.bytes.length ?? 0;
   }
 
   onSysex(cb: (bytes: Uint8Array) => void): void {
@@ -149,6 +207,10 @@ export class FakeCoop implements MidiPort {
         const put = this.put;
         if (!put) return [STATE];
         if (u32(p) !== put.bytes.length) return [OFFSET, ...le(put.bytes.length)];
+        if (++this.dataWrites === this.failWriteOf) {
+          this.put = null;
+          return [IO, ...le(put.bytes.length)];
+        }
         put.bytes.push(...p.subarray(4));
         return [OK, ...le(put.bytes.length)];
       }
