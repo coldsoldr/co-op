@@ -71,7 +71,7 @@ loop like every command; capabilities bits 4 and 5 say they are there.
     settings list, `new`: the file came after the boot), next (`on` or `off`: what the next boot does), version,
     author, size in bytes, reason (the loader's text for a failed file, else empty). e7: up to 48 files (8 KB of text);
     a file the boot refused for the plugin memory budget or skipped past the 32-file limit is `failed` with the reason
-    (`over the plugin memory budget (needs N KB, M KB of 1536 KB left)` (1728 KB from e11), `not enough memory left for the tape`,
+    (`over the plugin memory budget (needs N KB, M KB of 1536 KB left)` (1728 KB on e11, 5760 KB from e12), `not enough memory left for the tape` (e7-e11 only),
     `more than 32 plugin files`).
 - `0x29 PLUGIN_SET`: payload enable byte (1 on, 0 off) + the file name (no directory). Puts the file on or off the
   settings file's disabled list and writes `/yaffs2/user/coop_settings.bin` at once. Reply: status, the enable byte.
@@ -84,3 +84,49 @@ loop like every command; capabilities bits 4 and 5 say they are there.
   Result (2026-11-09, `saw.coop` and `stereo_delay.coop` on the NAND): HELLO `coop` protocol 1 caps `0x3f` build `e3`;
   the inventory lists both files `loaded on` with kind, name, version, author and size; after PLUGIN_SET off the saw
   row says `off`; on returns 0; `../x` returns 3. [C op1emu]
+
+## INVENTORY on e12: the budget, each file's memory (2026-11-20)
+
+e12 (docs/plugins.md "e12") appends to the inventory text; nothing that was there moved, so a host written for e3-e11
+reads it unchanged (the librarian's parser, `web/src/core/usbmidi/coop.ts`, finds the header's `build` field by its
+name and takes a row's first nine tab-separated columns) [C: `coop_usb.py --transport usbip inventory` against op1emu,
+whose parser is the same].
+
+- **Header line**, after `coop-inventory 1<TAB>build <tag><TAB>protocol 1`, five more tab-separated `name value`
+  fields:
+  - `budget <bytes>`: the plugin memory budget, what a memory bar shows as 100 % (5,898,240 on e12);
+  - `used <bytes>`: what the budget counts for the loaded plugins (the `plugmem` line's `used`);
+  - `fxbuf <bytes>`: the size of one effect position buffer (0: no scratch effect loaded);
+  - `fxbufs <n>`: how many position buffers exist (0..4; under 4, not every position can run a scratch effect);
+  - `clip <bytes>`: the stereo clipboard's pool (4,194,304 unless the plugins spilled into region B; never under
+    1,572,864).
+- **Rows**: two more columns after `reason`:
+  - column 10, `need`: the bytes the file takes of the budget by itself, or would have taken (image, voice state,
+    screen object, control table; without the shared position buffer). 0 for a file the boot did not read that far
+    (disabled, new, past the 32-file limit, refused before its header was parsed);
+  - column 11, `scratch`: the file's position buffer size, rounded up to 32 (0: not a scratch effect, or not read).
+  A set's cost is the sum of its `need`s plus the largest `scratch` once (docs/plugins.md "e12", the rule).
+- `size` (column 8) of a `new` file (one that arrived after the boot) is now its real size: the file is opened and
+  measured when the inventory is taken. Before e12 it was 0. Its `need` and `scratch` stay 0 until a boot reads it.
+- `reason` (column 9) texts on e12:
+  - `over the plugin memory budget (needs N KB, L KB of 5760 KB left)`: N = the file's `need` plus what it would
+    grow the budget's one position buffer by, L = budget - used, both in whole KB as before;
+  - `plugin memory full`: the budget had room but neither arena range could hold the block whole (the two ranges
+    are not contiguous);
+  - a **loaded** file may now carry a reason: `no memory for this position` (a scratch effect was selected at a
+    position that had no buffer left; it runs at the others). The stats name the positions (`plugfx` line);
+  - `not enough memory left for the tape` no longer occurs (the heap guard went with e12).
+
+Example (op1emu, e12, tabs shown as ` | `):
+```
+coop-inventory 1 | build e12 | protocol 1 | budget 5898240 | used 980992 | fxbuf 134784 | fxbufs 4 | clip 4194304
+rings.coop | synth | rings | loaded | on | 0.5 | coldsoldr | 113048 |  | 667712 | 0
+tape_echo.coop | fx | tape echo | loaded | on | 0.3 | coldsoldr | 23892 |  | 14592 | 134784
+zzover.coop | ? |  | new | on |  |  | 428 |  | 0 | 0
+```
+(the 13 catalogue files, two of the rows, and a 428-byte test file put over USB after the boot). From two other
+runs: a file over the budget, and a scratch effect that found no buffer at a position (an image that carves one):
+```
+zzover.coop | synth | zzover | failed | on | 0.1 | coldsoldr | 428 | over the plugin memory budget (needs 63 KB, 33 KB of 5760 KB left) | 64192 | 0
+tape_echo.coop | fx | tape echo | loaded | on | 0.3 | coldsoldr | 23892 | no memory for this position | 14592 | 134784
+```

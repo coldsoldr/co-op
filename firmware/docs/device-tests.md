@@ -2661,3 +2661,89 @@ USB disk mode with a full budget; whether the tape lift really landed in the syn
 13 files fit e10 too (the entry above); a set over 1,536 KiB has a file refused there, named in the stats.
 
 Result: (pending)
+
+## e12: plugin memory in coop's own SDRAM (5,760 KiB), four position buffers, the clipboard shares region B — device test (pending, 2026-11-20)
+
+What changed (`docs/plugins.md` "e12"): no plugin byte comes from the stock heap 0 any more. The plugin images, the
+engines' voice state, the screen objects, the control tables and the effect position buffers come from one arena in
+coop's own SDRAM: region A above the core (`0x02CE0000..0x03000000`, 3,276,800 bytes), then the upper 2.5 MiB of
+region B (`0x02980000..0x02C00000`, filled downwards). **The budget is the arena: 5,898,240 bytes (5,760 KiB), was
+1,728 KiB.** The synth and drum positions share one position buffer (four buffers, not five), the budget charges one
+of them and up to three more are carved from what is left. The stereo clipboard keeps a floor of 1.5 MiB of region B
+(17.8 s of right channel, all four slots together) and whatever the plugins do not take: all 4 MiB (47.5 s) while
+the plugins fit region A. A track's old clip is now given back when the track is lifted again. The files load in
+name order. Build tag `e12`, the boot picture's line `coop e12 - 246`. Existing `.coop` files load unchanged.
+
+- `build/pkg/op1_246_coop_e12.op1` sha256 `d89b3e1838960f322be52ccda301006024d4a6ace0a7f6b42e5aab63febb9cae`, copy in Downloads. Release image as e11
+  (`tools/build_device_package.sh ... --tape-stereo --set-word g_coop_spread=32767`): `verify_bootloader.py` PASS (no
+  te-boot.ldr), `pkg_check` = only `OP1_vdk.ldr` differs. The ELF holds the tag `e12` (and no `e11` / `e10`), the
+  package's LDR the line `coop e12 - 246`.
+- The site does not offer e12 yet (no web delta made), and its memory bar still computes e11's rule: it follows the
+  owner's device result. The rule to port is in `docs/plugins.md` "e12".
+
+**Gate notes (op1emu, 2026-11-20, one run at a time, a fresh NAND each; images `--tape-stereo --set-word
+g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`; scripts and outputs in `I:\op1emu-tmp\e12gate\`)** [C
+op1emu]:
+
+| Run | Result |
+|---|---|
+| **the stock image**, `--watch-writes 0x027ffb04-0x02ffffff`, pristine first boot, `det_heap_late.txt` (sounds, kits, tape record and play, lift, drops into the samplers and the tape) | **0 writer PCs, 0 stores**: the stock does not write regions A or B |
+| (a) no plugins: pristine `det_chord.txt`, e12 vs e11 (`emu_gate.py`) | **identical over 2,281,355 frames** (max diff 0, the second try of both runs; the first tries' onsets differed by a block, as known); `plugmem budget 5898240 used 0 ... clip 4194304`, end `heap_free 2729484` as e11 |
+| (b) **the 13 catalogue files**, first boot | 13 loaded, `fscr_built 11 scr_built 2`, no fault: `plugmem budget 5898240 used 980992 over_budget 0 heap_short 0 ... heap_free_boot 15739524 scratch_files 11 fxbuf 134784 fxbuf_mem 539136 fxbuf_short 0 fxbufs 4 fxbuf_refused 0 arena 1385344 arena_a 1385344 arena_b 0 clip 4194304`; end **`heap_largest 2722396 heap_free 2725820`** (e11: 1111444 / 1205596; a boot without plugins: 2729052 / 2729484) |
+| (b) the same NAND, second boot, `det_chord.txt` | 13 loaded, the same `plugmem` (`heap_free_boot 16069700`); end `heap_largest 3055244 heap_free 3055996` |
+| (b) an effect of the 13 selected and played (`det_fx_select.txt`) | the last row of the stock FX list picked at synth FX 1, a chord through it: `fxctl p0=8231i6`, `plugin_blocks 8231`, `fx1_plugin=11294/24221` (e11: 11296/24189), no fault |
+| (c) **the arena filled**: the 13 + 13 test engines (12 of 400,000 bytes of `.bss`, one of 80,000) + one more of 64,000, `det_heap_late.txt` | **boots** (the tape's cache got its 24 nodes) and plays 214 s, no fault: `plugins seen 27 loaded 26 failed 1`, `plugmem budget 5898240 used 5863488 over_budget 1 ... fxbufs 1 fxbuf_refused 11 arena 5863488 arena_a 3247360 arena_b 2616128 clip 1578176` (99.4 % of the budget; 5,312 bytes of region B and 29,440 of region A unused), `plugfile zzover.coop failed needs 64192: over the plugin memory budget`; inventory `... (needs 63 KB, 33 KB of 5760 KB left)`. One position buffer: instrument FX 2 took it (`p3` 12 inits, every effect in turn), master FX 2 got none: eleven `plugfx <name> no memory for this position: slots 4` lines, the slot stayed off, no fault. A lift and a drop at the floor: `edits lifts 1 drops 1 errors 0 mono_fallbacks 0 pool 789088`. End `heap_largest 1982436 heap_free 1983796`: e11's late-use figure (1,987,460 after every FX 2 tank and line) less 3,664 |
+| (c) the same NAND, second boot | the same 26 loaded and the same file refused (name order), `used 5863488`, end `heap_free 3054444` |
+| (d) one scratch effect at three positions (`det_fx_two_pos.txt`, tape_echo) | `fxbufs 4`, `fxctl p0=21646i1 p3=35129i1`, `plugin_blocks 21646 s2_instr 35129`, no fault |
+| (d) switching effects at a position (`det_fx_switch.txt`, cs_hall + tape_echo) | `p0=71372i3 p3=47199i3`: one init per selection, no fault |
+| (d) every position, synth / drum / synth / drum (`det_fx_fickle.txt`, `det_fx_petri.txt`) | fickle: `p0=41010i2 p1=14809i2 p2=32147i2 p3=43063i1 p4=25835i1` (the latch and fn words as e11: `1/2/4/0`), the block and init counts **equal to e11's gate to the block**; petri: `p0=40445i2 p1=4595i2 p2=21933i2 p3=33068i1 p4=15841i1`. Synth and drum each re-initialised at every change (two inits each across synth, drum, synth, drum) with the two positions on one buffer; no fault |
+| (d) **one buffer only** (`g_coop_fxbuf_max=1`), `det_fx_two_pos.txt` | `fxbufs 1 fxbuf_refused 1`, `plugfx tape echo no memory for this position: slots 3`; `p0=21645i1` plays, `p3=0i0`, `s2_instr 0`; inventory row `tape_echo.coop ... loaded ... no memory for this position`; no fault |
+| (d) one buffer only, `det_fx_fickle.txt` | `fxbufs 1 fxbuf_refused 3`, `plugfx fickle no memory for this position: slots 2 3 4`; **the synth and drum positions both play from the one buffer** (`p0=41009i2 p1=11370i2`), the master and both FX 2 positions stay off (`p2=0i0 p3=0i0 p4=0i0`, `s2_instr 0 s2_master 0`), 118 s of audio, no fault |
+| (e) clipboard, no plugins (the whole region), `det_tape_liftdrop.txt` | `edits lifts 1 drops 1 errors 0 mono_fallbacks 0 pool 2097152 pool_used 167648`; the dropped chord plays back as wide as it was recorded (side / mid 0.26 against 0.26) |
+| (e) **a lift past the pool** (`g_coop_clip_max=65536`: 32,768 samples, the clip 167,648) | `mono_fallbacks 1 pool 32768 pool_used 0 errors 0`; the drop plays back **mono** (side / mid 0.000, the level kept), nothing else differs |
+| (e) the pool at its floor (the arena full: the 13 + the 13 test engines), the same lift and drop | `clip 1578176`, `pool 789088 pool_used 167648 mono_fallbacks 0`; plays back at side / mid 0.26 |
+| (e) lifting a track again (`det_tape_relift.txt`: two takes on two tracks, shift + lift, shift + drop, twice) | `edits lifts 3 drops 2 errors 0 mono_fallbacks 0 pool_used 335296 pool_moves 1`: two clips' worth in the pool after three lifts (e11 kept all three), one slot moved down; the last playback at side / mid 0.25-0.26, no fault. The move itself on the host: `tests/host/clip_pool_test.cc`, 1,800 random lifts on three pool sizes, 1,205 moves, 557 that did not fit, every slot intact [C host] |
+| (e) `det_tape_liftdrop3.txt` | as e11's: 1 lift, 1 drop, no fallback, stereo |
+| (f) **who writes the two regions** with the 13 files and an effect played, and on pristine with a lift and drop (`--watch-writes 0x02800000-0x02bfffff 0x02cc1280-0x02ffffff`) | region A above the image: `coop_arena_take` (the zeroing, 346,336 stores), the loader (`relocate`, 398,947; the control tables' parser), the plugins' own code running in the arena (11.2 M stores up to `0x02DCF7EC`), and at the first frame the screen objects (`build_one`, `escr_init`, `coop_screens_frame` and the stock screen constructor at `0x01A3BAC8..`, 13 stores each for 13 screens). Region B: the staging block during the scan only (2.64-2.72 s: the stock NAND layer and the stock copy loop at `0x01AA6E40`, up to `0x0281B994`), and on the pristine run `coop_lift` alone (167,648 stores, `0x02800000..0x02851DBE`). **Nothing else writes either region; nothing writes between the image's end and the arena.** Both runs complete, no fault |
+| (g) saw: a note (`det_eng_note.txt`) | `plugmem ... used 3968 ... arena 3968`, `eng_renders 11725 eng_noteons 17`, `eng_saw=7345/7440`, `scr_built 1`, no fault; end `heap_free 2729524` |
+| (g) rings: every model (`det_eng_rings.txt`) | `used 667712`, `eng_renders 118595 eng_noteons 329`, `eng_rings=9602/34129`, `eng_rings_block=54444/115235`, `scr_built 1`, 132 s, no fault |
+| (h) INVENTORY over USB/IP (`coop_usb.py --transport usbip`) | header `budget 5898240, used 980992, fxbuf 134784, fxbufs 4, clip 4194304`; every row with `need` and `scratch` (rings 667712 / 0, tape_echo 14592 / 134784, bitcrusher 5440 / 32, ...: they sum to 846,208, + 134,784 = `used`); a 428-byte file PUT after the boot: `new`, size 428 (was 0 before e12); the old parser reads the text unchanged |
+
+Not shown in op1emu [I]: anything the caches decide (the code is cache-synced after every relocation as since e4b,
+but op1emu has no caches); region A above 0.75 MiB and region B's top on real SDRAM; the cycle cost of plugin code and
+state in this SDRAM bank instead of heap 0's (kennel measured a slower cold line fill there: `docs/plugins.md` "e12");
+the stock's sampler recording, album, radio and disk mode against the two regions (they were not run under the write
+watch); a NAND read landing in region B on the device (the staging block; in op1emu the NAND layer writes it).
+
+**What to do:**
+1. Flash `op1_246_coop_e12.op1` (keep your plugins). The boot picture's line reads `coop e12 - 246`. It must boot
+   to the tape as e11, with all your plugins. **If it hangs or crashes at boot with plugins, that is the cache or
+   SDRAM question: note it and go back to e11.**
+2. With the 13 catalogue plugins: copy `/yaffs2/user/coop_stats.txt`. Expected: `coop_stats 3 build e12`,
+   `plugins seen 13 loaded 13 failed 0`, **`plugmem budget 5898240 used 980992 ... fxbufs 4 fxbuf_refused 0 arena
+   1385344 arena_a 1385344 arena_b 0 clip 4194304`**, no `plugfile` or `plugfx` line. On the `plugins` line note
+   `heap_free` and `heap_largest`: the emulator says about 3.05 MB on a normal boot (e11: 1.5 MB), i.e. what the
+   OP-1 has without any plugin.
+3. Play each kind: a scratch effect at synth FX 1 (tape echo), the same or another at instrument FX 2 and at the
+   master (two different effects at two positions at once), switch effects at one position a few times, go synth ->
+   drum -> synth with a plugin effect on both: each restarts cleanly, no crackle, no stuck sound. Play saw and rings
+   (every rings model). **Listen for anything e11 did not do**: glitches, a slower UI, notes cutting out.
+4. Copy the stats again after a few minutes of that and compare the `cost` line's `fx1_plugin`, `s2_instr`,
+   `s2_master` and the `engines` line (rings, saw: avg / max per block) with an e11 stats file of the same playing.
+   **These figures are the main result**: the plugins now run from another SDRAM bank than heap 0, and only the
+   device can say whether that costs cycles.
+5. The clipboard, on the tape: record about 8 bars in stereo (something wide: a synth with spread, or two tracks
+   panned), lift it, drop it elsewhere, play it: still stereo. Lift and drop a few more times (before e12 the
+   stereo clipboard ran out after 47.5 s of lifts in a session; now each new lift of a track gives its old clip
+   back). Then lift one clip **longer than 48 s** (the whole pool with your 13 plugins) and drop it: it must drop
+   and play, in mono, nothing else wrong; the stats `edits` line then shows `mono_fallbacks 1`. Copy the `edits`
+   line (`pool 2097152` expected: samples).
+6. The librarian: the plugin list shows all loaded; its memory bar still uses e11's sums until the site knows e12.
+7. If you have more plugins than the 13: add them, power-cycle, repeat 2. Nothing should be refused until the bar
+   is far beyond what e11 allowed; a refused file is named in the stats and the list (`... KB of 5760 KB left`), and
+   the OP-1 must always boot.
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e11.op1` (or stock).
+Your plugin files are untouched by either; e11 loads the same files under its 1,728 KiB budget.
+
+Result: (pending)

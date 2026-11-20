@@ -883,3 +883,191 @@ position buffers and each costs the budget its image and screen object (~26-27 K
 
 New scenarios: `tests/sim/det_heap_late.txt` (above), `det_fx_fickle.txt`, `det_fx_petri.txt` (each plugin alone at
 every position with its latches and fn layers).
+
+## e12 (2026-11-20): plugin memory out of heap 0, four position buffers, the clipboard shares region B
+
+The owner's three decisions after e11 and the efficiency audit (`docs/efficiency-audit.md` findings 1, 7, 12): move
+all plugin memory out of the stock heap 0 into coop's own spare SDRAM; stop charging five position buffers at the
+largest effect's size; shrink the stereo clipboard to a floor and give the rest to plugins ("it's very uncommon to
+lift more than 8 bars of tape at a time"). Built and gated in op1emu; the device test is pending
+(`docs/device-tests.md` "e12"). Existing `.coop` files load unchanged (no repack; the file format, the ABI and the
+exports are e10's).
+
+### The memory map as built [C in the code and the ELF; the addresses' status below]
+
+| Range | Bytes | What |
+|---|---|---|
+| `0x02800000..0x02980000` | 1,572,864 (1.5 MiB) | **the clipboard's floor**: the right channel of lifted tape, 786,432 samples = 17.8 s (8 bars of 4/4 at 108 BPM or faster). Its first MiB doubles as the boot scan's file staging block (the clipboard is empty during the boot). Never the arena's. |
+| `0x02980000..0x02C00000` | 2,621,440 (2.5 MiB) | **arena range B**, filled downwards from `0x02C00000`, only when range A cannot hold a block. What the boot scan did not take stays the clipboard's: its pool is `0x02800000` up to the arena's lowest block. |
+| `0x02C00000..0x02CC127C` | 791,164 | the core's image (e12: text 181,078, data 396, bss 610,588; `___image_end = 0x02CC127C`) |
+| `0x02CC127C..0x02CE0000` | 126,340 | room for the core to grow; `coop_cb.ld` asserts the image ends at or below `0x02CE0000`, and the arena checks it again at run time |
+| `0x02CE0000..0x03000000` | 3,276,800 (3.125 MiB) | **arena range A**, filled first, upwards |
+
+`core/include/coop_arena.h`, `core/sdram/coop_arena.cc`. One bump arena over the two ranges: blocks are 32-byte
+aligned and sized, zeroed when taken, never freed, each checked to lie inside its range before it is handed out; a
+file that fails after its blocks were taken gives them back by a reset to a mark. Every take is on the main thread
+during the boot scan; at its end the arena is **sealed** (nothing can be taken afterwards) and the clipboard's pool
+size is fixed for the session. A block is never split across the two ranges.
+
+**The plugin memory budget is the arena: 5,898,240 bytes (5,760 KiB).** That is the one number, what the site's bar
+shows as 100 %. It is reached with the clipboard at its floor. A set that fits range A (3,276,800 bytes with all its
+position buffers; the 13 catalogue files take 1,385,344) leaves the clipboard all 4 MiB (47.5 s).
+
+What comes from the arena: the plugin images (code, data, `.bss`, call stubs), the engines' voice state, the screen
+objects (`engine_screen.cc struct escr`, taken at load now, filled on the Gfx thread later), the control tables
+(`engine_ui.cc struct ctls`; heap 0 and uncounted until e11), the position buffers. **What the boot scan takes from
+heap 0: nothing**, not even the staging block. So the e7 budget's reason (the stock tape cache's 24 nodes) is gone for
+plugins: `heap_room_ok`, `HEAP_RESERVE` and the reason "not enough memory left for the tape" are removed, and a plugin
+set can no longer cause the e6 boot hang. What coop still takes from heap 0 is what a boot without plugins takes
+(the FX twins' objects, lines and tanks, e11's 742,024 bytes at most, each of which may fail harmlessly) and needs
+no guard. Heap 0 is still read in place for the stats (`heap_free_boot`, `heap_free`, `heap_largest`).
+
+### Evidence that the ranges are free and usable
+
+- **The stock never writes them** [C op1emu]: `--watch-writes 0x027ffb04-0x02ffffff` on the stock image, first boot
+  of the pristine NAND, `det_heap_late.txt` (the eight synth sounds and eight drum kits with notes, a tape recording
+  played back, a lift, drops into the synth and drum samplers and onto the tape): **0 writer PCs, 0 stores**.
+  [I: the sampler's own recording, the album, the radio, disk mode were not run; op1emu has no read watch, so reads
+  were not traced: the stock reading memory it never writes is not a risk to the arena.]
+- **Static** [C te-op1-cfw `docs/memory-map.md` §6]: regions A and B are not loaded by the LDR, not in the heap
+  table, and no address constant of the stock points into them. te-boot uses region A but does not run in app mode,
+  and the boot picture is the app's, at `0x02000000` (`tools/boot_logo.py`), so the arena is not zero at boot: every
+  block is zeroed when taken.
+- **coop** [C]: the only fixed addresses in the two regions are the core's link address and `near` window
+  (`coop_cb.ld`), `inject_app.py`'s bounds (`REGION_START` / `REGION_END`: the image, not the arena) and the clipboard
+  pool. The old delay line at `0x02d00000` went with p6k. The core's `.bss` is an LDR FILL block inside the image;
+  nothing else is filled.
+- **CPLB** [C / I]: both ranges lie inside the two 4 MiB pages `0x02800000` and `0x02C00000`, each with a data and
+  an instruction entry in the stock tables (memory-map §4: `0x02C00000` DCPLB `0x0003101d` write-back cached, ICPLB
+  `0x00031005`, both visible; `0x02800000` ICPLB flags visible, DCPLB flags encrypted [I]).
+- **On a device** [C for the pages, I for the new addresses]: the core has run from region A's first 0.75 MiB since
+  milestone 1; region B was written and executed by coop itself (p6c put code at `0x02810000` and ran it; the first
+  lift overwrote it: the p6d note), and the stereo clipboard writes it on every lift. hundekraft's kennel, which ran
+  on the owner's unit, keeps its fixed code arena at `0x02980000..0x02C00000` (the same range as arena B) and its
+  buffer pool and file staging at `0x02C00000..0x03000000` (`kn_mem.h`) [I: which of those ranges the kennel
+  versions the unit ran really used]. Region A above `0x02CC0000` has not been written by coop on a device.
+- **Code in both ranges.** Images go wherever the next block fits, range A first; a set under 3.1 MiB never puts
+  anything in region B. `code_sync` (flush, ssync, iflush, csync over the relocated range) runs after every
+  relocation as since e4b; op1emu models no caches, so this stays [I] until the device test.
+- **PCREL24 reach** [C in the loader]: a plugin's calls into the core are direct when the target is within 16 MiB,
+  which every core export now is from both ranges (heap 0 was not: every call went through a stub); a target out of
+  reach still gets a stub (`kn_relocate_far`; room for one per import is in every image block), so no call can be
+  out of reach. Calls from the core into a plugin are through pointers.
+- **Not measurable in op1emu, for the device test** [I]: kennel measured a cold cache-line fill at 354 cycles in the
+  SDRAM bank of `0x02xxxxxx` against 193 in heap 0's (its rackverb README, "K1b"), and moved its arena into heap 0
+  for that. e12 moves plugin code and state the other way. The core has always run from that bank; what it costs
+  the plugins is the device's to say (the `cost` and `engines` lines against the e11 stats file).
+
+### Position buffers: four, one in the budget
+
+Chosen: (c), both parts, in their simplest safe form.
+
+- **The synth and drum positions share one buffer** (slots 0 and 1). The audit called this inferred from the stock's
+  behaviour; it is provable in coop's own code [C]: `coop_fx_render_mono` renders at `g_fx_pos`, the position of the
+  stock's last effect construction, not at a position the stock passes per block, and `g_fx_pos` only changes in
+  `coop_fx_init_mono`, which now forgets what **both** positions had initialised (`g_cur[0] = g_cur[1] = -1`). So the
+  plugin's `init` (e8: the restart, nothing preserved) always runs before the first block after a synth / drum
+  change, and an effect screen sees the other position as not live. Gate: `fxctl p0` / `p1` init counts across
+  synth / drum changes.
+- **Each buffer is E bytes** (the largest 32-rounded `"scratch"` among the loaded scratch files), zeroed, carved from
+  the arena at the end of the boot scan. **The budget charges one** (so a loaded scratch effect can always run
+  somewhere); up to three more come from what the arena has left. With all four (every set that leaves 3 x E free:
+  404,352 bytes with the present large effects) each position has its own from boot, as before e12, and nothing
+  can fail.
+- **With fewer than four**, a position gets a buffer on its first use and keeps it for the session
+  (`fxbuf_claim`: a constant-time take from the carved ones with interrupts masked for two words; it allocates
+  nothing, so it is safe in the audio interrupt, where positions 0-2 select). A scratch effect selected at a
+  position that gets none **does not run there**: FX 1 passes the instrument / master through dry, FX 2 stays off;
+  its screen shows its idle state (`view->live` 0). Named in the stats (`plugfx <name> no memory for this position:
+  slots ...`, `fxbuf_refused N`) and the inventory (the file's reason, though it is `loaded`). It runs at the
+  positions that have a buffer; effects without `"scratch"` and stock effects are not affected.
+- Why not buffers sized to the effect selected at each position: with a bump arena that needs a free list and
+  growth, and the worst case (each position cycling through the sizes) takes more than four of the largest; whole
+  buffers are bounded (4 x E = 539,136 bytes today), constant-time, and in every set that is not within 0.4 MiB of
+  full identical to e8's behaviour. Why not charge all four: then nothing could fail, but 404 KB of the bar would be
+  held back for positions most sets never use at once.
+- `coop_fx_scratch(slot, &bytes)` is unchanged for a plugin: the slot's buffer, fixed once the slot has one, 0 before.
+  Slots 0 and 1 return the same address.
+
+### The e12 cost rule (to port: `web/src/core/plugins/memory.ts` implements e7-e11's)
+
+```
+r32(n)  = (n + 31) & ~31                       every arena block (no heap header; e7-e11: blk(n) = (n + 15) & ~7)
+cap     = bss_offset + bss_size + 3 + 12 * imports             (no "+ 32": the arena block is already aligned)
+image   = r32(cap)
+effect, old model (no scratch flag):   5 * image
+effect, scratch:                       image
+synth engine:                          image + 6 * r32(voice_bytes)        (voice_bytes <= 8192; nothing when 0)
++ screen object, as e9-e11 decide it:  r32(240) = 256           (sizeof(struct escr) = 240)
++ control table, NEW:                  r32(1384) = 1408         when the header's extension table has tag 6
+                                                                (controls) with a non-empty text (sizeof(struct ctls))
+need(file) = the sum of its lines above
+E          = the largest r32(scratch) among the set's scratch effects (0 without one)
+used(set)  = sum of need(file) + E             <- ONE position buffer, not blk(5 * E + 32)
+budget     = 5,898,240 bytes on e12           (the bar's 100 %)
+fits       = used(set) <= budget
+```
+No longer charged: four of the five position buffers, the 8-byte heap headers and the 32-byte alignment slack per
+block, the staging block's side effects. Newly charged: the control table (1,408 bytes for a file with controls).
+Worth a second mark on the bar: `sum of need + 4 * E <= budget` means every position can run a scratch effect
+(always true below 5,359,104 bytes of `need` with today's E = 134,784); between that and the budget the files all
+load but only 1-3 positions get a buffer. The device reports the same figures: the `plugmem` line (`budget`, `used`)
+and the inventory (`budget`, `used`, per file `need` and `scratch`: `docs/sysex.md`).
+
+The total does not depend on the order; which file is refused does. **e12 loads the files in name order** (bytewise
+ascending by file name), not directory order: yaffs lists a directory in another order after a NAND's first boot
+[C op1emu, the arena gate: the same 27 files, `freq_shift` and `fickle` refused on the first boot, a filler on the
+second], so with directory order the refused file changed from boot to boot. Now it is the same every boot and a
+host can name it: walk the files by name and refuse each one that would take `used` over the budget. (Which 32
+files are taken when there are more is still the directory's order; plugin numbers come from the name map and do
+not depend on any order.) One case the rule cannot
+see [C in the code]: the arena is two ranges and a block is never split, so when the next block fits neither range's
+remainder the file is refused with `plugin memory full` although the budget had room. The unusable remainder is
+smaller than that block; with the catalogue's sizes (rings 667,680, the rest under 30 KB, buffers 134,784) it only
+matters within about one such block of the limit.
+
+The 13 catalogue files on e12 [C op1emu]: `plugmem budget 5898240 used 980992` (need 846,208 + one buffer 134,784;
+16.6 % of the bar), `fxbufs 4`, `arena 1385344` (the need and all four buffers), all in range A, `clip 4194304`.
+On e11 the same set was 1,502,128 of 1,769,472 (84.9 %).
+
+### The clipboard (`core/sdram/tape_edit.cc`)
+
+- The pool starts at `0x02800000` as before; its size is `coop_clip_pool_bytes()`: the floor until the scan has
+  ended, then all of region B below the arena's lowest block. The four slots (one per track, the stock's) share it.
+- **A lift that does not fit** keeps its left channel in the stock's slot and takes no right channel: the clip drops
+  as mono (right = left), counted in `mono_fallbacks`. Nothing else changes: no error, the tape is edited as always.
+  This is the behaviour e11 had past 47.5 s; on e12 it starts at 17.8 s only when the plugins fill the arena.
+- **Fixed on the way** [C in the code]: until e11 a lift's right-channel samples were never given back until the
+  tape was erased, so after 47.5 s of lifts in one session every later lift was mono. e12 releases a track's old clip
+  when that track is lifted again (the samples above it move down, the other slots' pointers follow; main loop,
+  beside the lift's file I/O). The pool therefore holds the four current clips, which is what the floor is sized for.
+  The move is proven on the host with the firmware's own function (`tests/host/clip_pool_test.cc`: tape_edit.cc
+  included whole, the pool mapped at its address, 1,800 random lifts on three pool sizes, every slot's samples
+  checked after each) and reached in op1emu by `tests/sim/det_tape_relift.txt` [C host, C op1emu].
+- Stats: the `edits` line gains `pool` (samples), `pool_used`, `pool_moves`.
+- Test switch `--set-word g_coop_clip_max=BYTES`: a smaller pool, to gate the mono fallback with a short clip.
+
+### Stats and inventory
+
+```
+plugmem budget 5898240 used U over_budget N heap_short 0 skipped N badname N tape_node 524288 heap_free_boot F
+        scratch_files S fxbuf E fxbuf_mem M fxbuf_short K fxbufs N fxbuf_refused R arena A arena_a Aa arena_b Ab clip C
+plugfile <file> <failed|disabled|skipped> needs <bytes>: <reason>
+plugfx <name> no memory for this position: slots <slot numbers>
+```
+The line keeps its shape (the site parses `plugmem budget B used U over_budget N heap_short N ...` and the
+`plugfile` lines). `heap_short` is always 0. `needs` = the file's `need` (its own blocks, without the buffer).
+`fxbuf_mem` = fxbufs x fxbuf. `arena` = bytes really taken (need, every buffer, blocks of files refused after the
+last buffer check); `arena_a` / `arena_b` by range; `clip` = the clipboard pool in bytes. The inventory's refusal
+text is unchanged in shape: `over the plugin memory budget (needs N KB, L KB of 5760 KB left)`, N = need + what the
+file would grow the one buffer by. Inventory fields: `docs/sysex.md` "INVENTORY on e12".
+
+Test switches (image time): `g_coop_plug_budget` (a smaller budget), `g_coop_fxbuf_max` (carve at most N buffers),
+`g_coop_clip_max`. Build tag `e12`.
+
+**Gate** (op1emu; the table and the figures are in `docs/device-tests.md` "e12") [C op1emu]: no-plugin regression
+against e11; the 13 files on a first and second boot with heap 0 as a boot without plugins leaves it; the arena
+filled to 99.4 % with 13 test engines and a file over the budget named; scratch effects at every position, two at
+once, switched repeatedly, with one buffer for five positions; the clipboard whole, at a 64 KiB test size (mono
+fallback) and at its floor; who writes the two regions; saw and rings with their voice state in the arena; the
+inventory over USB/IP.

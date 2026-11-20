@@ -20,13 +20,13 @@ Effort S = hours, M = a day or two, L = a week. "Decision" = changes behaviour o
 
 | # | Finding | Where | Estimated gain | Effort | Risk | Verify with |
 |---|---|---|---|---|---|---|
-| 1 | Plugin memory sits in heap 0 beside the tape cache while 3.25 MiB of coop's own region A is unused | `plugin_host.cc:490,599,690`, `coop_cb.ld:5` | 0.67 MiB of heap 0 back at once (the position buffers), 1.0 MiB staging block gone, the budget can go from 1.5 to ~2.2 MiB with heap 0 untouched [I] | M | region A's tail is mapped [C] but only its first 0.75 MiB has run on a device | op1emu `--watch-writes` over `0x02cc0000..0x02ffffff` on a stock session, then the 13-file set |
+| 1 | **Done in e12.** Plugin memory sits in heap 0 beside the tape cache while 3.25 MiB of coop's own region A is unused | `plugin_host.cc:490,599,690`, `coop_cb.ld:5` | 0.67 MiB of heap 0 back at once (the position buffers), 1.0 MiB staging block gone, the budget can go from 1.5 to ~2.2 MiB with heap 0 untouched [I] | M | region A's tail is mapped [C] but only its first 0.75 MiB has run on a device | op1emu `--watch-writes` over `0x02cc0000..0x02ffffff` on a stock session, then the 13-file set |
 | 2 | The tape record tap runs the stock record twice, with six state copies, on every block, recording or not | `tape_stereo.cc:112-175` | 4-6 k of the 7.2-7.5 k it costs a block [C device for the cost, I for the share] | M | must prove the stock function writes no lane while not recording | `rec_sum / recs` in the stats windows, `det_tape_rec*.txt` bit-exact |
 | 3 | The measuring code is always on: per-voice cost records, marks, a 63-slot scan and two folds at every block start | `stereo_bus.cc:142-161`, `engine_host.cc:166-181`, `coop_stats.cc:153-208`, `stereo_thunks.S:35-68` | 5-6 k a block while voices play [C device, m1c], more with the per-voice calls; 2-4 k idle [I] | S-M | Decision: the stats page loses its live cost table unless it is a switch | `cb_rest`, `thunk` in an m1 run with the switch off / on |
 | 4 | `coop_stats.txt` and the 8 KiB tape tail are rewritten every 5 s for the whole session | `coop_stats.cc:28,671-677,724` | ~19 KiB of NAND per 5 s (13.7 MB an hour) and a 10-50 ms main-loop stall each time [I from the recorded write times] | S | the librarian reads the file: serve it from RAM | `stats writes` count, `io_gap_max`, fps |
 | 5 | The S3 stage and the mix run in full on a silent instrument | `stereo_bus.cc:398-427,519-546` | ~11 k + ~8 k a block while nothing sounds [C device costs], bit-exact [I] | M | the skip conditions must be exact (ring, DC state, ramp) | `det_chord.txt` identical; `stage=` and `mix_sum` idle |
 | 6 | Idle paths missing in the heavy effects (tape_echo, cs_hall, cs_plate, fickle, petri, rings verb) | each `render` | 13-18 k a block per idle position [I: plugin cost minus the wrap] | M each | not bit-exact (thresholds); a tail cut below ~-96 dB | each plugin's `prof`, `s2_*` / `fx1_plugin` idle |
-| 7 | Positions 0 (synth) and 1 (drum) never run at once but each has a buffer | `plugin_host.cc:83,385,770-772,1129-1134` | one buffer of five: 134,784 bytes (171,936 at HEAD) [I] | S-M | the stock must re-init the effect on every synth / drum change | `det_fx_two_pos.txt`, `p0=`/`p1=` init counts |
+| 7 | **Done in e12.** Positions 0 (synth) and 1 (drum) never run at once but each has a buffer | `plugin_host.cc:83,385,770-772,1129-1134` | one buffer of five: 134,784 bytes (171,936 at HEAD) [I] | S-M | the stock must re-init the effect on every synth / drum change | `det_fx_two_pos.txt`, `p0=`/`p1=` init counts |
 | 8 | Software divides every block in nine plugins (the knob scaling); five per voice render in rings FM | `tape_echo.cc:109-114` and its copies, `rings/src/fm_voice_fixed.cc:132-138` | 0.75-1.5 k a block per effect; rings FM ~1.1 k a render, 4-7 k a block [I: ~190 cycles a `__divsi3`] | S | none, bit-exact | host tests bit-identical; `fx1_plugin=` |
 | 9 | The effect wrap is compiled C: int16 mid / side -> Q31 L / R and back, 2.3 k for a do-nothing effect | `plugin_host.cc:1198-1221,1248-1251,1465-1468,1506-1512` | ~1.5 k a block per plugin position, ~5 k with all four in use [I from test_fx's 3,068 C op1emu] | S | bit-exact kernel, sim-checkable | `fx1_plugin=` of test_fx |
 | 10 | SysEx installs keep one 64-byte message in flight | `coop_sysex.cc:38-39,242-253`, `web/src/core/usbmidi/coop.ts:50,156-163` | 1.5 -> ~4.5 KB/s with three in flight: rings 76 s -> ~25 s, the 13-file set 4 min -> 1.3 min [I] | S-M | drops when the queue overflows; needs the device | time a rings install |
@@ -82,6 +82,17 @@ If only the staging block is to be fixed in place: `MALLOC(FILE_MAX + 8)` makes 
 Risk [I]: region A beyond 0.75 MiB has not been written on a device. Gate: op1emu `--watch-writes` over the tail
 during a stock session (boot, tape, lift / drop: the p6c crash was coop's own clipboard pool in region B,
 `tape_edit.cc:34`, not this region), then the 13-file NAND, fresh and second boot, `plugmem` and `heap_free_boot`.
+
+**Done in e12 (2026-11-20; `docs/plugins.md` "e12", gate in `docs/device-tests.md` "e12").** All three parts, and
+more than proposed: the arena is region A above the core (`0x02CE0000..0x03000000`, 3,276,800 bytes) and then the
+upper 2.5 MiB of region B, 5,898,240 bytes in all (the budget, against 1,728 KiB), with the stereo clipboard keeping
+a 1.5 MiB floor of region B and whatever the plugins leave. The staging block is the clipboard floor's first MiB
+(not the arena's top: it costs nothing there), so the scan takes nothing from heap 0, `heap_room_ok` is gone, and
+the control tables (`engine_ui.cc`, uncounted heap 0 before) moved too. Measured [C op1emu]: the stock writes
+nothing in `0x027ffb04..0x02ffffff` through a first boot, sounds, kits, tape, lift and drops; with the 13 files heap
+0 ends a first boot with 2,725,820 bytes free (e11: 1,205,596; a boot without plugins: 2,729,484). Open [I, the
+device]: region A above 0.75 MiB on real SDRAM, and what running plugin code and state from this SDRAM bank instead
+of heap 0's costs in cycles (kennel measured a slower cold line fill there).
 
 ### 4. The stats file every 5 seconds
 
@@ -227,6 +238,15 @@ that init. Then slots 0 and 1 can return the same buffer: 134,784 bytes saved (1
 no path renders slot 1 after slot 0 without an init between (`p0=` / `p1=` init counts across a synth / drum / synth
 change in `det_fx_controls.txt`), and that the screen's `view->live` goes false for the other slot (set
 `g_cur[other] = -1` at the init).
+
+**Done in e12 (2026-11-20).** Slots 0 and 1 return one buffer (four buffers, not five). The inference is not
+needed: the dispatcher renders at `g_fx_pos`, which only `coop_fx_init_mono` changes, and that function now forgets
+what both positions had initialised (`g_cur[0] = g_cur[1] = -1`, which also makes the screen's `view->live` false for
+the other slot), so the restart is forced by coop's own code whatever the stock does [C in the code]. The stock does
+construct the effect on every synth / drum change as well [C op1emu: `det_fx_fickle.txt`, `p0` and `p1` two inits
+each across synth, drum, synth, drum, on e11 and e12 alike]. Item 12 was answered differently from its options: the
+budget charges one buffer of the largest size, up to three more are carved from what the arena has left, and a
+position that gets none refuses a scratch effect cleanly (`docs/plugins.md` "e12").
 
 ### 10. Install speed
 
