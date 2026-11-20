@@ -433,6 +433,16 @@ describe('checkOp1p', () => {
     expect(checkOp1p(op1p({ kind: 0, name: 'saw' })).info).toEqual({ kind: 'synth', savedName: 'saw' });
   });
 
+  it('reads the author line of the metadata after the code image, as op1r does', () => {
+    // binary: 76-byte header, a 4-byte image (word 32), no relocations (68) or imports (72), then the metadata
+    const bytes = op1p({ kind: 0, name: 'saw', binary: 76 + 4 + 24 });
+    const t = bytes.length - 16;
+    setU32(bytes, 32, 4);
+    bytes.set(ascii('kind=synth\nauthor=Ann\n'), 80);
+    setU32(bytes, t + 12, crc32(bytes.subarray(0, t)));
+    expect(checkOp1p(bytes).info).toEqual({ kind: 'synth', savedName: 'saw', author: 'Ann' });
+  });
+
   it("reads op1r's sequencer, drum, sampler and tool plugins as features", () => {
     for (const kind of [2, 3, 4, 5]) expect(checkOp1p(op1p({ kind, name: 'euclid' })).info).toEqual({ kind: 'feature', savedName: 'euclid' });
   });

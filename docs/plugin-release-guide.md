@@ -7,9 +7,10 @@ co-op lists OP-1 plugins under the people who made them and links to their own r
 Every day, co-op checks the GitHub repo of each plugin it lists:
 
 - **A hundekraft plugin with its `.knl` in the repo:** when a new commit changes that file, co-op downloads it and checks it is a valid kennel plugin with the same saved name and kind. It then pins the new commit, its SHA-256 and its size, and takes the version from the file's header.
+- **An op1r plugin with its `.op1p` in the repo:** the same, with op1r's check: a valid `.op1p` with the same saved name and kind. An `.op1p` carries no version, so the listed version is your release's tag, or else the day the file last changed.
 - **Any other plugin:** when you publish a GitHub release with a higher version than the one listed, its tag becomes the listed version.
 
-Each update becomes a pull request on co-op. A maintainer looks at what changed, the commit diff or your release notes, and merges it. Your listing then updates on the site. Nothing changes on co-op without that review: co-op's Install over USB button sends your file to people's OP-1s as firmware code, so a person always looks first.
+Each update becomes a pull request on co-op. A maintainer looks at what changed, the commit diff or your release notes, and merges it. Your listing then updates on the site. Nothing changes on co-op without that review: co-op's Install over USB button (and for op1r, its Download) sends your file to people's OP-1s as firmware code, so a person always looks first.
 
 ## What your repo needs
 
@@ -17,14 +18,15 @@ Each update becomes a pull request on co-op. A maintainer looks at what changed,
 2. **A licence file.** GPL-3.0-or-later with the OP-1 firmware permission is common for kennel plugins.
 3. **The built file committed in the repo**, at a path that stays the same from release to release:
    - hundekraft: `<id>.knl`, named after its saved name (spaces as `_`), for example `build/erdtree.knl`;
-   - opus: your `.opmod`.
+   - opus: your `.opmod`;
+   - op1r: your `.op1p`, for example `build/tape_drift.op1p`. co-op reads its saved name, kind and the `author=` line from it.
 4. **A picture of the plugin's screen** in the README, an OP-1 capture or your host build's render.
 
-Why commit the file, not only attach it to a release: browsers can't download GitHub release attachments from another site, so co-op's Install over USB can't fetch them. A file in the repo can be fetched. You can still attach it to your releases too.
+Why commit the file, not only attach it to a release: browsers can't download GitHub release attachments from another site, so co-op's Install over USB and Download can't fetch them. A file in the repo can be fetched. You can still attach it to your releases too.
 
 ## Publishing an update
 
-1. Build the new version, with its version number set in the plugin's metadata so the built `.knl` carries it: co-op reads the version from the file's header.
+1. Build the new version, with its version number set in the plugin's metadata so the built `.knl` carries it: co-op reads the version from the file's header. (An `.op1p` has none: your release tag is the version.)
 2. Commit the new file at the same path, replacing the old one.
 3. Publish a GitHub release whose tag is the version: `1.2.0` or `v1.2.0`. Versions must go up; co-op never lists a lower one.
 4. Write release notes: they go into co-op's pull request, and they help the maintainer review it.
@@ -35,7 +37,7 @@ Mark betas and test builds as **pre-releases**. co-op ignores pre-releases, so t
 
 co-op leaves your listing as it is, and tells the maintainer why, when:
 
-- the new `.knl` isn't a valid kennel plugin;
+- the new `.knl` isn't a valid kennel plugin, or the new `.op1p` isn't a valid op1r plugin;
 - its saved name or kind differs from the listing's (a different plugin under the same path);
 - its version is lower than the listed one;
 - the file was moved or removed. If you move it, open an issue on co-op with the new path.
@@ -54,7 +56,7 @@ From co-op's Plugins tab, choose **Submit a plugin**, pick your firmware, and fo
 
 - Public GitHub repo, README with credits, controls and requirements
 - Licence file
-- The built `.knl` or `.opmod` committed, always at the same path
+- The built `.knl`, `.opmod` or `.op1p` committed, always at the same path
 - The version set inside the `.knl`
 - A GitHub release per version, tags that only go up, betas as pre-releases
 - A screenshot in the README

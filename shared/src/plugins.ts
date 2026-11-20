@@ -778,7 +778,31 @@ export function checkOp1p(bytes: Uint8Array): PluginFileCheck {
   if (!kind) problems.push(`kind ${kindValue} is not 0 (synth), 1 (fx) or 2 to 5 (op1r's sequencer, drum, sampler or tool)`);
   const saved = savedNameAt(binary, 16, /^[a-z0-9 _-]+$/, 'lower-case letters, digits, spaces, _ or -');
   if (saved.problem) problems.push(saved.problem);
-  return done({ kind: kind as PluginKind, savedName: saved.name as string });
+  const author = op1pAuthor(binary);
+  return done({ kind: kind as PluginKind, savedName: saved.name as string, ...(author === undefined ? {} : { author }) });
+}
+
+/**
+ * The `author=` line of an op1r binary's metadata, as op1r's web patcher reads it (web/op1p.js): after the code
+ * image (header word 32), its relocations (16 bytes each, word 68) and its imports (NUL-terminated names, word 72).
+ */
+function op1pAuthor(binary: Uint8Array): string | undefined {
+  const image = u32(binary, 32);
+  const relocations = u32(binary, 68);
+  const imports = u32(binary, 72);
+  if (imports > 32) return undefined;
+  let at = OP1P_MIN_BINARY + image + 16 * relocations;
+  if (!Number.isSafeInteger(at) || at >= binary.length) return undefined;
+  for (let i = 0; i < imports; i++) {
+    const nul = binary.indexOf(0, at);
+    if (nul < 0) return undefined;
+    at = nul + 1;
+  }
+  for (const line of latin1(binary.subarray(at)).split('\n')) {
+    const value = line.startsWith('author=') ? line.slice(7).split('\0')[0]?.trim() : undefined;
+    if (value && /^[\x20-\x7e]+$/.test(value)) return value.slice(0, MAX_AUTHOR);
+  }
+  return undefined;
 }
 
 /** Checks an opus plugin (.opmod): the OPMD magic and the size limit; nothing more is known. */

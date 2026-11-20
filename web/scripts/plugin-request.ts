@@ -3,7 +3,7 @@
  * plugin-request-lib.ts, and writes them into plugins/ with their log entries. Run from web/:
  *
  *   tsx scripts/plugin-request.ts --issue 12 [--summary FILE] [--ids FILE]
- *   tsx scripts/plugin-request.ts --repo owner/repo [--firmware opus] [--summary FILE] [--ids FILE]
+ *   tsx scripts/plugin-request.ts --repo owner/repo [--firmware hundekraft|opus|op1r] [--summary FILE] [--ids FILE]
  *   tsx scripts/plugin-request.ts --watch [--dry] [--summary FILE] [--ids FILE]
  *
  * --watch looks in every repo plugins/log.json names for built plugin files not listed yet (the daily
@@ -69,7 +69,7 @@ async function target(): Promise<{ repo: string; firmware: RequestFirmware | nul
     return { ...found, issue };
   }
   const repo = parseRepo(opt('--repo') ?? '');
-  if (repo === null) return 'usage: --issue N | --repo owner/repo [--firmware hundekraft|opus]';
+  if (repo === null) return 'usage: --issue N | --repo owner/repo [--firmware hundekraft|opus|op1r]';
   const fw = opt('--firmware');
   return { repo, firmware: fw !== undefined && (REQUEST_FIRMWARES as readonly string[]).includes(fw) ? (fw as RequestFirmware) : null };
 }
@@ -160,8 +160,8 @@ async function writeDrafts(result: DraftResult, issue: number | undefined): Prom
   return shots;
 }
 
-/** Repos the workshop and opus refresher (listed_plugins.py) keeps; the watch leaves them to it. */
-const REFRESHED_REPOS = ['hundekraft/op1-workshop', 'lizardman245/opus'];
+/** Repos the workshop, opus and op1r refresher (listed_plugins.py) keeps; the watch leaves them to it. */
+const REFRESHED_REPOS = ['hundekraft/op1-workshop', 'lizardman245/opus', 'pcppcp/op1r', 'pcppcp/op1r-src'];
 
 /**
  * --watch: every repo plugins/log.json names, looked at for plugin files that aren't listed yet. A repo or file

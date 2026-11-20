@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { compareVersions, summary, updatePlugin, type Remote } from './plugin-updates-lib';
+import { op1pFile } from '../test/op1p';
 
 const plugin = (id: string): Uint8Array => new Uint8Array(readFileSync(new URL(`../../plugins/${id}/${id}.knl`, import.meta.url)));
 /** A real kennel file: an fx saved as "ensemble". */
@@ -48,6 +49,34 @@ describe('plugin updates from the author’s repo', () => {
       sizeBytes: ensemble.length,
     });
     expect(manifest.version).not.toBe('0.1');
+  });
+
+  it('follows a committed .op1p with op1r’s check: same saved name, and a date version moves to the new day', async () => {
+    const path = 'bin/tape_drift.op1p';
+    const at = (sha: string): string => `https://raw.githubusercontent.com/ann/drift/${sha}/${path}`;
+    const commits = `repos/ann/drift/commits?path=${encodeURIComponent(path)}&per_page=1`;
+    const listing = (): Record<string, unknown> => ({
+      id: 'tape_drift',
+      kind: 'fx',
+      firmware: 'op1/op1r',
+      link: 'https://github.com/ann/drift',
+      fileUrl: at(OLD),
+      sha256: 'c'.repeat(64),
+      sizeBytes: 10,
+      version: '2026-11-01',
+      savedName: 'tape drift',
+    });
+    const newer = op1pFile({ name: 'tape drift', kind: 1, filler: 8 });
+    const api = { [commits]: [{ sha: NEW, commit: { committer: { date: '2026-11-19T10:00:00Z' } } }] };
+    const manifest = listing();
+    const found = await updatePlugin(manifest, remote(api, { [at(NEW)]: newer }));
+    expect(found.problems).toEqual([]);
+    expect(manifest).toMatchObject({ fileUrl: at(NEW), sizeBytes: newer.length, version: '2026-11-19' });
+
+    const renamed = await updatePlugin(listing(), remote(api, { [at(NEW)]: op1pFile({ name: 'drift', kind: 1 }) }));
+    expect(renamed.problems[0]?.message).toMatch(/saved as "drift", not the fx "tape drift" listed/);
+    const knl = await updatePlugin(listing(), remote(api, { [at(NEW)]: ensemble }));
+    expect(knl.problems[0]?.message).toMatch(/fails co-op's check/);
   });
 
   it('leaves an unchanged file alone', async () => {

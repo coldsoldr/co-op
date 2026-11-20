@@ -18,6 +18,7 @@ import {
   tableRowFor,
 } from './plugin-request-lib';
 import type { Remote } from './plugin-updates-lib';
+import { op1pFile } from '../test/op1p';
 
 /** A real kennel file: an fx saved as "ensemble". */
 const ensemble = new Uint8Array(readFileSync(new URL('../../plugins/ensemble/ensemble.knl', import.meta.url)));
@@ -38,7 +39,7 @@ function repo(
       }
       if (path === `repos/${name}/git/trees/main?recursive=1`) return { tree: Object.keys(files).map((p) => ({ path: p, type: 'blob' })) };
       if (path === `repos/${name}/releases/latest`) return extra.release ? { tag_name: extra.release } : null;
-      if (path.startsWith(`repos/${name}/commits?path=`)) return [{ sha: 'f'.repeat(40) }];
+      if (path.startsWith(`repos/${name}/commits?path=`)) return [{ sha: 'f'.repeat(40), commit: { committer: { date: '2026-11-19T10:00:00Z' } } }];
       if (path === `repos/${name}/pages`) return extra.pages ? { html_url: extra.pages, source: { path: '/docs' } } : null;
       return null;
     },
@@ -172,6 +173,34 @@ describe('drafting listings', () => {
     expect(none.drafts).toHaveLength(0);
     expect(none.problems[0]).toMatch(/doesn’t say which firmware/);
     expect((await draftListings('a/vague', 'hundekraft', vague, new Map())).drafts[0]?.manifest.firmware).toBe('op1/hundekraft');
+  });
+
+  it('drafts an op1r .op1p from its header: saved name with spaces, kind, author, and a pinned download', async () => {
+    const delay = op1pFile({ name: 'tape drift', kind: 1, author: 'Ann' });
+    const files = { 'README.md': '# Tape Drift\n\nA wobbly tape delay for op1r 64 or later that drifts out of time.\n', 'bin/tape_drift.op1p': delay };
+    const r = await draftListings('ann/drift', 'op1r', repo('ann/drift', files, { license: 'GPL-3.0' }), new Map());
+    expect(r.problems).toEqual([]);
+    expect(r.drafts[0]?.manifest).toMatchObject({
+      id: 'tape_drift',
+      firmware: 'op1/op1r',
+      kind: 'fx',
+      author: 'Ann',
+      savedName: 'tape drift',
+      requires: 'op1r 64',
+      fileUrl: `https://raw.githubusercontent.com/ann/drift/${'f'.repeat(40)}/bin/tape_drift.op1p`,
+      sizeBytes: delay.length,
+    });
+    // No release and no version in an .op1p: the day the file last changed.
+    expect(r.drafts[0]?.manifest.version).toBe('2026-11-19');
+    expect(r.drafts[0]?.manual).toContain("op1r's web patcher");
+    expect(r.drafts[0]?.manifest.tags).toContain('op1r');
+  });
+
+  it('tells op1r from a README that names it, and drafts nothing when it names two firmwares', async () => {
+    const one = repo('a/seq', { 'README.md': '# Seq\n\nA step sequencer plugin for op1r, as an .op1p, that plays in time.\n' });
+    expect((await draftListings('a/seq', null, one, new Map())).drafts[0]?.manifest.firmware).toBe('op1/op1r');
+    const two = repo('a/seq2', { 'README.md': '# Seq\n\nA step sequencer for hundekraft and op1r that plays in time.\n' });
+    expect((await draftListings('a/seq2', null, two, new Map())).drafts).toHaveLength(0);
   });
 
   it('says so for a repo it cannot read', async () => {

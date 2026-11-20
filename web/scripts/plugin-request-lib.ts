@@ -2,11 +2,13 @@
  * Drafts co-op listings from a plugin's GitHub repo, for the plugin-request workflow
  * (.github/workflows/plugin-request.yml). No model is involved: it reads only facts the repo states.
  *
- * - Each built plugin file in the repo (.knl, .opmod, .coop) is one plugin; a repo with none is one
+ * - Each built plugin file in the repo (.knl, .opmod, .coop, .op1p) is one plugin; a repo with none is one
  *   plugin named after the repo, if its firmware can be told.
  * - An opus plugin's manifest.txt gives its name, author, version, kind and the Opus core it needs. A
  *   .knl's header gives its saved name, kind, author and version, and a .knl committed in the repo gets
  *   a pinned fileUrl so its card can install it over USB.
+ * - An .op1p is an op1r plugin: its header gives its saved name, kind and author, and one committed in the
+ *   repo gets a pinned fileUrl so its card can download it (op1r's own web patcher installs it).
  * - The nearest README to the file is the plugin's own page: the link points there when it is a folder of
  *   its own, and its first paragraph and first screen image become the draft description and screenshot.
  *   A README shared by several plugins is read by the section headed with the plugin's name.
@@ -16,11 +18,22 @@
  * the listing files for the owner to review in the pull request.
  */
 import { createHash } from 'node:crypto';
-import { HUNDEKRAFT_ID, MAX_DESCRIPTION, MAX_KNL_BYTES, OPUS_ID, checkKnl, type PluginKind } from '@co-op/shared/plugins';
+import {
+  HUNDEKRAFT_ID,
+  MAX_DESCRIPTION,
+  MAX_KNL_BYTES,
+  MAX_OP1P_BYTES,
+  OPUS_ID,
+  checkKnl,
+  checkOp1p,
+  idFromSavedName,
+  type PluginFileInfo,
+  type PluginKind,
+} from '@co-op/shared/plugins';
 import type { RequestFirmware } from '@co-op/shared/plugin-request';
 import type { Remote } from './plugin-updates-lib';
 
-export type Firmware = 'op1/hundekraft' | 'op1/opus' | 'op1/coop';
+export type Firmware = 'op1/hundekraft' | 'op1/opus' | 'op1/coop' | 'op1/op1r';
 
 export interface Draft {
   id: string;
@@ -47,8 +60,12 @@ export interface DraftResult {
 
 /** At most this many plugins from one repo; a repo with more is for a person to look at. */
 export const MAX_PLUGINS = 12;
-const EXT: Record<string, Firmware> = { '.knl': 'op1/hundekraft', '.opmod': 'op1/opus', '.coop': 'op1/coop' };
-const FIRMWARE_LABEL: Record<Firmware, string> = { 'op1/hundekraft': 'hundekraft', 'op1/opus': 'opus', 'op1/coop': 'coop' };
+const EXT: Record<string, Firmware> = { '.knl': 'op1/hundekraft', '.opmod': 'op1/opus', '.coop': 'op1/coop', '.op1p': 'op1/op1r' };
+const FIRMWARE_LABEL: Record<Firmware, string> = { 'op1/hundekraft': 'hundekraft', 'op1/opus': 'opus', 'op1/coop': 'coop', 'op1/op1r': 'op1r' };
+/** op1r's web patcher, which installs .op1p files (co-op downloads them). */
+const OP1R_PATCHER_URL = 'https://pcppcp.github.io/op1r/web/';
+/** A file name op1r loads from plugins/ (shared/src/plugins.ts, the fileUrl rule for .op1p). */
+const OP1P_FILE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,34}\.op1p$/;
 /** Folders whose plugin files are someone else's examples or build kit, not this repo's plugins. */
 const SKIP_DIR = /(^|\/)(examples?|tests?|sdk|plugin-kit|vendor|third_party|node_modules|\.github)(\/|$)/i;
 const TAG_WORDS: [RegExp, string][] = [
@@ -368,10 +385,13 @@ function kindFromProse(prose: string): PluginKind {
 function firmwareFromProse(prose: string, hint: RequestFirmware | null): Firmware | null {
   if (hint === 'hundekraft') return 'op1/hundekraft';
   if (hint === 'opus') return 'op1/opus';
-  const opus = /\bopus\b|\.opmod\b/i.test(prose);
-  const kennel = /\bhundekraft\b|\bkennel\b|\.knl\b/i.test(prose);
-  if (opus === kennel) return null;
-  return opus ? 'op1/opus' : 'op1/hundekraft';
+  if (hint === 'op1r') return 'op1/op1r';
+  // Only a README that names exactly one firmware says which it is for.
+  const named: Firmware[] = [];
+  if (/\bopus\b|\.opmod\b/i.test(prose)) named.push('op1/opus');
+  if (/\bhundekraft\b|\bkennel\b|\.knl\b/i.test(prose)) named.push('op1/hundekraft');
+  if (/\bop1r\b|\.op1p\b/i.test(prose)) named.push('op1/op1r');
+  return named.length === 1 ? (named[0] as Firmware) : null;
 }
 
 function requiresFrom(firmware: Firmware, prose: string, core: string | undefined): string | undefined {
@@ -383,6 +403,11 @@ function requiresFrom(firmware: Firmware, prose: string, core: string | undefine
   if (firmware === 'op1/hundekraft') {
     const m = /\bhundekraft\s+v?(\d+(?:\.\d+)+)/i.exec(prose);
     return m?.[1] ? `hundekraft ${m[1]}` : undefined;
+  }
+  if (firmware === 'op1/op1r') {
+    // op1r numbers its releases: "op1r 64 or later".
+    const m = /\bop1r\s+v?(\d+)\b/i.exec(prose);
+    return m?.[1] ? `op1r ${m[1]}` : undefined;
   }
   return undefined;
 }
@@ -417,7 +442,9 @@ export function draftManual(p: {
     '',
     '## Get it',
     '',
-    `${needs}, on the original OP-1. Download it from [its page](${p.link}) and follow the install steps there. co-op lists it for reference and hosts no copy.`,
+    p.firmware === 'op1/op1r'
+      ? `${needs}, on the original OP-1. Download the .op1p here or from [its page](${p.link}), and install it with [op1r's web patcher](${OP1R_PATCHER_URL}) (Connect OP-1). co-op hosts no copy: the download comes from the author's repo, checked against its hash.`
+      : `${needs}, on the original OP-1. Download it from [its page](${p.link}) and follow the install steps there. co-op lists it for reference and hosts no copy.`,
     '',
     '## Links',
     '',
@@ -486,7 +513,7 @@ export async function draftListings(
   if (fileless) {
     const firmware = firmwareFromProse(rootReadme, hint);
     if (firmware === null) {
-      result.problems.push('No built plugin file (.knl or .opmod) in the repo, and its README doesn’t say which firmware it is for.');
+      result.problems.push('No built plugin file (.knl, .opmod or .op1p) in the repo, and its README doesn’t say which firmware it is for.');
       return result;
     }
     found = [{ path: '', base: fullName.split('/')[1] ?? 'plugin', firmware }];
@@ -524,7 +551,7 @@ export async function draftListings(
   const taken = new Set(existing.keys());
   /** Ids this run gave out, with the plugin they went to: another firmware's build of it shares the id. */
   const given = new Map<string, string>();
-  const pending: { f: Found; manifest: OpusManifest | null; knl: Uint8Array | null }[] = [];
+  const pending: { f: Found; manifest: OpusManifest | null; file: Uint8Array | null; info: PluginFileInfo | null }[] = [];
   for (const f of found) {
     // An .opmod carries its own manifest; a manifest.txt in the repo is the fallback.
     let manifest: OpusManifest | null = null;
@@ -532,28 +559,31 @@ export async function draftListings(
       const bytes = f.path ? await remote.download(raw(fullName, branch, f.path)) : null;
       manifest = (bytes && bytes.length <= 2 * 1024 * 1024 ? embeddedManifest(bytes) : null) ?? manifests.find((m) => manifestMatches(m, f.base)) ?? null;
     }
-    let knl: Uint8Array | null = null;
-    if (f.firmware === 'op1/hundekraft' && f.path) {
-      knl = await remote.download(raw(fullName, branch, f.path));
-      const author = knl && knl.length <= MAX_KNL_BYTES ? checkKnl(knl).info?.author : undefined;
-      if (author) authors.push(author);
+    // A .knl or .op1p says its own saved name, kind and author in its header.
+    let file: Uint8Array | null = null;
+    let info: PluginFileInfo | null = null;
+    if ((f.firmware === 'op1/hundekraft' || f.firmware === 'op1/op1r') && f.path) {
+      file = await remote.download(raw(fullName, branch, f.path));
+      if (file && f.firmware === 'op1/hundekraft' && file.length <= MAX_KNL_BYTES) info = checkKnl(file).info;
+      if (file && f.firmware === 'op1/op1r' && file.length <= MAX_OP1P_BYTES) info = checkOp1p(file).info;
+      if (info?.author) authors.push(info.author);
     }
     if (manifest?.author && !/\s\/\s|\bby\b/i.test(manifest.author)) authors.push(manifest.author);
-    pending.push({ f, manifest, knl });
+    pending.push({ f, manifest, file, info });
   }
   // The author most of the repo's plugins name, for one whose own credit is a list of people.
   const counts = new Map<string, number>();
   for (const a of authors) counts.set(a, (counts.get(a) ?? 0) + 1);
   const usual = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 
-  for (const { f, manifest, knl } of pending) {
+  for (const { f, manifest, file, info: knlInfo } of pending) {
     const notes: string[] = [];
     const homePath = fileless ? rootReadmePath : homeOf(f);
     const homeText = (await readme(homePath)) ?? '';
     const shared = (sharing.get(homePath)?.size ?? 0) > 1;
     const homeDir = homePath === null ? '' : dirOf(homePath);
 
-    const knlInfo = knl && knl.length <= MAX_KNL_BYTES ? checkKnl(knl).info : null;
+    if (file && !knlInfo) notes.push(`\`${f.path}\` fails co-op's check of a ${FIRMWARE_LABEL[f.firmware]} plugin file, so it gets no download`);
     const nameGuess = manifest?.name ?? (shared ? null : headingName(homeText)) ?? titleCase(f.base);
     const name = nameGuess.slice(0, 60);
     const section = shared ? sectionFor(homeText, [name, f.base]) : null;
@@ -589,6 +619,10 @@ export async function draftListings(
       savedName = manifest.id;
     } else if (f.firmware === 'op1/hundekraft' && knlInfo?.savedName && HUNDEKRAFT_ID.test(knlInfo.savedName)) {
       id = knlInfo.savedName;
+    } else if (f.firmware === 'op1/op1r' && knlInfo?.savedName && HUNDEKRAFT_ID.test(idFromSavedName(knlInfo.savedName))) {
+      // op1r sounds store the header's name, which may have spaces ("pitch delay"): the id has _ for them.
+      id = idFromSavedName(knlInfo.savedName);
+      savedName = knlInfo.savedName;
     } else {
       id = idFrom(f.base, f.firmware);
     }
@@ -607,8 +641,9 @@ export async function draftListings(
       for (let n = 2; taken.has(candidate); n++) candidate = `${id.slice(0, max - String(n).length - 1)}_${n}`;
       notes.push(`\`${id}\` is taken by a different plugin, so this one is \`${candidate}\``);
       id = candidate;
-      savedName = undefined;
-      pinned = false;
+      // An op1r listing keeps its saved name under another id; the others' ids are their saved names.
+      if (f.firmware !== 'op1/op1r') savedName = undefined;
+      pinned = f.firmware === 'op1/op1r';
     }
     taken.add(id);
     given.set(id, norm(f.base));
@@ -664,16 +699,24 @@ export async function draftListings(
       tags: tagsFor(kind, f.firmware, `${name} ${description}`),
     };
 
-    // A .knl committed in the repo installs over USB from its card, pinned to the commit that last changed it.
-    if (f.firmware === 'op1/hundekraft' && knl && knlInfo && pinned && knlInfo.savedName === id && baseOf(f.path) === `${id}.knl`) {
-      const knlVersion = knlInfo.version ?? version;
-      const commits = (await remote.api(`repos/${fullName}/commits?path=${encodeURIComponent(f.path)}&per_page=1`)) as { sha?: string }[] | null;
+    // A .knl committed in the repo installs over USB from its card, pinned to the commit that last changed it. An
+    // .op1p is downloaded from its card the same way; op1r keeps it under its own file name, whatever the id.
+    const knlPin = f.firmware === 'op1/hundekraft' && knlInfo?.savedName === id && baseOf(f.path) === `${id}.knl`;
+    const op1pPin = f.firmware === 'op1/op1r' && knlInfo !== null && OP1P_FILE.test(baseOf(f.path));
+    if (file && knlInfo && pinned && (knlPin || op1pPin)) {
+      const commits = (await remote.api(`repos/${fullName}/commits?path=${encodeURIComponent(f.path)}&per_page=1`)) as
+        | { sha?: string; commit?: { committer?: { date?: string } } }[]
+        | null;
       const sha = commits?.[0]?.sha;
-      if (sha && knlVersion) {
-        manifestOut.version = knlVersion;
+      // An .op1p has no version of its own: the release's, else the day the file last changed (plugin-updates moves it on).
+      const day = /^\d{4}-\d{2}-\d{2}/.exec(commits?.[0]?.commit?.committer?.date ?? '')?.[0];
+      const fileVersion = knlInfo.version ?? version ?? (op1pPin ? day : undefined);
+      if (sha && fileVersion) {
+        manifestOut.version = fileVersion;
         manifestOut.fileUrl = `https://raw.githubusercontent.com/${fullName}/${sha}/${encodePath(f.path)}`;
-        manifestOut.sha256 = createHash('sha256').update(knl).digest('hex');
-        manifestOut.sizeBytes = knl.length;
+        manifestOut.sha256 = createHash('sha256').update(file).digest('hex');
+        manifestOut.sizeBytes = file.length;
+        if (op1pPin && fileVersion === day) notes.push(`version \`${day}\` is the day the .op1p last changed; the repo has no release for it`);
       }
     }
 
@@ -693,7 +736,7 @@ export async function draftListings(
 }
 
 /** The fields that belong to one firmware's build of a plugin. */
-const BUILD_FIELDS = ['firmware', 'link', 'version', 'requires', 'fileUrl', 'sha256', 'sizeBytes'] as const;
+const BUILD_FIELDS = ['firmware', 'link', 'version', 'requires', 'fileUrl', 'sha256', 'sizeBytes', 'savedName'] as const;
 
 /**
  * One plugin built for several firmwares (bloodmoon.knl and bloodmoon.opmod) is one listing with a build
@@ -709,17 +752,17 @@ export function joinBuilds(drafts: readonly Draft[]): Draft[] {
       out.push(...group);
       continue;
     }
-    const order = ['op1/hundekraft', 'op1/opus', 'op1/coop'];
+    const order = ['op1/hundekraft', 'op1/opus', 'op1/coop', 'op1/op1r'];
     const sorted = [...group].sort((a, b) => order.indexOf(String(a.manifest.firmware)) - order.indexOf(String(b.manifest.firmware)));
     const lead = sorted[0] as Draft;
     const shared: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(lead.manifest)) if (!(BUILD_FIELDS as readonly string[]).includes(k) && k !== 'savedName') shared[k] = v;
+    for (const [k, v] of Object.entries(lead.manifest)) if (!(BUILD_FIELDS as readonly string[]).includes(k)) shared[k] = v;
     shared.builds = sorted.map((d) => {
       const build: Record<string, unknown> = {};
       for (const k of BUILD_FIELDS) if (d.manifest[k] !== undefined) build[k] = d.manifest[k];
       return build;
     });
-    shared.tags = [...new Set(sorted.flatMap((d) => d.manifest.tags as string[]))].filter((t) => !['hundekraft', 'opus', 'coop'].includes(t)).slice(0, 8);
+    shared.tags = [...new Set(sorted.flatMap((d) => d.manifest.tags as string[]))].filter((t) => !['hundekraft', 'opus', 'coop', 'op1r'].includes(t)).slice(0, 8);
     out.push({
       ...lead,
       manifest: shared,

@@ -111,13 +111,13 @@ install. `author` is whoever made the plugin, so it shows under their name: a po
 porter's, with the original in `credits`. The manual says what it does and links to its source
 and its full manual.
 
-The easiest way to list a hundekraft or opus plugin is to paste its GitHub repo link on the
+The easiest way to list a hundekraft, opus or op1r plugin is to paste its GitHub repo link on the
 site's Submit a plugin page (no GitHub account needed), or into the plugin-request issue form. That
 files a `plugin-request` issue, and the `plugin-request` workflow
 (`.github/workflows/plugin-request.yml`, `web/scripts/plugin-request-lib.ts`) drafts the listing
-from the repo without a model: one plugin per built `.knl`, `.opmod` or `.coop` in it, with the
-name, author, kind and Opus core from an opus `manifest.txt` or the `.knl` header, the licence,
-the link to the plugin's own folder, a pinned `fileUrl` for a committed `.knl`, and the README's
+from the repo without a model: one plugin per built `.knl`, `.opmod`, `.coop` or `.op1p` in it, with the
+name, author, kind and Opus core from an opus `manifest.txt` or the `.knl` or `.op1p` header, the licence,
+the link to the plugin's own folder, a pinned `fileUrl` for a committed `.knl` or `.op1p`, and the README's
 paragraph and screen image as a draft description and screenshot. It opens a pull request into dev
 and links it on the issue. Nothing goes on the site until the owner merges it, and the owner's
 `/polish-plugins` skill later rewrites the drafted text.
