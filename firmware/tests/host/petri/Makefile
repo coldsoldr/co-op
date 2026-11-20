@@ -11,14 +11,16 @@ WAVDIR ?= ../../../build/petri_wav
 BLOCKS ?= 60000
 SIM_BLOCKS ?= 1500
 SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
-CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wextra -Wno-unused-parameter
+# 0.3: the idle path is off here (COOP_FX_NO_IDLE), so the digest is comparable with the versions before it (after an
+# idle time the filter and the space are an LSB or so apart); ../idle tests that path against this build
+CXXFLAGS := -DCOOP_FX_NO_IDLE -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wextra -Wno-unused-parameter
 COOP_SRC := $(COOP)/petri.cc $(COOP)/petri_screen.cc $(COOP)/src/petri_engine.cc $(COOP)/src/halfband.cc \
             ../fx_scratch_host.cc ../screen_host.cc
 COOP_DEPS := $(wildcard $(COOP)/*.cc $(COOP)/*.h $(COOP)/src/*) ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h \
              ../../../sdk/coop_plugin.h
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
-SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns
+SIMFLAGS := -DCOOP_FX_NO_IDLE -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns
 
 .PHONY: all sim screens tables clean
 all: $(BUILD)/petri_test

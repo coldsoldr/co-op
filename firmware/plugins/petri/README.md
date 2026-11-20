@@ -206,8 +206,8 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
   bytes a slot, cleared by `init`) and divided only for a word that moved (four `___divsi3` calls a block before):
   every row about 620 lower, all 20,488 / 35,523, the clearing blocks 22,082 at most. The output and the display
   words are 0.2's bit for bit (the test's digest, "Tests"). The engine's own per-block divides (pattern's and warp's
-  loop gain, warp's tap times, a grain's envelope step at its start) are as they were. File 36,348 bytes, `.text`
-  22,584, `.bss` 464; imports unchanged.
+  loop gain, warp's tap times, a grain's envelope step at its start) are as they were. With this change alone: file
+  36,348 bytes, `.text` 22,584, `.bss` 464. 0.3 also has the idle path ("Idle" below, with the file as it ships).
   The table is 0.2's (0.1: all 20,936 / 33,416). The averages moved with the material (the ring's mapping is about 40
   cycles a voice); the maxima are up to 2.8 k higher where the space's copy now falls in an effect's busiest block
   (it comes four times as often). **Over the 30 k SHOULD** (guidelines section 2.4): warp, as in 0.1 (three filtered
@@ -216,6 +216,62 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
   interpolate-mix-soft-limit 5.9 k), the filter ~3 k, the space ~2.2 k; each voice ~0.6 k. The device figure (stats
   `cost` line) is pending: expect 10-35 % more, more where the voices read far apart in SDRAM (each voice touches about
   4 cache lines a block). **Device: not run.**
+
+## Idle (0.3)
+
+petri left on a position used to compute its whole block on silence. 0.3 stops computing samples when the record
+holds nothing (`docs/efficiency-audit.md` finding 6; the code is in `petri.cc`, "The idle path", and
+`src/petri_engine.cc` `ProcessIdle`).
+
+- **When.** The input block is exact silence (every sample's top 16 bits 0), hold is off, and for 947 blocks in a row
+  (1.37 s: the record once round and a margin) the engine wrote only zeros to the record (the input, and for the
+  effects that feed back, the wet) and gave a wet output of exact zeros. Every frame of the record is then zero, so
+  no voice, whatever it is told to play, plays anything. For warp its three buses must be at rest as well.
+- **Idle.** A block is the detector, the effect's scheduler and the voices' positions and envelopes as ever: the same
+  grains start and end in the same blocks, the same random numbers are drawn, the write head moves on. The two tone
+  controls and the mix are smoothed and the display is published. The voices' kernel, the record's write, the
+  filter, the space and the half-rate path are not run.
+- **Waking.** The check is at the top of the render, before any DSP: the first block with a non-zero sample, or
+  hold, is rendered in full. No sample is skipped, and the note meets the grains the never-idle effect would have
+  had running.
+- **Never idle:** hold; any input; a tail that still sounds; warp with a bus not at rest.
+- **While idle the output is petri's own: zeros.** In the lockstep test the two give the same samples up to the
+  wake's first block.
+- **After waking it is not the same sample for sample**: the filter and the space keep their last states under a
+  silent output (the space gates its last +-2 LSB itself), stopped in the idle effect, worked on in the other. The
+  same grains then pass a filter and a space an LSB or so apart. The same difference shows between two that never
+  idle when what they played before the silence differed by 1 % (the last column).
+
+| A note, silence, a soft note (40 LSB), a loud one | idle after the input | difference while idle | after the wake: soft / loud / the tail | two that never idle, the earlier notes 1 % apart |
+|---|---|---|---|---|
+| the eleven effects at the defaults | 1.4 s (cut) .. 4.7 s (seq) | 0 LSB | 0-3 / 0-3 / 0-3 LSB | the same figures |
+| tunnel, repeats and space at the top, full wet | 16.8 s (output zero from 15.4 s) | 0 | 8 / 8 / 9 | 8 / 8 / 11 |
+| pattern, repeats at the top, reverse, full wet | 6.6 s | 0 | 6 / 6 / 6 | 6 / 4 / 6 |
+| warp, repeats at the top, full wet | 6.6 s | 0 | 6 / 4 / 6 | 6 / 4 / 6 |
+
+(16-bit output LSB, the largest sample difference; the wake's first block is 0 in every row. `make -C
+tests/host/idle FX=petri`.) The same run: 20,000 blocks that never go silent and 20,000 of notes with 150 ms gaps:
+identical, 0 idle blocks. Hold in mosaic, tunnel, pattern and warp: a minute of silence, 0 idle blocks, 0 LSB; engaged
+while idle: awake on that block. Every turn walking and jumping through 1,500 idle blocks: 0 LSB.
+
+| Simulator, cycles a block (`make -C tests/host/idle sim FX=petri`) | 0.3 without the idle path | 0.3 playing | silent, not yet idle | idle avg / max |
+|---|---|---|---|---|
+| mosaic | 18,725 | 18,860 | 19,467 | **2,474** / 3,410 |
+| seq | 17,527 | 17,672 | 18,251 | **2,190** / 4,041 |
+| glide | 19,875 | 20,000 | 20,527 | **2,606** / 3,813 |
+| haze | 21,897 | 22,037 | 22,561 | **2,453** / 3,485 |
+| tunnel | 23,091 | 23,182 | 23,680 | **2,838** / 3,893 |
+| strum | 18,001 | 18,140 | 17,451 | **2,151** / 2,156 |
+| blocks | 17,185 | 17,324 | 17,251 | **2,126** / 2,126 |
+| cut | 16,429 | 16,565 | 17,321 | **2,043** / 2,043 |
+| arp | 17,727 | 17,871 | 18,426 | **2,179** / 3,306 |
+| pattern | 22,261 | 22,313 | 22,850 | **2,947** / 2,948 |
+| warp | 29,194 | 29,359 | 29,760 | **3,316** / 5,684 |
+
+The idle figure is the scheduler and the voices' bookkeeping (the maxima are blocks in which grains start).
+`tests/host/petri` builds the plugin with `-DCOOP_FX_NO_IDLE`, so its digest stays comparable: 0.2's, host and
+simulator (the engine's playing path is the code it was). File 37,792 bytes, `.text` 23,652, `.bss` 504; imports
+unchanged.
 
 ## Tests
 

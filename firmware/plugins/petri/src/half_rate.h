@@ -191,6 +191,12 @@ class HalfRate {
     MixSoftLimit(r, wet_full_[1], kFxBlockSize, fade_out, fade_in, &kSoftLimit);
   }
 
+  // petri 0.3, the idle path: Mix's smoothing of the mix alone (no wet, a silent dry: nothing to compute).
+  void IdleMix(int32_t mix) {
+    const int32_t target = (mix << 1) + (mix >> 14);   // Q16
+    mix_ += (target - mix_) >> 2;
+  }
+
  private:
   static const uint32_t kGapCycles = 2000000;   // 5 ms at 400 MHz
 

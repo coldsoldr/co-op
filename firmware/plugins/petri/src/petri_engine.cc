@@ -235,7 +235,10 @@ inline void VoiceLoop(const uint32_t* rec, uint32_t pos, int32_t rate, int32_t* 
 
 inline uint32_t Pack(int32_t lo, int32_t hi) { return (static_cast<uint32_t>(hi) << 16) | (static_cast<uint32_t>(lo) & 0xffff); }
 
-__attribute__((noinline)) bool RenderVoices(Engine* e, int32_t mod_q24) {
+// kQuiet (0.3, the idle path): everything but the kernel (the record is zeros: the voice adds nothing). One body for
+// the two (RenderVoices is what it was, instruction for instruction).
+template <bool kQuiet>
+inline __attribute__((always_inline)) bool RenderVoicesT(Engine* e, int32_t mod_q24) {
   bool bus = false;
   for (int32_t vi = 0; vi < kVoices; ++vi) {
     Voice& v = e->v[vi];
@@ -265,7 +268,7 @@ __attribute__((noinline)) bool RenderVoices(Engine* e, int32_t mod_q24) {
     if (v.bus > 0) bus = true;
     int32_t* const ol = v.bus > 0 ? e->bus[v.bus - 1][0] : e->wl;
     int32_t* const orr = v.bus > 0 ? e->bus[v.bus - 1][1] : e->wr;
-    VoiceLoop(rec, kpos, rate, ol, orr, Pack(v.gl, v.gr), Pack((gl1 - v.gl) >> 5, (gr1 - v.gr) >> 5));
+    if (!kQuiet) VoiceLoop(rec, kpos, rate, ol, orr, Pack(v.gl, v.gr), Pack((gl1 - v.gl) >> 5, (gr1 - v.gr) >> 5));
     v.pos += static_cast<uint32_t>(rate) * kN;
     v.gl = gl1;
     v.gr = gr1;
@@ -278,6 +281,9 @@ __attribute__((noinline)) bool RenderVoices(Engine* e, int32_t mod_q24) {
   }
   return bus;
 }
+
+__attribute__((noinline)) bool RenderVoices(Engine* e, int32_t mod_q24) { return RenderVoicesT<false>(e, mod_q24); }
+__attribute__((noinline)) bool RenderVoicesQuiet(Engine* e, int32_t mod_q24) { return RenderVoicesT<true>(e, mod_q24); }
 
 // ---- the effects (once a block, before the voices) ----
 
@@ -939,7 +945,12 @@ int32_t ClearStep(Engine* e, int32_t at, int32_t words) {
   return end;
 }
 
-void Process(Engine* e, const int16_t* in_l, const int16_t* in_r, int16_t* out_l, int16_t* out_r, const Controls& c) {
+namespace {
+
+// What a call does before the voices render: the latches, an effect change, the detector, the effect's scheduler.
+// Returns the pitch modulation for the voices. Inlined into Process (as it was written there) and ProcessIdle.
+inline __attribute__((always_inline)) int32_t Prepare(Engine* e, const int16_t* in_l, const int16_t* in_r,
+                                                      const Controls& c) {
   const int32_t fx = Clamp(c.effect, 0, kNumEffects - 1);
   e->hold = c.hold;
   e->reverse = c.reverse;
@@ -970,6 +981,41 @@ void Process(Engine* e, const int16_t* in_l, const int16_t* in_r, int16_t* out_l
     case FX_PATTERN: Pattern(e, cc); break;
     default: Warp(e, cc); break;
   }
+  return mod_q24;
+}
+
+}  // namespace
+
+bool BusAtRest(const Engine* e) {
+  int32_t any = 0;
+  for (int32_t b = 0; b < kBuses; ++b) any |= e->bus_z[b][0] | e->bus_z[b][1];
+  return any == 0;
+}
+
+bool WroteSilence(const Engine* e) {
+  // Process wrote kN frames at the write position and moved it on (0 after the ring's last frames).
+  const uint32_t* const rec = e->rec + (e->hp == 0 ? kRecLen - kN : e->hp - kN);
+  uint32_t any = 0;
+  for (int32_t i = 0; i < kN; ++i) any |= rec[i];
+  return any == 0;
+}
+
+void ProcessIdle(Engine* e, const int16_t* zero_l, const int16_t* zero_r, const Controls& c) {
+  const int32_t mod_q24 = Prepare(e, zero_l, zero_r, c);
+  RenderVoicesQuiet(e, mod_q24);                  // (a bus voice: the buses are at rest, the caller's condition)
+  if (!e->hold) {                                 // the record: its fade-in's count and the write head
+    if (e->rec_in < 32767) e->rec_in = e->rec_in + 1024 > 32767 ? 32767 : e->rec_in + 1024;
+    const int32_t at = e->hp;
+    e->head += kN;
+    e->hp = at + kN < kRecLen ? at + kN : 0;
+  }
+  // The tone section: the two controls' smoothing (FilterRun's and SpaceRun's first lines).
+  e->filt.knob += ((Clamp(c.filter, 0, 32767) << 8) - e->filt.knob) >> 3;
+  e->space.amount += (Clamp(c.space, 0, 32767) - e->space.amount) >> 3;
+}
+
+void Process(Engine* e, const int16_t* in_l, const int16_t* in_r, int16_t* out_l, int16_t* out_r, const Controls& c) {
+  const int32_t mod_q24 = Prepare(e, in_l, in_r, c);
   for (int32_t i = 0; i < kN; ++i) e->wl[i] = e->wr[i] = 0;
   if (RenderVoices(e, mod_q24)) BusRun(e);
 

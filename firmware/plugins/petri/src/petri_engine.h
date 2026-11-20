@@ -135,6 +135,15 @@ const int32_t kClearEnd = kRecWords + kSpaceSize / 2;
 int32_t ClearStep(Engine* e, int32_t at, int32_t words);
 // One call: in[2][kN] the decimated input, out[2][kN] the wet (int16).
 void Process(Engine* e, const int16_t* in_l, const int16_t* in_r, int16_t* out_l, int16_t* out_r, const Controls& c);
+// 0.3, the idle path: true when the last Process (hold off) wrote kN frames of zeros to the record.
+bool WroteSilence(const Engine* e);
+// 0.3, the idle path (../petri.cc): a call on a record of zeros, with a silent input (zero_l, zero_r: kN zeros) and
+// hold off. Everything Process does but the samples: the detector, the effect's scheduler, the voices' positions,
+// envelopes and ends, the write head, the two smoothed tone controls; the voices' kernel, the record's write, the
+// filter and the space are not run (their inputs are zeros), and there is no output (it is silence).
+void ProcessIdle(Engine* e, const int16_t* zero_l, const int16_t* zero_r, const Controls& c);
+// True when warp's three filtered buses are at rest (their states 0: a bus voice then adds nothing to a silent sum).
+bool BusAtRest(const Engine* e);
 
 // The grain envelope (exposed for the host test): shape at phase Q24 (0..1 << 24), Q15.
 int32_t Envelope(int32_t shape, uint32_t phase_q24);
