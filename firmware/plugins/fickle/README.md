@@ -268,7 +268,8 @@ the clearing blocks included. The screen reads them through `Published<>` while 
     15,351 / 18,577, reverb + loop tape_1 + dub 29,330 / 42,593. Still dividing: the loop's position and envelope bin
     while a loop plays (by its length), slip's head display (by its refresh).
     The output and the display words are 0.2's bit for bit: the test's digest (below) over the whole stress run and
-    in the simulator, 0.2's sources against 0.3's. File 36,124 bytes, `.text` 22,312, `.bss` 476; imports unchanged.
+    in the simulator, 0.2's sources against 0.3's. With this change alone: file 36,124 bytes, `.text` 22,312, `.bss`
+    476. 0.3 also has the idle path ("Idle" below, with the file as it ships and its figures).
   - **Device figures: pending.**
 - **How it got there** (`make -C tests/host/fickle prof`: each pass's cycles):
   - Every product in a per-sample loop is a single 16 x 16 multiply. GCC drops `int16` casts once it can prove the
@@ -284,6 +285,55 @@ the clearing blocks included. The screen reads them through `Published<>` while 
   - From the first version (reverb + loop + dub 55-63 k at 32 kHz) to this: about -45 %.
 - No assembly files (nothing for `tools/asm_lint.py`). The two inline instructions are single packets with no parallel
   slots.
+
+## Idle (0.3)
+
+fickle left on a position used to compute its whole block on silence. 0.3 stops when there is nothing left to
+compute, and its arithmetic makes that exact: the feedback paths round towards zero, so a silent input dies to true
+zeros (`docs/efficiency-audit.md` finding 6; the code is in `fickle.cc`, "the idle path").
+
+- **When.** The input block is exact silence (every sample's top 16 bits 0); freeze and loop are off (the looper
+  listening); the wet mode and the loop mode are the words' and nothing is fading; in the delay mode modify is under
+  31,000 (it holds from 31,775); and for 16,448 clock samples in a row (the wet line once round and a margin: 0.69 s
+  at 24 kHz, 0.51 s at 32 kHz, 8.2 s at 2 kHz) the wet channel took in, gave out and wrote to its line only zeros,
+  with every small state at rest (the pre-filter, the two output poles, the feedback, the routing).
+- **Idle.** A block is the clock (its phase and its count of clock samples), the wet mode's bookkeeping (the reverb's
+  size easing, the delay's time and its crossfade count, slip's heads and refresh), zeros into the looper's buffer
+  (it keeps listening: a capture after a silence holds that silence, as before), the mix's easing and the display.
+- **Waking.** The check is at the top of the render, before any DSP: the first block with a non-zero sample, a
+  latch, a mode change or the delay's modify in its hold region is rendered in full. No sample is skipped.
+- **Never idle:** freeze (any wet mode); a loop playing, fading out or being dubbed; the delay holding (modify from
+  31,000 up); any input; a tail that still sounds.
+- **Exact.** Everything skipped would have computed zeros from zeros, so the output and the state after any number of
+  idle blocks are the never-idle effect's, bit for bit. `make -C tests/host/fickle` runs with the idle path on and
+  still prints 0.2's digest (60,000 blocks; the simulator build too).
+
+`make -C tests/host/idle FX=fickle` (the effect at two positions, one with the idle path switched off, every sample
+compared): 20,000 blocks that never go silent and 20,000 of notes with 150 ms gaps: identical, 0 idle blocks. A note,
+silence, a soft note, a loud one: idle 1.4 s after the input (reverb, defaults), 1.5 s (delay), 0.8 s (slip), 1.6 s
+(long reverb at 32 kHz), 16.6 s (delay at a 6 kHz clock: its tail lasts 13.6 s); 0 LSB before, while idle, on the
+wake and after it, in every case. Freeze in each wet mode, a loop playing, a loop with dub, the delay holding: a
+minute of silence, 0 idle blocks, 0 LSB; engaged while idle: awake on that block. Every turn walking and jumping
+through 1,500 idle blocks, then a note: 0 LSB.
+
+| Simulator, cycles a block (`make -C tests/host/idle sim FX=fickle`) | 0.3 without the idle path | 0.3 playing | silent, not yet idle | idle |
+|---|---|---|---|---|
+| reverb, defaults (24 kHz) | 19,041 | 19,190 | 19,919 | **1,887** |
+| delay | 11,966 | 12,128 | 12,855 | **1,927** |
+| slip | 13,447 | 13,171 | 13,838 | **2,889** (the heads' bookkeeping) |
+| reverb, long, 32 kHz | 22,637 | 22,798 | 23,639 | **2,130** |
+| delay, 6 kHz | 8,475 | 8,610 | 9,066 | **1,363** |
+
+- A playing block pays 45-180 cycles for the idle path (the silence test, the conditions, one call: the block's
+  passes are now their own function, `RenderBlock`). With that path's code inside the one render the compiler laid
+  the passes' loops out worse, 350-1,000 cycles a block; in its own function they are as they were.
+- slip is 220-420 cycles cheaper than before: its loop sat at the edge of what the compiler turns into a hardware
+  loop and is now out of line (`Slip`), where it gets one whatever is around it.
+- `make -C tests/host/fickle sim` with the idle path in (600 blocks, top clock / default clock): reverb listening
+  22,994 / 19,420, frozen 15,923 / 13,922; delay 13,761 / 12,359; slip 14,935 / 13,347; reverb + loop tape_1 + dub
+  29,472 / 24,741.
+
+File 38,164 bytes, `.text` 24,232, `.bss` 516 (+40: 8 bytes a slot); imports unchanged.
 
 ## Tests
 

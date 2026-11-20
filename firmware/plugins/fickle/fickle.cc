@@ -754,7 +754,10 @@ inline int32_t WetAt(const uint32_t *wet, uint32_t pos, int32_t *yl)
     return Lerp(Hi(a), Hi(c), fr);
 }
 
-void Slip(State *s, const int32_t *inl, const int32_t *inr, int32_t ticks, int32_t time, int32_t modv, bool freeze)
+/* Out of line (0.3): inside the block's function its loop sat at the edge of what the compiler makes a hardware loop,
+ * and lost it when that function changed (the idle path): 850 cycles a block at the top clock. */
+__attribute__((noinline)) void Slip(State *s, const int32_t *inl, const int32_t *inr, int32_t ticks, int32_t time, int32_t modv,
+                                    bool freeze)
 {
     /* The input is written round the line all the time; every refresh (time: 512 .. 16384 clock samples, exponential,
      * shortened where the speed needs the room) a head jumps back and plays from there at the speed (modify: 14 steps,
@@ -806,6 +809,171 @@ void Slip(State *s, const int32_t *inl, const int32_t *inr, int32_t ticks, int32
     s->s_xf = xf;
 }
 
+/* ---- the idle path (0.3; docs/efficiency-audit.md finding 6, README "Idle") ----
+ *
+ * fickle left on a position cost its whole block on silence. Its arithmetic lets a silent input die to true zeros
+ * (the feedback paths round towards zero), so its idle state is exact: while the input block is exact silence, freeze
+ * and loop are off (the looper listening), the wet mode and the loop mode are the words' and nothing is fading, each
+ * block's check asks whether the wet channel took in, gave out and wrote to its line only zeros. kIdleTicks clock
+ * samples of that in a row (the whole wet line once round and a margin: 0.69 s at 24 kHz, 8.2 s at 2 kHz) with every
+ * small state at rest (Rest), and the render stops computing: a block is then the clock (its phase and the count of
+ * clock samples), the wet mode's own bookkeeping (the reverb's size easing, the delay's time and its crossfade count,
+ * slip's heads and refresh), zeros into the looper's buffer (it keeps listening: a capture after a silence holds
+ * silence), the mix's easing and the display. Everything else would have computed zeros from zeros, so the output
+ * and the state after any number of idle blocks are the never-idle effect's, bit for bit (tests/host/idle). The first
+ * block with any input, a latch, a mode change or the delay's modify in its hold region is rendered in full: the check
+ * is before the DSP, no sample of a new note is lost.
+ * Tiny per-slot values in .bss (guidelines 2.3: the state has no room), cleared by init. */
+const int32_t kIdleTicks = kWetPairs + kBlock;         /* clock samples of zeros before the idle state */
+const int32_t kIdleDelayModify = 31000;                /* delay: modify from here up never idles (it holds from 31775) */
+struct IdleState {
+    int32_t zeros;                                     /* clock samples of zeros in a row */
+    int32_t on;
+};
+IdleState g_idle[COOP_FX_SLOTS];
+
+#if defined(COOP_FX_NO_IDLE)                           /* a build that never idles (a test's reference) */
+#define IDLE_OFF true
+#define IDLE_COUNT() ((void)0)
+#define IDLE_LEVEL(x) ((void)0)
+#elif defined(COOP_IDLE_PROBE)                         /* tests/host/idle: the lockstep's switch and its counters */
+}  // namespace
+extern "C" {
+extern int g_coop_idle_off;
+extern uint32_t g_coop_idle_blocks;
+extern int32_t g_coop_idle_level;
+}
+namespace {
+#define IDLE_OFF (g_coop_idle_off != 0)
+#define IDLE_COUNT() ((void)++g_coop_idle_blocks)
+#define IDLE_LEVEL(x) ((void)(g_coop_idle_level = (x)))
+#else
+#define IDLE_OFF false
+#define IDLE_COUNT() ((void)0)
+#define IDLE_LEVEL(x) ((void)0)
+#endif
+
+/* The idle path's pieces are kept out of line (noinline), and the block's passes in their own function (RenderBlock):
+ * a playing block then pays the six-sample test and a call. */
+#define IDLE_COLD __attribute__((noinline))
+
+/* True when the block's input is exact silence on the int16 bus (the top halves all 0). Six samples first: while
+ * anything plays, one of them is not zero and the block costs a few cycles here; only a block that may be silent is
+ * read through (SilentScan). */
+IDLE_COLD bool SilentScan(const int32_t *l, const int32_t *r)
+{
+    uint32_t any = 0;
+    for (int32_t i = 0; i < kBlock; ++i) any |= static_cast<uint32_t>(l[i]) | static_cast<uint32_t>(r[i]);
+    return (any >> 16) == 0;
+}
+inline bool Silent(const int32_t *l, const int32_t *r)
+{
+    const uint32_t some = static_cast<uint32_t>(l[0] | r[0] | l[21] | r[42] | l[kBlock - 1] | r[kBlock - 1]);
+    if (__builtin_expect((some >> 16) != 0, 1)) return false;
+    return SilentScan(l, r);
+}
+
+/* A silent block's check: did the wet channel take in, give out and write to its line only zeros? */
+IDLE_COLD bool WetZeros(const State *s, int32_t ticks)
+{
+    int32_t any = 0;
+    const int32_t *xl = s->xl, *xr = s->xr, *wl = s->wl, *wr = s->wr;
+    for (int32_t k = 0; k < ticks; ++k) any |= xl[k] | xr[k] | wl[k] | wr[k];
+    if (s->wmode != W_SLIP) {                          /* the reverb's and the delay's block of line writes */
+        const uint32_t *tp = s->tp;
+        for (int32_t k = 0; k < ticks; ++k) any |= static_cast<int32_t>(tp[k]);
+    }
+    return any == 0;
+}
+
+/* Every small state where silence leaves it for good: the pre-filter and the two output poles giving 0 (their Q4
+ * states under one LSB: a zero input no longer moves them), the last clock-domain output 0, the routing settled on the
+ * input, no mode fade, the wet channel's feedback 0 and its damping at 0 or its floor (-1, which feeds back as 0). */
+IDLE_COLD bool Rest(const State *s)
+{
+    return ((s->pre_l >> 4) | (s->pre_r >> 4) | (s->s1l >> 4) | (s->s1r >> 4) | (s->s2l >> 4) | (s->s2r >> 4)) == 0 &&
+           s->hold[0] == 0 && s->gx == kUnity && s->gl == 0 && s->wduck == kUnity && (s->fb_l | s->fb_r) == 0 &&
+           (s->lp_l == 0 || s->lp_l == -1) && (s->lp_r == 0 || s->lp_r == -1);
+}
+
+void Publish(State *s, int32_t in_pk, int32_t wet_pk, int32_t loop_pk, bool dub);
+
+/* One idle block: what a block of zeros through a state of zeros leaves changed. */
+IDLE_COLD void IdleBlock(State *s, int32_t time, int32_t modv, int32_t clk, int32_t mixk)
+{
+    /* A: the clock (the phase after 64 steps, the clock samples in them) */
+    s->inc += (ClockTable(kClockInc, clk) - s->inc) >> 2;
+    const uint32_t ph = s->phase + static_cast<uint32_t>(kBlock) * static_cast<uint32_t>(s->inc);
+    const int32_t ticks = static_cast<int32_t>(ph >> 16);
+    s->phase = ph & 0xffffu;
+    /* C: the wet mode's bookkeeping (Reverb, Delay, Slip without their samples) */
+    switch (s->wmode) {
+    case W_DELAY: {
+        const int32_t dt = DelayTime(time);
+        if (s->d_xf == 0 && (dt - s->d > 8 || s->d - dt > 8)) {
+            s->d_old = s->d;
+            s->d = dt;
+            s->d_xf = kXfDelay;
+        }
+        s->d_xf = Max(s->d_xf - ticks, 0);
+        s->n += static_cast<uint32_t>(ticks);
+        break;
+    }
+    case W_SLIP: {
+        const int32_t step = ClampStep((modv * kSlipSteps) >> 15, kSlipSteps);
+        const int32_t spd = kSlipSpeed[step];
+        const int32_t R = Min(Exp2Q15(10 * time) >> 6, kSlipRmax[step]);
+        s->s_r = R;
+        int32_t off;
+        if (spd > 65536) off = (((spd >> 8) * R) >> 8) + 64;
+        else if (spd > 0) off = R + 64;
+        else off = 64;
+        uint32_t n = s->n;
+        uint32_t sa = static_cast<uint32_t>(s->sa), sb = static_cast<uint32_t>(s->sb);
+        int32_t age = s->s_age, xf = s->s_xf;
+        for (int32_t k = 0; k < ticks; ++k) {
+            if (age >= R) {
+                sb = sa;
+                xf = kXfSlip;
+                sa = ((n - static_cast<uint32_t>(off)) & kWetMask) << 16;
+                age = 0;
+            }
+            if (xf) {
+                sb = (sb + static_cast<uint32_t>(spd)) & 0x3fffffffu;
+                xf--;
+            }
+            sa = (sa + static_cast<uint32_t>(spd)) & 0x3fffffffu;
+            age++;
+            ++n;
+        }
+        s->n = n;
+        s->sa = static_cast<int32_t>(sa);
+        s->sb = static_cast<int32_t>(sb);
+        s->s_age = age;
+        s->s_xf = xf;
+        break;
+    }
+    default:
+        s->size = Ramp(s->size, ReverbSize(time), (ticks >> 2) + 1);
+        s->n += static_cast<uint32_t>(ticks);
+        break;
+    }
+    /* D: the looper listens on: silence */
+    {
+        uint32_t *b = s->loop;
+        int32_t w = s->w;
+        for (int32_t k = 0; k < ticks; ++k) {
+            b[w] = 0;
+            if (++w == kLoopPairs) w = 0;
+        }
+        s->w = w;
+        s->filled = Min(s->filled + ticks, kLoopPairs);
+    }
+    /* E: the mix's easing; the display */
+    s->mix += (mixk - s->mix) >> 2;
+    Publish(s, 0, 0, 0, false);
+}
+
 /* ---- the block ---- */
 
 void Publish(State *s, int32_t in_pk, int32_t wet_pk, int32_t loop_pk, bool dub)
@@ -854,6 +1022,7 @@ int init(int slot)
 {
     if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
     g_kept[slot].valid = 0;                            /* nothing kept across a selection */
+    g_idle[slot].zeros = g_idle[slot].on = 0;
     uint32_t bytes = 0;
     State *s = static_cast<State *>(coop_fx_scratch(slot, &bytes));
     g_st[slot] = (s && bytes >= sizeof(State)) ? s : nullptr;
@@ -912,32 +1081,22 @@ int init(int slot)
     return 0;
 }
 
-void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int nsamp)
-{
-    if (slot < 0 || slot >= COOP_FX_SLOTS || !g_st[slot]) return;   /* not bound: dry */
-    State *const s = g_st[slot];
-    if (nsamp != kBlock) {                             /* the host's block is 64; anything else passes through */
-        Publish(s, 0, 0, 0, false);
-        return;
-    }
-    if (s->clear < kWetPairs + kApPairs) {             /* starting: clear a slice, the dry passes through */
-        int32_t c = s->clear;
-        const int32_t end = c + kClearWords;
-        for (; c < end && c < kWetPairs; ++c) s->wet[c] = 0;
-        for (; c < end && c < kWetPairs + kApPairs; ++c) s->ap[c - kWetPairs] = 0;
-        s->clear = c;
-        Publish(s, 0, 0, 0, false);
-        return;
-    }
-    PROF_START;
+/* The block's controls as the passes take them (render reads them from the params once). */
+struct BlockCtl {
+    int32_t time, modv, clk, mixk;                     /* the turns, 0..32767 */
+    int32_t wwant, route;
+    bool freeze, loop_on, dub;
+};
 
-    Kept &kept = ReadKnobs(slot, params);
-    const int32_t time = kept.q[0], modv = kept.q[1], clk = kept.q[2], mixk = kept.q[3];
-    const int32_t wwant = ClampStep(params[5], W_MODES);
-    const int32_t route = ClampStep(params[6], R_ROUTES);
-    s->lmode_want = ClampStep(params[7], L_MODES);
-    const int32_t latch = params[COOP_FX_LATCH];
-    const bool freeze = (latch & 1) != 0, loop_on = (latch & 2) != 0, dub = (latch & 4) != 0;
+/* One block in full: passes A to E and the display. Returns the block's clock samples. Its own function, as the render
+ * was before the idle path (0.3): with that path's code in the same function the compiler laid these loops out worse
+ * (a playing block 350-1,000 cycles dearer in the simulator). */
+__attribute__((noinline)) int32_t RenderBlock(State *const s, Kept &kept, int32_t *l, int32_t *r, const BlockCtl &ctl)
+{
+    PROF_START;
+    const int32_t time = ctl.time, modv = ctl.modv, clk = ctl.clk, mixk = ctl.mixk;
+    const int32_t wwant = ctl.wwant, route = ctl.route;
+    const bool freeze = ctl.freeze, loop_on = ctl.loop_on, dub = ctl.dub;
 
     /* ---- A: the input, the pre-filter, the clock ---- */
     s->inc += (ClockTable(kClockInc, clk) - s->inc) >> 2;
@@ -1110,6 +1269,65 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int nsamp)
     PROF(6);
     Publish(s, in_pk, wet_pk, loop_pk, dub && s->lstate == S_PLAY);
     PROF(7);
+    return ticks;
+}
+
+void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int nsamp)
+{
+    if (slot < 0 || slot >= COOP_FX_SLOTS || !g_st[slot]) return;   /* not bound: dry */
+    State *const s = g_st[slot];
+    if (nsamp != kBlock) {                             /* the host's block is 64; anything else passes through */
+        Publish(s, 0, 0, 0, false);
+        return;
+    }
+    if (s->clear < kWetPairs + kApPairs) {             /* starting: clear a slice, the dry passes through */
+        int32_t c = s->clear;
+        const int32_t end = c + kClearWords;
+        for (; c < end && c < kWetPairs; ++c) s->wet[c] = 0;
+        for (; c < end && c < kWetPairs + kApPairs; ++c) s->ap[c - kWetPairs] = 0;
+        s->clear = c;
+        Publish(s, 0, 0, 0, false);
+        return;
+    }
+
+    Kept &kept = ReadKnobs(slot, params);
+    BlockCtl ctl;
+    ctl.time = kept.q[0];
+    ctl.modv = kept.q[1];
+    ctl.clk = kept.q[2];
+    ctl.mixk = kept.q[3];
+    ctl.wwant = ClampStep(params[5], W_MODES);
+    ctl.route = ClampStep(params[6], R_ROUTES);
+    s->lmode_want = ClampStep(params[7], L_MODES);
+    const int32_t latch = params[COOP_FX_LATCH];
+    ctl.freeze = (latch & 1) != 0;
+    ctl.loop_on = (latch & 2) != 0;
+    ctl.dub = (latch & 4) != 0;
+
+    /* Idle (above): silence in, the looper listening, nothing held and nothing changing mode. */
+    IdleState &idle = g_idle[slot];
+    const bool may_idle = !ctl.freeze && !ctl.loop_on && s->lstate == S_LISTEN && s->wmode == ctl.wwant &&
+                          s->lmode == s->lmode_want && !(ctl.wwant == W_DELAY && ctl.modv >= kIdleDelayModify) &&
+                          Silent(l, r);
+    if (__builtin_expect(idle.on, 0)) {
+        if (may_idle && !IDLE_OFF) {
+            IdleBlock(s, ctl.time, ctl.modv, ctl.clk, ctl.mixk);
+            IDLE_COUNT();
+            return;
+        }
+        idle.on = idle.zeros = 0;                      /* awake: this block in full */
+    }
+
+    const int32_t ticks = RenderBlock(s, kept, l, r, ctl);
+
+    if (__builtin_expect(may_idle, 0)) {               /* a silent block: did the wet channel see, give and write only */
+        const bool zeros = WetZeros(s, ticks);         /* zeros (its block arrays are as the passes left them)? */
+        IDLE_LEVEL(zeros ? 0 : 1);
+        idle.zeros = zeros ? idle.zeros + ticks : 0;
+        if (idle.zeros >= kIdleTicks && !IDLE_OFF && Rest(s)) idle.on = 1;
+    } else {
+        idle.zeros = 0;
+    }
 }
 
 }  // namespace
