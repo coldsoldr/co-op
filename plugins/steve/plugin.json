@@ -2,19 +2,34 @@
   "format": 1,
   "id": "steve",
   "name": "Steve",
-  "firmware": "op1/hundekraft",
   "kind": "fx",
   "author": "pcppcp",
   "description": "Steve by pcppcp records a short loop and plays it back as two to four copies. In drift mode the copies run at slightly different speeds, so they slide apart and back together, like Reich's *It's Gonna Rain*. In steps mode the copies jump ahead one unit at a time and lock there, like *Piano Phase*.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/pcppcp/op1r",
-  "requires": "hundekraft 3.3.1",
   "credits": "From op1r, ported to kennel by Hundekraft",
   "tags": [
     "effect",
     "hundekraft",
     "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/steve.op1p",
+      "sha256": "8f62ea2b51c3d5ab9ab4f27ef398a75cc81f553dd2aceadfcefd9a6d8e3f1507",
+      "sizeBytes": 12884,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/steve",
+      "savedName": "steve"
+    }
   ]
 }

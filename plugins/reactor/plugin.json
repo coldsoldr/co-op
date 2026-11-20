@@ -2,17 +2,33 @@
   "format": 1,
   "id": "reactor",
   "name": "REACTOR",
-  "firmware": "op1/hundekraft",
   "kind": "synth",
   "author": "hundekraft",
   "description": "Four sine waves sit in a loop and modulate each other, like fuel rods in a core. Heat pushes the loop and cooling holds it back. While cooling keeps up you get clean FM; turn up the heat and the tone grows, bends and starts to howl. The fun is finding how close to the edge you can play.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3.1",
   "tags": [
     "synth",
-    "hundekraft"
+    "hundekraft",
+    "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/reactor.op1p",
+      "sha256": "ae57f1eacd0b39887d7d9d03bac6328b057811484495e99bebe816a287a0b631",
+      "sizeBytes": 34276,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/reactor",
+      "savedName": "reactor"
+    }
   ]
 }

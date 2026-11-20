@@ -15,6 +15,9 @@ import {
 import { CatalogueError, fetchOk, withSlash } from '../catalogue/catalogue';
 import { sha256Hex } from '../util';
 
+/** op1r's own web patcher, which installs its .op1p plugins over USB (co-op only lists and downloads them). */
+export const OP1R_PATCHER_URL = 'https://pcppcp.github.io/op1r/web/';
+
 const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -24,7 +27,7 @@ const SHA256 = /^[0-9a-f]{64}$/i;
 /** A file name inside a plugin folder: no separators, never `.` or `..`. */
 const FILE_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 const HTTPS = /^https:\/\/\S+$/;
-/** Where a listed build's .knl may be fetched from: its author's repo, pinned to a commit (shared/src/plugins.ts). */
+/** Where a listed build's .knl or .op1p may be fetched from: its author's repo, pinned to a commit (shared/src/plugins.ts). */
 const REMOTE_FILE = /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\/\S+$/;
 
 /** True when `path` is `<id>/<name>` for a plain file name: the plugin's own folder and nothing else. */
@@ -59,14 +62,15 @@ function isIndexEntry(value: unknown): value is PluginIndexEntry {
  */
 function isBuild(value: Record<string, unknown>, id: string): boolean {
   if (!oneOf(PLUGIN_FIRMWARE, value.firmware)) return false;
-  if (!(value.firmware === 'op1/hundekraft' ? HUNDEKRAFT_ID : OPUS_ID).test(id)) return false;
+  if (!(value.firmware === 'op1/opus' ? OPUS_ID : HUNDEKRAFT_ID).test(id)) return false;
   if (value.link !== undefined) {
     if (typeof value.link !== 'string' || !HTTPS.test(value.link)) return false;
     if (value.fileUrl === undefined) {
       if (value.file !== undefined) return false;
     } else {
-      // A listed hundekraft build the page fetches from its author and installs: checked by hash like a hosted one.
-      if (value.firmware !== 'op1/hundekraft' || typeof value.fileUrl !== 'string' || !REMOTE_FILE.test(value.fileUrl)) return false;
+      // A listed hundekraft or op1r build the page fetches from its author: checked by hash like a hosted one.
+      const remote = value.firmware === 'op1/hundekraft' || value.firmware === 'op1/op1r';
+      if (!remote || typeof value.fileUrl !== 'string' || !REMOTE_FILE.test(value.fileUrl)) return false;
       if (typeof value.version !== 'string' || typeof value.file !== 'string' || !FILE_NAME.test(value.file)) return false;
       if (!value.fileUrl.endsWith(`/${value.file}`)) return false;
       if (typeof value.sizeBytes !== 'number' || typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)) return false;

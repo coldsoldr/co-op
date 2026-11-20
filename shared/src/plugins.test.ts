@@ -313,8 +313,10 @@ describe('parsePluginManifest', () => {
     rejects({ tags: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'] }, /at most 8 tags/);
   });
 
-  it('allows savedName only on opus, as opus.<id>', () => {
-    rejects({ savedName: 'opus.tape' }, /savedName is only for op1\/opus plugins/);
+  it('allows savedName only on opus, as opus.<id>, and on op1r, as its header name', () => {
+    rejects({ savedName: 'opus.tape' }, /savedName is only for op1\/opus and op1\/op1r plugins/);
+    expect(parse({ firmware: 'op1/op1r', file: 'tape_drive.op1p', savedName: 'tape drive' }).issues).toEqual([]);
+    rejects({ firmware: 'op1/op1r', file: 'tape_drive.op1p', savedName: 'Tape Drive' }, /savedName "Tape Drive" must be 1 to 15/);
     const opus = (savedName: unknown) => parsePluginManifest({ ...opusValid(), savedName }, 'opus.chorus-2');
     expect(messages(opus('chorus').issues)).toMatch(/savedName "chorus" must be opus\.<id>/);
     expect(messages(opus(1).issues)).toMatch(/savedName 1 must be opus\.<id>/);
@@ -431,6 +433,20 @@ describe('checkOp1p', () => {
     expect(checkOp1p(op1p({ kind: 0, name: 'saw' })).info).toEqual({ kind: 'synth', savedName: 'saw' });
   });
 
+  it('reads the author line of the metadata after the code image, as op1r does', () => {
+    // binary: 76-byte header, a 4-byte image (word 32), no relocations (68) or imports (72), then the metadata
+    const bytes = op1p({ kind: 0, name: 'saw', binary: 76 + 4 + 24 });
+    const t = bytes.length - 16;
+    setU32(bytes, 32, 4);
+    bytes.set(ascii('kind=synth\nauthor=Ann\n'), 80);
+    setU32(bytes, t + 12, crc32(bytes.subarray(0, t)));
+    expect(checkOp1p(bytes).info).toEqual({ kind: 'synth', savedName: 'saw', author: 'Ann' });
+  });
+
+  it("reads op1r's sequencer, drum, sampler and tool plugins as features", () => {
+    for (const kind of [2, 3, 4, 5]) expect(checkOp1p(op1p({ kind, name: 'euclid' })).info).toEqual({ kind: 'feature', savedName: 'euclid' });
+  });
+
   it('reads a file with an SVG prefix and refuses the decimal hazard in it', () => {
     expect(checkOp1p(op1p({ svg: '<svg/>' })).problems).toEqual([]);
     expect(checkOp1p(op1p({ svg: '<svg x="0.000001"/>' })).problems.join('\n')).toMatch(/more than four decimals \("0\.000001"\)/);
@@ -456,7 +472,9 @@ describe('checkOp1p', () => {
     expect(problems((b, at) => setU32(b, at, 0))).toEqual(['the binary does not start with the op1r plugin magic']);
     expect(problems((b, at) => setU32(b, at + 4, 2))).toEqual(['binary format 2 is not 1']);
     expect(problems((b, at) => setU32(b, at + 8, 3))).toEqual(['plugin API 3 is not 1']);
-    expect(problems((b, at) => setU32(b, at + 12, 2))).toEqual(['kind 2 is not 0 (synth) or 1 (fx)']);
+    expect(problems((b, at) => setU32(b, at + 12, 6))).toEqual([
+      "kind 6 is not 0 (synth), 1 (fx) or 2 to 5 (op1r's sequencer, drum, sampler or tool)",
+    ]);
     expect(problems((b, at) => b.fill(0, at + 16, at + 32))).toEqual(['the saved name is empty']);
     expect(problems((b, at) => (b[at + 16] = 0x41))).toEqual(['the saved name must be lower-case letters, digits, spaces, _ or -']);
     expect(problems((b, at) => b.fill(0x61, at + 16, at + 32))).toEqual(['the saved name does not end in a NUL within 16 bytes']);
@@ -637,6 +655,14 @@ describe('validatePluginFiles', () => {
     expect(result.info).toEqual({ kind: 'fx', savedName: 'tape drive', author: 'someone', version: '0.9' });
   });
 
+  it('checks a hosted op1r .op1p: its name, and a feature kind for a sequencer', async () => {
+    expect(parse({ firmware: 'op1/op1r', file: 'tape_drive.knl' }).issues.map((i) => i.message)).toEqual(['file must be "tape_drive.op1p"']);
+    const m = parse({ firmware: 'op1/op1r', file: 'tape_drive.op1p' }).manifest as PluginManifest;
+    expect((await check(m, good(op1p(), 'tape_drive.op1p'))).issues).toEqual([]);
+    const seq = parse({ firmware: 'op1/op1r', file: 'tape_drive.op1p', kind: 'feature' }).manifest as PluginManifest;
+    expect((await check(seq, good(op1p({ kind: 2 }), 'tape_drive.op1p'))).issues).toEqual([]);
+  });
+
   it('checks an .op1p plugin the same way', async () => {
     const m = manifest({ file: 'tape_drive.op1p' });
     expect((await check(m, good(op1p(), 'tape_drive.op1p'))).issues).toEqual([]);
@@ -755,7 +781,7 @@ describe('plugins with a file per firmware', () => {
       expect(manifest).toBeNull();
       expect(messages(issues)).toMatch(pattern);
     };
-    bad([], /builds must be a list of 1 to 3/);
+    bad([], /builds must be a list of 1 to 4/);
     bad('x', /builds must be a list/);
     bad([{ firmware: 'op1/coop', file: 'rings.knl', version: '1' }], /builds\[1\]: file must be "rings.coop"/);
     bad([{ firmware: 'op1/coop', file: 'rings.coop' }], /builds\[1\]: version must be a string/);
@@ -954,8 +980,68 @@ describe('listed plugins with a fileUrl (installed from the author over USB)', (
     expect(issue({ version: undefined })).toMatch(/version must be a string/);
   });
 
-  it('refuses a fileUrl on a hosted build or on a non-hundekraft build', () => {
+  it('refuses a fileUrl on a hosted build or on a build for a firmware without one', () => {
     expect(messages(parsePluginManifest(remote({ link: undefined, file: 'moai.knl' }), 'moai').issues)).toMatch(/are for a listed build/);
-    expect(messages(parsePluginManifest(remote({ firmware: 'op1/opus' }), 'moai').issues)).toMatch(/only for op1\/hundekraft/);
+    expect(messages(parsePluginManifest(remote({ firmware: 'op1/opus' }), 'moai').issues)).toMatch(/only for op1\/hundekraft and op1\/op1r/);
+  });
+
+  describe('op1r', () => {
+    const op1rUrl = `https://raw.githubusercontent.com/pcppcp/op1r/${commit}/data/plugins/in_a_room.op1p`;
+    const op1r = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+      remote({
+        id: 'in_a_room',
+        name: 'In a Room',
+        kind: 'fx',
+        firmware: 'op1/op1r',
+        link: 'https://pcppcp.github.io/op1r/web/',
+        fileUrl: op1rUrl,
+        sizeBytes: 24179,
+        version: '72',
+        savedName: 'in a room',
+        ...overrides,
+      });
+
+    it('accepts a commit-pinned .op1p and keeps its saved name with spaces', () => {
+      const { manifest, issues } = parsePluginManifest(op1r(), 'in_a_room');
+      expect(issues).toEqual([]);
+      const entry = pluginIndexEntryOfBuilds(manifest as PluginManifest, [null]);
+      expect(entry).toMatchObject({ firmware: 'op1/op1r', file: 'in_a_room.op1p', savedName: 'in a room', sizeBytes: 24179 });
+      expect(isHosted(entry)).toBe(false);
+      expect(isInstallable(entry)).toBe(true);
+    });
+
+    it("keeps op1r's own file name when the folder differs (grids_op1r has grids.op1p)", () => {
+      const url = op1rUrl.replace('in_a_room.op1p', 'grids.op1p');
+      const { manifest, issues } = parsePluginManifest(op1r({ id: 'grids_op1r', fileUrl: url, savedName: 'grids' }), 'grids_op1r');
+      expect(issues).toEqual([]);
+      expect(pluginIndexEntryOfBuilds(manifest as PluginManifest, [null])).toMatchObject({ file: 'grids.op1p', savedName: 'grids' });
+    });
+
+    it('takes the id as the saved name when plugin.json gives none', () => {
+      const { manifest } = parsePluginManifest(op1r({ savedName: undefined }), 'in_a_room');
+      expect(pluginIndexEntryOfBuilds(manifest as PluginManifest, [null]).savedName).toBe('in_a_room');
+    });
+
+    it('wants an .op1p, not a .knl, and allows files up to 1 MiB', () => {
+      const issue = (o: Record<string, unknown>): string => messages(parsePluginManifest(op1r(o), 'in_a_room').issues);
+      expect(issue({ fileUrl: op1rUrl.replace('.op1p', '.knl') })).toMatch(/to the \.op1p, pinned to a commit/);
+      expect(issue({ fileUrl: op1rUrl.replace('in_a_room', 'in+room') })).toMatch(/must end in a file name op1r takes/);
+      expect(issue({ sizeBytes: 600 * 1024 })).toBe('');
+      expect(issue({ sizeBytes: 2 * 1024 * 1024 })).toMatch(/sizeBytes must be the file's size in bytes, 1 to 1048576/);
+    });
+
+    it('sits beside a hundekraft build of the same plugin', () => {
+      const m = op1r({ builds: [
+        { firmware: 'op1/hundekraft', link: 'https://hundekraft.github.io/op1-workshop/', requires: 'hundekraft 3.3.1' },
+        { firmware: 'op1/op1r', link: 'https://pcppcp.github.io/op1r/web/', fileUrl: op1rUrl, sha256: hash, sizeBytes: 24179, version: '72', savedName: 'in a room' },
+      ] });
+      for (const k of ['firmware', 'link', 'fileUrl', 'sha256', 'sizeBytes', 'version', 'savedName', 'requires']) delete m[k];
+      const { manifest, issues } = parsePluginManifest(m, 'in_a_room');
+      expect(issues).toEqual([]);
+      const entry = pluginIndexEntryOfBuilds(manifest as PluginManifest, [null, null]);
+      expect(isInstallable(pluginFor(entry, 'op1/hundekraft') as PluginIndexEntry)).toBe(false);
+      expect(pluginFor(entry, 'op1/op1r')).toMatchObject({ file: 'in_a_room.op1p', savedName: 'in a room' });
+    });
+
   });
 });

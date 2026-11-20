@@ -1,9 +1,10 @@
 /**
  * Finds updates to listed plugins in their authors' GitHub repos (docs/plugin-release-guide.md):
  *
- * - A build with a fileUrl (a .knl committed in the author's repo, pinned to a commit) follows that file: a
+ * - A build with a fileUrl (a .knl or .op1p committed in the author's repo, pinned to a commit) follows that file: a
  *   newer commit that changed it gives the build the new commit, size, hash and the version in the file's
- *   header. The new file must pass co-op's kennel check and keep the plugin's saved name and kind.
+ *   header (an .op1p has no version: a date version becomes the new commit's day). The new file must pass co-op's
+ *   kennel or op1r check and keep the plugin's saved name and kind.
  * - Any other build whose link or source is a GitHub repo, and which has a version, follows the repo's latest
  *   release (pre-releases are not releases): a newer tag becomes its version.
  *
@@ -11,7 +12,7 @@
  * Nothing is applied that fails a check; it is reported instead, for the pull request to show.
  */
 import { createHash } from 'node:crypto';
-import { checkKnl } from '@co-op/shared/plugins';
+import { checkKnl, checkOp1p } from '@co-op/shared/plugins';
 
 /** GitHub's REST API and plain downloads; null for a 404. */
 export interface Remote {
@@ -40,11 +41,15 @@ export interface Problem {
 
 const RAW = /^https:\/\/raw\.githubusercontent\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/([0-9a-f]{40})\/(.+)$/;
 const REPO = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)(?:[/?#]|$)/;
-/** Kept by web/scripts/listed_plugins.py from the workshop's and opus's own releases. */
-const REFRESHED = ['https://hundekraft.github.io/op1-workshop/', 'https://github.com/LizardMan245/opus/releases'];
+/** Kept by web/scripts/listed_plugins.py from the workshop's, opus's and op1r's own releases. */
+const REFRESHED = [
+  'https://hundekraft.github.io/op1-workshop/',
+  'https://github.com/LizardMan245/opus/releases',
+  'https://pcppcp.github.io/op1r/web/',
+];
 const MAX_NOTES = 1500;
 
-type Build = Record<string, unknown> & { firmware: string; version?: string; link?: string; source?: string; fileUrl?: string };
+type Build = Record<string, unknown> & { firmware: string; version?: string; link?: string; source?: string; fileUrl?: string; savedName?: string };
 
 /** The numbers in a version or tag ("v1.5.2" → [1, 5, 2]); null when it has none. */
 export function versionParts(version: string): number[] | null {
@@ -90,7 +95,9 @@ export async function updatePlugin(manifest: Record<string, unknown>, remote: Re
       if (!pinned) continue;
       const [, owner, name, sha, path] = pinned as unknown as [string, string, string, string, string];
       const repo = `${owner}/${name}`;
-      const commits = (await remote.api(`repos/${repo}/commits?path=${encodeURIComponent(path)}&per_page=1`)) as { sha: string }[] | null;
+      const commits = (await remote.api(`repos/${repo}/commits?path=${encodeURIComponent(path)}&per_page=1`)) as
+        | { sha: string; commit?: { committer?: { date?: string } } }[]
+        | null;
       const latest = commits?.[0]?.sha;
       if (!latest) {
         problem(`${path} is no longer in ${repo}: it was moved or removed. Point fileUrl at its new place.`);
@@ -103,18 +110,24 @@ export async function updatePlugin(manifest: Record<string, unknown>, remote: Re
         problem(`${url} could not be downloaded.`);
         continue;
       }
-      const check = checkKnl(bytes);
+      // An .op1p is op1r's: its saved name is the build's (spaces and all), and a version that is a date (it has
+      // none of its own) moves on to the day of the new commit.
+      const op1p = path.toLowerCase().endsWith('.op1p');
+      const check = op1p ? checkOp1p(bytes) : checkKnl(bytes);
       if (!check.info) {
         problem(`the new ${path} (commit ${latest.slice(0, 7)}) fails co-op's check: ${check.problems.join('; ')}. Not applied.`);
         continue;
       }
-      if (check.info.savedName !== id || check.info.kind !== kind) {
+      const savedName = op1p ? (build.savedName ?? id) : id;
+      if (check.info.savedName !== savedName || check.info.kind !== kind) {
         problem(
-          `the new ${path} (commit ${latest.slice(0, 7)}) is a ${check.info.kind ?? '?'} saved as "${check.info.savedName ?? '?'}", not the ${kind} "${id}" listed. Not applied.`,
+          `the new ${path} (commit ${latest.slice(0, 7)}) is a ${check.info.kind ?? '?'} saved as "${check.info.savedName ?? '?'}", not the ${kind} "${savedName}" listed. Not applied.`,
         );
         continue;
       }
-      const version = check.info.version ?? build.version;
+      const day = /^\d{4}-\d{2}-\d{2}/.exec(commits?.[0]?.commit?.committer?.date ?? '')?.[0];
+      const dated = op1p && build.version !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(build.version);
+      const version = check.info.version ?? (dated && day ? day : build.version);
       if (version !== undefined && build.version !== undefined && compareVersions(version, build.version) < 0) {
         problem(`the new ${path} (commit ${latest.slice(0, 7)}) says version ${version}, older than the listed ${build.version}. Not applied.`);
         continue;
@@ -168,7 +181,7 @@ export function summary(changes: readonly Change[], problems: readonly Problem[]
     }
     lines.push(
       '',
-      'Each new .knl passed co-op’s kennel check with the listed saved name and kind, and plugins:validate passed on the result. ' +
+      'Each new .knl or .op1p passed co-op’s kennel or op1r check with the listed saved name and kind, and plugins:validate passed on the result. ' +
         'Install over USB sends these files to people’s OP-1s: look at what changed before merging. If the controls changed, ' +
         're-run `/add-plugin <repo>` to rewrite the manual.',
     );

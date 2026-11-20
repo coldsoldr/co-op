@@ -1,0 +1,25 @@
+{
+  "format": 1,
+  "id": "perc",
+  "name": "Perc",
+  "firmware": "op1/op1r",
+  "kind": "synth",
+  "author": "Serhii Tonkoshkuryk",
+  "version": "72",
+  "description": "A PO-32 / Microtonic style drum synth, in two plugins. percsyn is a synth engine (one sound across the keyboard, 10 built-in sounds and 16 places for PO-32 transfers recorded into the slot's sample). perc is a drum type: a kit of 24 sounds, one per key; the pages edit the sound itself (T1 tone, T2 noise, T4 mix; Shift + turn the second layer), Shift + blue browses presets and transferred sounds. Patch model after libpo32 (MIT, Eric Lewis)",
+  "license": "GPL-3.0-or-later",
+  "link": "https://pcppcp.github.io/op1r/web/",
+  "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/perc.op1p",
+  "sha256": "aace5cda60b06f5f5bfbaff4d5b834acfe9e8b8405c35d915af32b8490b6c247",
+  "sizeBytes": 55772,
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/percdrum",
+  "requires": "op1r 72",
+  "credits": "PO-32 patch model after libpo32 by Eric Lewis (MIT); in op1r by pcppcp",
+  "savedName": "perc",
+  "tags": [
+    "drums",
+    "op1r"
+  ]
+}

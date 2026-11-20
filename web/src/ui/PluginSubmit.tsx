@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { MAX_NOTE, MAX_REQUEST_CONTACT, parseRepo, type RequestFirmware } from '@co-op/shared/plugin-request';
 import { feedbackAvailable, buildConfig, FeedbackError } from '../core/feedback/client';
+import { OP1R_PATCHER_URL } from '../core/plugins/catalogue';
 import { requestIssueUrl, sendPluginRequest } from '../core/plugins/request';
 import { PLUGIN_PROMPT } from '../core/plugins/submission';
 import { TurnstileWidget } from './Feedback';
@@ -19,6 +20,7 @@ const FIRMWARES = [
   { id: 'op1/hundekraft', label: 'hundekraft', file: '.knl', request: 'hundekraft' },
   { id: 'op1/opus', label: 'opus', file: '.opmod', request: 'opus' },
   { id: 'op1/coop', label: 'coop', file: '.coop', request: 'coop' },
+  { id: 'op1/op1r', label: 'op1r', file: '.op1p', request: 'op1r' },
 ] as const;
 type Firmware = (typeof FIRMWARES)[number];
 
@@ -97,9 +99,10 @@ export function PluginSubmit({ onBack, firmwareId }: PluginSubmitProps) {
   );
 }
 
-/** hundekraft and opus: the plugin stays in its author's repo, and co-op lists it from there. */
+/** hundekraft, opus and op1r: the plugin stays in its author's repo, and co-op lists it from there. */
 function FromYourRepo({ firmware }: { firmware: Firmware }) {
   const hundekraft = firmware.id === 'op1/hundekraft';
+  const op1r = firmware.id === 'op1/op1r';
   return (
     <>
       <p>
@@ -114,12 +117,21 @@ function FromYourRepo({ firmware }: { firmware: Firmware }) {
         <li>A picture of the plugin’s screen in the README. Without one, its card gets a plain name card.</li>
         <li>For updates: a GitHub release per version, with the built file replaced at the same path.</li>
         <li>
-          The built <code>{hundekraft ? '<id>.knl' : '<name>.opmod'}</code> committed in the repo, not only inside a zip or a
-          release.{' '}
+          The built <code>{hundekraft ? '<id>.knl' : op1r ? '<name>.op1p' : '<name>.opmod'}</code> committed in the repo, not
+          only inside a zip or a release.{' '}
           {hundekraft ? (
             <>
               Then its card gets <strong>Install over USB</strong>: co-op fetches the file from your repo, checks it, and
               sends it to the OP-1.
+            </>
+          ) : op1r ? (
+            <>
+              Then its card gets a <strong>Download</strong>: co-op fetches the file from your repo and checks it, and
+              people install it with{' '}
+              <a href={OP1R_PATCHER_URL} target="_blank" rel="noopener noreferrer">
+                op1r’s web patcher
+              </a>
+              . co-op reads its name, kind and author from the file’s header.
             </>
           ) : (
             <>Then co-op can install it from your repo once opus installs from an author’s repo are supported; until then the card links to your repo.</>

@@ -2,19 +2,34 @@
   "format": 1,
   "id": "dots",
   "name": "Dots",
-  "firmware": "op1/hundekraft",
   "kind": "feature",
   "author": "pcppcp",
   "description": "Six slots of up to 64 steps each, all playing at once at 1/16. Every step can have a note, a level, ratchets, a chance, a condition, a nudge and up to four effect locks.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/pcppcp/op1r",
-  "requires": "hundekraft 3.3.1",
   "credits": "From op1r, ported to kennel by Hundekraft",
   "tags": [
     "tool",
     "hundekraft",
     "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/dots.op1p",
+      "sha256": "f18d7c93654da083e53647fea7587d5c683cc85b8b406f5cd2b89eff5328b190",
+      "sizeBytes": 30772,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/dots",
+      "savedName": "dots"
+    }
   ]
 }

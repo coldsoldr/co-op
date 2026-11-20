@@ -2,19 +2,34 @@
   "format": 1,
   "id": "aether",
   "name": "Aether",
-  "firmware": "op1/hundekraft",
   "kind": "synth",
   "author": "pcppcp",
   "description": "Hold a key to choose the note, then tilt forward/back to bend its pitch. Raising the right side reduces volume; shaking adds vibrato. The angle at note-on becomes home. The satellite dish follows tilt and the radio waves follow the note envelope. Stock mono, legato and portamento modes still apply.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/pcppcp/op1r",
-  "requires": "hundekraft 3.3.1",
   "credits": "Satellite artwork by DAN76/Rackes; from op1r, ported to kennel by Hundekraft",
   "tags": [
     "synth",
     "hundekraft",
     "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/pcppcp/op1r"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/aether.op1p",
+      "sha256": "937db76f9f9c74d11b4dbb08415318682cd839d69a088ca9068887d4defa3278",
+      "sizeBytes": 24786,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/aether",
+      "savedName": "aether"
+    }
   ]
 }

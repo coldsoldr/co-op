@@ -52,4 +52,11 @@ describe('the issue', () => {
     expect(repoFromIssue('only https://github.com/coldsoldr/co-op/issues')).toBeNull();
     expect(repoFromIssue('nothing here')).toBeNull();
   });
+
+  it('takes op1r plugins: the firmware choice, the marker and an issue form that names op1r', () => {
+    expect(validatePluginRequest({ repo: 'a/b', firmware: 'op1r', turnstileToken: 't' })).toMatchObject({ ok: true, value: { firmware: 'op1r' } });
+    expect(repoFromIssue(requestBody({ ...p, firmware: 'op1r' }))).toEqual({ repo: 'a/b', firmware: 'op1r' });
+    const form = '### What should it do?\n\nA drum machine for op1r\n\n### Source\n\nhttps://github.com/c/d';
+    expect(repoFromIssue(form)).toEqual({ repo: 'c/d', firmware: 'op1r' });
+  });
 });

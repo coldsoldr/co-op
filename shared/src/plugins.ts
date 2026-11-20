@@ -27,7 +27,7 @@ export const PLUGIN_LICENSES = [
 export type PluginLicense = (typeof PLUGIN_LICENSES)[number];
 
 /** The profile ids a plugin can be for. */
-export const PLUGIN_FIRMWARE = ['op1/hundekraft', 'op1/opus', 'op1/coop'] as const;
+export const PLUGIN_FIRMWARE = ['op1/hundekraft', 'op1/opus', 'op1/coop', 'op1/op1r'] as const;
 export type PluginFirmware = (typeof PLUGIN_FIRMWARE)[number];
 
 export const PLUGIN_KINDS = ['synth', 'fx', 'feature'] as const;
@@ -66,14 +66,21 @@ export const HUNDEKRAFT_ID = /^[a-z0-9_-]{1,15}$/;
 export const OPUS_ID = /^[a-z0-9_.-]{1,40}$/;
 /** The name opus sounds store for a plugin: its plugin id. */
 const OPUS_SAVED_NAME = /^opus\.[a-z0-9_.-]{1,40}$/;
+/** The name op1r sounds store for a plugin: the name in its .op1p header (op1r web/op1p.js). */
+const OP1R_SAVED_NAME = /^[a-z0-9 _-]{1,15}$/;
 const OPMOD_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,57}\.opmod$/;
 const SCREENSHOT_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,59}\.png$/;
 const HTTPS_LINK = /^https:\/\/[^\s/?#]+\.[^\s/?#]+([/?#]\S*)?$/;
 /**
- * A .knl in its author's GitHub repo, pinned to a commit so its bytes (and so its SHA-256) never change:
- * raw.githubusercontent.com, which browsers may fetch from any page.
+ * A plugin file in its author's GitHub repo, pinned to a commit so its bytes (and so its SHA-256) never change:
+ * raw.githubusercontent.com, which browsers may fetch from any page. A .knl for hundekraft, an .op1p for op1r.
  */
-const REMOTE_KNL = /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\/(?:[^\s?#/]+\/)*([^\s?#/]+\.knl)$/;
+const REMOTE_FILE = /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\/(?:[^\s?#/]+\/)*([^\s?#/]+\.(knl|op1p))$/;
+/** A plugin file name op1r loads: plugins/<name>.op1p, at most 40 characters (op1r web/devupd.js, op1p.js). */
+const OP1P_FILE_NAME = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,34}\.op1p$/;
+const OP1P_FILE_NAME_RULE = 'letters, digits, _, . or - ending in .op1p, at most 40 characters';
+/** The firmware whose listed builds may name their file with a fileUrl, and that file's extension. */
+const REMOTE_EXT: Partial<Record<string, 'knl' | 'op1p'>> = { 'op1/hundekraft': 'knl', 'op1/op1r': 'op1p' };
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 /**
@@ -83,7 +90,7 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
 export interface PluginBuildManifest {
   firmware: PluginFirmware;
   /**
-   * `<id>.knl` or `<id>.op1p` for hundekraft, `<name>.opmod` for opus, `<id>.coop` for coop. Absent
+   * `<id>.knl` or `<id>.op1p` for hundekraft, `<name>.opmod` for opus, `<id>.coop` for coop, `<id>.op1p` for op1r. Absent
    * for a listed build (see link).
    */
   file?: string;
@@ -94,7 +101,7 @@ export interface PluginBuildManifest {
    */
   link?: string;
   /**
-   * A listed hundekraft build only: the plugin's .knl where its author publishes it (REMOTE_KNL), with
+   * A listed hundekraft or op1r build only: the plugin's .knl or .op1p where its author publishes it (REMOTE_FILE), with
    * its sha256 and sizeBytes. co-op still hosts no copy: the page fetches the file from there, checks
    * it against both, and installs it over USB.
    */
@@ -109,7 +116,10 @@ export interface PluginBuildManifest {
   requires?: string;
   /** An https:// link to the source. */
   source?: string;
-  /** opus only: the `opus.<id>` plugin id that sounds made with it store. */
+  /**
+   * opus: the `opus.<id>` plugin id that sounds made with it store. op1r: the name in the .op1p header, which can
+   * differ from the id (it may have spaces); without it the id is taken.
+   */
   savedName?: string;
 }
 
@@ -144,7 +154,7 @@ export interface PluginBuild extends Omit<PluginBuildManifest, 'savedName'> {
   sizeBytes?: number;
   /** Lower-case hex SHA-256 of the plugin file; absent for a listed build. */
   sha256?: string;
-  /** The name sounds store: from the file header for hundekraft and coop, from plugin.json for opus. */
+  /** The name sounds store: from the file header for hundekraft and coop, from plugin.json for opus and op1r. */
   savedName?: string;
   /** Author and version from a .knl or .coop extension table, when it has them. */
   headerAuthor?: string;
@@ -332,23 +342,29 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
     const remote = fileUrl !== undefined || record.sha256 !== undefined || record.sizeBytes !== undefined;
     const version = listed && !remote && record.version === undefined ? undefined : textIn(record, where, 'version', MAX_VERSION);
     if (remote) {
+      const ext = typeof firmware === 'string' ? REMOTE_EXT[firmware] : undefined;
       if (!listed) fail(`${where}fileUrl, sha256 and sizeBytes are for a listed build (with a link); a hosted build's file is in the folder`);
-      else if (firmware !== 'op1/hundekraft') fail(`${where}fileUrl is only for op1/hundekraft builds for now`);
-      const match = typeof fileUrl === 'string' ? REMOTE_KNL.exec(fileUrl) : null;
-      if (!match || (fileUrl as string).length > MAX_SOURCE) {
+      else if (ext === undefined) fail(`${where}fileUrl is only for op1/hundekraft and op1/op1r builds for now`);
+      const want = ext ?? 'knl';
+      const match = typeof fileUrl === 'string' ? REMOTE_FILE.exec(fileUrl) : null;
+      if (!match || match[2] !== want || (fileUrl as string).length > MAX_SOURCE) {
         fail(
-          `${where}fileUrl must be a link of at most ${MAX_SOURCE} characters to the .knl, pinned to a commit: ` +
-            'https://raw.githubusercontent.com/<owner>/<repo>/<40-hex commit>/<path>/<id>.knl',
+          `${where}fileUrl must be a link of at most ${MAX_SOURCE} characters to the .${want}, pinned to a commit: ` +
+            `https://raw.githubusercontent.com/<owner>/<repo>/<40-hex commit>/<path>/<id>.${want}`,
         );
-      } else if (typeof id === 'string' && match[1] !== `${id}.knl`) {
-        fail(`${where}fileUrl must end in /${id}.knl, the name the OP-1 stores it under`);
+      } else if (want === 'op1p') {
+        // op1r stores the file under its own name, which a folder may not share (grids_op1r has grids.op1p).
+        if (!OP1P_FILE_NAME.test(match[1] as string)) fail(`${where}fileUrl must end in a file name op1r takes: ${OP1P_FILE_NAME_RULE}`);
+      } else if (typeof id === 'string' && match[1] !== `${id}.${want}`) {
+        fail(`${where}fileUrl must end in /${id}.${want}, the name the OP-1 stores it under`);
       }
       if (typeof record.sha256 !== 'string' || !SHA256_HEX.test(record.sha256)) {
         fail(`${where}sha256 must be the file's SHA-256: 64 lower-case hex digits`);
       }
       const size = record.sizeBytes;
-      if (typeof size !== 'number' || !Number.isInteger(size) || size < 1 || size > MAX_KNL_BYTES) {
-        fail(`${where}sizeBytes must be the file's size in bytes, 1 to ${MAX_KNL_BYTES}`);
+      const maxSize = want === 'op1p' ? MAX_OP1P_BYTES : MAX_KNL_BYTES;
+      if (typeof size !== 'number' || !Number.isInteger(size) || size < 1 || size > maxSize) {
+        fail(`${where}sizeBytes must be the file's size in bytes, 1 to ${maxSize}`);
       }
     }
 
@@ -363,6 +379,8 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
     } else if (firmware === 'op1/coop' && typeof id === 'string') {
       if (file !== `${id}.coop`) fail(`${where}file must be "${id}.coop"`);
       else if (kind === 'feature') fail('a coop plugin is a synth or an fx; coop has no feature plugins yet');
+    } else if (firmware === 'op1/op1r' && typeof id === 'string') {
+      if (file !== `${id}.op1p`) fail(`${where}file must be "${id}.op1p"`);
     } else if (opus && (!OPMOD_NAME.test(file) || isWindowsReservedName(file))) {
       fail(`${where}file must be a name ending in .opmod: letters, digits, _, . or -, at most 64 characters`);
     }
@@ -371,8 +389,13 @@ export function parsePluginManifest(json: unknown, folderName: string): { manife
     const requires = record.requires === undefined ? undefined : textIn(record, where, 'requires', MAX_REQUIRES);
     const savedName = record.savedName;
     if (savedName !== undefined) {
-      if (!opus) fail(`${where}savedName is only for op1/opus plugins; hundekraft and coop take it from the plugin file`);
-      else if (typeof savedName !== 'string' || !OPUS_SAVED_NAME.test(savedName)) {
+      if (firmware === 'op1/op1r') {
+        if (typeof savedName !== 'string' || !OP1R_SAVED_NAME.test(savedName)) {
+          fail(`${where}savedName ${JSON.stringify(savedName)} must be 1 to 15 lower-case letters, digits, spaces, _ or -`);
+        }
+      } else if (!opus) {
+        fail(`${where}savedName is only for op1/opus and op1/op1r plugins; hundekraft and coop take it from the plugin file`);
+      } else if (typeof savedName !== 'string' || !OPUS_SAVED_NAME.test(savedName)) {
         fail(`${where}savedName ${JSON.stringify(savedName)} must be opus.<id>: "opus." and 1 to 40 lower-case letters, digits, _, . or -`);
       }
     }
@@ -693,13 +716,14 @@ function checkKennelFormat(bytes: Uint8Array, format: KennelFormat): PluginFileC
 const OP1P_TRAILER_MAGIC = 0x5431504f;
 const OP1P_BINARY_MAGIC = 0x5031504f;
 const OP1P_MIN_BINARY = 76;
-const OP1P_KINDS: Record<number, PluginKind> = { 0: 'synth', 1: 'fx' };
+/** op1r's kinds (web/op1p.js KINDS): synth, fx, then seq, drum, sampler and tool, which co-op calls features. */
+const OP1P_KINDS: Record<number, PluginKind> = { 0: 'synth', 1: 'fx', 2: 'feature', 3: 'feature', 4: 'feature', 5: 'feature' };
 
 /**
  * Checks an op1r plugin (.op1p): the 16-byte trailer (magic, 4-aligned binary offset, binary
  * length of at least 76 bytes inside the file, CRC-32 of the binary), then the binary's own header
- * (magic, format 1, API 1, kind 0 synth or 1 fx, saved name), the size limits and the SVG boot
- * hazard on a screen SVG in front.
+ * (magic, format 1, API 1, kind 0 synth, 1 fx or 2 to 5 for op1r's sequencer, drum, sampler and tool
+ * plugins, saved name), the size limits and the SVG boot hazard on a screen SVG in front.
  */
 export function checkOp1p(bytes: Uint8Array): PluginFileCheck {
   const problems: string[] = [];
@@ -751,10 +775,34 @@ export function checkOp1p(bytes: Uint8Array): PluginFileCheck {
   if (api !== 1) problems.push(`plugin API ${api} is not 1`);
   const kindValue = u32(binary, 12);
   const kind = OP1P_KINDS[kindValue];
-  if (!kind) problems.push(`kind ${kindValue} is not 0 (synth) or 1 (fx)`);
+  if (!kind) problems.push(`kind ${kindValue} is not 0 (synth), 1 (fx) or 2 to 5 (op1r's sequencer, drum, sampler or tool)`);
   const saved = savedNameAt(binary, 16, /^[a-z0-9 _-]+$/, 'lower-case letters, digits, spaces, _ or -');
   if (saved.problem) problems.push(saved.problem);
-  return done({ kind: kind as PluginKind, savedName: saved.name as string });
+  const author = op1pAuthor(binary);
+  return done({ kind: kind as PluginKind, savedName: saved.name as string, ...(author === undefined ? {} : { author }) });
+}
+
+/**
+ * The `author=` line of an op1r binary's metadata, as op1r's web patcher reads it (web/op1p.js): after the code
+ * image (header word 32), its relocations (16 bytes each, word 68) and its imports (NUL-terminated names, word 72).
+ */
+function op1pAuthor(binary: Uint8Array): string | undefined {
+  const image = u32(binary, 32);
+  const relocations = u32(binary, 68);
+  const imports = u32(binary, 72);
+  if (imports > 32) return undefined;
+  let at = OP1P_MIN_BINARY + image + 16 * relocations;
+  if (!Number.isSafeInteger(at) || at >= binary.length) return undefined;
+  for (let i = 0; i < imports; i++) {
+    const nul = binary.indexOf(0, at);
+    if (nul < 0) return undefined;
+    at = nul + 1;
+  }
+  for (const line of latin1(binary.subarray(at)).split('\n')) {
+    const value = line.startsWith('author=') ? line.slice(7).split('\0')[0]?.trim() : undefined;
+    if (value && /^[\x20-\x7e]+$/.test(value)) return value.slice(0, MAX_AUTHOR);
+  }
+  return undefined;
 }
 
 /** Checks an opus plugin (.opmod): the OPMD magic and the size limit; nothing more is known. */
@@ -844,7 +892,7 @@ function checkPluginFile(file: string, bytes: Uint8Array): PluginFileCheck {
  * file in the folder with its size, by path relative to the folder; `read` returns one file's
  * bytes. The folder must hold plugin.json, the plugin file of every build, manual.md and the
  * screenshot, spelled exactly, and nothing else but ignored clutter (isIgnoredFile). Sizes are
- * checked before a file is read. For hundekraft and coop the file's saved name must give the id
+ * checked before a file is read. For hundekraft, coop and op1r the file's saved name must give the id
  * and its kind must match plugin.json; an author or version in the file that differs from its
  * build's is a warning. `infos` is what each build's plugin file says, in build order, and `info`
  * the first build's; both are null when there are issues.
@@ -897,7 +945,7 @@ export async function validatePluginFiles(
     for (const problem of check.problems) fail(problem, path);
     if (!check.info) continue;
     infos[at] = check.info;
-    if (build.firmware !== 'op1/hundekraft' && build.firmware !== 'op1/coop') continue;
+    if (build.firmware !== 'op1/hundekraft' && build.firmware !== 'op1/coop' && build.firmware !== 'op1/op1r') continue;
     const savedName = check.info.savedName as string;
     const id = idFromSavedName(savedName);
     if (!HUNDEKRAFT_ID.test(id)) {
@@ -938,12 +986,16 @@ export function pluginIndexEntry(
   info: PluginFileInfo,
 ): PluginIndexEntry {
   const { format: _format, savedName: ownSavedName, builds: _builds, ...fields } = manifest;
-  // A fetched .knl is checked by its hash, not read here: its saved name is the id (REMOTE_KNL ends in <id>.knl).
+  // A fetched .knl or .op1p is checked by its hash, not read here: its saved name is the id (REMOTE_FILE ends in
+  // <id>.knl or <id>.op1p), or for op1r the one plugin.json gives.
   const remoteName = manifest.fileUrl === undefined ? undefined : manifest.fileUrl.slice(manifest.fileUrl.lastIndexOf('/') + 1);
+  const fromFile = info.savedName ?? (remoteName === undefined ? undefined : manifest.id);
   const savedName =
     manifest.firmware === 'op1/hundekraft' || manifest.firmware === 'op1/coop'
-      ? (info.savedName ?? (remoteName === undefined ? undefined : manifest.id))
-      : ownSavedName;
+      ? fromFile
+      : manifest.firmware === 'op1/op1r'
+        ? (ownSavedName ?? fromFile)
+        : ownSavedName;
   return {
     ...fields,
     ...(remoteName === undefined ? {} : { file: remoteName }),

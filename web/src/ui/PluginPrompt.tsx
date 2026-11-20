@@ -3,7 +3,7 @@ import type { HostedPluginEntry } from '@co-op/shared/plugins';
 import { readPatch } from '../core/codec/patch';
 import { soundTraits } from '../core/codec/sound-traits';
 import { listOpusPlugins } from '../core/library/mods';
-import { fetchPluginBytes } from '../core/plugins/catalogue';
+import { OP1R_PATCHER_URL, fetchPluginBytes } from '../core/plugins/catalogue';
 import { installedNames, requiredPlugins } from '../core/plugins/requirements';
 import { op1Opus } from '../core/profiles/op1-opus';
 import type { DeviceProfile } from '../core/profiles/types';
@@ -112,7 +112,11 @@ export function usePluginPrompt(device: Device): {
         {asking.plugins.map((plugin) => (
           <li key={plugin.id}>
             <strong>{plugin.name}</strong> (<code>{plugin.file}</code>){' '}
-            {plugin.firmware === 'op1/hundekraft' ? (
+            {plugin.firmware === 'op1/op1r' ? (
+              <a href={OP1R_PATCHER_URL} target="_blank" rel="noopener noreferrer">
+                Install with op1r's web patcher
+              </a>
+            ) : plugin.firmware === 'op1/hundekraft' ? (
               <InstallOverUsb plugin={plugin} onInstalled={device.setInstalledPlugins} />
             ) : plugin.firmware === 'op1/coop' ? (
               <CoopInstall plugin={plugin} onInventory={device.setInstalledPlugins} />

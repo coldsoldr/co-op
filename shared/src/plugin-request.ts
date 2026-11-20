@@ -8,7 +8,7 @@
  */
 import { neutraliseMentions } from './feedback';
 
-export const REQUEST_FIRMWARES = ['hundekraft', 'opus', 'unsure'] as const;
+export const REQUEST_FIRMWARES = ['hundekraft', 'opus', 'op1r', 'unsure'] as const;
 export type RequestFirmware = (typeof REQUEST_FIRMWARES)[number];
 
 export const MAX_REPO = 200;
@@ -150,7 +150,13 @@ export function repoFromIssue(body: string): { repo: string; firmware: RequestFi
   for (const match of body.matchAll(/https?:\/\/(?:www\.)?github\.com\/[^\s)<>"'\]]+/gi)) {
     const repo = parseRepo(match[0]);
     if (repo && repo.toLowerCase() !== 'coldsoldr/co-op') {
-      const firmware = /\bopus\b/i.test(body) ? 'opus' : /\b(hundekraft|kennel)\b/i.test(body) ? 'hundekraft' : null;
+      const firmware = /\bopus\b/i.test(body)
+        ? 'opus'
+        : /\b(hundekraft|kennel)\b/i.test(body)
+          ? 'hundekraft'
+          : /\bop1r\b|\.op1p\b/i.test(body)
+            ? 'op1r'
+            : null;
       return { repo, firmware };
     }
   }

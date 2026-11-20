@@ -2,18 +2,34 @@
   "format": 1,
   "id": "nostromo",
   "name": "Nostromo",
-  "firmware": "op1/hundekraft",
   "kind": "fx",
   "author": "Lewis-Clayton",
   "description": "Nostromo by Lewis-Clayton is Jon Dattorro's plate reverb, the design behind the Lexicon 224 and the Deluge's Digital reverb, with the controls of the Chase Bliss CXM 1978. It can be a room, a plate or a hall. The screen draws the reverb's tail like a scope trace, and the ship from *Alien* flies where the tail dies out.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3.1",
   "credits": "After the Deluge's Digital reverb by Katherine Whitlock and Jon Dattorro's plate; from op1r, ported to kennel by Hundekraft",
   "tags": [
     "effect",
-    "hundekraft"
+    "hundekraft",
+    "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/nostromo.op1p",
+      "sha256": "53090f1ead93b868597a31a50a16cc0167e56e4dd8b974a02f09016e1bf59693",
+      "sizeBytes": 85462,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/nostromo",
+      "savedName": "nostromo"
+    }
   ]
 }

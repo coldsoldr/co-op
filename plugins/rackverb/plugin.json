@@ -2,18 +2,34 @@
   "format": 1,
   "id": "rackverb",
   "name": "rackverb",
-  "firmware": "op1/hundekraft",
   "kind": "fx",
   "author": "hundekraft",
   "description": "rackverb is a rack of four effects units from the late 80s, with 316 programs between them: big halls, gated drum rooms and reverse reverbs, then flangers, slapback echoes and wide choruses. VERB I has 63 programs: reverbs, gated rooms and reverse rooms. VERB II has 100, from 00 to 99: reverbs, gates, reverses, flangers, choruses, delays and a few odd ones. Program 00 is a bypass. FEX has 63 echoes, multi-tap delays, slapbacks and stereo wideners.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3.1",
   "credits": "Written from Eric Brombaugh's and thement's published Midiverb research; no Alesis ROM data",
   "tags": [
     "effect",
-    "hundekraft"
+    "hundekraft",
+    "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/rackverb.op1p",
+      "sha256": "2f35a3424a4d90a1c74482e97f3933459af3b1e37c6cb135b741b1e6b1229deb",
+      "sizeBytes": 75746,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/rackverb",
+      "savedName": "rackverb"
+    }
   ]
 }

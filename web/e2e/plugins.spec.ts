@@ -62,6 +62,15 @@ test('explains how to submit a plugin, per firmware, and copies the prompt', asy
   await expect(coop).toContainText('/port <plugin>');
   await expect(coop).not.toContainText('/add-plugin');
 
+  // op1r: listed from your repo like hundekraft, with the .op1p downloaded and installed by op1r's own patcher.
+  await page.keyboard.press('End');
+  await expect(firmware.getByRole('tab', { name: 'op1r' })).toBeFocused();
+  const op1r = page.getByRole('tabpanel', { name: 'op1r' });
+  await expect(op1r).toContainText('<name>.op1p');
+  await expect(op1r.getByRole('link', { name: 'op1r’s web patcher' })).toHaveAttribute('href', 'https://pcppcp.github.io/op1r/web/');
+  await expect(op1r).not.toContainText('Install over USB');
+  await expect(op1r.getByRole('link', { name: 'Offer your plugin in an issue' })).toHaveAttribute('href', /firmware=op1r$/);
+
   await page.getByRole('button', { name: 'Back to plugins' }).click();
   await expect(page.locator('#panel-plugins article')).toHaveCount(16);
   await expect(page.getByRole('button', { name: 'Submit a plugin' })).toBeFocused();

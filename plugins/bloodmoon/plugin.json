@@ -11,7 +11,12 @@
   "source": "https://github.com/SammiBabe666/Project_Bloodmoon",
   "video": "https://raw.githubusercontent.com/SammiBabe666/Project_Bloodmoon/main/media/bloodmoon_demo.mp4",
   "credits": "Published by SammiBabe666; also part of hundekraft's workshop",
-  "tags": ["synth", "organ", "bell", "gothic"],
+  "tags": [
+    "synth",
+    "organ",
+    "bell",
+    "gothic"
+  ],
   "builds": [
     {
       "firmware": "op1/hundekraft",
@@ -27,6 +32,17 @@
       "link": "https://github.com/SammiBabe666/Project_Bloodmoon/tree/main/download",
       "version": "1.5.2",
       "requires": "opus core 2.6"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/bloodmoon.op1p",
+      "sha256": "17352c5d345a2a3a713289195d5336c29866a6635fbbc84307256b7d5fc59629",
+      "sizeBytes": 17519,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/bloodmoon",
+      "savedName": "bloodmoon"
     }
   ]
 }

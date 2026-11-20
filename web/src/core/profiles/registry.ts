@@ -5,12 +5,13 @@ import { op1Stock } from './op1-stock';
 import { op1Hundekraft } from './op1-hundekraft';
 import { op1Opus } from './op1-opus';
 import { op1Coop } from './op1-coop';
+import { op1Op1r } from './op1-op1r';
 
 /**
  * Every supported profile. Order matters: detection ties keep this order, and the first is the
  * default when nothing is recognised. Later firmware profiles are appended here.
  */
-export const profiles: readonly DeviceProfile[] = [op1Stock, op1Hundekraft, op1Opus, op1Coop];
+export const profiles: readonly DeviceProfile[] = [op1Stock, op1Hundekraft, op1Opus, op1Coop, op1Op1r];
 
 export function getProfile(id: string): DeviceProfile | undefined {
   return profiles.find((p) => p.id === id);

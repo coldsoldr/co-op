@@ -2,17 +2,33 @@
   "format": 1,
   "id": "juni_chorus",
   "name": "JUNI chorus",
-  "firmware": "op1/hundekraft",
   "kind": "fx",
   "author": "hundekraft",
   "description": "Made for JUNI, but it works on anything. As the master effect it's stereo, with one delay per side. In I and II the two sides move in opposite directions, which makes it wide; in I+II they move together, as on the original. On a synth or the drums it's mono. The voicing is a Juno-106's, after FM-106 by PatttF and KR-106 by Karl LaRocca.",
-  "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3.1",
   "tags": [
     "effect",
-    "hundekraft"
+    "hundekraft",
+    "op1r"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://hundekraft.github.io/op1-workshop/",
+      "requires": "hundekraft 3.3.1",
+      "source": "https://github.com/Hundekraft/op1-workshop"
+    },
+    {
+      "firmware": "op1/op1r",
+      "link": "https://pcppcp.github.io/op1r/web/",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/juni_chorus.op1p",
+      "sha256": "86aaffe34b999af57fe3cc5ae32e364c28653862e331e61e36be3bfc8e0cc0b3",
+      "sizeBytes": 28987,
+      "version": "72",
+      "requires": "op1r 72",
+      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/juni_chorus",
+      "savedName": "juni_chorus"
+    }
   ]
 }
