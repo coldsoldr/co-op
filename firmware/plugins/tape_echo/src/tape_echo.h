@@ -99,6 +99,12 @@ class TapeEcho {
   // In-place calls are fine.
   void Process(const int16_t* in_l, const int16_t* in_r, int16_t* wet_l, int16_t* wet_r,
                int32_t n, const TapeEchoParams& p);
+  // coop 0.4, the idle path (../tape_echo.cc): a call's control without the tape. Everything Process moves but the
+  // tape, its write position and its two filters: the glide, the smoothers, the wow and flutter, and the heads'
+  // delays, weights and the input gain as the run kernel would have left them after n samples.
+  void Idle(const TapeEchoParams& p, int32_t n);
+  // True when the n pairs the last Process wrote to the tape are all zero (both channels).
+  bool WroteSilence(int32_t n) const;
 
  private:
   void Control(const TapeEchoParams& p, int32_t n);

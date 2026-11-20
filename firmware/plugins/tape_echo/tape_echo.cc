@@ -104,6 +104,63 @@ inline int32_t SyncedTime(int32_t sync, int32_t knob_word, int32_t s96, int32_t 
 
 typedef coop_tape_echo::Instance Instance;
 
+/* The idle path (0.4; docs/efficiency-audit.md finding 6, README "Idle"). An echo left on a position cost its whole
+ * block on silence. Now: while the input block is exact silence (every sample's top 16 bits 0), hold is off and the
+ * feedback turn is under kIdleFeedback, each block's check looks at what the echo just wrote to the tape; kIdleHold
+ * blocks of zeros in a row (the tape once round and a margin: nothing is left anywhere on it, whatever the time or
+ * the heads are set to next) and the render stops computing. It passes the silent input and runs only the control
+ * (TapeEcho::Idle: the time's glide, the smoothers, the wow and flutter in phase, the mix's smoothing), so a note
+ * comes back into an echo that is where it would have been. The first block with any input, hold, or the feedback
+ * turn at kIdleFeedback or over, is rendered in full (the check is before the DSP: no sample of a new note is lost).
+ * A tape of zeros gives zeros, so the idle blocks are what the echo would have given; what is not carried on is the
+ * two filters' last sub-LSB state. A tail the loop's rounding holds for ever (high feedback on a new tape: a ghost
+ * of a few LSB) never passes the check: such an echo stays awake, as before.
+ * Tiny per-slot values in .bss (guidelines 2.3), cleared by init and by a restart. */
+const int32_t kIdleHold = TE_TAPE_SIZE / kHalfN + 9;   /* blocks: 1,047 (1.52 s), the tape once round is 1,038 */
+const int32_t kIdleFeedback = 29000;                   /* the turn, Q15: 0.97 (1.0 is 29789); from here it never idles */
+struct IdleState {
+    int32_t quiet;                                     /* silent, quiet blocks in a row */
+    int32_t on;
+};
+IdleState g_idle[COOP_FX_SLOTS];
+
+#if defined(COOP_FX_NO_IDLE)                           /* tests/host/tape_echo: the echo against te-op1-cfw's, sample */
+#define IDLE_OFF true                                  /* for sample (the idle path has its own test) */
+#define IDLE_COUNT() ((void)0)
+#define IDLE_LEVEL(x) ((void)0)
+#elif defined(COOP_IDLE_PROBE)                         /* tests/host/idle: the lockstep's switch and its counters */
+}  // namespace
+extern "C" {
+extern int g_coop_idle_off;
+extern uint32_t g_coop_idle_blocks;
+extern int32_t g_coop_idle_level;
+}
+namespace {
+#define IDLE_OFF (g_coop_idle_off != 0)
+#define IDLE_COUNT() ((void)++g_coop_idle_blocks)
+#define IDLE_LEVEL(x) ((void)(g_coop_idle_level = (x)))
+#else
+#define IDLE_OFF false
+#define IDLE_COUNT() ((void)0)
+#define IDLE_LEVEL(x) ((void)0)
+#endif
+
+/* True when the block's input is exact silence on the int16 bus (the top halves all 0). Six samples first: while
+ * anything plays, one of them is not zero and the block costs a few cycles here; only a block that may be silent is
+ * read through (SilentScan, out of line: a playing block's code stays as it was). */
+__attribute__((noinline)) bool SilentScan(const int32_t *l, const int32_t *r)
+{
+    uint32_t any = 0;
+    for (int32_t i = 0; i < kBlock; ++i) any |= static_cast<uint32_t>(l[i]) | static_cast<uint32_t>(r[i]);
+    return (any >> 16) == 0;
+}
+inline bool Silent(const int32_t *l, const int32_t *r)
+{
+    const uint32_t some = static_cast<uint32_t>(l[0] | r[0] | l[21] | r[42] | l[kBlock - 1] | r[kBlock - 1]);
+    if (__builtin_expect((some >> 16) != 0, 1)) return false;
+    return SilentScan(l, r);
+}
+
 #ifdef COOP_FX_SCRATCH_BYTES
 static_assert(sizeof(Instance) <= COOP_FX_SCRATCH_BYTES, "plugin.json scratch: the state must fit");
 #endif
@@ -178,6 +235,7 @@ int init(int slot)
 {
     if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
     g_knobs[slot].valid = 0;                            /* nothing kept across a selection */
+    g_idle[slot].quiet = g_idle[slot].on = 0;
     uint32_t bytes = 0;
     Instance *g = static_cast<Instance *>(coop_fx_scratch(slot, &bytes));
     g_inst[slot] = (g && bytes >= sizeof(Instance)) ? g : nullptr;
@@ -202,9 +260,11 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
         Publish(g, time, div, s96);
         return;
     }
+    IdleState &idle = g_idle[slot];
     if (!g->half.Begin(Cycles())) {
         g->echo.Init();
         g->clear = 0;
+        idle.quiet = idle.on = 0;
     }
     if (g->clear < TE_TAPE_PAIRS) {                     /* starting: clear a slice, the dry passes through */
         g->clear = g->echo.ClearTape(g->clear, kClearPairs);
@@ -222,6 +282,20 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
     q.heads = pattern < 0 ? 0 : (pattern >= op1fx::kTapeEchoNumPatterns ? op1fx::kTapeEchoNumPatterns - 1 : pattern);
     q.hold = (params[COOP_FX_LATCH] & 1) != 0;
     const int32_t gain = kn.gain;
+
+    /* Idle: silence in and nothing that holds a sound: the control alone; l and r stay as they came (silence). */
+    const bool may_idle = !q.hold && q.feedback < kIdleFeedback && Silent(l, r);
+    if (__builtin_expect(idle.on, 0)) {
+        if (may_idle && !IDLE_OFF) {
+            g->echo.Idle(q, kHalfN);
+            g->half.IdleMix(mix);
+            g->half.End(Cycles());
+            Publish(g, time, div, s96);
+            IDLE_COUNT();
+            return;
+        }
+        idle.on = idle.quiet = 0;                       /* awake: this block in full */
+    }
 
     /* The bus to int16, into the decimators' buffers and the dry copy the mix works on. */
     int16_t *dl = g->dry[0], *dr = g->dry[1];
@@ -245,6 +319,14 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
         }
     }
     g->echo.Process(g->gained[0], g->gained[1], g->half.wet(0), g->half.wet(1), kHalfN, q);
+    if (__builtin_expect(may_idle, 0)) {                /* a silent block: did the echo write silence too? */
+        const bool zeros = g->echo.WroteSilence(kHalfN);
+        IDLE_LEVEL(zeros ? 0 : 1);
+        idle.quiet = zeros ? idle.quiet + 1 : 0;
+        if (idle.quiet >= kIdleHold && !IDLE_OFF) idle.on = 1;
+    } else {
+        idle.quiet = 0;
+    }
     g->half.Mix(dl, dr, mix);
     for (int32_t i = 0; i < kBlock; ++i) {
         l[i] = static_cast<int32_t>(dl[i]) << 16;

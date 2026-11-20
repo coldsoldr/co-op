@@ -15,7 +15,9 @@ TEMPOS ?= 1200 900 1335 1740 0
 SIM_TEMPO ?= 1335
 # e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
 SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
-CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-function
+# 0.4: the echo is compared sample for sample, so its idle path is off here (COOP_FX_NO_IDLE; the scenario has silent
+# stretches longer than the hold): ../idle tests that path against this build
+CXXFLAGS := -DCOOP_FX_NO_IDLE -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-function
 REF_INC := -I$(TE)/fx -I$(TE) -I$(TE)/rings -I$(TE)/clouds
 REF_SRC := $(TE)/fx/src/tape_echo/tape_echo.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clouds/src/core/clouds_tables.cc \
            $(TE)/rings/src/fixed_tables.cc
@@ -27,7 +29,7 @@ COOP_DEPS := $(wildcard $(COOP)/*.cc $(COOP)/*.h $(COOP)/src/*) ../../../sdk/coo
              ../../../sdk/coop_plugin.h ../../../core/include/coop_tempo.h ../tempo_host.cc
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
-SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns
+SIMFLAGS := -DCOOP_FX_NO_IDLE -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns
 
 .PHONY: all sim tables clean
 all: $(BUILD)/tape_echo_ref $(BUILD)/tape_echo_coop

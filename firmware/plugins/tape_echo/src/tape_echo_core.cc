@@ -472,4 +472,29 @@ void TapeEcho::Process(const int16_t* in_l, const int16_t* in_r, int16_t* wet_l,
   }
 }
 
+// --- coop 0.4: the idle path ---
+
+void TapeEcho::Idle(const TapeEchoParams& p, int32_t n) {
+  Control(p, n);
+  // What the run kernel does to its block over n samples, without the samples: each head's delay moves by its step,
+  // each weight half and the gain by theirs (TapeEchoRunC; the halves wrap in 16 bits as the kernel's adds do).
+  for (int32_t h = 0; h < 3; ++h) {
+    k_.pos[h] += k_.step[h] * n;
+    k_.w[h] = Pack(Lo(k_.w[h]) + n * Lo(k_.ws[h]), Hi(k_.w[h]) + n * Hi(k_.ws[h]));
+  }
+  k_.gain += k_.gstep * n;
+}
+
+bool TapeEcho::WroteSilence(int32_t n) const {
+  // Process writes downwards from ptr_ - 1 and leaves ptr_ on its last write (TE_TAPE_SIZE standing for 0): the
+  // call's n pairs are the n from there up, round the ring (two runs at most).
+  int32_t i = ptr_ == TE_TAPE_SIZE ? 0 : ptr_;
+  int32_t first = TE_TAPE_SIZE - i;
+  if (first > n) first = n;
+  int32_t any = 0;
+  for (int32_t j = 0; j < first; ++j) any |= tape_[i + j];
+  for (int32_t j = 0; j < n - first; ++j) any |= tape_[j];
+  return any == 0;
+}
+
 }  // namespace op1fx

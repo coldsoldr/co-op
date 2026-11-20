@@ -154,8 +154,9 @@ positions and the head fills against the SVG are the gate's to confirm.
   now makes none. Simulator **15,039 avg / 16,018 max** over the same 3,000 blocks at 133.5 BPM (0.3 on that
   scenario: 16,079 / 16,833): 1,040 less a block. The same values reach the DSP, so the output is bit for bit 0.3's:
   `make -C tests/host/tape_echo` (te-op1-cfw's DSP, five tempo runs of 20,000 blocks, now with stretches where every
-  turn and the gain move every block) and `sim`. File 24,508 bytes, `.text` 9,348, `.rodata` 3,576, `.bss` 404 (+220:
-  44 bytes a slot, cleared by `init`); imports unchanged.
+  turn and the gain move every block) and `sim`. With this change alone: file 24,508 bytes, `.text` 9,348, `.rodata`
+  3,576, `.bss` 404 (+220: 44 bytes a slot, cleared by `init`). 0.4 also has the idle path ("Idle" below, with the
+  file as it ships and its figures).
 - **0.3 (2026-11-11, the tempo export):** file 23,892 bytes, `.text` 9,060, `.rodata` 3,560, `.bss` 184 (8 more: the
   tempo the render last saw and its 96th, so the 16-step division runs only when the tempo moves); one import more,
   `_coop_tempo_bpm_q16`. Simulator 16,090 avg / 16,844 max at 120 BPM (+41 over e9's 16,049: the export call and the
@@ -190,6 +191,50 @@ positions and the head fills against the SVG are the gate's to confirm.
   `[P5 + ...]` some 20 times a sample); fuse the int16 -> Q31 output into the mix kernel; an L1 home for the kernel
   block and the soft-limit table once effects get a lease. The mono kernel for L == R is not an option: it records
   only the left half of the tape, and the right half would be stale when width returns.
+
+## Idle (0.4)
+
+An echo left on a position used to compute its whole block on silence. 0.4 stops when there is nothing left to
+compute (`docs/efficiency-audit.md` finding 6; the code is in `tape_echo.cc`, "The idle path").
+
+- **When.** The input block is exact silence (every sample's top 16 bits 0), hold is off, the feedback turn is under
+  0.97 (29,000 of 32,767; 1.0 is 29,789), and for 1,047 blocks in a row (1.52 s: the tape once round, 1,038 blocks,
+  and a margin) every pair the echo wrote to the tape was zero. The whole tape is then zeros: whatever the time, the
+  heads or the age are set to next, the echo plays zeros.
+- **Idle.** The render leaves the silent input as it came and runs only the control: the time's glide, the
+  smoothers, the wow and flutter (in phase), the heads' ramps, the mix's smoothing, the screen's words.
+- **Waking.** The check is at the top of the render, before any DSP: the first block with a non-zero sample, hold,
+  or the feedback at 0.97 or over is rendered in full. Nothing is faded and no sample is skipped.
+- **Never idle:** hold; feedback from 0.97 up (self-oscillation); any input; and a tail the loop's own rounding keeps
+  alive. At high feedback on a new tape the echo holds a faint ghost of its last repeats for ever (measured: longest
+  time, feedback 0.87, age 0: 9 LSB of the 16-bit output after three minutes; feedback 0.6, age 8,000: 2 LSB). That
+  is this echo's sound, with or without the idle path: the check never passes on it and such an echo stays awake,
+  at its full cost. Cutting a ghost under some level would be a change to the sound: not done (the owner's call).
+- **What it gives while idle is what the echo would have given: zeros from a tape of zeros.** In the lockstep test
+  the two never differ, awake or idle or after waking (0 LSB in every case below).
+
+| Simulator, cycles a block (`make -C tests/host/idle sim FX=tape_echo`) | 0.4 without the idle path (its divides already out) | 0.4 |
+|---|---|---|
+| playing | 14,305 | 14,371 (the six-sample silence test and the idle state's flags) |
+| silent, not yet idle | 14,295 | 14,774 (the input read through, the tape's new pairs read back) |
+| idle | | **1,382** |
+| the block that wakes | | 14,381 |
+
+`make -C tests/host/idle FX=tape_echo` (the effect at two positions, one with the idle path switched off, every
+sample compared; `tests/host/idle/fx_idle_test.cc`):
+- 20,000 blocks that never go silent (controls walking and jumping, the latches, re-inits) and 20,000 of notes with
+  150 ms gaps: identical, 0 idle blocks.
+- A note, silence, a soft note (40 LSB), a loud one, at four settings: idle 3.9 s after the input at the defaults
+  (the last echo falls under 1 LSB at 2.6 s), 2.0 s (short, worn tape, three heads), 39.4 s (sync 1/4, feedback 0.95),
+  68.3 s (0.6 s, feedback 0.6). Difference before, while idle, on the wake's first block and through both notes: 0 LSB.
+- Hold, feedback at 1.0 and at 1.1: a minute of silence, 0 idle blocks, 0 LSB; engaged while idle: awake on that
+  block, 0 idle blocks after.
+- The ghosts above: three minutes, 0 idle blocks, 0 LSB.
+- Every turn walking and jumping through 1,500 idle blocks, then a note: 0 LSB.
+
+`tests/host/tape_echo` builds the plugin with `-DCOOP_FX_NO_IDLE` (its scenario has silences longer than the hold, and
+it compares with te-op1-cfw's echo sample for sample): bit-identical as before, host and simulator.
+File 25,188 bytes, `.text` 9,908, `.bss` 444; imports unchanged (it loads on core e10 as 0.3 does).
 
 ## Tests
 
