@@ -289,6 +289,22 @@ pool has room; on the OP-1 rings landed in the far pool (Opus's figures: bank 2)
 costs about twice as much while it sends a frame, and a note of sympathetic strings at polyphony 1 took a whole
 audio block. The audio pool (1.3 MB) is not shared with the display. coop's build is unchanged.
 
+## 0.10: FM's five divides a render folded (2026-11-20)
+
+`FmVoiceFixed::Process` divided five times by its block size for the per-sample steps (carrier, modulator,
+brightness, feedback twice): five `___divsi3` calls a render, ~190 cycles each on this CPU
+(`docs/efficiency-audit.md` finding 8). The size is `kSubblockSize` = 32 in every build of this port, so the
+quotients are now the constant's (an add and a shift each), with the general divide kept for any other size, as
+`modal_resonator.cc` already does. The same truncating quotient, so the same samples. [C simulator] `make -C
+tests/host/rings profile PROFILE_BLOCKS=6000 PROFILE_MODEL='3 0'` (FM, polyphony all): the fm stage 7,637 cycles a
+render (0.9: 8,548), the heaviest render 14,810 (15,726): 911 less a voice, 3.6-5.5 k a block at four to six voices;
+the two builds' output files are identical. [C host] the 90 s scenario's output (`rings_coop`, every model) is 0.9's
+byte for byte. File 113,816 bytes, `.text` 45,072; imports unchanged.
+
+Found while checking: `make -C tests/host/rings` (this engine against te-op1-cfw's) no longer reports bit-identical
+at HEAD before this change (the two outputs first differ at byte 3,786,753 of the 90 s scenario); 0.10 gives the
+same bytes as 0.9 there, so the difference is older than this version and is not looked into here.
+
 ## Building and checking
 
 ```sh

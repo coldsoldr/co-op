@@ -129,13 +129,17 @@ void FmVoiceFixed::Process(int32_t* out, size_t size) {
 
   // Upstream's ParameterInterpolators: linear over the block, reaching the
   // target on the last sample.
+  // coop 0.10: the five quotients by n, folded for the usual size as modal_resonator.cc does (a division is a
+  // libgcc call, ~190 cycles on this CPU: five a render; size is kSubblockSize = 32 in every build of this port,
+  // where the constant's division is an add and a shift). The same truncating quotient, so the same samples.
   const int32_t n = static_cast<int32_t>(size);
+  const auto by_n = [n](int32_t x) -> int32_t { return n == 32 ? x / 32 : x / n; };
   const int32_t carrier_step =
-      static_cast<int32_t>(carrier_increment - previous_carrier_increment_) / n;
+      by_n(static_cast<int32_t>(carrier_increment - previous_carrier_increment_));
   const int32_t modulator_step =
-      static_cast<int32_t>(modulator_increment - previous_modulator_increment_) / n;
-  const int32_t brightness_step = (brightness_ - previous_brightness_) / n;
-  const int32_t feedback_step = feedback / n - previous_feedback_ / n;
+      by_n(static_cast<int32_t>(modulator_increment - previous_modulator_increment_));
+  const int32_t brightness_step = by_n(brightness_ - previous_brightness_);
+  const int32_t feedback_step = by_n(feedback) - by_n(previous_feedback_);
 
   uint32_t carrier_inc = previous_carrier_increment_;
   uint32_t modulator_inc = previous_modulator_increment_;
