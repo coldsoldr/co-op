@@ -87,7 +87,8 @@ the fine step (the owner, 2026-11-11; guidelines §4, §4.1, held layers instead
 - One instance in the slot's position buffer (e8; before e8 in `.bss`, 86,740 bytes, one per relocation): each
   position has its own tail.
 - params read once a block: `params[0..3]` mapped from the filter type's range units to Q15 with kennel's formula
-  (`(v - lo) × 32767 / (hi - lo)`, four divides a block, outside the sample loops), `params[5..7]` clamped to Q15,
+  (`(v - lo) × 32767 / (hi - lo)`; 0.3 keeps the four values per slot and divides only for a word that moved, so a
+  steady block has no divide), `params[5..7]` clamped to Q15,
   freeze from `params[8]` bit 0.
 - **The tank clear (guidelines §2.3).** Kennel zeroed the instance (84 KB) in `Init` and on a restart; coop's init
   runs in the audio interrupt at the stock positions, so `init` only resets the reverb's control state and marks the
@@ -151,6 +152,15 @@ text calls; the core's popup shows the one being turned); freeze is shown by the
 not by the envelope "held flat".
 
 ## Memory, L1, cost
+- **0.3 (2026-11-20, no divide in a steady block; `docs/efficiency-audit.md` finding 8):** the four turns' Q15 values
+  are kept per slot (`.bss`, 28 bytes a slot, cleared by `init`) and redone only for a word that moved: four
+  `___divsi3` calls a block before (~190 cycles each), none now while the turns are still. Simulator, the test's
+  scenarios (0.2 on the same script in brackets): 17,277 (17,753), 19,011 (19,500), 19,821 (20,305), 21,486 (21,942),
+  18,142 (18,632), 18,169 (18,639), 18,501 (18,991); the turns held 18,027 (18,517): about 490 less a block. With
+  every turn and word moving every block 21,725 (21,383): 340 more, the compares and stores beside the four divides;
+  max 26,548 (26,206, a size crossfade in that stretch). Bit-identical to te-op1-cfw, host and simulator (the script
+  below plus 800 blocks with every turn and word moving every block and jumps between, 300 held). File 23,492 bytes,
+  `.text` 12,424, `.rodata` 5,280, `.bss` 240; imports unchanged.
 - **e9 (2026-11-11, 0.2, the screen):** file 23,184 bytes (SVG 3,927), `.text` 12,268, `.rodata` 5,248, `.bss` 100
   (the five buffer pointers and the screen's node table and colours); load 17,616 once, +1,396 over e8 (16,220 with
   e9's new `coop_fx_t` field). The state and `"scratch"` are unchanged (nothing published). Audio bit-identical, host
@@ -181,7 +191,7 @@ not by the envelope "held flat".
 
 `make -C tests/host/cs_hall` (host C) and `make -C tests/host/cs_hall sim` (the Blackfin build with its assembly in
 `bfin-elf-run`): this plugin against te-op1-cfw's hall played through kennel's glue (transcribed: knob formula,
-latch, restart), 6,880 blocks of noise, saw, impulses, full-scale noise, mono input, every control moving, size
+latch, restart), 7,980 blocks (0.3: + every turn and word moving every block, then held) of noise, saw, impulses, full-scale noise, mono input, every control moving, size
 crossfades, infinite decay, freeze, a sound change (the 21-block clear) and a 5 ms pause. **Bit-identical, host and
 simulator** (2026-11-11). Mutating the reference's clear length or the motion constant breaks the match (checked).
 In a worktree pass `TE=/mnt/i/GitHub/coldsoldr/te-op1-cfw/ports`.

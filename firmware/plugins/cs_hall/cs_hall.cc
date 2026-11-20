@@ -52,11 +52,36 @@ const int32_t kHi[4] = { 14528, 24576, 22528, 32767 };
 
 inline int32_t Clamp15(int32_t v) { return v < 0 ? 0 : (v > 32767 ? 32767 : v); }
 
-/* kennel's op1_fx_param_q15 with the constant ranges: one divide per knob a block, outside the sample loops. */
-inline int32_t KnobQ15(const int16_t *p, int i)
+/* kennel's op1_fx_param_q15 with the constant ranges: one software divide (libgcc's ___divsi3, ~190 cycles on this
+ * CPU), only for a word that moved (Knobs below). */
+inline int32_t KnobQ15(int32_t word, int i)
 {
-    const int32_t v = (static_cast<int32_t>(p[i]) - kLo[i]) * 32767 / (kHi[i] - kLo[i]);
+    const int32_t v = (word - kLo[i]) * 32767 / (kHi[i] - kLo[i]);
     return Clamp15(v);
+}
+
+/* 0.3: the four turns as the DSP takes them, kept per slot and redone only for a word that moved (four divides a block
+ * before: docs/efficiency-audit.md finding 8). The same values, so the same output bit for bit. Tiny per-slot values
+ * in .bss (guidelines 2.3); init clears `valid`, so the first render after a selection computes all four. */
+struct Knobs {
+    int16_t raw[4];                                    /* params[0..3] as last seen */
+    int32_t valid;
+    int32_t q[4];                                      /* 0..32767 */
+};
+Knobs g_knobs[COOP_FX_SLOTS];
+
+inline const Knobs &ReadKnobs(int slot, const int16_t *p)
+{
+    Knobs &c = g_knobs[slot];
+    const bool all = !c.valid;
+    for (int k = 0; k < 4; ++k) {
+        if (all || p[k] != c.raw[k]) {
+            c.raw[k] = p[k];
+            c.q[k] = KnobQ15(p[k], k);
+        }
+    }
+    c.valid = 1;
+    return c;
 }
 
 inline uint32_t Cycles()
@@ -172,6 +197,7 @@ void ClearStep(Instance &g)
 int init(int slot)
 {
     if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+    g_knobs[slot].valid = 0;                                   /* nothing kept across a selection */
     uint32_t bytes = 0;
     Instance *p = static_cast<Instance *>(coop_fx_scratch(slot, &bytes));
     g_inst[slot] = (p && bytes >= sizeof(Instance)) ? p : nullptr;
@@ -197,10 +223,11 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
         return;
     }
     op1fx::HallParams q;                                       /* the block's controls, read once */
-    q.size = KnobQ15(params, P_SIZE);
-    q.decay = KnobQ15(params, P_DECAY);
-    q.damp = KnobQ15(params, P_DAMP);
-    const int32_t mix = KnobQ15(params, P_MIX);
+    const Knobs &kn = ReadKnobs(slot, params);
+    q.size = kn.q[P_SIZE];
+    q.decay = kn.q[P_DECAY];
+    q.damp = kn.q[P_DAMP];
+    const int32_t mix = kn.q[P_MIX];
     q.predelay = Clamp15(params[5]);
     q.early = Clamp15(params[6]);
     q.width = Clamp15(params[7]);
