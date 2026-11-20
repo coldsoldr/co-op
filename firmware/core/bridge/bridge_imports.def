@@ -1,0 +1,148 @@
+/*
+ * coop's bridge: every name a foreign plugin file may import, and the firmware addresses its code may carry
+ * (docs/bridge.md "ABI gap"). One table for the core (core/bridge/bridge_knl.cc, bridge_opmod.cc), the host test
+ * (tests/host/bridge) and the survey (tools/bridge/survey.py reads this file as text: keep one entry a line).
+ *
+ *   BR_IMPORT(dialect, "name", loads, full, kind, shim, "note")
+ *     dialect  KNL (a kennel .knl: the ELF name, with Blackfin's underscore) or OPMOD (an Opus 2 .opmod: the plain name)
+ *     loads    the bridge phase from which a file importing it LOADS (docs/bridge.md "Plan": B2 kennel effects, B3 their
+ *              screens, B4 kennel engines, B5 controls, B6 Opus effects, B7 Opus engines, B8 the big buffers and kennel's
+ *              engine extensions). 0 = never: the file is refused with "needs <name>"
+ *     full     the phase from which it does what the file expects (between the two a stand-in answers: nothing drawn,
+ *              no L1, page 1 only)
+ *     kind     FN or DATA (a stand-in function cannot answer a data import)
+ *     shim     the bridge's function or object in this tree, or 0 when it needs the core (named in the note)
+ *   A name that is not here is refused: "needs <name>". Append; never change what a released core resolved.
+ *
+ *   BR_ADDR(address, "name", "note")
+ *     an R246 address kennel's SDK reaches through a static inline (not an import, so no table catches it): the ones
+ *     known to mean the same on coop, where the stock firmware is the OS too. The survey and the audit name every
+ *     other firmware-looking constant a file's code builds.
+ *
+ * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
+ */
+
+/* ---- kennel: effects (the 19 effect files of hundekraft 3.3.1 import exactly these) ---- */
+BR_IMPORT(KNL, "_read_fx_param_safe", 2, 2, FN, 0, "core: the stock read_fx_param 0x01A28DA0 behind coop's fx_sanitize (plugin_host.cc)")
+BR_IMPORT(KNL, "_op1_fx_page", 2, 5, DATA, br_op1_fx_page, "uint8 [3][4], page 2 / latch per knob: all 0 (page 1) until B5 maps presses onto coop's controls")
+BR_IMPORT(KNL, "_op1_fx_wrap", 2, 5, DATA, br_op1_fx_wrap, "uint8 [3][4], a stepped knob that wraps: written by the file, read by nobody until B5")
+BR_IMPORT(KNL, "_op1_l1_claim", 2, 2, FN, br_op1_l1_claim, "0 = no pool: kennel's contract is the same output from the SDRAM copy")
+BR_IMPORT(KNL, "_op1_l1_claim_state", 2, 2, FN, br_op1_l1_claim_state, "0 = work on home")
+BR_IMPORT(KNL, "_op1_l1_sine_quarter", 2, 2, FN, br_op1_l1_sine_quarter, "0 = use OP1_SINE_TABLE (R246's own, 0x0101E5E8)")
+BR_IMPORT(KNL, "_op1_dbg", 2, 2, FN, br_op1_dbg, "empty on the OP-1 by contract")
+BR_IMPORT(KNL, "_op1_fx_fast", 2, 8, FN, br_op1_fx_fast, "0 = no lease: the file falls back to op1_fx_big")
+BR_IMPORT(KNL, "_op1_sc_source", 2, 8, FN, br_op1_sc_source, "0 and zeros = source not available (ente's sidechain hears nothing)")
+BR_IMPORT(KNL, "_op1_fx_big", 8, 8, FN, 0, "a 1 MiB lease per position: more than coop's whole plugin budget (owner decision 3)")
+BR_IMPORT(KNL, "_op1_fx_shift", 5, 5, FN, 0, "core: shift + turn into words 5..7, coop's e6 controls")
+BR_IMPORT(KNL, "_op1_fx_push_bit", 5, 5, FN, 0, "core: a push toggles a bit of word 7, coop's e6 latch")
+/* ---- kennel: screens (GUI thread). From B2 the file loads and plays with the stock filter page: the screen object is
+ * never registered, so these are never called; the stand-in answers 0 if one is. From B3 they draw. ---- */
+BR_IMPORT(KNL, "_op1_screen_draw_cached", 2, 3, FN, br_stub0, "B3: R246's screen draw 0x01A3B4C8, uncached (coop_scr_draw)")
+BR_IMPORT(KNL, "_op1_screen_cached_extra", 2, 3, FN, br_stub0, "B3: the extra static drawing, run every frame")
+BR_IMPORT(KNL, "_sq_line", 2, 3, FN, br_stub0, "B3: kennel's seq_text.h raster line, vendored (GPL)")
+BR_IMPORT(KNL, "_sq_text", 2, 3, FN, br_stub0, "B3: kennel's stroke text")
+BR_IMPORT(KNL, "_sq_num", 2, 3, FN, br_stub0, "B3")
+BR_IMPORT(KNL, "_sq_cat", 2, 3, FN, br_stub0, "B3")
+BR_IMPORT(KNL, "_sq_dot", 2, 3, FN, br_stub0, "B3")
+BR_IMPORT(KNL, "_sq_node_rotate", 2, 3, FN, br_stub0, "B3")
+BR_IMPORT(KNL, "_sq_fx_knobs_live", 2, 3, FN, br_stub0, "B3: the shown effect's four knobs, coop_fx_view_t.knobs")
+BR_IMPORT(KNL, "_sq_synth_knobs_live", 4, 4, FN, 0, "core: coop_scr_knobs")
+/* ---- kennel: engines ---- */
+BR_IMPORT(KNL, "_op1_eng_page", 4, 5, DATA, br_op1_eng_page, "uint8 [4], page 2 per knob: all 0 until B5")
+BR_IMPORT(KNL, "_op1_engine_knob_steps", 4, 5, FN, br_stub0, "a stepped page-1 knob: turns fine until B5 (strum's pattern selector)")
+BR_IMPORT(KNL, "_op1_harmony_context", 0, 0, FN, 0, "kennel's chord / scale features feed it: coop has neither")
+BR_IMPORT(KNL, "_op1_input_gain_db", 0, 0, FN, 0, "kennel's input engines (amp, snap, vox): coop has no input engine path")
+BR_IMPORT(KNL, "_op1_input_tuner_active", 0, 0, FN, 0, "as above")
+
+/* ---- Opus 2: effects (the kit's opus_plugin.h; the files of the 4.2 starter pack) ---- */
+BR_IMPORT(OPMOD, "opus_effect_register", 6, 6, FN, 0, "core: one coop effect per registered type, state per position")
+BR_IMPORT(OPMOD, "fw_snprintf", 6, 6, FN, 0, "core: R246's snprintf by address (the kit's op1fw.h)")
+BR_IMPORT(OPMOD, "fw_shift_held", 6, 6, FN, 0, "core: coop_scr_mods bit 0")
+BR_IMPORT(OPMOD, "opus_fn_held", 6, 6, FN, 0, "core: coop_scr_mods bit 1")
+BR_IMPORT(OPMOD, "opus_log", 6, 6, FN, 0, "core: dropped")
+BR_IMPORT(OPMOD, "opus_alloc", 6, 6, FN, 0, "core: heap 0 inside the file's budget, from opl_init only")
+BR_IMPORT(OPMOD, "opus_sincos", 6, 6, FN, 0, "core: R246's sine table")
+BR_IMPORT(OPMOD, "opus_setting", 6, 6, FN, 0, "core: the manifest's default (coop has no settings rows for plugins yet)")
+BR_IMPORT(OPMOD, "opus_on_setting", 6, 6, FN, 0, "core: kept, never called")
+BR_IMPORT(OPMOD, "opus_accent_now", 6, 6, FN, 0, "core: the stock encoder colour")
+BR_IMPORT(OPMOD, "opus_page_now", 6, 9, FN, 0, "the effect's own page: answers nothing to draw")
+BR_IMPORT(OPMOD, "opus_page_pixels", 6, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_page_still", 6, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_page_still_done", 6, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_art_text", 6, 9, FN, 0, "art: refused politely (0), the plain page")
+BR_IMPORT(OPMOD, "opus_art_ready", 6, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_art_draw", 6, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_art_show", 6, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "fw_screen_draw", 6, 9, FN, 0, "core: R246's screen draw 0x01A3B4C8")
+/* ---- Opus 2: engines ---- */
+BR_IMPORT(OPMOD, "opus_engine_add", 7, 7, FN, 0, "core: one coop engine per type, six voice blocks")
+BR_IMPORT(OPMOD, "opus_engine_live", 7, 7, FN, 0, "core: coop_scr_words")
+BR_IMPORT(OPMOD, "opus_engine_knob_set", 7, 7, FN, 0, "core")
+BR_IMPORT(OPMOD, "opus_on_main_pass", 7, 7, FN, 0, "core: the main loop's call")
+BR_IMPORT(OPMOD, "opus_page_text", 7, 9, FN, 0, "page primitives: nothing drawn until B9")
+BR_IMPORT(OPMOD, "opus_page_line", 7, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_page_frame", 7, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_page_fill", 7, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_page_dot", 7, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_page_stroke_line", 7, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_page_keep", 7, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_page_put", 7, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_page_art", 7, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_art_colour_slots", 7, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_art_set_colour", 7, 9, FN, 0, "as above")
+BR_IMPORT(OPMOD, "fw_screen_raster", 7, 9, FN, 0, "core: R246's raster 0x01A3B490")
+BR_IMPORT(OPMOD, "fw_text_new", 7, 9, FN, 0, "core: R246's text ctor 0x01A61904")
+BR_IMPORT(OPMOD, "fw_set_text", 7, 9, FN, 0, "core: 0x01A61AAC")
+BR_IMPORT(OPMOD, "fw_text_draw", 7, 9, FN, 0, "core: 0x01A6259C")
+/* ---- Opus 2: not planned (each refuses the file by name) ---- */
+BR_IMPORT(OPMOD, "opus_lfo_register", 0, 0, FN, 0, "an LFO type: coop has no LFO type slot for plugins")
+BR_IMPORT(OPMOD, "opus_seq_register", 0, 0, FN, 0, "a sequencer: coop has no sequencer slot for plugins")
+BR_IMPORT(OPMOD, "opus_on_knob", 0, 0, FN, 0, "a handler that takes or changes a turn (kennel's bridge refuses it too)")
+BR_IMPORT(OPMOD, "opus_on_key", 0, 0, FN, 0, "a key handler before the OS")
+BR_IMPORT(OPMOD, "opus_key_post", 0, 0, FN, 0, "posting key events")
+BR_IMPORT(OPMOD, "opus_drum_key", 0, 0, FN, 0, "a drum engine (sim): coop engines play in the synth's iter slot only")
+BR_IMPORT(OPMOD, "opus_fast_lease", 0, 0, FN, 0, "fast memory: coop_l1_lease is 4 KiB for all engines (dx alone leases 8 KiB)")
+BR_IMPORT(OPMOD, "opus_fast_use", 0, 0, FN, 0, "as above")
+BR_IMPORT(OPMOD, "opus_on_folder", 0, 0, FN, 0, "a folder on the OP-1's disk (dx's banks)")
+BR_IMPORT(OPMOD, "opus_engine_data", 0, 0, FN, 0, "data saved with the sound: coop saves eight words")
+BR_IMPORT(OPMOD, "opus_engine_data_set", 0, 0, FN, 0, "as above")
+
+/* ---- R246 addresses kennel's SDK inlines carry (op1_plugin.h, op1_synth.h of hundekraft 3.3.1) ---- */
+BR_ADDR(0x0101E5E8, "OP1_SINE_TABLE", "8192 x int16; symbols/sdram.sym")
+BR_ADDR(0x019EAD58, "op1_node_set_transform", "coop_scr_transform's target")
+BR_ADDR(0x019EB8AC, "node lookup by id", "kennel's opus_art show; R246")
+BR_ADDR(0x01A24A4C, "op1_raster_line", "coop_scr_line's target")
+BR_ADDR(0x01A28210, "ReadInterface (synth knobs as the screens see them)", "coop_scr_knobs' target")
+BR_ADDR(0x01A3B490, "op1_raster", "coop_scr_raster's target")
+BR_ADDR(0x01A3B4C8, "op1_screen_draw", "coop_scr_draw's target")
+BR_ADDR(0x01A3B580, "op1_find_node", "coop_scr_find's target")
+BR_ADDR(0x01A3B854, "op1_node_line_rgba", "coop_scr_line_rgba's target")
+BR_ADDR(0x01A3B96C, "op1_node_fill_rgba", "coop_scr_fill_rgba's target")
+BR_ADDR(0x01A61904, "op1_text_new", "R246 Text ctor")
+BR_ADDR(0x01A61AAC, "op1_text_set", "R246")
+BR_ADDR(0x01A6259C, "op1_text_draw", "R246")
+BR_ADDR(0x01AAAC0C, "current synth slot", "R246 data")
+BR_ADDR(0x01AB8BA0, "op1_fx_scratch table", "three pointers, R246's own position buffers: the bridge swaps the entry for the right channel")
+BR_ADDR(0x01DD7F78, "op1_shift_held", "R246 data")
+BR_ADDR(0x01DE5D40, "filter type range table", "0x01DE5C50 + 5 * 0x30: op1_fx_param_q15")
+BR_ADDR(0x01DE5D46, "filter type range table +6", "")
+BR_ADDR(0x01DE5D4C, "filter type range table +12", "")
+BR_ADDR(0x01DE5D52, "filter type range table +18", "")
+BR_ADDR(0x01DE5D58, "filter type range table +24", "")
+BR_ADDR(0x01DF4E38, "OP1_SCREEN_SLOT", "the instrument slot on screen")
+BR_ADDR(0x01DF4E3C, "FX screen edit mode", "0 / 1 / 3")
+BR_ADDR(0x01DF6F78, "sample buffers per slot", "uses_sample engines (B8)")
+BR_ADDR(0xFF801064, "OP1_VOICE_VEL", "symbols/l1.sym; engine_host.cc VOICE_VEL")
+BR_ADDR(0xFF8013C4, "synth knob words", "symbols/l1.sym")
+BR_ADDR(0xFF801444, "synth FX knob words", "8 slots x 16 bytes")
+BR_ADDR(0xFF8015C4, "drum FX knob words", "")
+BR_ADDR(0xFF8016C4, "master FX knob words", "symbols/l1.sym")
+BR_ADDR(0xFF8016D4, "current synth slot (audio)", "")
+BR_ADDR(0xFF8016D8, "current drum slot (audio)", "")
+BR_ADDR(0xFF8016E0, "block counter", "")
+BR_ADDR(0xFF801774, "FX output meter", "+ pos * 16: coop's stereo bus may not read it")
+BR_ADDR(0xFF801950, "OP1_PITCH_INC", "symbols/l1.sym; engine_host.cc PITCH_INC")
+BR_ADDR(0xFF801D50, "OP1_VOICE_ENV", "symbols/l1.sym")
+BR_ADDR(0xFF802970, "tape speed", "op1_beat clock inline")
+BR_ADDR(0xFF802974, "tape position", "op1_beat clock inline")
+BR_ADDR(0xFFB00000, "voice objects", "six x 0x24 in the scratchpad; engine_host.cc VOICE_BASE")
