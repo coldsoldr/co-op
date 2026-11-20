@@ -202,7 +202,13 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
 | warp | 29,697 | 36,152 |
 | all | 21,111 | 36,152 |
 
-  0.2's figures (0.1: all 20,936 / 33,416). The averages moved with the material (the ring's mapping is about 40
+  **0.3 (2026-11-20, `docs/efficiency-audit.md` finding 8):** the four turns' values are kept per slot (`.bss`, 28
+  bytes a slot, cleared by `init`) and divided only for a word that moved (four `___divsi3` calls a block before):
+  every row about 620 lower, all 20,488 / 35,523, the clearing blocks 22,082 at most. The output and the display
+  words are 0.2's bit for bit (the test's digest, "Tests"). The engine's own per-block divides (pattern's and warp's
+  loop gain, warp's tap times, a grain's envelope step at its start) are as they were. File 36,348 bytes, `.text`
+  22,584, `.bss` 464; imports unchanged.
+  The table is 0.2's (0.1: all 20,936 / 33,416). The averages moved with the material (the ring's mapping is about 40
   cycles a voice); the maxima are up to 2.8 k higher where the space's copy now falls in an effect's busiest block
   (it comes four times as often). **Over the 30 k SHOULD** (guidelines section 2.4): warp, as in 0.1 (three filtered
   buses beside six voices), and pattern by 144 cycles in the copy's block; every effect is far under the 60 k line.
@@ -225,6 +231,11 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
   effect (slot 0 beside slot 3 on dirty buffers, a restart): 0 blocks differ. **Listening**: 8 s of a plucked-saw
   riff through each effect into `build/petri_wav/` (mix 60 %; `wet/` the same at 100 %), plus mosaic and haze held,
   glide and pattern reversed, and `00_dry.wav`.
+- **The digest (0.3):** every rendered block's output and display words are folded into one number, printed last
+  (`output digest ...`). Two builds of the plugin that print the same digest gave the same samples in every check:
+  `make -C tests/host/petri COOP=<the older sources' folder> BUILD=<another>` builds an older version under the same
+  test. 0.2 and 0.3: `0178aade26c9622a` (host, 60,000 blocks) and `474736ab08745fff` (`sim`). The stress run has
+  stretches where every turn moves every block.
 - `make -C tests/host/petri sim` (Blackfin simulator): the two kernels against their C references (3,000 random calls
   each: 0 differ) and the cycle table above.
 - `make -C tests/host/petri screens`: the screen previews (above).

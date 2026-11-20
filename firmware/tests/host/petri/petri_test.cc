@@ -195,6 +195,15 @@ inline uint32_t RealCycles() {
 #endif
 
 // One render of 64 int16 pairs through the plugin at `slot` (the Q31 bus), with the low-bit check.
+// Every rendered block's output and display words folded into one number (FNV-1a), printed at the end: two builds of
+// the plugin that print the same digest gave the same samples in every check of the run (the bit-exactness proof of a
+// change that must not alter the sound: build the old sources with COOP=<their folder> and compare the lines).
+uint64_t g_digest = 1469598103934665603ull;
+void Digest(const void* p, size_t n) {
+  const uint8_t* b = static_cast<const uint8_t*>(p);
+  for (size_t i = 0; i < n; ++i) g_digest = (g_digest ^ b[i]) * 1099511628211ull;
+}
+
 bool Render(int slot, const int16_t* il, const int16_t* ir, int16_t* ol, int16_t* orr, const int16_t* p, uint32_t* cyc) {
   int32_t l[kBlock], r[kBlock];
   for (int i = 0; i < kBlock; ++i) {
@@ -216,6 +225,13 @@ bool Render(int slot, const int16_t* il, const int16_t* ir, int16_t* ol, int16_t
     if ((l[i] & 0xffff) || (r[i] & 0xffff)) ok = false;
     ol[i] = static_cast<int16_t>(l[i] >> 16);
     orr[i] = static_cast<int16_t>(r[i] >> 16);
+  }
+  Digest(l, sizeof(l));
+  Digest(r, sizeof(r));
+  {
+    uint32_t bytes = 0;
+    const coop_petri::Instance* st = static_cast<const coop_petri::Instance*>(coop_fx_scratch(slot, &bytes));
+    Digest(&st->disp, sizeof(st->disp));
   }
   return ok;
 }
@@ -261,6 +277,12 @@ bool DisplayOk(int slot) {
       if (ev < 3) knob[k] = RandRange(0, 32767);
       else if (ev < 60) knob[k] += RandRange(-500, 500);
       knob[k] = knob[k] < 0 ? 0 : (knob[k] > 32767 ? 32767 : knob[k]);
+    }
+    if (b % 4000 >= 3300 && b % 4000 < 3700) {   // stretches with every turn moving every block (0.3: the plugin keeps
+      for (int k = 0; k < 4; ++k) {              // each turn's value until its word moves)
+        knob[k] += RandRange(40, 200) * ((Rand() & 1) ? 1 : -1);
+        knob[k] = knob[k] < 0 ? 300 : (knob[k] > 32767 ? 32400 : knob[k]);
+      }
     }
     if (Rand() % 700 == 0) effect = RandRange(0, 10);
     if (Rand() % 4000 == 0) effect = RandRange(-3, 14);               // a stored word out of range: the plugin clamps
@@ -548,6 +570,8 @@ int main(int argc, char** argv) {
   const long cblocks = argc > 2 ? std::atol(argv[2]) : 1500;
   const int bad = KernelCheck(3000);
   Cycles(cblocks);
+  std::printf("output digest %08lx%08lx\n", static_cast<unsigned long>(g_digest >> 32),
+              static_cast<unsigned long>(g_digest & 0xffffffffu));
   std::printf(bad ? "petri (simulator): FAIL\n" : "petri (simulator): pass\n");
   return bad;
 #else
@@ -570,6 +594,8 @@ int main(int argc, char** argv) {
     if (bad) fail = 1;
   }
   if (dir) Listen(dir);
+  std::printf("output digest %08lx%08lx\n", static_cast<unsigned long>(g_digest >> 32),
+              static_cast<unsigned long>(g_digest & 0xffffffffu));
   std::printf(fail ? "petri: FAIL\n" : "petri: pass\n");
   return fail;
 #endif

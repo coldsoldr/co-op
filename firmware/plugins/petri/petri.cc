@@ -63,11 +63,37 @@ Instance *g_inst[COOP_FX_SLOTS];                       /* .bss: each slot's stat
 
 inline int32_t Clamp15(int32_t v) { return v < 0 ? 0 : (v > 32767 ? 32767 : v); }
 
-/* A turn's word in the filter range -> 0..32767 (per block). */
-inline int32_t Knob(const int16_t *p, int k)
+/* A turn's word in the filter range -> 0..32767. One software divide (libgcc's ___divsi3, ~190 cycles on this CPU),
+ * only for a word that moved (Knobs below). */
+inline int32_t Knob(int32_t word, int k)
 {
     const int32_t lo = kRangeLo[k], hi = kRangeHi[k];
-    return Clamp15((p[k] - lo) * 32767 / (hi - lo));
+    return Clamp15((word - lo) * 32767 / (hi - lo));
+}
+
+/* 0.3: the four turns as the DSP takes them, kept per slot and redone only for a word that moved (four divides a block
+ * before: docs/efficiency-audit.md finding 8). The same values, so the same output bit for bit. Tiny per-slot values
+ * in .bss (guidelines 2.3: the state has no room, it is sized to the position buffers' 134,784 bytes); init clears
+ * `valid`, so the first render after a selection computes all four. */
+struct Knobs {
+    int16_t raw[4];                                    /* params[0..3] as last seen */
+    int32_t valid;
+    int32_t q[4];                                      /* 0..32767 */
+};
+Knobs g_knobs[COOP_FX_SLOTS];
+
+inline const Knobs &ReadKnobs(int slot, const int16_t *p)
+{
+    Knobs &c = g_knobs[slot];
+    const bool all = !c.valid;
+    for (int k = 0; k < 4; ++k) {
+        if (all || p[k] != c.raw[k]) {
+            c.raw[k] = p[k];
+            c.q[k] = Knob(p[k], k);
+        }
+    }
+    c.valid = 1;
+    return c;
 }
 
 /* e9: the display words (state.h Display), one store each, once a block after the DSP; the DSP never reads them. */
@@ -96,6 +122,7 @@ void Publish(Instance *g)
 int init(int slot)
 {
     if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+    g_knobs[slot].valid = 0;                            /* nothing kept across a selection */
     uint32_t bytes = 0;
     Instance *g = static_cast<Instance *>(coop_fx_scratch(slot, &bytes));
     g_inst[slot] = (g && bytes >= sizeof(Instance)) ? g : nullptr;
@@ -133,10 +160,11 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
     }
 
     petri::Controls c;
-    c.time = Knob(params, 0);
-    c.activity = Knob(params, 1);
-    c.repeats = Knob(params, 2);
-    const int32_t mix = Knob(params, 3);
+    const Knobs &kn = ReadKnobs(slot, params);
+    c.time = kn.q[0];
+    c.activity = kn.q[1];
+    c.repeats = kn.q[2];
+    const int32_t mix = kn.q[3];
     c.effect = params[5] < 0 ? 0 : (params[5] >= petri::kNumEffects ? petri::kNumEffects - 1 : params[5]);
     c.filter = Clamp15(params[6]);
     c.space = Clamp15(params[7]);
