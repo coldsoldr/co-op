@@ -86,11 +86,17 @@ inline int32_t RenderNinetySixthQ4()
 
 /* The time word sync gives (step 1..11), or the turn's word when off or when the division is out of range; *div the
  * division in force (0..10), -1 when the turn's word is used (the screen's display word). */
-inline int32_t SyncedTime(int32_t sync, int32_t knob_word, int32_t s96, int32_t *div)
+inline int32_t SyncedTime(int32_t sync, int32_t knob_word, int32_t s96, int32_t *div, int32_t *kept_sync,
+                          int32_t *kept_s96, int32_t *kept_word)
 {
     *div = -1;
     if (sync < 1 || sync > kNumDivisions) return knob_word;
-    const int32_t word = op1fx::TapeEchoTimeWord(s96 * kDivision96ths[sync - 1]);
+    if (sync != *kept_sync || s96 != *kept_s96) {      /* a new division or tempo: the word again (0.4) */
+        *kept_word = op1fx::TapeEchoTimeWord(s96 * kDivision96ths[sync - 1]);
+        *kept_sync = sync;
+        *kept_s96 = s96;
+    }
+    const int32_t word = *kept_word;
     if (word < 0) return knob_word;
     *div = sync - 1;
     return word;
@@ -105,16 +111,17 @@ Instance *g_inst[COOP_FX_SLOTS];                       /* .bss: each slot's stat
 
 inline int32_t Clamp15(int32_t v) { return v < 0 ? 0 : (v > 32767 ? 32767 : v); }
 
-/* A turn's word in the filter range -> 0..32767 (kennel's op1_fx_param_q15; per block, not per sample). */
-inline int32_t Knob(const int16_t *p, int k)
+/* A turn's word in the filter range -> 0..32767 (kennel's op1_fx_param_q15). One software divide (libgcc's
+ * ___divsi3, ~190 cycles on this CPU): only when the word moved (Knobs below). */
+inline int32_t Knob(int32_t word, int k)
 {
     const int32_t lo = kRangeLo[k], hi = kRangeHi[k];
-    const int32_t v = (p[k] - lo) * 32767 / (hi - lo);
+    const int32_t v = (word - lo) * 32767 / (hi - lo);
     return Clamp15(v);
 }
 
 /* The input gain word as a Q14 factor: -6 dB at 0, 0 dB at the centre, +6 dB at the top (10^(dB / 20) x 16384, one
- * table entry per dB, interpolated): kennel's knl::GainQ14 (ports/knl/common/knl_fx.h). */
+ * table entry per dB, interpolated): kennel's knl::GainQ14 (ports/knl/common/knl_fx.h). Two divides: likewise. */
 inline int32_t GainQ14(int32_t word)
 {
     static const int32_t kTable[13] = { 8211, 9215, 10338, 11600, 13016, 14605, 16384, 18382, 20626, 23143, 25966,
@@ -124,6 +131,39 @@ inline int32_t GainQ14(int32_t word)
     const int32_t frac = pos - i * 32767;
     if (i >= 12) return kTable[12];
     return kTable[i] + (((kTable[i + 1] - kTable[i]) * frac) / 32767);
+}
+
+/* 0.4: what the block's control words give the DSP, kept per slot and redone only for a word that moved: the four
+ * turns and the gain (six divides a block before), and the sync division's time word (TapeEchoTimeWord: a table walk
+ * and a divide, every block while sync was on). The same values, so the same output bit for bit
+ * (docs/efficiency-audit.md finding 8). Tiny per-slot values in .bss (guidelines 2.3); init clears `valid`, so the
+ * first render after a selection computes everything. */
+struct Knobs {
+    int16_t raw[5];                                    /* params[0..3], params[5] as last seen */
+    int16_t valid;
+    int32_t q[4];                                      /* the turns, 0..32767 */
+    int32_t gain;                                      /* GainQ14(params[5]) */
+    int32_t sync, s96, word;                           /* the sync step and the 96th note `word` was made from */
+};
+Knobs g_knobs[COOP_FX_SLOTS];
+
+inline Knobs &ReadKnobs(int slot, const int16_t *p)
+{
+    Knobs &c = g_knobs[slot];
+    const bool all = !c.valid;
+    for (int k = 0; k < 4; ++k) {
+        if (all || p[k] != c.raw[k]) {
+            c.raw[k] = p[k];
+            c.q[k] = Knob(p[k], k);
+        }
+    }
+    if (all || p[5] != c.raw[4]) {
+        c.raw[4] = p[5];
+        c.gain = GainQ14(p[5]);
+    }
+    if (all) c.sync = 0;                               /* no division's word kept */
+    c.valid = 1;
+    return c;
 }
 
 /* e9: the display words (state.h Display), one store each, once a block after the DSP; the DSP never reads them. */
@@ -137,6 +177,7 @@ inline void Publish(Instance *g, int32_t time, int32_t div, int32_t s96)
 int init(int slot)
 {
     if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+    g_knobs[slot].valid = 0;                            /* nothing kept across a selection */
     uint32_t bytes = 0;
     Instance *g = static_cast<Instance *>(coop_fx_scratch(slot, &bytes));
     g_inst[slot] = (g && bytes >= sizeof(Instance)) ? g : nullptr;
@@ -153,9 +194,10 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
     if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   /* not bound: dry */
     Instance *const g = g_inst[slot];
     /* The time in force (the sync division's or the turn's): the echo's and the screen's (published at every exit). */
+    Knobs &kn = ReadKnobs(slot, params);
     const int32_t s96 = RenderNinetySixthQ4();
     int32_t div;
-    const int32_t time = SyncedTime(params[6], Knob(params, 0), s96, &div);
+    const int32_t time = SyncedTime(params[6], kn.q[0], s96, &div, &kn.sync, &kn.s96, &kn.word);
     if (n != kBlock) {                                  /* the host's block is 64; anything else passes through */
         Publish(g, time, div, s96);
         return;
@@ -173,13 +215,13 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
 
     op1fx::TapeEchoParams q;
     q.time = time;
-    q.feedback = Knob(params, 1);
-    q.age = Knob(params, 2);
-    const int32_t mix = Knob(params, 3);
+    q.feedback = kn.q[1];
+    q.age = kn.q[2];
+    const int32_t mix = kn.q[3];
     int32_t pattern = params[7];
     q.heads = pattern < 0 ? 0 : (pattern >= op1fx::kTapeEchoNumPatterns ? op1fx::kTapeEchoNumPatterns - 1 : pattern);
     q.hold = (params[COOP_FX_LATCH] & 1) != 0;
-    const int32_t gain = GainQ14(params[5]);
+    const int32_t gain = kn.gain;
 
     /* The bus to int16, into the decimators' buffers and the dry copy the mix works on. */
     int16_t *dl = g->dry[0], *dr = g->dry[1];

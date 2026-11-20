@@ -240,6 +240,16 @@ int main(int argc, char** argv) {
     }
     if (b % 3000 < 600) knob_q15[1] = 30500 + (b % 7) * 300;   // stretches of feedback over 1 (self-oscillation)
     if (Rand() % 300 == 0) gain = RandRange(0, 32767);
+    if (b % 4000 >= 3300 && b % 4000 < 3700) {   // stretches with every turn and the gain moving every block (0.4: the
+      for (int k = 0; k < 4; ++k) {              // plugin keeps each word's value until the word moves)
+        knob_q15[k] += RandRange(40, 200) * ((Rand() & 1) ? 1 : -1);
+        if (knob_q15[k] < 0) knob_q15[k] = 300;
+        if (knob_q15[k] > 32767) knob_q15[k] = 32400;
+      }
+      gain += RandRange(20, 300) * ((Rand() & 1) ? 1 : -1);
+      if (gain < 0) gain = 200;
+      if (gain > 32767) gain = 32500;
+    }
     if (Rand() % 500 == 0) pattern = (pattern + 1) % 4;
     if (Rand() % 450 == 0) sync = Rand() % 3 == 0 ? 0 : RandRange(1, 11);   // sync: off, or a division
     if (Rand() % 700 == 0) hold = !hold;

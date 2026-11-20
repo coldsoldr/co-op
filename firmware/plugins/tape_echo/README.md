@@ -148,6 +148,14 @@ positions and the head fills against the SVG are the gate's to confirm.
   pairs, every head read serving both channels, so stereo costs about 1.56x the mono path rather than 2x (te-op1-cfw
   simulator: 9.2 MHz stereo, 5.9 MHz mono, whole effect). coop runs it at every position (synth, drum, master and both
   FX 2 slots): the instrument positions now hear the echo in stereo, and each position is a full stereo instance.
+- **0.4 (2026-11-20, no divide in a steady block; `docs/efficiency-audit.md` finding 8):** the four turns, the gain
+  and the sync division's time word are kept per slot and redone only for a word (or a tempo) that moved. Before, a
+  block made six `___divsi3` calls for them (seven and a table walk with sync on, ~190 cycles each); a steady block
+  now makes none. Simulator **15,039 avg / 16,018 max** over the same 3,000 blocks at 133.5 BPM (0.3 on that
+  scenario: 16,079 / 16,833): 1,040 less a block. The same values reach the DSP, so the output is bit for bit 0.3's:
+  `make -C tests/host/tape_echo` (te-op1-cfw's DSP, five tempo runs of 20,000 blocks, now with stretches where every
+  turn and the gain move every block) and `sim`. File 24,508 bytes, `.text` 9,348, `.rodata` 3,576, `.bss` 404 (+220:
+  44 bytes a slot, cleared by `init`); imports unchanged.
 - **0.3 (2026-11-11, the tempo export):** file 23,892 bytes, `.text` 9,060, `.rodata` 3,560, `.bss` 184 (8 more: the
   tempo the render last saw and its 96th, so the 16-step division runs only when the tempo moves); one import more,
   `_coop_tempo_bpm_q16`. Simulator 16,090 avg / 16,844 max at 120 BPM (+41 over e9's 16,049: the export call and the
