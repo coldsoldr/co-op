@@ -959,6 +959,30 @@
       "added": "2026-11-20",
       "draft": false,
       "source": "https://github.com/pcppcp/op1r-src"
+    },
+    {
+      "id": "bubbler_volkerjunginger",
+      "added": "2026-11-21",
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "draft": true
+    },
+    {
+      "id": "delayed_volkerjunginger",
+      "added": "2026-11-21",
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "draft": true
+    },
+    {
+      "id": "hollow_saint",
+      "added": "2026-11-21",
+      "source": "https://github.com/SammiBabe666/Project_Hollow_Saint",
+      "draft": true
+    },
+    {
+      "id": "pitchdelay_volkerjunginger",
+      "added": "2026-11-21",
+      "source": "https://github.com/VolkerJunginger/OP-1",
+      "draft": true
     }
   ]
 }

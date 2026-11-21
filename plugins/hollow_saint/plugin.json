@@ -1,0 +1,27 @@
+{
+  "format": 1,
+  "id": "hollow_saint",
+  "name": "Cathedral of the Hollow Saint",
+  "kind": "synth",
+  "author": "cathedral of the hollow saint",
+  "description": "A haunted hurdy-gurdy for the original Teenage Engineering OP-1: a kennel synth plugin (hollow_saint) for the Hundekraft OP-1 Workshop 3.0.x. Bowed melody strings, a drone that can hold a key like real bourdons, a buzzing bridge that kicks in on tempo-locked wheel strokes, and a cathedral that darkens, rings and tolls a distant bell.",
+  "license": "GPL-3.0-or-later",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/SammiBabe666/Project_Hollow_Saint",
+  "tags": [
+    "synth"
+  ],
+  "builds": [
+    {
+      "firmware": "op1/hundekraft",
+      "link": "https://github.com/SammiBabe666/Project_Hollow_Saint",
+      "requires": "hundekraft 3.0"
+    },
+    {
+      "firmware": "op1/opus",
+      "link": "https://github.com/SammiBabe666/Project_Hollow_Saint",
+      "requires": "opus 2.6"
+    }
+  ]
+}
