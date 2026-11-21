@@ -21,14 +21,14 @@ Effort S = hours, M = a day or two, L = a week. "Decision" = changes behaviour o
 | # | Finding | Where | Estimated gain | Effort | Risk | Verify with |
 |---|---|---|---|---|---|---|
 | 1 | **Done in e12; slower on the device; a boot policy in e13.** Plugin memory sits in heap 0 beside the tape cache while 3.25 MiB of coop's own region A is unused | `plugin_host.cc:490,599,690`, `coop_cb.ld:5` | 0.67 MiB of heap 0 back at once (the position buffers), 1.0 MiB staging block gone, the budget can go from 1.5 to ~2.2 MiB with heap 0 untouched [I] | M | region A's tail is mapped [C] but only its first 0.75 MiB has run on a device | op1emu `--watch-writes` over `0x02cc0000..0x02ffffff` on a stock session, then the 13-file set |
-| 2 | The tape record tap runs the stock record twice, with six state copies, on every block, recording or not | `tape_stereo.cc:112-175` | 4-6 k of the 7.2-7.5 k it costs a block [C device for the cost, I for the share] | M | must prove the stock function writes no lane while not recording | `rec_sum / recs` in the stats windows, `det_tape_rec*.txt` bit-exact |
-| 3 | The measuring code is always on: per-voice cost records, marks, a 63-slot scan and two folds at every block start | `stereo_bus.cc:142-161`, `engine_host.cc:166-181`, `coop_stats.cc:153-208`, `stereo_thunks.S:35-68` | 5-6 k a block while voices play [C device, m1c], more with the per-voice calls; 2-4 k idle [I] | S-M | Decision: the stats page loses its live cost table unless it is a switch | `cb_rest`, `thunk` in an m1 run with the switch off / on |
-| 4 | `coop_stats.txt` and the 8 KiB tape tail are rewritten every 5 s for the whole session | `coop_stats.cc:28,671-677,724` | ~19 KiB of NAND per 5 s (13.7 MB an hour) and a 10-50 ms main-loop stall each time [I from the recorded write times] | S | the librarian reads the file: serve it from RAM | `stats writes` count, `io_gap_max`, fps |
-| 5 | The S3 stage and the mix run in full on a silent instrument | `stereo_bus.cc:398-427,519-546` | ~11 k + ~8 k a block while nothing sounds [C device costs], bit-exact [I] | M | the skip conditions must be exact (ring, DC state, ramp) | `det_chord.txt` identical; `stage=` and `mix_sum` idle |
+| 2 | **Done in e14.** The tape record tap runs the stock record twice, with six state copies, on every block, recording or not | `tape_stereo.cc:112-175` | 4-6 k of the 7.2-7.5 k it costs a block [C device for the cost, I for the share] | M | must prove the stock function writes no lane while not recording | `rec_sum / recs` in the stats windows, `det_tape_rec*.txt` bit-exact |
+| 3 | **Done in e14 (a switch).** The measuring code is always on: per-voice cost records, marks, a 63-slot scan and two folds at every block start | `stereo_bus.cc:142-161`, `engine_host.cc:166-181`, `coop_stats.cc:153-208`, `stereo_thunks.S:35-68` | 5-6 k a block while voices play [C device, m1c], more with the per-voice calls; 2-4 k idle [I] | S-M | Decision: the stats page loses its live cost table unless it is a switch | `cb_rest`, `thunk` in an m1 run with the switch off / on |
+| 4 | **Done in e14.** `coop_stats.txt` and the 8 KiB tape tail are rewritten every 5 s for the whole session | `coop_stats.cc:28,671-677,724` | ~19 KiB of NAND per 5 s (13.7 MB an hour) and a 10-50 ms main-loop stall each time [I from the recorded write times] | S | the librarian reads the file: serve it from RAM | `stats writes` count, `io_gap_max`, fps |
+| 5 | **Done in e14.** The S3 stage and the mix run in full on a silent instrument | `stereo_bus.cc:398-427,519-546` | ~11 k + ~8 k a block while nothing sounds [C device costs], bit-exact [I] | M | the skip conditions must be exact (ring, DC state, ramp) | `det_chord.txt` identical; `stage=` and `mix_sum` idle |
 | 6 | Idle paths missing in the heavy effects (tape_echo, cs_hall, cs_plate, fickle, petri, rings verb) | each `render` | 13-18 k a block per idle position [I: plugin cost minus the wrap] | M each | not bit-exact (thresholds); a tail cut below ~-96 dB | each plugin's `prof`, `s2_*` / `fx1_plugin` idle |
 | 7 | **Done in e12.** Positions 0 (synth) and 1 (drum) never run at once but each has a buffer | `plugin_host.cc:83,385,770-772,1129-1134` | one buffer of five: 134,784 bytes (171,936 at HEAD) [I] | S-M | the stock must re-init the effect on every synth / drum change | `det_fx_two_pos.txt`, `p0=`/`p1=` init counts |
 | 8 | Software divides every block in nine plugins (the knob scaling); five per voice render in rings FM | `tape_echo.cc:109-114` and its copies, `rings/src/fm_voice_fixed.cc:132-138` | 0.75-1.5 k a block per effect; rings FM ~1.1 k a render, 4-7 k a block [I: ~190 cycles a `__divsi3`] | S | none, bit-exact | host tests bit-identical; `fx1_plugin=` |
-| 9 | The effect wrap is compiled C: int16 mid / side -> Q31 L / R and back, 2.3 k for a do-nothing effect | `plugin_host.cc:1198-1221,1248-1251,1465-1468,1506-1512` | ~1.5 k a block per plugin position, ~5 k with all four in use [I from test_fx's 3,068 C op1emu] | S | bit-exact kernel, sim-checkable | `fx1_plugin=` of test_fx |
+| 9 | (not in e14) The effect wrap is compiled C: int16 mid / side -> Q31 L / R and back, 2.3 k for a do-nothing effect | `plugin_host.cc:1198-1221,1248-1251,1465-1468,1506-1512` | ~1.5 k a block per plugin position, ~5 k with all four in use [I from test_fx's 3,068 C op1emu] | S | bit-exact kernel, sim-checkable | `fx1_plugin=` of test_fx |
 | 10 | SysEx installs keep one 64-byte message in flight | `coop_sysex.cc:38-39,242-253`, `web/src/core/usbmidi/coop.ts:50,156-163` | 1.5 -> ~4.5 KB/s with three in flight: rings 76 s -> ~25 s, the 13-file set 4 min -> 1.3 min [I] | S-M | drops when the queue overflows; needs the device | time a rings install |
 | 11 | rings: reverb buffer twice the size it reads; 48 string lines for at most ~16 live | `rings/src/reverb_fixed.h:32-33`, `src/string_voice.h:109`, `src/string_fixed.h:199` | 54 KB (S, bit-exact) and ~260 KB (M) of its 572 KB `.bss` [I] | S / M | the string pool touches voice stealing | host bit-exact, `plugmem used` |
 | 12 | The largest effect state sets all five buffers: tape_echo's 1.5 s | `tape_echo/src/tape_echo_layout.h:13`, `plugin_host.cc:473` | 220-240 KB with a ~1.0 s cap; or size classes (two large, five small) ~390 KB [I] | S / M | Decision: a shorter echo, or at most N large effects at once | `plugmem fxbuf` |
@@ -126,6 +126,11 @@ calls `write_file` into `g_text` and is served from that buffer, no NAND at all.
 settings row or an image flag (it exists for disk mode without a host). The web client's new plugin-memory read
 (`web/src/core/usbmidi/coop.ts`, uncommitted) reads the same path and would keep working.
 
+**Done in e14 (2026-11-21; `docs/performance.md` "e14" 5).** The text is made in RAM and a FILE_GET of the stats
+path is answered from it (made afresh when a read starts); the file and the tape tail are written only with
+`g_coop_statsfile` (1 in the ELF for the op1emu gate, 0 in the device packages, the policy token `statsfile=1`).
+The windows tick without the write. Not measurable in op1emu (no NAND timing): the stall is the device's.
+
 ### 8. Software divides per block and per render
 
 Evidence [C by reading; the call counts from disassembly of test builds, not the packed files]:
@@ -222,6 +227,11 @@ Gate: `det_tape_rec*.txt`, `det_tape_liftdrop*.txt` bit-exact; `mismatch 0`.
 Further [I]: the 45-word copies are per-word `volatile` loops; a hardware-loop copy halves what is left while
 recording.
 
+**Done in e14 (`docs/performance.md` "e14" 1).** The stock function was read: with the tape state word not 1 and the
+recording byte 0 it makes two stores into the tape state and returns; it does not advance the input ring (the
+proposal above assumed it did). So the idle block is one stock call with no copies at all, not a mono pass plus a
+ring catch-up. op1emu: the tap 2,710 -> 178 cycles a block; a check image compared every idle block.
+
 ### 5. Silence in the instrument path
 
 Evidence [C]: `coop_instr_stage` runs every block (`stage_calls` = blocks) at 10,880 cycles average on the device
@@ -238,6 +248,13 @@ it only has to advance its ramp and, for loop A, leave the meter (`max(meter, 0)
 while the instrument is silent. It does not lower the peak block; it gives the UI thread its time back at rest,
 which is where the frame rate is judged. Gate: `det_chord.txt` and the stock-compare switch (`g_coop_dbg_cmp`)
 sample-identical across note starts and tails.
+
+**Done in e14 (`docs/performance.md` "e14" 3 and 4).** The conditions above, exactly, for the stage; for the mix a
+test of the three buffers for zero instead of "the effects idle" (the core cannot know an effect's tail, but it can
+see the buffers), so it holds with effects on. Added: a voice that rendered 128 zeros is not accumulated and does
+not mark the pair dirty, so a held, silent rings chord (0.11) reaches the rest path. A check image compared every
+skipped block with the real code. What an idle effect still costs (its render and the wrap's conversions around
+it: on the device 13 k a block in `fx` for an idle tape_echo, e13) is item 9's and the effects' own idle paths.
 
 ### 7. One buffer for the synth and drum positions
 
@@ -343,6 +360,11 @@ Proposed: one word in L1, "profile", off by default, on from the settings menu o
 off the thunk skips the three calls and the block start skips the folds. The scan becomes a walk of the engines
 that rendered (at most six). Gain: 5-6 k a block playing [C], plus the per-voice share and 2-4 k idle [I]. The
 decision: the librarian's stats page shows the cost table only after the switch is on.
+
+**Done in e14 (`docs/performance.md` "e14" 2).** `g_coop_prof`, the policy token `prof=0|1`; dev packages on,
+release packages off (the owner's decision). Off skips the per-voice calls, every mark and cost entry, the
+block-start fold and the counter reads; the 63-slot walk now runs only after a plugin engine rendered, switch or
+not. The stats' `mode` line says which.
 
 ### 6. Idle paths in the effects
 

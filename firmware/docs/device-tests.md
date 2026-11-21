@@ -3100,7 +3100,7 @@ the catalogue); note which, the settings, and what you did just before.
 
 Result: (pending)
 
-## e13: where plugin memory goes is a boot policy; images and voice state back in heap 0 by default — device test (pending, 2026-11-21)
+## e13: where plugin memory goes is a boot policy; images and voice state back in heap 0 by default — device test (2026-11-21: the default policy confirmed; the A/B steps B-H not yet run)
 
 What changed (`docs/plugins.md` "e13"): e12's arena made the plugins' code stalls about double on the device (the e12
 result above), so e13 places each class of plugin memory in heap 0 (as e11) or in the arena (as e12) by a policy read
@@ -3204,7 +3204,19 @@ disk mode does not show `/yaffs2`, so there is nothing to copy by hand).
 **If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e11.op1` (or stock).
 The plugin files are untouched by either. A policy file left on the OP-1 is ignored by e11 and e12.
 
-Result: (pending)
+**Result (the owner's OP-1, 2026-11-21, the default policy, read over USB MIDI): the default restores e11's speed.**
+- Step 0 / A: `build e13`; `plugmem ... heap_used 834520 arena_used 156416 ... place_src 0` (the catalogue's rings
+  0.11 and tape_echo 0.5, hence 834,520 and not the gate's 833,168); `sysex ... drop 0`; `dcplb_changes 0
+  icplb_changes 0`: **the CPLB tables are not being swapped** while the OP-1 plays.
+- rings 0.11: `eng_rings=27475/106262` (avg / max per voice render), `eng_rings_block=162542/228613`: e11's figures
+  (27,222-28,058 avg, 104-117 k max; e12: 27,529 avg but 213,030 max). A held six-key chord: `peng` 158-160 k a
+  block, flat; the whole callback 334-356 k, worst block 453 k (e12: 457-520 k, worst 600-856 k).
+- The effects' idle paths work on the device: nothing sounding with tape_echo 0.5 idle at synth FX 1, `fx` 13.1 k a
+  block in every window (44-46 k active on e11), the whole callback ~116 k against ~91 k with no effect on: an idle
+  effect still costs ~13 k in `fx` and ~25 k of the callback (its render, the wrap's conversions, the stage and the
+  mix after it: e14's rest paths and audit item 9).
+- **Not yet run: the A/B steps B-H** (the other policies, the fill probe, `pf=1`), so why the arena is slower and
+  what the buffers cost there are still open.
 
 ## rings 0.12: a tail that stalls under 4 LSB sleeps; the held chord that cost the same for 75 s — device test (pending, 2026-11-21)
 
@@ -3362,3 +3374,91 @@ second; no effects, no sequencer, sustain at the top, the damping at its longest
 | the screen's levels stay up, `env_peak` (or `vgain`, `ramp`) falls within seconds | rings plays the chord; the stock closes it afterwards | the cost can only be saved in the core (it knows the envelope); rings' early cut never sees it |
 | the levels stay up, `env_peak`, `vgain` and `ramp` stay up too | the chord is in the output; the fade is in the listening (level, speaker) or the report | repeat on headphones at a fixed volume |
 | the levels fall within seconds, `peng` stays flat | rings on the device decays where the host rings on, and its voices do not sleep | record the device's output (or dump a voice's `out` on the device) with this patch and compare with the host run of the same control words |
+
+## e14: the core's stages at rest, the measuring code behind a switch, the stats text in RAM — device test (pending, 2026-11-21)
+
+What changed (`docs/performance.md` "e14"): e13 with the efficiency audit's core fixes, each its own commit and
+switch: (1) the tape record tap makes one stock call while nothing records; (2) the measuring code (cost table,
+marks, per-voice records, block-start folds) is behind `g_coop_prof` / the policy token `prof=0|1`; (3) the S3 stage
+and the mix loops are skipped on a silent instrument; (4) a voice that rendered silence is not placed or summed
+(rings 0.11's idle voices); (5) the stats text is made in RAM and served over SysEx, and `coop_stats.txt` and the
+tape tail are no longer written every 5 s. e13's placement policy, default and budgets are unchanged. Build tag
+`e14`, the boot picture's line `coop e14 - 246`. Existing `.coop` files load and behave unchanged.
+
+Two packages from one ELF (sha256 of each below), both in Downloads:
+- **`op1_246_coop_e14.op1`, the release flavour**: the measuring code off (`g_coop_prof=0`), no periodic stats
+  file. sha256 `93d0c275041b45b55a96dd1b3a75ef858106d66c8e4f14742fb55b6189abbcc7`.
+- **`op1_246_coop_e14_dev.op1`, the dev flavour**: the measuring code on, no periodic stats file. sha256 `c5725f1cd9bc67e842767a23d0a4087d68cd44bcf6fbe23e35841b620946b7d9`.
+Both: `tools/build_device_package.sh ... --tape-stereo --set-word g_coop_spread=32767 --set-word g_coop_statsfile=0`
+(release adds `--set-word g_coop_prof=0`); `verify_bootloader.py` PASS (no te-boot.ldr), `pkg_check` = only
+`OP1_vdk.ldr` differs; the ELF holds the tag `e14` (and no `e13` / `e12`). Either flavour becomes the other at the
+next boot with a policy file: `prof=1` or `prof=0` in `/yaffs2/user/coop_place.txt` (e13's file; its other tokens
+as before; `statsfile=1` brings the 5 s file writes back).
+- No web delta made. The site needs no change for the stats path (it is answered from RAM under the same name). On
+  a release image the `cost` / `engines` lines are empty and the windows' `eng` / `peng` / `fx` / `s2` are 0; a
+  reader that shows them should say "profiling off" when the stats' `mode` line has `prof 0`.
+
+**Gate notes (op1emu, 2026-11-21, one run at a time, fresh NANDs; images `--tape-stereo --set-word
+g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`; the 13 catalogue plugins of that day, rings 0.11 and
+tape_echo 0.5 among them; scripts and outputs in `I:\op1emu-tmp\e14gate\`)** [C op1emu]. A scenario with several
+key events is not sample-identical run to run on one image (e13 against itself on `det_tape_relift.txt`: max diff
+4,124): audio identity is shown on the scenarios with one event time, with retries, and the multi-event scenarios
+are covered by the check images, which compare every fast-path block with the real code in place.
+
+| Run | Result |
+|---|---|
+| The check image (all three fast paths in check mode), pristine NAND, six scenarios | pass; `idle_bad 0` (31,624-146,170 blocks a scenario), `skip_bad 0` (81,569-441,453) |
+| The check image, the 13 catalogue plugins, `det_fx_select` (waits x3) | pass; `skip_checked 335673 skip_bad 0`, `idle_checked 114330 idle_bad 0` |
+| The check image, cs_hall + tape_echo, `det_fx_switch` | pass; `skip_checked 164624 skip_bad 0` |
+| The check image, fickle, `det_fx_fickle` | `skip_checked 158845 skip_bad 0`; the run ended 1.9 s before its last event (the host was loaded: `ran_to_end` failed, nothing else) |
+| The check image, rings 0.11, `det_eng_rings` | pass; `skip_bad 0`, `voice_checked 41610 voice_bad 0` |
+| e14 against e13, pristine | `det_drum` and `det_tape_play` identical; `det_chord` max diff 2; `det_tape_rec`: aligned, max diff 2 over 3,707,181 frames (a scenario with several key events: another run of the same pair differed by 4,108, as e13 does against itself) |
+| e14 with `g_coop_prof=0` against e13, pristine | `det_drum` identical, `det_chord` max diff 2 |
+| e14 against e13, the 13 catalogue plugins, `det_fx_select` | differs (max diff 5,312): a scenario with many key events, not identical run to run on one image either; covered by the check image |
+| Six rings 0.12 voices held 68 s (`rings_held6` after `det_eng_rings`) | cycles a block held and asleep: e13 76,405; e14 53,978; profile off 50,712; `voice_skips 273999` |
+| A plain test engine, the stock envelope (one note; six keys held with the sustain down; the decay down too) | the stock stops rendering a voice when its envelope ends, key held or not; `env_skips 0` |
+| The release image over USB/IP | `mode prof 0 statsfile 0`; two reads 8 s apart over SysEx, 10,361 and 12,171 bytes, 13 and 19 windows (the second made afresh: `ram_reads 162`), `sysex drop 0 errors 0`, `stats writes 0 tail_writes 0`, no `coop_stats.txt` on the NAND afterwards; with `prof=1 statsfile=1` in the policy file the same image reports `mode prof 1 statsfile 1`, `writes 7 tail_writes 7` and the file is on the NAND; the dev image `prof 1 statsfile 0`, `writes 0`. `tools/emu_gate.py` read its stats from the NAND in every other run here (gate images keep `statsfile=1`) |
+
+Not shown in op1emu [I]: every device cycle figure (op1emu has no cache and no stall); the main loop's stall that
+the stats write caused; the stats read over the real USB MIDI port from RAM (the path is the same code as in the
+USB/IP gate).
+
+**What to do** (the owner plays; the coordinator reads the stats **over USB MIDI**, `python
+firmware/tools/coop_usb.py stats -o FILE`; nothing is copied in disk mode, and on e14 the stats file is not on the
+OP-1's flash at all unless `statsfile=1`):
+1. Flash **`op1_246_coop_e14_dev.op1`** first (keep the plugins and any policy file). Boot line `coop e14 - 246`.
+   `coop_usb.py hello` -> `build e14`; `stats` -> `mode prof 1 statsfile 0 ... idle_skip 1 ... voice_skip 1`, and on
+   the `tape` line `idle_mode 1`. The stats must read at once after boot and again any time later (they come from RAM).
+2. **At rest** (nothing sounding, the tape stopped, a minute): read the stats. On the `win` lines `cb_sum / blocks`
+   was 91-92 k on e11; expected clearly lower. `rec_sum / blocks` (the record tap; ~7.2 k before), `mix_sum /
+   blocks`; `mode ... stage_skips` and `mix_skips` counting up; `tape ... idle_blocks` counting, `mismatch 0`.
+3. **rings**, six-note chords held and re-struck for a minute, then **let a held chord ring out and keep the keys
+   down** (rings 0.11 idles its voices): read the stats. `cb_sum / blocks` and `cb_max` in the playing windows
+   (e11: 367-403 k, peaks to 660 k), `peng / blocks` (rings' own renders), `engines eng_rings` and
+   `eng_rings_block`; `mode ... voice_skips` counting while the held chord is silent, and those windows' `cb_sum /
+   blocks` falling towards the at-rest figure.
+   **And the chord that "died down"**: rings at the longest damping, six keys held until it sounds dead, then read
+   the stats while still holding: `mode ... env_skips N env_peak N vgain N ramp N` beside `peng`. `env_peak` near 0
+   = the stock envelope closed the voices (then `env_skips` counting = the stock still renders under it, which
+   op1emu says it does not); `env_peak` high with `vgain 24576 ramp 32767` = every gain between rings and the mix is
+   open and the silence is in rings' own output or after the mix. Then release the keys and read again after the
+   envelope's release time: `peng` must be 0 (the stock stops rendering a released voice when its envelope ends).
+4. **A sampler sound with fickle at synth FX 1**, a minute: `cb_sum / blocks`, `fx / blocks`, `cost fx1_plugin`.
+5. **Recording**: record a take on the tape while playing, play it back, lift and drop it: `rec_sum / blocks` while
+   recording (unchanged from e13: ~20 k under a chord), `tape ... mismatch 0 mismatch2 0`, the take plays back in
+   stereo as before; no click at the start or the end of the take.
+6. Listen through all of it for anything e13 / e11 did not do: a first note after silence must start exactly as
+   before (no lost or soft first block), effect tails must ring out to the end, the tape must loop seamlessly.
+7. Then the release flavour **without a flash**: `coop_usb.py --write put place.txt --to
+   /yaffs2/user/coop_place.txt` with `prof=0` in the file (plus whatever placement tokens are in use), power-cycle,
+   repeat 2 and 3: `mode prof 0`, the `cost` / `engines` lines empty, `cb_sum / blocks` lower again by what the
+   measuring cost (the audit: 5-6 k a block playing, more with the per-voice calls; 2-4 k at rest). Delete the token
+   (or the file) to go back.
+8. The figures the coordinator records, each for e14 dev and e14 with `prof=0`, beside e11's: at rest; rings chord
+   (and rings held and silent); sampler + fickle; recording.
+
+**If something is wrong:** the switches are image words, so a fault can be bisected with test packages; on the
+device, power off; recovery: hold COM at power-on and flash `op1_246_coop_e13.op1`, `e11` or stock. The plugin
+files and the policy file are untouched.
+
+Result: (pending)
