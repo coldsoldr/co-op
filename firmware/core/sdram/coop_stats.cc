@@ -43,6 +43,7 @@ extern volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g
 extern volatile uint32_t g_tape_io_steps_win;
 extern volatile uint32_t g_edit_lifts, g_edit_drops, g_edit_erases, g_edit_errors, g_edit_mono_fallbacks;
 extern volatile uint32_t g_edit_pool_used, g_edit_pool_moves;          /* tape_edit.cc (e12) */
+extern volatile uint32_t g_sysex_polls, g_sysex_rx, g_sysex_drop, g_sysex_replies, g_sysex_errors;   /* coop_sysex.cc (e13: the sysex line) */
 extern "C" uint32_t coop_clip_pool_bytes(void);                         /* coop_arena.cc (e12) */
 extern volatile uint32_t g_master_cycles;
 extern volatile uint32_t g_l1_state, g_l1_used, g_l1_refused, g_l1_sine_copied;
@@ -78,6 +79,9 @@ volatile uint32_t g_stats_writes, g_stats_errors, g_stats_windows, g_stats_ticks
 struct window {
     uint32_t seq, blocks, cb_max, cb_sum, cb_over, rec_max, rec_sum, mix_max, mix_sum, hook_max, hook_sum, hooks, side, recs;
     uint32_t io_steps, io_step_max, io_gap_max, io_load_max, io_flush_max, loads, flushes;
+    uint32_t eng, peng, fx, s2;                                  /* e13: cycles in the window: every synth and drum voice render;
+                                                                    the plugin engines' own renders; a plugin at FX 1; both FX 2
+                                                                    slots (stock types included) */
     uint8_t recording;
 };
 static struct window g_ring[WINDOWS], g_top[TOP];
@@ -109,7 +113,9 @@ static void put_window(const char *tag, const struct window *w)
     kv("hook_max", w->hook_max); kv("hook_sum", w->hook_sum); kv("hooks", w->hooks); kv("side", w->side); kv("recs", w->recs);
     kv("io_steps", w->io_steps); kv("io_step_max", w->io_step_max); kv("io_gap_max", w->io_gap_max);
     kv("io_load_max", w->io_load_max); kv("io_flush_max", w->io_flush_max); kv("loads", w->loads); kv("flushes", w->flushes);
-    kv("recording", w->recording); put("\n");
+    kv("recording", w->recording);
+    kv("eng", w->eng); kv("peng", w->peng); kv("fx", w->fx); kv("s2", w->s2);   /* e13, appended */
+    put("\n");
 }
 
 #include "coop_cost.h"
@@ -409,6 +415,7 @@ extern "C" void coop_icache_probe(void)                          /* main thread,
 static uint32_t g_sweep[2][16][2][2];                            /* [side][event][cnt][cold, warm] */
 static volatile uint32_t g_probe_data[2048] __attribute__((aligned(32)));   /* 8 KB: 256 data lines */
 static volatile uint32_t g_evict_data[8192] __attribute__((aligned(32)));   /* 32 KB: walks the 16 KB data cache out */
+#define COOP_PROBE_ARRAYS 1
 static uint32_t data_walk(volatile uint32_t *a, uint32_t n) { uint32_t s = 0; for (uint32_t i = 0; i < n; i += 8) s += a[i]; return s; }
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_pf_sweep = 0; }   /* p6i: the sweep only on request (--set-word): ~40 ms of boot */
 extern "C" void coop_pf_sweep(void)
@@ -529,10 +536,87 @@ static void put_slow(const char *tag, const struct slow *w)        /* marks in t
  * the big buffers sit (slot 1's delay / cwo line and spring tank: plugin_host.cc). */
 extern "C" uint32_t coop_fx_buffers(uint32_t *out4);               /* plugin_host.cc */
 static void puthex8(uint32_t v) { char b[9]; for (int d = 0; d < 8; d++) b[d] = "0123456789abcdef"[(v >> (28 - 4 * d)) & 15]; b[8] = 0; put(b); }
+/* e13: do the CPLB tables change while the OP-1 runs? The stock has 17 data pages and 18 instruction pages for 16
+ * entries each, so its miss handler swaps entries; a swap on every block would be very expensive. Every stats window
+ * the 32 address words are compared with the last window's: `dcplb_changes` / `icplb_changes` count the entries that
+ * differ (a table that is being rotated shows it; one that is stable counts nothing after the boot). */
+static uint32_t g_cplb_prev[2][16], g_cplb_changes[2], g_cplb_seen;
+static void cplb_watch(void)
+{
+    for (int t = 0; t < 2; t++)
+        for (int i = 0; i < 16; i++) {
+            uint32_t a = ((volatile uint32_t *)(t ? 0xFFE01100u : 0xFFE00100u))[i];
+            if (g_cplb_seen && a != g_cplb_prev[t][i]) g_cplb_changes[t]++;
+            g_cplb_prev[t][i] = a;
+        }
+    g_cplb_seen = 1;
+}
+
+/* e13: the live fill probe (the policy file's `probe=1`, coop_place.cc). e12 on the device: the plugins' code stalls
+ * about doubled when their code moved from heap 0 to region A, and the boot probe above says a cold line of region-A
+ * code costs ~200 cycles, the figure kennel measured for heap 0 (354 for 0x02xxxxxx). The boot probe runs before the
+ * GUI and the audio exist. This one runs from the main loop at every stats window, while the OP-1 plays: the same
+ * 4 KB of NOPs (128 code lines) cold in region A (probe_4k) and cold from a copy in heap 0, and 8 KB of data (256
+ * lines, one word a line) cold in region A (g_probe_data) and in heap 0, each after a walk that empties the cache
+ * (probe_24k; g_evict_data), and the region-A passes once more warm. Five tries a window, the smallest kept (a try
+ * the audio interrupt cut into is longer); the stats give the smallest and the average of the windows' figures:
+ *   fill n N state S code_a_min C code_a_avg C code_heap_min C code_heap_avg C data_a_min C data_a_avg C data_heap_min C
+ *        data_heap_avg C code_warm W data_warm W
+ * (cycles a pass; a cold line = (cold - warm) / 128 or / 256). Off by default: 12.3 KB of heap 0, ~3 M cycles a window. */
+#define MALLOC ((void *(*)(uint32_t))0x01A9F348u)                 /* heap 0 (plugin_host.cc) */
+extern "C" void coop_code_sync(uint32_t lo, uint32_t hi);         /* plugin_host.cc */
+#include "coop_place.h"
+static void (*g_heap_code)(void);
+static volatile uint32_t *g_heap_data;
+static uint32_t g_fill_n, g_fill_min[4], g_fill_warm[2], g_fill_state;   /* state: 0 not set up, 1 ready, 2 no memory */
+static uint64_t g_fill_sum[4];
+static void fill_probe(void)
+{
+    if (!g_coop_place.probe || g_fill_state == 2) return;
+    if (!g_fill_state) {
+        uint8_t *c = (uint8_t *)MALLOC(4096u + 2u + 64u), *d = (uint8_t *)MALLOC(8192u + 32u);
+        if (!c || !d) { g_fill_state = 2; return; }
+        uint16_t *code = (uint16_t *)(uintptr_t)(((uint32_t)(uintptr_t)c + 31u) & ~31u);
+        for (int i = 0; i < 2048; i++) ((volatile uint16_t *)code)[i] = 0x0000;   /* NOP */
+        ((volatile uint16_t *)code)[2048] = 0x0010;                               /* RTS */
+        coop_code_sync((uint32_t)(uintptr_t)code, (uint32_t)(uintptr_t)code + 4098u);
+        g_heap_code = (void (*)(void))(uintptr_t)code;
+        g_heap_data = (volatile uint32_t *)(uintptr_t)(((uint32_t)(uintptr_t)d + 31u) & ~31u);
+        for (int i = 0; i < 2048; i++) g_heap_data[i] = 0;
+        for (int k = 0; k < 4; k++) g_fill_min[k] = 0xFFFFFFFFu;
+        g_fill_state = 1;
+    }
+    uint32_t best[4] = { 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu }, warm[2] = { 0xFFFFFFFFu, 0xFFFFFFFFu };
+    for (int t = 0; t < 5; t++) {
+        uint32_t c0, c1, v[4], w[2];
+        probe_24k(); c0 = coop_cost_now(); probe_4k(); c1 = coop_cost_now(); v[0] = c1 - c0;
+        c0 = coop_cost_now(); probe_4k(); c1 = coop_cost_now(); w[0] = c1 - c0;
+        probe_24k(); c0 = coop_cost_now(); g_heap_code(); c1 = coop_cost_now(); v[1] = c1 - c0;
+        (void)data_walk(g_evict_data, 8192); c0 = coop_cost_now(); (void)data_walk(g_probe_data, 2048); c1 = coop_cost_now(); v[2] = c1 - c0;
+        c0 = coop_cost_now(); (void)data_walk(g_probe_data, 2048); c1 = coop_cost_now(); w[1] = c1 - c0;
+        (void)data_walk(g_evict_data, 8192); c0 = coop_cost_now(); (void)data_walk(g_heap_data, 2048); c1 = coop_cost_now(); v[3] = c1 - c0;
+        for (int k = 0; k < 4; k++) if (v[k] < best[k]) best[k] = v[k];
+        for (int k = 0; k < 2; k++) if (w[k] < warm[k]) warm[k] = w[k];
+    }
+    for (int k = 0; k < 4; k++) { if (best[k] < g_fill_min[k]) g_fill_min[k] = best[k]; g_fill_sum[k] += best[k]; }
+    g_fill_warm[0] = warm[0]; g_fill_warm[1] = warm[1];
+    g_fill_n++;
+}
+static void put_fill(void)
+{
+    static const char *const kmin[4] = { "code_a_min", "code_heap_min", "data_a_min", "data_heap_min" };
+    static const char *const kavg[4] = { "code_a_avg", "code_heap_avg", "data_a_avg", "data_heap_avg" };
+    if (!g_coop_place.probe) return;
+    put("fill"); kv("n", g_fill_n); kv("state", g_fill_state);
+    for (int k = 0; k < 4 && g_fill_n; k++) { kv(kmin[k], g_fill_min[k]); kv(kavg[k], (uint32_t)(g_fill_sum[k] / g_fill_n)); }
+    kv("code_warm", g_fill_warm[0]); kv("data_warm", g_fill_warm[1]); put("\n");
+}
+
 static void put_cplb(void)
 {
     volatile uint32_t *const dmem = (volatile uint32_t *)0xFFE00004u, *const imem = (volatile uint32_t *)0xFFE01004u;
-    put("cplb dmem "); puthex8(*dmem); put(" imem "); puthex8(*imem); put("\n");
+    put("cplb dmem "); puthex8(*dmem); put(" imem "); puthex8(*imem);
+    kv("dcplb_changes", g_cplb_changes[0]); kv("icplb_changes", g_cplb_changes[1]); put("\n");   /* e13, appended */
     put("dcplb");
     for (int i = 0; i < 16; i++) { put(" "); puthex8(((volatile uint32_t *)0xFFE00100u)[i]); put("/"); puthex8(((volatile uint32_t *)0xFFE00200u)[i]); }
     put("\nicplb");
@@ -603,7 +687,9 @@ static void write_file(void)
     for (int l = 0; l < 2; l++) {                                /* p6f / p6g: the 4 KB probe under each PFCTL layout, three passes (cycles, p0) */
         put(l ? "icache_l1" : "icache_l0"); kv("c1", g_icp[l][0][0]); kv("p1", g_icp[l][0][1]); kv("c2", g_icp[l][1][0]); kv("p2", g_icp[l][1][1]); kv("c3", g_icp[l][2][0]); kv("p3", g_icp[l][2][1]); put("\n");
     }
-    for (int side = 0; side < 2; side++) {                       /* p6h: the event sweep, "ev s cold/warm" (cycles) and "ev o cold/warm" (occurrences) */
+    put_fill();                                                  /* e13: the live fill probe, when the policy file asks */
+    for (int side = 0; side < 2 && g_coop_pf_sweep; side++) {    /* p6h: the event sweep, "ev s cold/warm" (cycles) and "ev o cold/warm"
+                                                                    (occurrences); e13: only when the sweep ran (two lines of zeros before) */
         put(side ? "pfsweep_data" : "pfsweep_code");
         for (int ev = 0; ev < 16; ev++)
             for (int cnt = 0; cnt < 2; cnt++) {
@@ -659,13 +745,24 @@ static void write_file(void)
     put("edits"); kv("lifts", g_edit_lifts); kv("drops", g_edit_drops); kv("erases", g_edit_erases); kv("errors", g_edit_errors);
     kv("mono_fallbacks", g_edit_mono_fallbacks);
     kv("pool", coop_clip_pool_bytes() >> 1); kv("pool_used", g_edit_pool_used); kv("pool_moves", g_edit_pool_moves); put("\n");   /* e12: samples */
+    put("sysex"); kv("polls", g_sysex_polls); kv("rx", g_sysex_rx); kv("drop", g_sysex_drop); kv("replies", g_sysex_replies);   /* e13 */
+    kv("errors", g_sysex_errors); put("\n");
     put("stats"); kv("writes", g_stats_writes); kv("errors", g_stats_errors); kv("tail_writes", g_stats_tail_writes);
     kv("tail_errors", g_stats_tail_errors); kv("windows", g_stats_windows); kv("ticks", g_stats_ticks); put("\n");
     for (uint32_t i = 0; i < TOP; i++) {                               /* the heaviest windows, any order */
         if (!g_top[i].blocks) continue;
         put_window("top", &g_top[i]);
     }
-    for (uint32_t i = 0; i < WINDOWS; i++) {                           /* oldest first */
+    /* e13: the text is 16 KiB and a window line can reach ~370 bytes with the appended sums: when the windows left
+     * to print cannot all fit, the oldest go, so the text never ends in half a line and always has the newest */
+    uint32_t first = 0, live = 0;
+    for (uint32_t i = 0; i < WINDOWS; i++) { const struct window *w = &g_ring[(g_ring_next + i) % WINDOWS]; if (w->blocks || w->io_steps) live++; }
+    while (live && live * 370u + 2u > (uint32_t)(g_cap - g_len)) {
+        const struct window *w = &g_ring[(g_ring_next + first) % WINDOWS];
+        if (w->blocks || w->io_steps) live--;
+        first++;
+    }
+    for (uint32_t i = first; i < WINDOWS; i++) {                       /* oldest first */
         const struct window *w = &g_ring[(g_ring_next + i) % WINDOWS];
         if (!w->blocks && !w->io_steps) continue;
         put_window("win", w);
@@ -680,6 +777,20 @@ static void write_file(void)
 }
 
 extern "C" void coop_stats_write_now(void) { write_file(); }    /* coop_runner.cc: after a run (main loop) */
+
+/* e13: what a cost entry has summed since the last window (the audio interrupt adds to the 64-bit sums: read masked) */
+static uint64_t g_cost_prev[COOP_COST_N];
+static uint32_t cost_delta(int i)
+{
+    uint32_t m; __asm__ __volatile__("cli %0;" : "=d"(m) : : "memory");
+    uint64_t now = g_coop_cost[i].sum;
+    __asm__ __volatile__("sti %0;" : : "d"(m) : "memory");
+    uint32_t d = (uint32_t)(now - g_cost_prev[i]);
+    g_cost_prev[i] = now;
+    return d;
+}
+static void cplb_watch(void);                                    /* below */
+static void fill_probe(void);
 
 static void keep_if_heavy(const struct window *w)
 {
@@ -722,6 +833,12 @@ extern "C" void coop_stats_tick(int recording)
     w->loads = g_tape_io_loads - g_prev_loads;             g_prev_loads = g_tape_io_loads;
     w->flushes = g_tape_io_flushes - g_prev_flushes;       g_prev_flushes = g_tape_io_flushes;
     w->recording = g_win_recording;      g_win_recording = 0;
+    w->eng = cost_delta(COOP_COST_SYNTH) + cost_delta(COOP_COST_DRUM);   /* e13 */
+    w->peng = cost_delta(COOP_COST_PENG_B);
+    w->fx = cost_delta(COOP_COST_PLUG);
+    w->s2 = cost_delta(COOP_COST_S2I) + cost_delta(COOP_COST_S2M);
+    cplb_watch();
+    fill_probe();
     g_stats_windows++;
     keep_if_heavy(w);
     if (!recording) write_file();
