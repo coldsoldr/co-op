@@ -67,14 +67,16 @@
     {
       "id": "aether",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "amp",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "arc",
@@ -91,14 +93,16 @@
     {
       "id": "blot",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "brassophone",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "c64arp",
@@ -114,14 +118,16 @@
     {
       "id": "chord",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "clouds",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "composer",
@@ -144,32 +150,37 @@
     {
       "id": "dddd",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "dots",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "drumplus",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "elg",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "ente",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "erdtree",
@@ -179,14 +190,16 @@
     {
       "id": "euclid",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "eva",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "fasterase",
@@ -197,8 +210,9 @@
     {
       "id": "father",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "file",
@@ -209,8 +223,9 @@
     {
       "id": "fmbell",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "gin",
@@ -220,20 +235,23 @@
     {
       "id": "granular",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "grids_op1r",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "hail",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "hold",
@@ -256,14 +274,16 @@
     {
       "id": "juni",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "juni_chorus",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "latch",
@@ -286,8 +306,9 @@
     {
       "id": "mbira",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "midicc",
@@ -310,14 +331,16 @@
     {
       "id": "moai",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/fungiboletus/op-moai"
+      "draft": true,
+      "source": "https://github.com/fungiboletus/op-moai",
+      "changed": "2026-11-16"
     },
     {
       "id": "monolit",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "naming",
@@ -328,8 +351,9 @@
     {
       "id": "nostromo",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "oblique",
@@ -502,8 +526,9 @@
     {
       "id": "oracle",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "oxbow",
@@ -520,14 +545,16 @@
     {
       "id": "peal",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "pew",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "plate",
@@ -550,32 +577,37 @@
     {
       "id": "rackverb",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "randomiser",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r-src"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r-src",
+      "changed": "2026-11-20"
     },
     {
       "id": "reactor",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "reverb",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "samplerplus",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "sampletools",
@@ -592,14 +624,16 @@
     {
       "id": "sid",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "sister",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "snap",
@@ -610,14 +644,16 @@
     {
       "id": "snowglobe",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "steve",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "strum",
@@ -628,14 +664,16 @@
     {
       "id": "stutter",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "supersaw",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "sysmon",
@@ -646,14 +684,16 @@
     {
       "id": "taffy",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "tape",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/pcppcp/op1r"
+      "draft": true,
+      "source": "https://github.com/pcppcp/op1r",
+      "changed": "2026-11-20"
     },
     {
       "id": "tapes",
@@ -682,8 +722,9 @@
     {
       "id": "vapora",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "vox",
@@ -700,14 +741,16 @@
     {
       "id": "washer",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "wavetable",
       "added": "2026-11-11",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "cs_hall",
@@ -841,8 +884,9 @@
     {
       "id": "windwood",
       "added": "2026-11-18",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
+      "draft": true,
+      "source": "https://github.com/Hundekraft/op1-workshop",
+      "changed": "2026-11-19"
     },
     {
       "id": "bitcrush",
