@@ -3205,3 +3205,42 @@ disk mode does not show `/yaffs2`, so there is nothing to copy by hand).
 The plugin files are untouched by either. A policy file left on the OP-1 is ignored by e11 and e12.
 
 Result: (pending)
+
+## rings 0.12: a tail that stalls under 4 LSB sleeps; the held chord that cost the same for 75 s — device test (pending, 2026-11-21)
+
+**The finding this answers** [C device, rings 0.11 on e13, 2026-11-21]: string + reverb, a chord held about 75 s, no
+effects: rings' own cost (`peng`) 151,700 cycles a block in the strike window, then 158,278-159,812 in every
+5-second window to the end; "it sounded like it had died down". The damping was not noted.
+
+**What the host and the simulator say** [C host, simulator; `plugins/rings/README.md` "0.12"]. With the default patch
+six held keys are asleep 17.4 s after the strike (the last non-zero 16-bit sample at 17.1 s), host and simulator the
+same samples; the cost falls from 10 s on. Nothing in the core strikes a held string again (`note_on` once, then
+`render` with pitch and controls). A flat cost for 75 s needs strings that ring that long: with the other controls at
+their defaults, damping from about 29,800 up (30,000: asleep at 91 s, the sum at 18 LSB, -65 dBFS, by 75 s; 31,000:
+176 s). So the likely cause is a long tail at a high damping, quiet to the ear and not to the arithmetic [I]: 0.12
+does not shorten that, on purpose (those strings still sound in 16 bits). What 0.12 does remove is a voice that
+stalls for good between half an LSB and 4 LSB (FM and the strings at some structure settings from damping 26,000 up)
+and computed at full cost for as long as its key was down: such a voice sleeps after 10 s under 4 LSB.
+
+File: `firmware/build/plugins-next3/rings.coop`, 0.12, 115,036 bytes, sha256
+`d39db785bb8541723694c39a545cd6e740658241745550b30853a144aef64963`. The same imports as 0.11 (loads on e10 and
+later). **Not in the catalogue: it needs the op1emu gate first** (13 files load, `det_eng_rings.txt`, the held-chord
+scenario of the 0.11 gate).
+
+**Owner's checklist** (the stats are read over USB MIDI with `coop_usb.py stats`; I read `peng` per 5-second window):
+
+1. Copy `rings.coop` 0.12 to the OP-1, restart, select rings. No effects, no sequencer.
+2. **The default patch first** (this tells a long tail from a fault): string + reverb, polyphony "all", the four
+   controls where a fresh rings patch has them (damping about 70 %). Strike a chord of four to six keys and hold it
+   60 s. Expected: `peng` starts to fall about 10 s after the strike and is at its floor (a few thousand cycles a
+   block, the six render calls) from about 20 s. If it stays flat here, the cause is not the tail's length: say so,
+   that is a fault to find.
+3. **The setting of the first test**: turn the damping to where it was (if it was high, near the top), hold the
+   same chord 60 s, and write down where the damping stood (the kennel page's number). Expected at a high damping:
+   flat for the whole 60 s, as before; that is the string still ringing under what the ear picks out. Say whether
+   anything is still audible with the volume up near the end.
+4. **A stalled tail** (what 0.12 changes): the FM model, structure fully down, damping at about 80 %; hold six keys
+   45 s. Expected: silence to the ear after about 12 s, and `peng` at its floor from about 22 s after the strike
+   (0.11: at full cost for as long as the keys are down).
+5. Strike keys again after each of these: every note sounds at once, at its usual level, with no click.
+6. By ear, any model: tails end as they did in 0.11; nothing is cut that could be heard.
