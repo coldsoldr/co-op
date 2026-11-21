@@ -104,8 +104,10 @@ describe('the e13 sums', () => {
   });
 
   /**
-   * Today's catalogue (rings 0.11, tape_echo 0.5) by the same rule: not gated in the emulator. The sizes pin the
-   * builds; when one of the files is rebuilt this steps aside until the figures are brought up to date.
+   * Today's catalogue (rings 0.13, tape_echo 0.5) by the same rule. The default policy is the op1emu gate's of
+   * 2026-11-22 on e13 and e14 (`heap_used 835408 arena_used 156416`, first and second boot); the other three policies
+   * were not run. The sizes pin the builds; when one of the files is rebuilt this steps aside until the figures are
+   * brought up to date.
    */
   const PLUGINS = fileURLToPath(new URL('../../../../plugins', import.meta.url));
   const NOW: Record<string, number> = {
@@ -117,7 +119,7 @@ describe('the e13 sums', () => {
     fickle: 38164,
     freq_shift: 23396,
     petri: 37792,
-    rings: 114948,
+    rings: 115788,
     saw: 6520,
     tape_drive: 22660,
     tape_echo: 25444,
@@ -128,10 +130,10 @@ describe('the e13 sums', () => {
 
   it.skipIf(!unchanged)('adds up the 13 catalogue files as they are now', () => {
     const now = Object.keys(NOW).map((id) => coopMemoryOf(new Uint8Array(readFileSync(file(id)))));
-    expect(setPools(now, 'placed')).toEqual({ heap: 834_520, arena: 156_416 });
-    expect(setPools(now, 'placed', ALL_HEAP)).toEqual({ heap: 1_373_696, arena: 21_632 });
-    expect(setPools(now, 'placed', ALL_ARENA)).toEqual({ heap: 0, arena: 990_592 });
-    expect(setPools(now, 'placed', FX_ARENA)).toEqual({ heap: 670_288, arena: 320_352 });
+    expect(setPools(now, 'placed')).toEqual({ heap: 835_408, arena: 156_416 });
+    expect(setPools(now, 'placed', ALL_HEAP)).toEqual({ heap: 1_374_584, arena: 21_632 });
+    expect(setPools(now, 'placed', ALL_ARENA)).toEqual({ heap: 0, arena: 991_488 });
+    expect(setPools(now, 'placed', FX_ARENA)).toEqual({ heap: 671_176, arena: 320_352 });
   });
 });
 

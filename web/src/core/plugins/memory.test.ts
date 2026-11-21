@@ -203,8 +203,8 @@ describe('the catalogue files', () => {
   /**
    * The 13 files of the e11 and e12 gates of 2026-11-21 (firmware/docs/device-tests.md, the idle entry and the one
    * after it): the eight rebuilt on 2026-11-20 and 2026-11-21 (tape_echo 0.5, cs_hall 0.3, cs_plate 0.3, fickle 0.3,
-   * petri 0.3, tape_drive 0.6, bitcrusher 0.3, rings 0.11) and the five that were not. GATE above keeps the e9 gate's older builds, so its
-   * test steps aside for good now.
+   * petri 0.3, tape_drive 0.6, bitcrusher 0.3, rings 0.11) and the five that were not, with rings 0.13 (2026-11-22) in
+   * place of 0.11. GATE above keeps the e9 gate's older builds, so its test steps aside for good now.
    */
   const ALL: Record<string, number> = {
     bitcrusher: 13076,
@@ -215,7 +215,7 @@ describe('the catalogue files', () => {
     fickle: 38164,
     freq_shift: 23396,
     petri: 37792,
-    rings: 114948,
+    rings: 115788,
     saw: 6520,
     tape_drive: 22660,
     tape_echo: 25444,
@@ -244,24 +244,26 @@ describe('the catalogue files', () => {
   });
 
   /**
-   * e11: `plugmem budget 1769472 used 1511704` with these 13 files, first and second boot (with rings 0.10 and
-   * tape_echo 0.4: 1,510,352). e10 charges the same and allows 1,572,864.
+   * e11: `plugmem budget 1769472 used 1511704` with these 13 files and rings 0.11, first and second boot (with rings
+   * 0.10 and tape_echo 0.4: 1,510,352). rings 0.13 takes 888 bytes more of heap 0 (e13 and e14 in the op1emu gate of
+   * 2026-11-22: `heap_used 835408` for 0.11's 834,520, rings alone 668,856), and e11 charges an engine's image as they
+   * do: 1,512,592. e10 charges the same and allows 1,572,864 (60,272 to spare).
    */
   it.skipIf(!unchanged(ALL))('adds the 13 files up to what the e11 core reported', () => {
-    expect(setBytes(memories(ALL).map(([, m]) => m), 'heap')).toBe(1_511_704);
+    expect(setBytes(memories(ALL).map(([, m]) => m), 'heap')).toBe(1_512_592);
   });
 
   /**
-   * e12: `plugmem budget 5898240 used 990592`: need 855,808 and one buffer of 134,784 (with rings 0.10 and
-   * tape_echo 0.4: 989,248). Alone on the NAND the core reported rings `used 669600` and tape_echo `used 150784`
-   * (16,000 and its buffer).
+   * e12: `plugmem budget 5898240 used 990592` with rings 0.11: need 855,808 and one buffer of 134,784 (with rings 0.10
+   * and tape_echo 0.4: 989,248). Alone on the NAND the core reported rings 0.11 `used 669600` and tape_echo `used
+   * 150784` (16,000 and its buffer). rings 0.13 by the same rule (not run on e12): 896 bytes more, 991,488.
    */
   it.skipIf(!unchanged(ALL))('adds the 13 files up to what the e12 core reported', () => {
     const set = memories(ALL);
     const need = Object.fromEntries(set.map(([id, m]) => [id, ownBytes(m, 'arena')]));
-    expect(Object.values(need).reduce((a, b) => a + b, 0)).toBe(855_808);
-    expect(setBytes(set.map(([, m]) => m), 'arena')).toBe(990_592);
-    expect(need.rings).toBe(669_600);
+    expect(Object.values(need).reduce((a, b) => a + b, 0)).toBe(856_704);
+    expect(setBytes(set.map(([, m]) => m), 'arena')).toBe(991_488);
+    expect(need.rings).toBe(670_496);
     expect(need.tape_echo).toBe(16_000);
     expect(set.every(([, m]) => m.controls && m.screen)).toBe(true);
   });
