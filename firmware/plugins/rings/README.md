@@ -494,6 +494,244 @@ needs to see.
 **The same imports as 0.11** (it loads on e10 and later). Not on the device yet; `docs/device-tests.md` "rings
 0.12".
 
+## 0.13: the early cut, a quiet tail is faded out and sleeps (2026-11-21)
+
+**What a listener may notice.** The very end of a long tail is now a one-second fade to silence instead of the last
+stretch of its own decay. A voice (one key's string, modes or FM pair) that has stayed quieter than **-66 dBFS** for
+**5 seconds** is faded out over **1 second** and then stops, whether its key is still down or not. -66 dBFS is a peak
+of 16 steps of the 16-bit output, 66 dB under full scale; a strike peaks within a few dB of it. Nothing changes while a
+voice is louder than that, and a note struck during those seconds plays exactly as before. The owner's decision
+(2026-11-21): a chord at a long damping cost its full voices for a minute and more after it could no longer be
+heard, and 0.12 only cut tails under 4 LSB (-78 dBFS). The level is one constant, to be moved up or down after a
+hearing test; a second file with **-60 dBFS** is built beside this one for that test.
+
+- **The level is per voice, not of the chord.** Six voices near the level together sum higher: in the modal model
+  the six keys of a chord reach the level within half a second of each other, and their fades begin with the summed
+  output at about -57 dBFS (-50 dBFS in the -60 build). That is the case to listen to.
+- **The reverb is not cut.** In string + reverb a faded string stops feeding the reverb over the same second; the
+  reverb then runs its own tail out, as it did since 0.11 (it idles 0.3 s after its last non-zero sample). With the
+  damping at the top that tail is 10 s long (26 s after a chord with the structure at the top). No level rule is
+  applied to it: measured, it never outlasts the strings by more than that, with nothing sent it costs a quarter of
+  what the playing chord costs (0.11's figures: 15.5 k cycles a block for 68 k), it ends by itself, and its decay is
+  the smooth end the cut needs.
+- **What it does not do: shorten a loud tail.** With the damping at the very top the strings ring for minutes at a
+  level anyone hears: six keys, the default patch otherwise, the summed output peaks at -12 dBFS after 60 s and -13
+  dBFS after 75 s in string + reverb (-8.5 and -10 dBFS in the string model), and between -3 and -27 dBFS after 75 s
+  with the brightness at 0, a quarter or the top, or the structure at 0 or the middle; only the structure at the top
+  ends inside a minute. Those voices stay awake in 0.13 as in 0.12, and so does their cost. So if a chord at the
+  longest damping was "no longer heard" after a minute on the device, it was not rings' output that had gone quiet
+  [C host; I for the device]: what comes after the engine (the OP-1's envelope and levels) the engine does not
+  see, and a voice silenced there still costs its full render.
+
+**The rule** (`src/op1_voice.h`, every constant in one place; `op1_voice.cc` `RenderMono`):
+
+| constant | value | meaning |
+|---|---|---|
+| `kEarlyLevel` (`OP1RINGS_EARLY_LEVEL`) | 67,268 (Q27) | -66 dBFS: 16.4 LSB peak of the 16-bit output. The -60 build: 134,218, 32.8 LSB |
+| `kEarlyHoldRenders` | 3,445 renders | 5 s under the level, without one render at or above it |
+| `kEarlyFadeRenders` | 689 renders | the fade: 1 s, linear, 48,701 of 2^30 a sample at 22.05 kHz |
+| `kEarlyFadeInSpeed` | 32 | back up 32 times faster (31 ms) when the level returns with no strike |
+| `-DOP1RINGS_NO_EARLY_SLEEP` | | the rule's code is not compiled: the build is 0.12 |
+| `-DOP1RINGS_EARLY_FREEZE=1` | | a faded voice keeps its state (the test's other twin) |
+
+- The level is measured where 0.11 and 0.12 measure theirs: the peak of each render (1.45 ms) of the voice's own
+  output, before the reverb's share and the limiter. A peak, and five seconds of it, so partials that beat through
+  zero do not start a fade. It is compared at the scale of the voice's 16-bit output: the own peak times the model's
+  gain (1.12 modal and string, 0.56 FM, 0.8 sympathetic), so -66 dBFS is 60,060 of own peak for the modes and the
+  string, 120,121 for FM, 84,085 for the sympathetic strings. In string + reverb the own peak is the voice's dry
+  part (the string times 1 - the reverb's amount), what the voice itself plays.
+- One render at or above the level starts the five seconds again. If that happens during the fade (a control moved:
+  the FM voice's envelope rises again when the damping is turned up), the gain goes back to full in 31 ms.
+- The fade is a gain on the voice's own output, applied after the level is taken and before the send to the reverb
+  and the limiter. The model under it runs on untouched, so nothing in the fade depends on the model.
+- At the end of the fade the voice is asleep, as 0.12's sleeping voices are: zeros at once in the five models
+  without reverb (all 64 samples of the render written), and in string + reverb the reverb's share until the bus
+  idles. 0.11's rule (under half an LSB for 12 ms) and 0.12's (under 4 LSB for 10 s) are still there underneath;
+  0.12's can no longer come first.
+- **A strike during the hold or the fade** sets the gain to full at once: the voice plays what it would have played
+  without the rule (the fade never touched the model). The gain's jump is at most the level, under the strike.
+- **A strike into a voice that was faded out: the string starts from rest.** Its modes, its exciter or its strings
+  are cleared (`RingsVoice::Rest`); in a steal the new key takes the cleared string. A string that has died away is
+  at rest, and that is what the fade said it was; kept, what the string held at the end of the fade (up to the
+  level) would come back at full gain with the strike, from wherever it stood. Measured both ways (below): the two
+  differ by 2 to 11 LSB in the first tenth of a second after the strike and by 0.00 dB in level, with the same first
+  sample; cleared is the one with nothing left over. The FM voice is not cleared: an oscillator has no rest, its
+  envelope fell and the strike raises it, phase unbroken. Voices put to sleep by 0.11's or 0.12's rule keep their
+  state as before.
+
+**When each build sleeps** (`make -C tests/host/rings early-table`: six keys C3 G3 C4 E4 G4 C5 struck together and
+held; the default patch but for the damping; seconds after the strike until every voice is asleep; `>` = still
+awake when the run ends):
+
+| six keys, damping | 0.12 | 0.13 (-66) | the -60 build |
+|---|---|---|---|
+| string + reverb, 22,937 (default) | 17.1 | 16.9 | 15.6 |
+| string + reverb, 28,000 | 39.0 | 30.7 | 27.5 |
+| string + reverb, 30,000 | 90.2 | 72.3 | 63.7 |
+| string + reverb, 31,000 | 171.7 | 144.3 | 126.7 |
+| string + reverb, 32,767 (the top) | 322.0 | 322.0 | 322.0 |
+| string, 22,937 | 10.0 | 10.0 | 10.0 |
+| string, 28,000 | 16.9 | 16.7 | 15.6 |
+| string, 30,000 | 20.4 | 19.0 | 17.5 |
+| string, 31,000 | 21.2 | 19.5 | 17.9 |
+| string, 32,767 | > 480 | > 480 | > 480 |
+| modal, 22,937 | 16.9 | 15.8 | 14.3 |
+| modal, 28,000 | 62.8 | 46.7 | 40.6 |
+| modal, 30,000 | 104.6 | 77.5 | 66.9 |
+| modal, 32,767 | > 150 | > 150 | 136.7 |
+| sympathetic, 28,000 / 30,000 | 21.2 / 23.3 | 21.2 / 23.3 | 21.2 / 23.0 |
+| quantised, 28,000 / 30,000 | 18.2 / 21.5 | 18.0 / 19.3 | 16.8 / 18.0 |
+| FM, 22,937 / 28,000 | 6.8 / 16.1 | 6.8 / 16.1 | 6.8 / 16.1 |
+
+String + reverb plays four strings for six keys (the keys C4 E4 G4 C5 keep theirs), and the higher a string the
+sooner it is done. Each string, seconds after the strike, 0.12 / -66 / -60:
+
+| damping | C5 | G4 | E4 | C4 |
+|---|---|---|---|---|
+| 28,000 | 17.4 / 16.2 / 14.7 | 29.2 / 24.1 / 21.8 | 30.8 / 24.8 / 22.2 | 39.0 / 30.7 / 27.5 |
+| 30,000 | 34.5 / 29.5 / 25.9 | 61.0 / 51.1 / 45.4 | 69.5 / 54.4 / 47.8 | 90.2 / 72.3 / 63.7 |
+| 31,000 | 56.3 / 44.9 / 39.2 | 108.6 / 88.3 / 78.0 | 122.8 / 99.6 / 87.3 | 171.7 / 144.3 / 126.7 |
+| 32,767 | 97.8 / 77.0 / 67.0 | 214.9 / 199.3 / 176.3 | 255.4 / 255.4 / 254.5 | 322.0 / 322.0 / 322.0 |
+
+At the top two things show that have nothing to do with 0.13. The strings are loud for minutes (above). And a
+string there does not always die away smoothly: after minutes of a slow, nearly linear decay it can collapse to
+zero within 50 to 400 ms from well above the level (the string model's E4 from 43 LSB, -57 dBFS, in 50 ms at
+264.6 s; G3 and C4 at 453.1 and 335.7 s; string + reverb's E4 and C4 at 255.4 and 322.0 s), in 0.12 as in 0.13.
+That is the string's own arithmetic, not a rule of the engine: the level never spends five seconds under -66 dBFS
+there, so no fade comes first. [C host; why it collapses just there was not looked into.]
+
+The other models at the top: FM from damping 29,500 holds its note for as long as the key is down, by design; the
+sympathetic and quantised strings ring past 150 s at -3 to -14 dBFS; none of these is under the level, so none is
+cut.
+
+**The summed 16-bit output when a fade starts and when it ends** (the peak of the six voices' sum in the quarter
+second before; the first strings to fade do so under the others, which are still loud):
+
+| six keys | -66: start / end | -60: start / end |
+|---|---|---|
+| string + reverb, 28,000: the first string (C5) | -41.4 / -44.7 dBFS | -39.0 / -39.8 |
+| string + reverb, 28,000: the last (C4) | -71.2 / -76.3 | -66.8 / -74.7 |
+| string + reverb, 30,000: the first | -29.4 / -30.7 | -32.3 / -28.5 |
+| string + reverb, 30,000: the last | -66.8 / -74.7 | -57.2 / -68.7 |
+| string + reverb, 31,000: the last | -63.5 / -71.2 | -56.5 / -64.3 |
+| string, 30,000: the last (C3) | -80.8 / -90.3 | -76.3 / -90.3 |
+| modal, 28,000: the six within 0.3 s | -57 / -65 to -72 | -50 / -55 to -76 |
+| modal, 30,000: the six within 1.5 s | -54 to -58 / -57 to -78 | -50 to -57 / -52 to -75 |
+
+A fade starts five seconds after the voice went under the level, so the faster a tail falls the lower it is by
+then. In the string model a string under the level is nearly done anyway: the fade often ends on 0.11's rule before
+its second is over, and the cut saves a second or two. In string + reverb and the modal model the tail under the
+level is long, and that is where the time goes.
+
+**A single held note** (C3), seconds until it sleeps, and the output's peak when its fade starts / ends:
+
+| one key, damping | 0.12 | 0.13 (-66) | the -60 build |
+|---|---|---|---|
+| string + reverb, 22,937 | 18.8 | 17.6 (-84 / -90 dBFS) | 16.1 (-78 / -90) |
+| string + reverb, 28,000 | 44.6 | 33.8 (-72 / -84) | 30.2 (-67 / -81) |
+| string + reverb, 30,000 | 107.6 | 84.7 (-67 / -81) | 74.4 (-61 / -69) |
+| string + reverb, 31,000 | 226.8 | 183.1 (-66 / -78) | 159.5 (-61 / -71) |
+| string + reverb, 32,767 | > 480 | > 480 | > 480 |
+| string, 28,000 | 16.9 | 16.7 | 15.5 |
+| string, 30,000 | 20.4 | 19.0 (-84 / -90) | 17.5 (-78 / -90) |
+| string, 32,767 | > 480 | > 480 | > 480 |
+
+**Cost** (`make -C tests/host/rings early-sim`: the simulator, compute only, cycles a block averaged over each 5 s,
+six keys held; on the device a block costs more, about 160 k in the 0.11 run where the simulator says 68 k, and the
+times are the same):
+
+| string + reverb, damping 30,000: seconds after the strike | 0.12 | 0.13 (-66) | the -60 build |
+|---|---|---|---|
+| 0-25 (four strings and the reverb) | 67,751 | 68,275 | 68,279 |
+| 25-30 | 67,754 | 67,634 | 61,069 |
+| 30-35 | 66,947 | 59,054 | 59,057 |
+| 35-45 (three strings) | 58,640 | 59,050 | 59,160 |
+| 45-50 | 58,640 | 59,107 | 46,793 |
+| 50-55 | 58,643 | 51,342 | 40,603 |
+| 55-60 (-66, -60: one string) | 58,685 | 40,602 | 40,617 |
+| 60-65 | 51,446 | 40,593 | 36,410 |
+| 65-70 | 48,640 | 40,622 | 5,749 |
+| 70-75 | 40,418 | 23,491 | **5,613** |
+| 75-90 | 40,440 | **5,613** | 5,613 |
+| 90-95 | 8,553 | 5,613 | 5,613 |
+| from 95 (every render silent) | **5,613** | 5,613 | 5,613 |
+
+| the same in fewer words: cycles a block, and until when | 0.12 | 0.13 (-66) | the -60 build |
+|---|---|---|---|
+| string + reverb, 28,000 | 67.8 k to 15 s, 57-63 k to 30 s, 5.6 k from 40 s | 68.3 k to 15 s, 5.6 k from 35 s | 68.3 k to 10 s, 5.6 k from 30 s |
+| string + reverb, 31,000 | 67.8 k to 55 s, 58.6 k to 105 s, 40.4 k to 170 s, 5.6 k from 175 s | 68.3 k to 45 s, 59.0 k to 85 s, 40.6 k to 140 s, 5.6 k from 145 s | 68.3 k to 35 s, 59.0 k to 75 s, 40.6 k to 125 s, 5.6 k from 130 s |
+| string + reverb, 32,767 (the top) | 67.8 k to 95 s, then 58.7 k (to the run's end, 130 s) | 68.3 k to 75 s, then 59.1 k | 68.3 k to 65 s, then 59.1 k |
+| string, 30,000 | 82.1 k, 2.6 k from 25 s | 82.9 k, 2.6 k from 20 s | 82.9 k, 2.7 k from 20 s |
+| string, 32,767 | 82.1 k to 110 s, then 68.9 k | 82.9 k to 100 s, then 69.6 k | 82.9 k to 90 s, then 69.6 k |
+| modal, 28,000 | 101.0 k to 60 s, 2.7 k from 65 s | 101.7 k to 45 s, 2.8 k from 50 s | 101.7 k to 40 s, 2.8 k from 45 s |
+| one key, string + reverb, 30,000 | 23.6 k to 105 s, 1.5 k from 110 s | 23.8 k to 80 s, 1.5 k from 90 s | 23.8 k to 70 s, 1.5 k from 80 s |
+
+So at damping 30,000 the held chord is at its floor 18 s sooner than in 0.12 (25 s with -60), at 31,000 27 s (44 s),
+in the modal model at 28,000 16 s (22 s); **at the very top the cost is what it was**, less one string 20 to 30 s
+sooner. The rule is not free while a voice plays: 0.13 costs 0.7 to 1.0 % more than 0.12 with every voice awake
+(68,435 for 67,911 cycles a block in string + reverb, 82,860 for 82,043 in the string model, 101,723 for 101,018 in
+the modal model: about 130 cycles a voice a render, the test for the fade and the level's compare). Asleep, the same
+as 0.12 to within 16 cycles a voice.
+
+**Proof** (`make -C tests/host/rings early`, `rings_early.cc`, `early.sh`: the build as it ships, the -60 build,
+the twin without the rule and the build that keeps a faded voice's state; six keys, every voice rendered every
+block, the 16-bit output of every render compared; a render's `out` is filled with a pattern first):
+
+- **Above the level, 0.12's samples.** Every key struck again every 4 s for 40 s (no voice is ever 5 s under the
+  level): the six models at the four polyphony settings, the -66 and the -60 build against the twin: **0 samples
+  differ** in all 48. Keys held and left to die, 60 s (seven model and structure settings x four dampings x
+  polyphony 4 and "all", both builds: 112 runs): the twin's samples up to the first render in which any voice
+  fades, in all 112. The twin itself against 0.12's sources (`make sleep OLD12=<0.12's folder>`, the six models x
+  four polyphony settings x three dampings with restrikes, and five stalled tails held 150 s): the same samples in
+  all 77. `rings_compare.cc`'s 90 s of playing (4,367 notes, every model): the same file as 0.12's.
+- **The fade has no click.** In those 112 runs 78 have fades, 266 of them. The largest step between two
+  neighbouring samples of a fading voice's output, from the fade's first render to the render after its last: 2 LSB
+  in the models without reverb, 14 LSB in string + reverb (the reverb's share, which the voice goes on playing); in
+  every run it is the twin's own largest step in the same renders or 1 LSB more. In the models without reverb the
+  faded output is the twin's sample times the gain to within 1.95 LSB, and the fade's last render peaks at 0 or 1
+  LSB, after which the render is zeros.
+- **A strike 2 s before a voice would fade** (in the hold): the voice's output is the twin's, 0 LSB apart for the
+  second after the strike, in the string, modal, FM, quantised and reverb models; the files are the same up to the
+  first fade of another voice.
+- **A strike half a second into the fade:** the first sample's step is the twin's to 1 LSB, the voice is within
+  3 LSB of the twin's for the next second (0 to 2 without reverb), the level the same to 0.00 dB.
+- **A strike 3 s after the fade (asleep), cleared against kept:** the same first sample; apart by 2 LSB (string), 3
+  to 6 (string + reverb), 11 (modal, where the kept state still rang at 7 LSB), 0 (FM, not cleared); level 0.00 dB.
+  Quantised strings differ more (0.2 dB): the cleared strings' slow detune starts again. Against the twin the
+  strings' samples cannot agree, as 0.12's note says (one noise generator feeds every awake string's pluck), and
+  the level moves with the pluck: in the twin alone the same key struck at eight moments a tenth of a second apart
+  gives 1,141 to 3,624 LSB RMS over its first second in string + reverb and 2,380 to 4,043 in the string model.
+  The modal model has no noise: cleared against the twin 9 LSB and 0.00 dB.
+- **A steal while a voice fades** (polyphony 4, four keys, a fifth struck half a second into the oldest voice's
+  fade): the new voice is the twin's (0 LSB string, 2 LSB modal), the stolen one fades out in its 3 ms as before.
+  In string + reverb the new voice's level is the pluck's again: over eight strike times its first second is 1,153
+  to 4,818 LSB RMS against the twin's 1,355 to 3,281 (means 2,234 and 2,338), and cleared and kept are the same
+  sample for sample (the stolen string was not yet faded out).
+- **The level returns with no strike** (FM, structure 0, damping 26,000, the damping turned to the top half a second
+  into the six fades): all six gains are back at full 60 ms later; no step larger than the twin's own.
+- **A sleeping voice's render is 64 zeros**: every silent render of every run above was checked (none with a
+  non-zero sample), and a voice asleep in a model without reverb is rendered silent from its next render.
+- `make idle` (0.11's test): as it ships against its twin that never idles, 0 samples differ (damping 24,000 held
+  24 s, and 29,000 held 100 s, where the chord's last non-zero sample now comes at 32.6 s; 0.12: 42.0 s). `make
+  models OLD=<0.12>`: the same bytes. `make sleep`: as before, and it now builds both sides with the early cut off,
+  since it is about 0.12's rule (said in the Makefile).
+- The assembly is untouched (no `.S` file changed). **Simulator against host**, the build as it ships with the
+  assembly kernels, every render's 16-bit output and every voice's gain: the same file in string + reverb (40 s:
+  four fades, a strike into a fade, a strike into a faded voice), the string model (22 s), FM with the structure
+  at 0 (22 s, five fades, both strikes) and the modal model (24 s, five fades, both strikes).
+
+**The second file, and why not a second plugin.** `rings60` beside `rings` would fit the memory (rings takes 668 KB
+of the 1,769,472-byte plugin budget, the 13-file set uses 834,520, so two copies come to about 1,503,000, 85 %),
+but not the L1 lease: rings leases 3,328 of the 4,096 bytes all engines share, so the copy that loads second would
+run with its hot state, its modes and its limiter table in SDRAM, and the two would not cost the same: the
+comparison the test is for would be off. A second name would also be a second engine type in saved sounds. So the
+-60 build is a second `rings.coop` (version `0.13-60`) that replaces the first: copy it over, restart; `coop_usb.py
+inventory` shows which version is loaded.
+
+File 115,788 bytes (`.text` 46,940, +704 on 0.12; `.bss` 572,640, +72); the -60 file 115,796. **The same imports as
+0.12**, the same ten names in the same order (it loads on e10 and later). Not on the device yet, and not through the
+op1emu gate: `docs/device-tests.md` "rings 0.13".
+
 ## Building and checking
 
 ```sh
@@ -506,6 +744,19 @@ make -C tests/host/rings halfband-check   # the upsampler kernel against its C l
 make -C tests/host/rings profile     # cycles per render by model and stage, in the simulator
 make -C tests/host/rings footprint   # rings' code lines a block (FOOTPRINT_MODEL, FOOTPRINT_FLAGS)
 make -C tests/host/rings dirty       # rings' SDRAM lines written a block, by owner (DIRTY_MODEL)
+make -C tests/host/rings idle        # 0.11: the reverb's idle state against its twin (OLD=<an older folder>)
+make -C tests/host/rings sleep       # 0.12: the 4 LSB rule against its twin (OLD12=<0.12's folder>: the same samples)
+make -C tests/host/rings early       # 0.13: the early cut: above the level, the fades, the strikes, the steal
+make -C tests/host/rings early-table # 0.13: when each voice fades and sleeps, 0.12 / -66 / -60 (host, ~10 min)
+make -C tests/host/rings early-sim   # 0.13: simulator against host, and the cost curves (~30 min, 30 runs at once)
+```
+
+The two files of 0.13 (the second from a copy of the folder with `-DOP1RINGS_EARLY_LEVEL=134218` added to
+`plugin.json`'s `cflags` and the version `0.13-60`; `pack.py` wants the folder named `rings`):
+
+```sh
+python3 -I tools/plugin/pack.py plugins/rings -o build/plugins-next4/rings.coop --toolchain ~/op1-toolchain
+python3 -I tools/plugin/pack.py /tmp/p60/plugins/rings -o build/plugins-next4/alt60/rings.coop --toolchain ~/op1-toolchain
 ```
 
 ## Differences from te-op1-cfw

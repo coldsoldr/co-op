@@ -15,7 +15,8 @@ SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree
 PROFILE_BLOCKS ?= 62010
 PROFILE_MODEL ?=
 
-.PHONY: voice44 all clean profile halfband-check halved batched footprint dirty idle idle-sim models sleep sleep-sim
+.PHONY: voice44 all clean profile halfband-check halved batched footprint dirty idle idle-sim models sleep sleep-sim early early-bins \
+        early-table early-sim
 all: $(BUILD)/rings_ref $(BUILD)/rings_coop $(BUILD)/rings_coop_m14
 	$(BUILD)/rings_ref $(BUILD)/ref.raw
 	$(BUILD)/rings_coop $(BUILD)/coop.raw
@@ -205,13 +206,16 @@ endif
 #                                  (-DOP1RINGS_NO_QUIET_SLEEP): the default patch (the same samples), then settings
 #                                  whose tails stall (the difference, and when each voice sleeps)
 #   make sleep OLD=<0.11's plugin folder>   and the twin against 0.11's sources: the same samples
+#   make sleep OLD12=<0.12's plugin folder> and the build against 0.12's sources: the same samples
+# Since 0.13 both are built with the early cut off (-DOP1RINGS_NO_EARLY_SLEEP: the build is then 0.12, which is what
+# this target is about; the early cut has its own, `make early`).
 #   make sleep-sim                 cycles a block in the simulator, six keys held: the reverb model's default patch,
 #                                  and an FM patch whose envelope stalls at 1 LSB
 SLEEP_DEPS := rings_sleep.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
 SLEEP_SRC = rings_sleep.cc $(1)/rings.cc $(addprefix $(1)/,$(DSP))
 $(BUILD)/rings_sleep: $(SLEEP_DEPS)
 	@mkdir -p $(BUILD)
-	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -I$(COOP) -I../../../sdk $(call SLEEP_SRC,$(COOP)) -o $@
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -DOP1RINGS_NO_EARLY_SLEEP -I$(COOP) -I../../../sdk $(call SLEEP_SRC,$(COOP)) -o $@
 
 $(BUILD)/rings_sleep_twin: $(SLEEP_DEPS)
 	@mkdir -p $(BUILD)
@@ -231,6 +235,12 @@ ifneq ($(OLD),)
 	@set -e; for m in 0 1 2 3 4 5; do for q in 0 3; do for d in 22937 28000; do printf "model $$m, polyphony setting $$q, damping $$d:"; \
 	  $(call SLEEP_CMP,$(BUILD)/rings_sleep_twin $(BUILD)/rings_sleep_old,$$m $$q $$d 60 6 7,env); done; done; done
 endif
+ifneq ($(OLD12),)
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -I$(OLD12) -I../../../sdk $(call SLEEP_SRC,$(OLD12)) -o $(BUILD)/rings_sleep_old12
+	@echo "the early cut off / $(OLD12):"
+	@set -e; for m in 0 1 2 3 4 5; do for q in 0 1 2 3; do for d in 22937 28000 31000; do printf "model $$m, polyphony setting $$q, damping $$d:"; 	  $(call SLEEP_CMP,$(BUILD)/rings_sleep $(BUILD)/rings_sleep_old12,$$m $$q $$d 60 6 7,env); done; done; done
+	@set -e; for c in "0 28000 8192 32767" "3 26000 0 19660" "3 28000 16384 19660" "5 28000 0 19660" "1 28000 0 32767"; do set -- $$c; 	  printf "model $$1, damping $$2, structure $$3, brightness $$4, 150 s:"; 	  $(call SLEEP_CMP,$(BUILD)/rings_sleep $(BUILD)/rings_sleep_old12,$$1 3 $$2 150 6,env SLEEP_STRUCTURE=$$3 SLEEP_BRIGHTNESS=$$4); done
+endif
 	@echo "tails that stall, 150 s held (a difference is the stalled tail the twin goes on playing):"
 	@for c in "0 28000 8192 32767" "3 26000 0 19660" "3 28000 16384 19660" "5 28000 0 19660" "1 28000 0 32767"; do set -- $$c; \
 	  printf "model $$1, damping $$2, structure $$3, brightness $$4:"; \
@@ -241,7 +251,7 @@ endif
 
 $(BUILD)/rings_sleep.elf: $(SLEEP_DEPS)
 	@mkdir -p $(BUILD)
-	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) $(IDLE_FLAGS) -I$(COOP) -I../../../sdk $(call SLEEP_SRC,$(COOP)) $(ASM) -o $@
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) $(IDLE_FLAGS) -DOP1RINGS_NO_EARLY_SLEEP -I$(COOP) -I../../../sdk 	  $(call SLEEP_SRC,$(COOP)) $(ASM) -o $@
 
 $(BUILD)/rings_sleep_twin.elf: $(SLEEP_DEPS)
 	@mkdir -p $(BUILD)
@@ -252,3 +262,41 @@ sleep-sim: $(BUILD)/rings_sleep.elf $(BUILD)/rings_sleep_twin.elf
 	$(BFIN)/bfin-elf-run $(BUILD)/rings_sleep.elf run - 5 3 22937 25 6
 	$(BFIN)/bfin-elf-run $(BUILD)/rings_sleep.elf run - 3 3 26000 35 6 0 0
 	$(BFIN)/bfin-elf-run $(BUILD)/rings_sleep_twin.elf run - 3 3 26000 35 6 0 0
+
+# rings 0.13: the early cut (src/op1_voice.h kEarlyLevel; rings_early.cc): a voice under -66 dBFS for 5 s is faded
+# out over 1 s and sleeps. Four builds of the one test: as it ships; the -60 dBFS build; the twin without the rule
+# (-DOP1RINGS_NO_EARLY_SLEEP: 0.12); and the rule with the faded voice's state kept (-DOP1RINGS_EARLY_FREEZE=1).
+#   make early                     the proofs: above the level the twin's samples, the fades, the strikes, the steal
+#   make early-table               when each voice fades and sleeps, and at what level (0.12, -66, -60), on the host
+#   make early-sim                 the simulator against the host (the assembly kernels), and the cost curves
+EARLY_FLAGS := $(IDLE_FLAGS) -DCOOP_EARLY_PROBE
+EARLY_DEPS := rings_early.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
+EARLY_SRC := rings_early.cc $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP))
+EARLY_60 := -DOP1RINGS_EARLY_LEVEL=134218
+EARLY_VARIANT_ := 
+EARLY_VARIANT_60 := $(EARLY_60)
+EARLY_VARIANT__twin := -DOP1RINGS_NO_EARLY_SLEEP
+EARLY_VARIANT__freeze := -DOP1RINGS_EARLY_FREEZE=1
+define EARLY_BUILD
+$(BUILD)/rings_early$(1): $(EARLY_DEPS)
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) $(EARLY_FLAGS) $(EARLY_VARIANT_$(1)) -I$(COOP) -I../../../sdk $(EARLY_SRC) -o $$@
+$(BUILD)/rings_early$(1).elf: $(EARLY_DEPS)
+	@mkdir -p $(BUILD)
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) $(EARLY_FLAGS) $(EARLY_VARIANT_$(1)) -I$(COOP) -I../../../sdk $(EARLY_SRC) $(ASM) -o $$@
+endef
+$(eval $(call EARLY_BUILD,))
+$(eval $(call EARLY_BUILD,60))
+$(eval $(call EARLY_BUILD,_twin))
+$(eval $(call EARLY_BUILD,_freeze))
+EARLY_BINS := $(BUILD)/rings_early $(BUILD)/rings_early60 $(BUILD)/rings_early_twin $(BUILD)/rings_early_freeze
+early-bins: $(EARLY_BINS)
+
+early: $(EARLY_BINS)
+	bash early.sh $(BUILD) proofs
+
+early-table: $(EARLY_BINS)
+	bash early.sh $(BUILD) table
+
+early-sim: $(EARLY_BINS) $(BUILD)/rings_early.elf $(BUILD)/rings_early60.elf $(BUILD)/rings_early_twin.elf
+	bash early.sh $(BUILD) sim $(BFIN)

@@ -524,6 +524,11 @@ void NoteOn(int voice, void* state, int32_t velocity, const int16_t* params) {
     voices[v]->Init(PolyModes(poly));
     upsamplers[v].Init();
   }
+#if !OP1RINGS_EARLY_FREEZE
+  // 0.13: a voice the early cut faded out (src/op1_voice.h) is struck from rest, as a string that has died away is;
+  // what it held when the fade ended is dropped (it is the stolen voice's state when this note took one over).
+  if (voices[v]->early_asleep()) voices[v]->Rest();
+#endif
   voices[v]->set_resolution(PolyModes(poly));
   voices[v]->set_polyphony(op1::kRingsPolyphony[poly]);
   voices[v]->set_model(static_cast<op1rings::ResonatorModel>(model));
