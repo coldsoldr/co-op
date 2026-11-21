@@ -214,13 +214,17 @@ def inventory(s):
                    'author': f[6], 'bytes': int(f[7]) if f[7].isdigit() else None, 'reason': f[8]}
             if len(f) >= 11 and f[9].isdigit() and f[10].isdigit():      # e12: the file's own memory, its position buffer
                 row['need'], row['scratch'] = int(f[9]), int(f[10])
+            if len(f) >= 12 and f[11].isdigit():                         # e13: the part of need that is in heap 0
+                row['heap'] = int(f[11])
             rows.append(row)
     out = {'header': head, 'build': next((h[6:] for h in head if h.startswith('build ')), None), 'plugins': rows}
-    memory = {}                                                          # e12: budget, used, fxbuf, fxbufs, clip
-    for h in head[3:]:
+    memory = {}                                                          # e12: budget, used, fxbuf, fxbufs, clip;
+    for h in head[3:]:                                                   # e13: heap_ / arena_ budget and used, place, place_src
         k, _, v = h.partition(' ')
         if v.isdigit():
             memory[k] = int(v)
+        elif k in ('place', 'place_src') and v:
+            memory[k] = v
     if memory:
         out['memory'] = memory
     return out

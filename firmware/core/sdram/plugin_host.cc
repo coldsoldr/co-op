@@ -29,6 +29,7 @@
 #include "coop_cost.h"
 #include "coop_tempo.h"
 #include "coop_arena.h"
+#include "coop_place.h"
 #include "fw_addrs.h"
 
 #define Y_OPENDIR  ((void *(*)(const char *))0x01A9B450u)               /* kennel kn_boot.c */
@@ -70,6 +71,8 @@
 extern "C" const kn_export coop_exports[];                                /* sdk/coop_exports.cc */
 extern "C" const int coop_exports_count;
 extern "C" int coop_stereo_side_rw(int instr, int16_t **l, int16_t **r);   /* stereo_bus.cc: one instrument's side pair, live */
+extern volatile uint32_t g_place_marker_writes, g_place_marker_clears, g_place_marker_errors;   /* coop_place.cc (e13) */
+extern volatile uint32_t g_place_mmr[6], g_place_mmr_read;
 extern "C" const coop_engine_t *coop_engine_at(int n);                    /* engine_host.cc (E1): the engine at number n */
 extern "C" const char *coop_engine_add(int n, const coop_engine_t *e);
 extern "C" void coop_engine_screen_file(int n, const char *file);         /* engine_screen.cc (E2) */
@@ -93,7 +96,8 @@ char g_plugins_last_name[NAME_MAX];
 struct fileinfo;
 /* e9: scr = a scratch file (its state in the position buffers); fsc = its screen (COOP_FX_F_SCREEN, inst[0]'s) */
 struct plug { const coop_fx_t *fx; const coop_fx_t *inst[POSITIONS]; char name[16]; int16_t def[4]; int ctl; int16_t wmax[3], def5[3];
-              const coop_fx_t *pend; struct fileinfo *fi; uint32_t img; uint8_t scr, noroom; const coop_fx_screen_t *fsc; };   /* e12: noroom =
+              const coop_fx_t *pend; struct fileinfo *fi; uint32_t img; uint8_t scr, noroom; const coop_fx_screen_t *fsc;
+              void *raw; uint32_t img_heap, img_arena; };   /* e12: noroom =
                                                                              the positions (bits) that had no buffer for it */
 static struct plug g_plug[SLOTS];                                          /* by number */
 struct mapent { char name[16]; uint8_t n, present; };
@@ -108,13 +112,16 @@ volatile uint32_t g_plugins_skipped, g_plugins_badname, g_plugins_over_budget;
 /* e3: what the boot scan made of each file, for the SysEx inventory (coop_inventory_text) and (e7) the stats report */
 enum { FS_NONE, FS_LOADED, FS_FAILED, FS_DISABLED, FS_SKIPPED };
 struct fileinfo { uint8_t state, kind; char name[16]; char version[12]; char author[24]; uint32_t size; const char *reason;
-                  uint32_t need, scratch, charge; uint8_t num; };           /* e12: need = its own arena bytes (or what it would
+                  uint32_t need, scratch, charge; uint8_t num;
+                  uint32_t heap; uint8_t pool; };                           /* e13: heap = the part of need in heap 0; pool = the
+                                                                             budget that refused it (1 heap 0, 0 the arena) */           /* e12: need = its own arena bytes (or what it would
                                                                              have taken), scratch = its position buffer size
                                                                              (32-rounded, 0 none), charge = need + what it grew
                                                                              the budget's one buffer by, num = its number */
 static struct fileinfo g_finfo[MAX_FILES + SKIP_KEEP];
 static const char *const R_SKIPPED = "more than 32 plugin files";
 static const char *const R_BUDGET = "over the plugin memory budget";
+static const char *const R_HEAP = "not enough memory left for the tape";   /* e7; back with e13 for what lives in heap 0 */
 static const char *const R_SCRATCH_BIG = "effect buffer larger than this core gives (repack)";   /* e8 */
 static const char *const R_FXBUF = "no memory for the effect buffers";                       /* e8 */
 static const char *const R_NOROOM = "no memory for this position";                           /* e12 */
@@ -321,6 +328,8 @@ static void list_dir(void)
  * bytes (kennel kn_boot.c sync_caches). The device crashed at boot without it (SEQSTAT 0x21, undefined instruction, in
  * heap 0) when e4's saw called into the core from init right after its relocation; op1emu models no caches. */
 volatile uint32_t g_code_syncs;
+static void code_sync(uint32_t lo, uint32_t hi);
+extern "C" void coop_code_sync(uint32_t lo, uint32_t hi) { code_sync(lo, hi); }   /* e13: coop_stats.cc's heap probe */
 static void code_sync(uint32_t lo, uint32_t hi)
 {
     for (uint32_t a = lo & ~31u; a < hi; a += 32) __asm__ __volatile__("flush [%0];" : : "a"(a) : "memory");
@@ -330,29 +339,48 @@ static void code_sync(uint32_t lo, uint32_t hi)
     g_code_syncs++;
 }
 
-/* ---- e12: the plugin memory budget is coop's own arena (coop_arena.h, docs/plugins.md "e12") ----
+/* ---- e13: two budgets, by where the policy puts each class of memory (coop_place.cc, docs/plugins.md "e13") ----
  * e7-e11 loaded the plugins from heap 0 right before the stock tape builds its cache there (24 nodes of one MALLOC
  * each, tape_c 0x01A54168; a node that does not fit halts the boot in the stock fatal handler: the e6 hang), so they
- * had a budget (1,536 then 1,728 KiB) and a second guard that read the heap (heap_room_ok). e12's scan takes nothing
- * from heap 0: both are gone. The budget is the arena's size, COOP_ARENA_CAP = 5,898,240 bytes, counted in whole
- * 32-byte blocks as the arena takes them:
- *   an effect, old model   5 x r32(cap)                    one relocation per position (state in .bss)
- *   an effect, scratch     r32(cap)                        one relocation
- *   an engine              r32(cap) + 6 x r32(voice_bytes) its relocation and the six voices' state
- *   with a screen          + r32(sizeof(struct escr))      the screen object (engine_screen.cc)
- *   with controls          + r32(sizeof(struct ctls))      the control table (engine_ui.cc; heap 0 and uncounted before)
- *   all scratch effects    + E once                        ONE position buffer, E = the largest r32(scratch) among them
- * with cap = load_size + 3 + 12 x imports and r32(n) = n rounded up to 32. A file that would take the sum over the
- * budget is refused before anything is taken. The position buffers (below) beyond that one come from what is left.
- * heap 0 is still read in place for the stats (heap_free, heap_largest, heap_free_boot): nothing guards on it. */
+ * had a budget (1,536 then 1,728 KiB) and a second guard that read the heap. e12 took everything from coop's arena
+ * (5,898,240 bytes, no guard needed) and was slower on the device. e13 places each class where the policy says and
+ * keeps both sets of rules, each for what lives there:
+ *   in heap 0 (the heap budget, 1,728 KiB as e11; blocks as the heap takes them, blk(n) = (n + 15) & ~7):
+ *     an image             copies x blk(cap + 32)             cap = load_size + 3 + 12 x imports; copies = 1, or 5
+ *                                                             for an old-model effect (no scratch flag)
+ *     an engine's voices   blk(6 x r32(voice_bytes) + 32)
+ *     the buffers          blk(4 x E + 32)                    all four, E = the largest r32(scratch)
+ *     and before anything is taken heap_room_ok: the tape's 24 nodes, one spare and 512 KiB must still fit (e7)
+ *   in the arena (the arena budget, COOP_ARENA_CAP; whole 32-byte blocks, r32(n)):
+ *     an image             copies x r32(cap)
+ *     an engine's voices   6 x r32(voice_bytes)
+ *     the buffers          E once (one buffer; up to three more from what is left: e12)
+ *     always               r32(sizeof(struct escr)) a screen object, r32(sizeof(struct ctls)) a control table
+ * A file loads when its heap part fits the heap budget (and the guard) and its arena part the arena budget; one that
+ * does not is refused before anything is taken. */
 #define HEAP_LIST     (*(volatile uint32_t *)0x01DFFC40u)
 #define TAPE_NODE_OP  (*(volatile uint16_t *)0x01A54172u)                  /* tape_c: BITSET (R0, n), the node data size */
-#define PLUG_BUDGET_DEFAULT COOP_ARENA_CAP
-/* Image-time test switch (--set-word g_coop_plug_budget=N): another (smaller) budget, for the gates. 0 = the default. */
-extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_plug_budget = 0; }
-#define PLUG_BUDGET   (g_coop_plug_budget ? g_coop_plug_budget : PLUG_BUDGET_DEFAULT)
+#define TAPE_NODES    24                                                    /* the node loop's bound (0x01A54200: R4 < 0x18) */
+#define HEAP_RESERVE  (512u * 1024u)                                        /* heap 0 left after the tape's nodes, at least */
+/* The heap budget: e11's 1,728 KiB (docs/plugins.md "e11": a first boot without plugins ends with 2,729,484 bytes of
+ * heap 0 free, coop takes at most 742,024 more later, each of which may fail harmlessly; a full budget left 201,012
+ * in op1emu). Whatever the policy puts in heap 0 counts against it; what it puts in the arena does not. */
+#define HEAP_BUDGET_DEFAULT (1728u * 1024u)
+#define ARENA_BUDGET_DEFAULT COOP_ARENA_CAP
+/* Image-time test switches (--set-word): other budgets, for the gates. 0 = the default. g_coop_plug_budget is the
+ * arena's (e12's word), g_coop_heap_budget the heap's. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_plug_budget = 0;
+             __attribute__((section(".data"))) volatile uint32_t g_coop_heap_budget = 0; }
+#define ARENA_BUDGET  (g_coop_plug_budget ? g_coop_plug_budget : ARENA_BUDGET_DEFAULT)
+#define HEAP_BUDGET   (g_coop_heap_budget ? g_coop_heap_budget : HEAP_BUDGET_DEFAULT)
 static uint32_t r32(uint32_t n) { return coop_arena_round(n); }
-volatile uint32_t g_plug_mem_used, g_heap0_free_boot, g_tape_node;
+static uint32_t blk(uint32_t n) { return (n + 15u) & ~7u; }                 /* the heap block MALLOC(n) takes */
+volatile uint32_t g_used_heap, g_used_arena, g_heap0_free_boot, g_tape_node;
+volatile uint32_t g_plugins_heap_short;
+/* What the one-figure fields report (`plugmem budget / used`, the inventory's `budget` / `used`): the budget that
+ * binds, i.e. the one with less room left; the arena's when the policy puts nothing in heap 0. */
+static int heap_in_use(void) { const struct coop_place *p = &g_coop_place; return p->eng || p->fx || p->voice || p->buf; }
+static int heap_binds(void) { return heap_in_use() && HEAP_BUDGET - g_used_heap <= ARENA_BUDGET - g_used_arena; }
 static uint32_t tape_node_size(void)
 {
     uint32_t op = TAPE_NODE_OP, n = (op >> 3) & 31u;
@@ -434,6 +462,59 @@ static int fxbuf_claim(int slot)
     return g_pos_buf[i] != 0;
 }
 static void fx_noroom(int slot, int e);                                    /* below: counted once a selection */
+static uint32_t fxbuf_heap_cost(uint32_t each) { return each ? blk(FXBUFS * each + 32u) : 0; }   /* e13: all four in one heap block */
+
+/* e7, back with e13 for what the policy puts in heap 0. Before a file's heap blocks are taken (`cost` bytes more):
+ * would the tape's nodes, one node spare and HEAP_RESERVE still fit afterwards? Asked before allocating, and the
+ * blocks are assumed to come off the break: a block taken and then freed never goes back above the break, so it is
+ * lost to the nodes (op1emu, e7 gate), and the stock's small blocks after the scan may land in any hole. 1 = yes (or
+ * heap 0 cannot be read: then the budget alone decides). e13: the scan's staging block is not in heap 0 any more. */
+static int heap0_read(struct heap0 *h, uint32_t node, uint32_t extra);
+static int heap_room_ok(uint32_t cost)
+{
+    struct heap0 h;
+    if (g_coop_place.buf == COOP_IN_HEAP && !g_fxbuf_n) cost += fxbuf_heap_cost(g_scr_max);   /* the buffers still to be taken */
+    uint32_t node = blk(g_tape_node ? g_tape_node : 0x80000u);
+    if (!heap0_read(&h, node, 0)) return 1;
+    uint32_t list_nodes = h.nodes - h.top / node;
+    uint32_t nodes = (h.top > cost ? (h.top - cost) / node : 0) + list_nodes;
+    if (nodes < TAPE_NODES + 1) return 0;
+    return h.free >= TAPE_NODES * node + HEAP_RESERVE + cost;
+}
+
+/* ---- e13: one load's blocks, from either pool, and how a failed load gives them back ----
+ * pool_take(heap, n): n bytes, 32-byte aligned. From the arena: zeroed, r32(n). From heap 0: MALLOC(n + 32), the
+ * start aligned up (not zeroed: an image is written whole by the relocation, the voice state is zeroed by its taker).
+ * load_begin() opens a load; load_undo() frees its heap blocks and resets the arena to where the load began. */
+#define UNDO_MAX (POSITIONS + 2)
+static void *g_undo_raw[UNDO_MAX];
+static int g_undo_n;
+static coop_arena_mark_t g_undo_mark;
+static void load_begin(void) { g_undo_n = 0; g_undo_mark = coop_arena_mark(); }
+static void load_undo(void)
+{
+    for (int i = 0; i < g_undo_n; i++) FREE(g_undo_raw[i]);
+    g_undo_n = 0;
+    coop_arena_reset(g_undo_mark);
+}
+static void *pool_take(int heap, uint32_t bytes, void **raw_out)
+{
+    if (raw_out) *raw_out = 0;
+    if (!heap) return coop_arena_take(bytes);
+    if (g_undo_n >= UNDO_MAX) return 0;
+    uint8_t *raw = (uint8_t *)MALLOC(bytes + 32u);
+    if (!raw) return 0;
+    g_undo_raw[g_undo_n++] = raw;
+    if (raw_out) *raw_out = raw;
+    return (void *)(uintptr_t)(((uint32_t)(uintptr_t)raw + 31u) & ~31u);
+}
+/* engine_host.cc: an engine's voice state (bytes = six strides), zeroed, where the policy puts it */
+extern "C" void *coop_voice_take(uint32_t bytes)
+{
+    uint8_t *b = (uint8_t *)pool_take(g_coop_place.voice == COOP_IN_HEAP, bytes, 0);
+    if (b && g_coop_place.voice == COOP_IN_HEAP) for (uint32_t i = 0; i < bytes; i += 4) *(volatile uint32_t *)(b + i) = 0;
+    return b;
+}
 
 /* ---- the tempo export (2026-11-11, packaged with e10; docs/fx-abi.md "Tempo", core/include/coop_tempo.h) ----
  * The tempo screen's BPM as Q16 (120 << 16 when the word is out of 20..400 BPM). One aligned word load from the stock's
@@ -501,31 +582,41 @@ static const char *load_one(const char *fname, uint8_t *stage)
     if (scr && in.scratch > COOP_FX_SCRATCH_MAX) return R_SCRATCH_BIG;
     int n = number_for(in.type_name);
     if (!n) return "no free plugin number";
-    /* The budget first, before anything is taken or set (the rule: the comment at PLUG_BUDGET). The old model: five
-     * relocations. e8, a scratch file: one relocation; e12: and what it grows the budget's ONE position buffer by. */
+    /* The budgets first, before anything is taken or set (the rule: the comment at HEAP_BUDGET). The old model: five
+     * relocations. e8, a scratch file: one relocation, and what it grows the position buffers by where they are
+     * counted (the arena: one buffer; heap 0: all four). */
     const int copies = scr ? 1 : POSITIONS;
+    const int img_heap = g_coop_place.fx == COOP_IN_HEAP, buf_heap = g_coop_place.buf == COOP_IN_HEAP;
     uint32_t each = scr ? r32(in.scratch) : 0, new_max = each > g_scr_max ? each : g_scr_max;
-    uint32_t grow = new_max - g_scr_max;
-    /* e9: a file with an SVG may carry an effect screen; its screen object is counted here and taken below (e12: from
-     * the arena, at load), its code is in the image. The parsed SVG lives in the stock TE heap (engine_screen.cc
+    uint32_t grow_heap = buf_heap ? fxbuf_heap_cost(new_max) - fxbuf_heap_cost(g_scr_max) : 0;
+    uint32_t grow_arena = buf_heap ? 0 : new_max - g_scr_max;
+    /* e9: a file with an SVG may carry an effect screen; its screen object is counted here and taken below (the
+     * arena, at load), its code is in the image. The parsed SVG lives in the stock TE heap (engine_screen.cc
      * build_fx_all keeps a reserve there). Charged up front; given back below if the effect has no screen after all. */
     uint32_t scr_obj = in.svg ? r32(coop_screen_obj_bytes()) : 0;
     uint32_t ctl_b = (in.controls && in.controls[0]) ? r32(coop_ctl_bytes()) : 0;   /* e12: the control table is counted */
     uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports, img = r32(cap);
-    uint32_t own = (uint32_t)copies * img + scr_obj + ctl_b, cost = own + grow;
-    if (g_cur_info) { g_cur_info->need = own; g_cur_info->scratch = each; g_cur_info->charge = cost; g_cur_info->num = (uint8_t)n; }
-    if (g_plug_mem_used + cost > PLUG_BUDGET) { g_plugins_over_budget++; return R_BUDGET; }
-    const coop_arena_mark_t mark = coop_arena_mark();                      /* a failure below gives every block back */
-    if (in.controls) { err = coop_fx_set_controls(n, in.controls); if (err) { coop_ctl_drop(n); coop_arena_reset(mark); return err; } }   /* e6, before anything runs */
+    uint32_t own_heap = img_heap ? (uint32_t)copies * blk(cap + 32u) : 0;
+    uint32_t own_arena = (img_heap ? 0 : (uint32_t)copies * img) + scr_obj + ctl_b;
+    uint32_t cost_heap = own_heap + grow_heap, cost_arena = own_arena + grow_arena;
+    if (g_cur_info) { g_cur_info->need = own_heap + own_arena; g_cur_info->heap = own_heap; g_cur_info->scratch = each; g_cur_info->num = (uint8_t)n; }
+    if (g_used_heap + cost_heap > HEAP_BUDGET) { g_plugins_over_budget++; if (g_cur_info) { g_cur_info->pool = 1; g_cur_info->charge = cost_heap; } return R_BUDGET; }
+    if (g_used_arena + cost_arena > ARENA_BUDGET) { g_plugins_over_budget++; if (g_cur_info) { g_cur_info->pool = 0; g_cur_info->charge = cost_arena; } return R_BUDGET; }
+    if (cost_heap && !heap_room_ok(cost_heap)) { g_plugins_heap_short++; return R_HEAP; }
+    load_begin();                                                          /* a failure below gives every block back */
+    if (in.controls) { err = coop_fx_set_controls(n, in.controls); if (err) { coop_ctl_drop(n); load_undo(); return err; } }   /* e6, before anything runs */
     /* the old model: one relocated instance per position (P2b), a plugin selected at two positions at once keeps two
      * states in two .bss; e8: one image for all five, the two states in two position buffers */
     const coop_fx_t *inst[POSITIONS];
+    void *raw0 = 0;
     for (int k = 0; k < copies; k++) {
-        uint8_t *raw = (uint8_t *)coop_arena_take(cap);                    /* 32-aligned, img bytes, zeroed */
-        if (!raw) err = R_FULL;
+        void *rawk = 0;
+        uint8_t *at = (uint8_t *)pool_take(img_heap, cap, &rawk);          /* 32-aligned, at least cap bytes */
+        if (k == 0) raw0 = rawk;
+        if (!at) err = R_FULL;
         else {
-            uint32_t base = (uint32_t)(uintptr_t)raw, used = 0;
-            if (!kn_relocate_far(stage, &in, raw, base, img, coop_exports, coop_exports_count, &err, &used)) {
+            uint32_t base = (uint32_t)(uintptr_t)at, used = 0;
+            if (!kn_relocate_far(stage, &in, at, base, cap, coop_exports, coop_exports_count, &err, &used)) {
                 code_sync(base, base + used);                               /* e4b: before anything of it runs */
                 const coop_fx_t *fx = (const coop_fx_t *)(uintptr_t)(base + in.entry_offset);
                 uint32_t text_end = base + in.text_size;
@@ -538,13 +629,13 @@ static const char *load_one(const char *fname, uint8_t *stage)
                 if (!err) inst[k] = fx;
             } else if (!err) err = "relocation failed";
         }
-        if (err) { coop_ctl_drop(n); coop_arena_reset(mark); return err; }
+        if (err) { coop_ctl_drop(n); load_undo(); return err; }
     }
     for (int k = copies; k < POSITIONS; k++) inst[k] = inst[0];            /* e8: one image serves every position */
     const coop_fx_screen_t *fsc = (inst[0]->flags & COOP_FX_F_SCREEN) ? inst[0]->screen : 0;   /* e9 */
     if (fsc && !coop_screen_obj_reserve(n)) fsc = 0;                       /* e12: no room for its object: the stock page */
-    if (!fsc && scr_obj) { cost -= scr_obj; own -= scr_obj; if (g_cur_info) { g_cur_info->need = own; g_cur_info->charge = cost; } }   /* an SVG but no screen: nothing built */
-    g_plug_mem_used += cost;
+    if (!fsc && scr_obj) { cost_arena -= scr_obj; own_arena -= scr_obj; if (g_cur_info) g_cur_info->need = own_heap + own_arena; }   /* an SVG but no screen: nothing built */
+    g_used_heap += cost_heap; g_used_arena += cost_arena;
     g_plug[n].scr = (uint8_t)scr; g_plug[n].fsc = fsc;
     if (fsc) coop_fx_screen_file(n, fname);                                /* e9: built on the Gfx thread after the scan */
     scopy(g_plug[n].name, in.type_name, 16);
@@ -560,7 +651,8 @@ static const char *load_one(const char *fname, uint8_t *stage)
     for (int k = 0; k < POSITIONS; k++) g_plug[n].inst[k] = inst[k];
     __asm__ __volatile__("ssync;" ::: "memory");
     if (scr) {                                                             /* e8: selectable once the buffers exist */
-        g_plug[n].pend = inst[0]; g_plug[n].fi = g_cur_info; g_plug[n].img = own;
+        g_plug[n].pend = inst[0]; g_plug[n].fi = g_cur_info; g_plug[n].raw = raw0;
+        g_plug[n].img_heap = own_heap; g_plug[n].img_arena = own_arena;
         g_scr_max = new_max; g_scratch_files++;
     } else g_plug[n].fx = inst[0];                                        /* selectable from here */
     row_ensure(DB_FACTORY(), "fx_types", g_plug[n].name, g_plug[n].def, n);
@@ -576,18 +668,22 @@ static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fn
     if (in.flags) return "plugin flags not supported yet";
     int n = number_for(in.type_name);
     if (!n) return "no free plugin number";
+    const int img_heap = g_coop_place.eng == COOP_IN_HEAP, voice_heap = g_coop_place.voice == COOP_IN_HEAP;
     uint32_t cap = in.load_size + 3u + KN_STUB_SIZE * in.n_imports, img = r32(cap);
     uint32_t ctl_b = (in.controls && in.controls[0]) ? r32(coop_ctl_bytes()) : 0;   /* e12: counted */
-    uint32_t cost = img + ctl_b;
-    if (g_cur_info) { g_cur_info->need = cost; g_cur_info->charge = cost; g_cur_info->num = (uint8_t)n; }
-    if (g_plug_mem_used + cost > PLUG_BUDGET) { g_plugins_over_budget++; return R_BUDGET; }   /* e7: the code alone already */
-    const coop_arena_mark_t mark = coop_arena_mark();                      /* a failure below gives every block back */
-    uint8_t *raw = (uint8_t *)coop_arena_take(cap);
-    if (!raw) return R_FULL;
-    uint32_t base = (uint32_t)(uintptr_t)raw, used = 0;
+    uint32_t cost_heap = img_heap ? blk(cap + 32u) : 0, cost_arena = (img_heap ? 0 : img) + ctl_b;
+    if (g_cur_info) { g_cur_info->need = cost_heap + cost_arena; g_cur_info->heap = cost_heap; g_cur_info->num = (uint8_t)n; }
+    /* e7: the code alone already; the heap guard with the largest voice state when that goes to heap 0 too */
+    if (g_used_heap + cost_heap > HEAP_BUDGET) { g_plugins_over_budget++; if (g_cur_info) { g_cur_info->pool = 1; g_cur_info->charge = cost_heap; } return R_BUDGET; }
+    if (g_used_arena + cost_arena > ARENA_BUDGET) { g_plugins_over_budget++; if (g_cur_info) { g_cur_info->pool = 0; g_cur_info->charge = cost_arena; } return R_BUDGET; }
+    if ((img_heap || voice_heap) && !heap_room_ok(cost_heap + (voice_heap ? blk(COOP_VOICE_BYTES_MAX * COOP_VOICES + 32u) : 0))) { g_plugins_heap_short++; return R_HEAP; }
+    load_begin();                                                          /* a failure below gives every block back */
+    uint8_t *at = (uint8_t *)pool_take(img_heap, cap, 0);
+    if (!at) return R_FULL;
+    uint32_t base = (uint32_t)(uintptr_t)at, used = 0;
     const char *err = 0;
-    if (kn_relocate_far(stage, &in, raw, base, img, coop_exports, coop_exports_count, &err, &used)) {
-        coop_arena_reset(mark); return err ? err : "relocation failed";
+    if (kn_relocate_far(stage, &in, at, base, cap, coop_exports, coop_exports_count, &err, &used)) {
+        load_undo(); return err ? err : "relocation failed";
     }
     code_sync(base, base + used);                                          /* e4b: before init or any call into it */
     const coop_engine_t *e = (const coop_engine_t *)(uintptr_t)(base + in.entry_offset);
@@ -607,39 +703,54 @@ static const char *load_engine(const kn_info &in, uint8_t *stage, const char *fn
     const int has_screen = !err && e->screen && in.svg;
     const uint32_t scr_obj = has_screen ? r32(coop_screen_obj_bytes()) : 0;
     if (!err && e->voice_bytes <= COOP_VOICE_BYTES_MAX) {                  /* e7: with its per-voice state (engine_host.cc) */
-        cost += r32(e->voice_bytes) * COOP_VOICES + scr_obj;              /* e9: its screen object is counted too */
-        if (g_cur_info) { g_cur_info->need = cost; g_cur_info->charge = cost; }
-        if (g_plug_mem_used + cost > PLUG_BUDGET) { err = R_BUDGET; g_plugins_over_budget++; }
+        uint32_t six = r32(e->voice_bytes) * COOP_VOICES;
+        if (voice_heap) cost_heap += six ? blk(six + 32u) : 0; else cost_arena += six;
+        cost_arena += scr_obj;                                             /* e9: its screen object is counted too */
+        if (g_cur_info) { g_cur_info->need = cost_heap + cost_arena; g_cur_info->heap = cost_heap; }
+        if (g_used_heap + cost_heap > HEAP_BUDGET) { err = R_BUDGET; g_plugins_over_budget++; if (g_cur_info) { g_cur_info->pool = 1; g_cur_info->charge = cost_heap; } }
+        else if (g_used_arena + cost_arena > ARENA_BUDGET) { err = R_BUDGET; g_plugins_over_budget++; if (g_cur_info) { g_cur_info->pool = 0; g_cur_info->charge = cost_arena; } }
     }
     if (!err) err = coop_engine_set_controls(n, in.controls);           /* e4: before the engine plays */
     if (!err) err = coop_engine_add(n, e);
-    if (err) { coop_ctl_drop(n); coop_arena_reset(mark); return err; }
+    if (err) { coop_ctl_drop(n); load_undo(); return err; }
     if (has_screen && !coop_screen_obj_reserve(n)) {                      /* e12: no room for its object: iter's page */
-        cost -= scr_obj; if (g_cur_info) { g_cur_info->need = cost; g_cur_info->charge = cost; }
+        cost_arena -= scr_obj; if (g_cur_info) g_cur_info->need = cost_heap + cost_arena;
     } else if (has_screen) coop_engine_screen_file(n, fname);             /* E2: built on the Gfx thread later */
-    g_plug_mem_used += cost;
+    g_used_heap += cost_heap; g_used_arena += cost_arena;
     scopy(g_eng_name[n], in.type_name, 16);
     g_engines_loaded++;
     row_ensure(DB_FACTORY(), "synth_types", in.type_name, in.defaults, n);
     return 0;
 }
 
-/* e12: after the scan, the position buffers (the comment at FXBUFS): up to four of g_scr_max bytes from the arena,
- * zeroed; the first is the one the budget counted. Then the waiting scratch files become selectable. With all four
- * every position has its own from here; with fewer they are handed out on first use (fxbuf_claim). When the arena
- * cannot give even one (the budget said it could: only the two ranges' ends left unusable pieces), every waiting file
- * is refused after all; its image stays taken (the arena does not free). */
-/* Image-time test switch (--set-word g_coop_fxbuf_max=N, 1..3): carve at most N buffers, so a gate reaches the "no
- * memory for this position" path without filling the arena. 0 = no limit. */
+/* After the scan, the position buffers (the comment at FXBUFS), g_scr_max bytes each, zeroed, where the policy puts
+ * them. The arena (e12): up to four, the first the one the budget counted; with fewer than four they are handed out
+ * on first use (fxbuf_claim). Heap 0 (e13): all four in one block (the heap budget and the guard counted it), so
+ * every position has its own. Then the waiting scratch files become selectable. When not even one buffer can be had
+ * (the budget said it could: the arena's two ranges left unusable pieces, or a heap read gone wrong), every waiting
+ * file is refused after all; its image goes back to heap 0, or stays taken in the arena (which does not free). */
+/* Image-time test switch (--set-word g_coop_fxbuf_max=N, 1..3): carve at most N buffers from the arena, so a gate
+ * reaches the "no memory for this position" path without filling it. 0 = no limit. */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fxbuf_max = 0; }
 static void fxbuf_publish(void)
 {
     if (!g_scr_max || g_fxbuf_n) return;
-    uint32_t each = g_scr_max, got = 0, lim = (g_coop_fxbuf_max && g_coop_fxbuf_max < FXBUFS) ? g_coop_fxbuf_max : FXBUFS;
-    for (; got < lim; got++) {
-        uint8_t *b = (uint8_t *)coop_arena_take(each);
-        if (!b) break;
-        g_fxbuf_pool[got] = b;
+    const int buf_heap = g_coop_place.buf == COOP_IN_HEAP;
+    uint32_t each = g_scr_max, got = 0;
+    if (buf_heap) {
+        uint8_t *raw = (uint8_t *)MALLOC(FXBUFS * each + 32u);
+        if (raw) {
+            uint8_t *b = (uint8_t *)(uintptr_t)(((uint32_t)(uintptr_t)raw + 31u) & ~31u);
+            for (uint32_t i = 0; i < FXBUFS * each; i += 4) *(volatile uint32_t *)(b + i) = 0;
+            for (got = 0; got < FXBUFS; got++) g_fxbuf_pool[got] = b + got * each;
+        }
+    } else {
+        uint32_t lim = (g_coop_fxbuf_max && g_coop_fxbuf_max < FXBUFS) ? g_coop_fxbuf_max : FXBUFS;
+        for (; got < lim; got++) {
+            uint8_t *b = (uint8_t *)coop_arena_take(each);
+            if (!b) break;
+            g_fxbuf_pool[got] = b;
+        }
     }
     if (got) {
         g_fxbuf_bytes = each; g_fxbuf_mem = got * each;
@@ -647,7 +758,7 @@ static void fxbuf_publish(void)
         __asm__ __volatile__("ssync;" ::: "memory");
         g_fxbuf_n = got;
     } else {
-        g_plug_mem_used -= each;
+        if (buf_heap) g_used_heap -= fxbuf_heap_cost(each); else g_used_arena -= each;
         g_fxbuf_short++;
     }
     for (int n = 1; n < SLOTS; n++) {
@@ -655,12 +766,13 @@ static void fxbuf_publish(void)
         if (!p->pend) continue;
         if (got) { __asm__ __volatile__("ssync;" ::: "memory"); p->fx = p->pend; }
         else {
+            if (p->raw) { FREE(p->raw); g_used_heap -= p->img_heap; }
             if (p->fi) { p->fi->state = FS_FAILED; p->fi->reason = R_FXBUF; }
             if (g_plugins_loaded) g_plugins_loaded--;
             g_plugins_failed++; g_plugins_last_error = R_FXBUF; scopy(g_plugins_last_name, p->name, NAME_MAX);
             if (g_scratch_files) g_scratch_files--;
         }
-        p->pend = 0;
+        p->pend = 0; p->raw = 0;
     }
 }
 /* A scratch effect selected at a position that has no buffer and can get none: counted once a selection, named in the
@@ -716,6 +828,7 @@ extern "C" void coop_plugins_boot(void)
 }
 static void plugins_boot_body(void)
 {
+    coop_place_boot();                                                     /* e13: the placement policy (and the monitor's mode) first */
     coop_pf_boot();                                                        /* p6a: the performance monitor (coop_stats.cc) */
     coop_icache_probe();                                                   /* p6f: the instruction-cache probe, right after the counters are on */
     coop_pf_sweep();                                                       /* p6h: the event sweep, against the probes */
@@ -1219,6 +1332,7 @@ static void master_save_service(void)
 }
 extern "C" void coop_fx_service(void)
 {
+    coop_place_service();                                                 /* e13: the policy's boot marker */
     coop_ui_service();
     if (g_s2_save_req) { g_s2_save_req = 0; coop_slot2_save(); }
     master_save_service();
@@ -1586,6 +1700,14 @@ extern "C" int coop_fx_plugin_render(int32_t *l, int32_t *r, int n) { (void)l; (
  *           scratch_files S fxbuf E fxbuf_mem M fxbuf_short K fxbufs N fxbuf_refused R arena A arena_a Aa arena_b Ab clip C
  *   plugfile <file> <failed|disabled|skipped> needs <bytes>: <reason>     one line for every file the boot did not load
  *   plugfx <name> no memory for this position: slots <bits>               e12: a scratch effect that got no buffer somewhere
+ * e13 (two budgets: the comment at HEAP_BUDGET): `budget` / `used` are the figures of the budget that binds (the one
+ * with less room left; the arena's when nothing is in heap 0), so a host that knows one budget still warns at the
+ * right time. Appended: heap_budget / heap_used (what the policy put in heap 0), arena_budget / arena_used, and the
+ * policy as numbers: place_eng, place_fx, place_voice, place_buf (1 heap 0, 0 the arena), place_src (0 the built-in
+ * default, 1 the file, 2 the file was malformed, 3 the boot marker was found: the file was ignored). heap_short
+ * counts again (the guard is back for what lives in heap 0). `needs` on a plugfile line = the file's own blocks in
+ * both pools. The policy also has a line of its own, in words: `place eng=heap,fx=heap,voice=heap,buf=arena src=default
+ * marker_writes N marker_clears N marker_errors N`.
  * e12 (the rule: the comment at PLUG_BUDGET): budget = the arena's size; `used` = what the budget counts for the loaded
  * plugins: each file's own blocks (image, voice state, screen object, control table) and ONE position buffer;
  * `needs` = that file's own blocks (0: not read that far), without the buffer. heap_short is always 0 (the heap guard
@@ -1601,15 +1723,32 @@ extern "C" int coop_plugin_report(char *out, int cap)
     char *o = out, *end = out + cap - 1, num[12];
     #define PUT(str) do { const char *q_ = (str); while (*q_ && o < end) *o++ = *q_++; } while (0)
     #define PUTN(k, v) do { PUT(" "); PUT(k); PUT(" "); snum(num, (int)(v)); PUT(num); } while (0)
-    PUT("plugmem"); PUTN("budget", PLUG_BUDGET); PUTN("used", g_plug_mem_used); PUTN("over_budget", g_plugins_over_budget);
-    PUTN("heap_short", 0); PUTN("skipped", g_plugins_skipped); PUTN("badname", g_plugins_badname);
+    const int hb = heap_binds();
+    PUT("plugmem"); PUTN("budget", hb ? HEAP_BUDGET : ARENA_BUDGET); PUTN("used", hb ? g_used_heap : g_used_arena); PUTN("over_budget", g_plugins_over_budget);
+    PUTN("heap_short", g_plugins_heap_short); PUTN("skipped", g_plugins_skipped); PUTN("badname", g_plugins_badname);
     PUTN("tape_node", g_tape_node); PUTN("heap_free_boot", g_heap0_free_boot);
     PUTN("scratch_files", g_scratch_files); PUTN("fxbuf", g_fxbuf_bytes); PUTN("fxbuf_mem", g_fxbuf_mem);   /* e8 */
     PUTN("fxbuf_short", g_fxbuf_short);
     { uint32_t ua, ub, sealed; coop_arena_stats(&ua, &ub, &sealed);          /* e12 */
       PUTN("fxbufs", g_fxbuf_n); PUTN("fxbuf_refused", g_fxbuf_refused); PUTN("arena", ua + ub); PUTN("arena_a", ua);
       PUTN("arena_b", ub); PUTN("clip", coop_clip_pool_bytes()); }
+    PUTN("heap_budget", HEAP_BUDGET); PUTN("heap_used", g_used_heap); PUTN("arena_budget", ARENA_BUDGET); PUTN("arena_used", g_used_arena);   /* e13 */
+    PUTN("place_eng", g_coop_place.eng); PUTN("place_fx", g_coop_place.fx); PUTN("place_voice", g_coop_place.voice);
+    PUTN("place_buf", g_coop_place.buf); PUTN("place_src", g_coop_place.src);
     PUT("\n");
+    { char pt[48]; coop_place_text(pt, (int)sizeof pt);
+      PUT("place "); PUT(pt); PUT(" src="); PUT(coop_place_src_word()); PUTN("marker_writes", g_place_marker_writes);
+      PUTN("marker_clears", g_place_marker_clears); PUTN("marker_errors", g_place_marker_errors); PUT("\n"); }
+    if (g_place_mmr_read) {                                                /* e13, probe=1 on the device: the SDRAM controller and the PLL */
+        static const char *const nm[6] = { " sdgctl=", " sdbctl=", " sdrrc=", " sdstat=", " pll_ctl=", " pll_div=" };
+        PUT("sdram");
+        for (int k = 0; k < 6; k++) {
+            char hx[9];
+            for (int d = 0; d < 8; d++) hx[d] = "0123456789abcdef"[(g_place_mmr[k] >> (28 - 4 * d)) & 15];
+            hx[8] = 0; PUT(nm[k]); PUT(hx);
+        }
+        PUT("\n");
+    }
     for (int k = 0; k < MAX_FILES + SKIP_KEEP; k++) {
         if (k >= g_n_names && k < MAX_FILES) continue;
         if (k >= MAX_FILES && k >= MAX_FILES + g_n_skipnames) break;
@@ -1641,7 +1780,9 @@ extern "C" int coop_plugin_report(char *out, int cap)
  *   then one row per .coop file in /yaffs2/plugins now: file, kind (fx | synth | ?), name, boot (loaded | failed |
  *   disabled | new: the file came after the boot scan), next (on | off: what the next boot does, from the settings
  *   file), version, author, size, reason (the loader's text for a failed file), e12: need (the file's own arena
- *   bytes, 0 unknown), scratch (its position buffer bytes, 0 none); tab-separated, newline-terminated. e12: a file
+ *   bytes, 0 unknown), scratch (its position buffer bytes, 0 none), e13: heap (the part of need that is in heap 0;
+ *   the header gains heap_budget, heap_used, arena_budget, arena_used, place, place_src); tab-separated,
+ *   newline-terminated. e12: a file
  *   that came after the boot has its real size (the boot never read it; the file is opened and measured here).
  * Fields are only ever appended: a host reads the columns and header fields it knows.
  * A file gone since boot drops out; its number stays reserved in the map as always. */
@@ -1654,9 +1795,15 @@ extern "C" int coop_inventory_text(char *out, int cap, const char *build)
     #define PUT(str) do { const char *q_ = (str); while (*q_ && o < end) *o++ = *q_++; } while (0)
     PUT("coop-inventory 1\tbuild "); PUT(build); PUT("\tprotocol 1");
     { char hn[12];                                                          /* e12: appended header fields */
-      PUT("\tbudget "); snum(hn, (int)PLUG_BUDGET); PUT(hn); PUT("\tused "); snum(hn, (int)g_plug_mem_used); PUT(hn);
+      const int hb = heap_binds();                                          /* e13: the binding budget's figures */
+      PUT("\tbudget "); snum(hn, (int)(hb ? HEAP_BUDGET : ARENA_BUDGET)); PUT(hn); PUT("\tused "); snum(hn, (int)(hb ? g_used_heap : g_used_arena)); PUT(hn);
       PUT("\tfxbuf "); snum(hn, (int)g_fxbuf_bytes); PUT(hn); PUT("\tfxbufs "); snum(hn, (int)g_fxbuf_n); PUT(hn);
-      PUT("\tclip "); snum(hn, (int)coop_clip_pool_bytes()); PUT(hn); }
+      PUT("\tclip "); snum(hn, (int)coop_clip_pool_bytes()); PUT(hn);
+      /* e13: appended: both budgets and the policy */
+      PUT("\theap_budget "); snum(hn, (int)HEAP_BUDGET); PUT(hn); PUT("\theap_used "); snum(hn, (int)g_used_heap); PUT(hn);
+      PUT("\tarena_budget "); snum(hn, (int)ARENA_BUDGET); PUT(hn); PUT("\tarena_used "); snum(hn, (int)g_used_arena); PUT(hn);
+      char pt[48]; coop_place_text(pt, (int)sizeof pt);
+      PUT("\tplace "); PUT(pt); PUT("\tplace_src "); PUT(coop_place_src_word()); }
     PUT("\n");
     void *d = Y_OPENDIR(DIR_PLUGINS);
     if (d) {
@@ -1696,11 +1843,14 @@ extern "C" int coop_inventory_text(char *out, int cap, const char *build)
             if (fi && fi->reason == R_BUDGET) {                             /* e7: how much it needs (e12: its own blocks and
                                                                              what it grows the one buffer by), how much is left */
                 PUT(" (needs "); snum(num, (int)((fi->charge + 1023u) >> 10)); PUT(num); PUT(" KB, ");
-                snum(num, (int)((PLUG_BUDGET - g_plug_mem_used) >> 10)); PUT(num); PUT(" KB of ");
-                snum(num, (int)(PLUG_BUDGET >> 10)); PUT(num); PUT(" KB left)");
+                const uint32_t pb = fi->pool ? HEAP_BUDGET : ARENA_BUDGET, pu = fi->pool ? g_used_heap : g_used_arena;   /* e13: of the
+                                                                             budget that refused it */
+                snum(num, (int)((pb - pu) >> 10)); PUT(num); PUT(" KB of ");
+                snum(num, (int)(pb >> 10)); PUT(num); PUT(" KB left)");
             }
             PUT("\t"); snum(num, fi ? (int)fi->need : 0); PUT(num);        /* e12: appended columns */
             PUT("\t"); snum(num, fi ? (int)fi->scratch : 0); PUT(num);
+            PUT("\t"); snum(num, fi ? (int)fi->heap : 0); PUT(num);        /* e13: appended: the part of need in heap 0 */
             PUT("\n");
         }
         (void)more;                                                         /* past INV_FILES: counted in the stats only */

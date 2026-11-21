@@ -10,7 +10,8 @@
  * Voices: the six iter voice objects sit at 0xFFB00000 + i * 0x24 (kennel op1_voice_index). The stock computes the
  * voice's per-sample pitch words (0xFF801950) before the render and writes its velocity (0xFF801064, vel << 8) around
  * the note on; the dispatchers hand both to the plugin, so a plugin never names a firmware address. The plugin's
- * per-voice state (coop_engine_t.voice_bytes, six voices) comes from coop's plugin arena at load (e12; heap 0 before).
+ * per-voice state (coop_engine_t.voice_bytes, six voices) is taken at load from heap 0 or coop's plugin arena, as the
+ * placement policy says (e13, coop_place.cc; e12: the arena; before: heap 0).
  *
  * Threads: the dispatchers run in the audio interrupt (the voice loop); coop_engine_add runs on the main thread at
  * boot, before the engine is published (g_eng[n].e last, after an ssync).
@@ -20,7 +21,8 @@
 #include <stdint.h>
 #include "coop_plugin.h"
 #include "coop_cost.h"
-#include "coop_arena.h"
+extern "C" void *coop_voice_take(uint32_t bytes);                         /* plugin_host.cc (e13): zeroed, 32-aligned, from the
+                                                                             pool the placement policy names */
 
 #define ITER_RENDER   ((void (*)(void *, int16_t *, const int16_t *))0x019B99D4u)
 #define ITER_NOTE_ON  ((void (*)(void *, const int16_t *))0x019B9B8Au)
@@ -54,9 +56,9 @@ extern "C" const char *coop_engine_add(int n, const coop_engine_t *e)
     if (e->voice_bytes > COOP_VOICE_BYTES_MAX) return "engine voice state too large";
     uint32_t stride = (e->voice_bytes + 31u) & ~31u;
     uint8_t *state = 0;
-    if (stride) {                                                         /* e12: the arena (32-aligned, zeroed); a caller
-                                                                             that fails resets the arena to its mark */
-        state = (uint8_t *)coop_arena_take(stride * COOP_VOICES);
+    if (stride) {                                                         /* e13: heap 0 or the arena, as the policy says; a
+                                                                             caller that fails gives the block back */
+        state = (uint8_t *)coop_voice_take(stride * COOP_VOICES);
         if (!state) return "plugin memory full";
     }
     g_l1_lease_open = 1;
