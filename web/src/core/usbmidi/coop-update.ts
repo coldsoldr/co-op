@@ -4,7 +4,7 @@
  * the download, the questions and the progress line, so the whole run is tested against the fake device.
  */
 import type { HostedPluginEntry, PluginIndex } from '@co-op/shared/plugins';
-import { formatKb, largestRows, planMemory, type DeviceCoopFile, type DeviceMemoryReport, type KnownCoopFile } from '../plugins/memory';
+import { formatKb, largestRows, planMemory, shortNote, type DeviceCoopFile, type DeviceMemoryReport, type KnownCoopFile } from '../plugins/memory';
 import { listUpdates, type BlockedUpdate, type PluginUpdate } from '../plugins/updates';
 import { messageOf } from '../util';
 import { coopPutPlugin, readCoopInventory } from './coop';
@@ -26,13 +26,25 @@ export const deviceFilesOf = (inventory: Inventory | null): DeviceCoopFile[] =>
       enabled: r.enabled !== false,
       reason: r.reason,
       ...(r.need === undefined ? {} : { need: r.need, scratch: r.scratch ?? 0 }),
+      ...(r.heap === undefined ? {} : { heap: r.heap }),
     }));
 
-/** The plugin memory by the OP-1's own count, from an e12 inventory's header; null before e12. */
+/** The plugin memory by the OP-1's own count, from an e12 or e13 inventory's header; null before e12. */
 export function deviceReportOf(inventory: Inventory | null): DeviceMemoryReport | null {
   const m = inventory?.memory;
   if (!m) return null;
-  return { budget: m.budget, used: m.used, exact: true, needs: {}, fxbuf: m.fxbuf, fxbufs: m.fxbufs, ...(m.clip === null ? {} : { clip: m.clip }) };
+  return {
+    budget: m.budget,
+    used: m.used,
+    exact: true,
+    needs: {},
+    fxbuf: m.fxbuf,
+    fxbufs: m.fxbufs,
+    ...(m.clip === null ? {} : { clip: m.clip }),
+    ...(m.pools ? { pools: m.pools } : {}),
+    ...(m.place ? { place: m.place } : {}),
+    ...(m.placeSrc ? { placeSrc: m.placeSrc } : {}),
+  };
 }
 
 /** One line of the list the user agrees to: "fickle: 0.2 → 0.3". */
@@ -65,6 +77,7 @@ export function updateMemoryQuestion(inventory: Inventory, known: readonly Known
     plan.refused.length > 0
       ? `At the next power cycle the OP-1 would leave out ${plan.refused.map(titleOf).join(', ')}: it loads the plugins in name order.`
       : 'At the next power cycle the OP-1 would leave out at least one plugin.',
+    ...(shortNote(plan) ? [shortNote(plan) as string] : []),
     ...(largest.length > 0 ? [`The largest: ${largest.join(', ')}. Remove or switch off one to make room.`] : []),
     'Update anyway? The files do no harm; a plugin left out loads once there is room.',
   ].join('\n\n');

@@ -22,6 +22,8 @@ export interface CoopBootRecord {
   /** e12: the row's need and scratch columns (default 0). */
   need?: number;
   scratch?: number;
+  /** e13: the row's heap column (default 0). */
+  heap?: number;
 }
 
 export interface FakeCoopOptions {
@@ -30,7 +32,18 @@ export interface FakeCoopOptions {
    * e12's inventory: the header's budget, used, fxbuf, fxbufs and clip fields, and the need and scratch columns on
    * every row. Without it the inventory is as e3..e11 gave it.
    */
-  memory?: { budget: number; used: number; fxbuf?: number; fxbufs?: number; clip?: number };
+  memory?: {
+    budget: number;
+    used: number;
+    fxbuf?: number;
+    fxbufs?: number;
+    clip?: number;
+    /**
+     * e13's part: the two budgets and the placement policy in the header, and a `heap` column on every row. Without
+     * it the inventory is e12's.
+     */
+    e13?: { heapBudget: number; heapUsed: number; arenaBudget: number; arenaUsed: number; place?: string; placeSrc?: string };
+  };
   caps?: number;
   /** Plugin files on the device, by file name. */
   files?: Record<string, Uint8Array>;
@@ -182,11 +195,12 @@ export class FakeCoop implements MidiPort {
         String(this.files.get(file)?.length ?? 0),
         b?.reason ?? '',
         ...(memory ? [String(b?.need ?? 0), String(b?.scratch ?? 0)] : []),
+        ...(memory?.e13 ? [String(b?.heap ?? 0)] : []),
       ];
       return `${fields.join('\t')}\n`;
     });
     const more = memory
-      ? `\tbudget ${memory.budget}\tused ${memory.used}\tfxbuf ${memory.fxbuf ?? 0}\tfxbufs ${memory.fxbufs ?? 0}\tclip ${memory.clip ?? 4194304}`
+      ? `\tbudget ${memory.budget}\tused ${memory.used}\tfxbuf ${memory.fxbuf ?? 0}\tfxbufs ${memory.fxbufs ?? 0}\tclip ${memory.clip ?? 4194304}${memory.e13 ? `\theap_budget ${memory.e13.heapBudget}\theap_used ${memory.e13.heapUsed}\tarena_budget ${memory.e13.arenaBudget}\tarena_used ${memory.e13.arenaUsed}\tplace ${memory.e13.place ?? 'eng=heap,fx=heap,voice=heap,buf=arena'}\tplace_src ${memory.e13.placeSrc ?? 'default'}` : ''}`
       : '';
     return `coop-inventory 1\tbuild ${this.options.build ?? 'e3'}\tprotocol 1${more}\n${rows.join('')}`;
   }

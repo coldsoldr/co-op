@@ -9,7 +9,7 @@ import { crc32, readU32le, u32le } from './framing';
 import type { Inventory, InventoryKind, InventoryRecord, InventoryState } from './inventory';
 import type { Reply } from './framing';
 import type { Session } from './session';
-import { reportFromStats, type DeviceMemoryReport } from '../plugins/memory';
+import { parsePlacement, reportFromStats, type DeviceMemoryReport } from '../plugins/memory';
 
 /** coop's status codes (firmware/docs/sysex.md). */
 const COOP_STATUS: Record<number, string> = {
@@ -102,9 +102,9 @@ const BOOT_STATES: Record<string, InventoryState> = { loaded: 'loaded', failed: 
 
 /**
  * The text INVENTORY serves, as an Inventory (inventory.ts): a header `coop-inventory 1<TAB>build ...`, then one line
- * per file: file, kind, name, boot, next, version, author, size, reason, and from e12 need and scratch. `name` is the
- * plugin id (the file without `.coop`), as kennel's records name plugins. An e12 header also gives the plugin memory's
- * budget and what is in use (`memory`).
+ * per file: file, kind, name, boot, next, version, author, size, reason, from e12 need and scratch, from e13 heap.
+ * `name` is the plugin id (the file without `.coop`), as kennel's records name plugins. An e12 header also gives the
+ * plugin memory's budget and what is in use (`memory`), an e13 header both memories' and the placement policy.
  */
 export function parseCoopInventory(text: string): Inventory & { build: string | null } {
   const lines = text.split('\n').filter((l) => l.length > 0);
@@ -116,16 +116,34 @@ export function parseCoopInventory(text: string): Inventory & { build: string | 
   const build = field('build');
   const budget = count('budget');
   const used = count('used');
+  // e13 added the two budgets and the placement policy; without all four figures there is one budget, as on e12.
+  const [heapBudget, heapUsed, arenaBudget, arenaUsed] = [count('heap_budget'), count('heap_used'), count('arena_budget'), count('arena_used')];
+  const pools =
+    heapBudget !== null && heapUsed !== null && arenaBudget !== null && arenaUsed !== null && arenaBudget > 0
+      ? { heap: { budget: heapBudget, used: heapUsed }, arena: { budget: arenaBudget, used: arenaUsed } }
+      : null;
+  const place = parsePlacement(field('place'));
+  const placeSrc = field('place_src');
   const memory =
     budget !== null && budget > 0 && used !== null
-      ? { budget, used, fxbuf: count('fxbuf') ?? 0, fxbufs: count('fxbufs') ?? 0, clip: count('clip') }
+      ? {
+          budget,
+          used,
+          fxbuf: count('fxbuf') ?? 0,
+          fxbufs: count('fxbufs') ?? 0,
+          clip: count('clip'),
+          ...(pools ? { pools } : {}),
+          ...(place ? { place } : {}),
+          ...(placeSrc ? { placeSrc } : {}),
+        }
       : null;
   const records = lines.map((line): InventoryRecord => {
-    // e12 appended need and scratch after the reason; before it a row ends there.
-    const [file = '', kind = '', , boot = '', next = '', version = '', author = '', size = '', reason = '', need = '', scratch = ''] =
+    // e12 appended need and scratch after the reason, e13 heap after those; before them a row ends at the reason.
+    const [file = '', kind = '', , boot = '', next = '', version = '', author = '', size = '', reason = '', need = '', scratch = '', heap = ''] =
       line.split('\t');
     return {
       ...(/^\d+$/.test(need) ? { need: Number(need), scratch: /^\d+$/.test(scratch) ? Number(scratch) : 0 } : {}),
+      ...(/^\d+$/.test(need) && /^\d+$/.test(heap) ? { heap: Number(heap) } : {}),
       kind: KINDS[kind] ?? null,
       name: file.replace(/\.coop$/, ''),
       source: 'coop',

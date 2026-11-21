@@ -51,6 +51,8 @@ export interface InventoryRecord {
    */
   need?: number;
   scratch?: number;
+  /** coop e13 on: the part of `need` that is in heap 0 (the rest is in coop's arena). Absent before e13. */
+  heap?: number;
 }
 
 export interface Inventory {
@@ -65,7 +67,20 @@ export interface Inventory {
    * coop e12 on: the plugin memory by the OP-1's own count: its budget, the bytes the loaded plugins hold, the size
    * and number of the effect position buffers, and the stereo clipboard's pool (null when the header has none).
    */
-  memory?: { budget: number; used: number; fxbuf: number; fxbufs: number; clip: number | null };
+  memory?: {
+    /** From e13 these two are the figures of the budget that binds: the one with the least room left. */
+    budget: number;
+    used: number;
+    fxbuf: number;
+    fxbufs: number;
+    clip: number | null;
+    /** coop e13 on: the budget of heap 0 and of coop's arena, and what the loaded plugins hold of each. */
+    pools?: { heap: { budget: number; used: number }; arena: { budget: number; used: number } };
+    /** coop e13 on: where the boot put engine images, effect images, voice state and position buffers. */
+    place?: { eng: 'heap' | 'arena'; fx: 'heap' | 'arena'; voice: 'heap' | 'arena'; buf: 'heap' | 'arena' };
+    /** coop e13 on: `default`, `file` (a policy file is in force), `malformed` or `marker` (the file was ignored). */
+    placeSrc?: string;
+  };
 }
 
 const MAGIC = 'kennel-inventory 1';

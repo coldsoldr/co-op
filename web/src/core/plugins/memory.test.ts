@@ -103,9 +103,10 @@ describe('the sums of the cores', () => {
 
   it('picks the rule by the core', () => {
     expect(['e7', 'e10', 'e11'].map(ruleOfCore)).toEqual(['heap', 'heap', 'heap']);
-    expect(['e12', 'e12-test', 'e13', 'e99'].map(ruleOfCore)).toEqual(['arena', 'arena', 'arena', 'arena']);
-    // A core the site cannot name counts the newest way.
-    expect(ruleOfCore(null)).toBe('arena');
+    expect(['e12', 'e12-test'].map(ruleOfCore)).toEqual(['arena', 'arena']);
+    // e13 on places by a policy (memory-e13.test.ts); a core the site cannot name counts the newest way.
+    expect(['e13', 'e99'].map(ruleOfCore)).toEqual(['placed', 'placed']);
+    expect(ruleOfCore(null)).toBe('placed');
   });
 });
 
@@ -298,8 +299,9 @@ describe('budgetOfCore', () => {
   });
 
   it('guesses for a core it does not know', () => {
-    expect(budgetOfCore('e99')).toEqual({ bytes: E12, known: false });
-    expect(budgetOfCore(null)).toEqual({ bytes: E12, known: false });
+    // The newest the site knows: e13's heap budget, the one that binds with its default policy.
+    expect(budgetOfCore('e99')).toEqual({ bytes: 1728 * 1024, known: false });
+    expect(budgetOfCore(null)).toEqual({ bytes: 1728 * 1024, known: false });
   });
 });
 
@@ -453,8 +455,8 @@ describe('planMemory on e12', () => {
       approximate: false,
       used: 132_000,
     });
-    // Without the header's figures the newest budget the site knows stands in, and the plan says so.
-    expect(planMemory([onDevice('a.coop', 1000)], KNOWN, { build: 'e14' })).toMatchObject({ rule: 'arena', budget: E12, budgetKnown: false, approximate: true });
+    // Without the header's figures the newest rule and budgets the site knows stand in, and the plan says so.
+    expect(planMemory([onDevice('a.coop', 1000)], KNOWN, { build: 'e14' })).toMatchObject({ rule: 'placed', budget: 1728 * 1024, budgetKnown: false, approximate: true });
   });
 
   it('names the files the boot leaves out: it loads in name order and skips each that does not fit', () => {

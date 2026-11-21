@@ -11,7 +11,18 @@ export interface CoopStubOptions {
    * e12's inventory: the header's budget, used, fxbuf, fxbufs and clip fields. The rows then carry need and scratch
    * (coopRow), and a file written after the boot is listed with its real size. Without it the inventory is e3..e11's.
    */
-  memory?: { budget: number; used: number; fxbuf?: number; fxbufs?: number; clip?: number };
+  memory?: {
+    budget: number;
+    used: number;
+    fxbuf?: number;
+    fxbufs?: number;
+    clip?: number;
+    /**
+     * e13's part: the two budgets and the placement policy in the header, and a `heap` column on every row. Without
+     * it the inventory is e12's.
+     */
+    e13?: { heapBudget: number; heapUsed: number; arenaBudget: number; arenaUsed: number; place?: string; placeSrc?: string };
+  };
 }
 
 /** What a test can read from the stub, as `window.coopStub` in the page. */
@@ -46,9 +57,11 @@ export function coopRow(o: {
   reason?: string;
   need?: number;
   scratch?: number;
+  /** e13's column after those: the part of `need` in heap 0. */
+  heap?: number;
 }): string {
   const name = o.file.replace(/\.coop$/, '').replaceAll('_', ' ');
-  return [o.file, o.kind ?? 'fx', name, o.boot ?? 'loaded', o.next ?? 'on', o.version ?? '0.1', 'coldsoldr', String(o.size ?? 0), o.reason ?? '', ...(o.need === undefined ? [] : [String(o.need), String(o.scratch ?? 0)])].join('\t');
+  return [o.file, o.kind ?? 'fx', name, o.boot ?? 'loaded', o.next ?? 'on', o.version ?? '0.1', 'coldsoldr', String(o.size ?? 0), o.reason ?? '', ...(o.need === undefined ? [] : [String(o.need), String(o.scratch ?? 0)]), ...(o.heap === undefined ? [] : [String(o.heap)])].join('\t');
 }
 
 /**
@@ -104,7 +117,7 @@ export async function stubCoop(page: Page, options: CoopStubOptions): Promise<vo
           case 0x28:
           {
             const more = memory
-              ? `\tbudget ${memory.budget}\tused ${memory.used}\tfxbuf ${memory.fxbuf ?? 0}\tfxbufs ${memory.fxbufs ?? 0}\tclip ${memory.clip ?? 4194304}`
+              ? `\tbudget ${memory.budget}\tused ${memory.used}\tfxbuf ${memory.fxbuf ?? 0}\tfxbufs ${memory.fxbufs ?? 0}\tclip ${memory.clip ?? 4194304}${memory.e13 ? `\theap_budget ${memory.e13.heapBudget}\theap_used ${memory.e13.heapUsed}\tarena_budget ${memory.e13.arenaBudget}\tarena_used ${memory.e13.arenaUsed}\tplace ${memory.e13.place ?? 'eng=heap,fx=heap,voice=heap,buf=arena'}\tplace_src ${memory.e13.placeSrc ?? 'default'}` : ''}`
               : '';
             return pageOf(text(`coop-inventory 1\tbuild ${build}\tprotocol 1${more}\n${list.map((r) => `${r}\n`).join('')}`), rd32(p));
           }

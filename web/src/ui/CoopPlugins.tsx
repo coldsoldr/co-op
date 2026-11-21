@@ -7,6 +7,7 @@ import {
   formatKb,
   largestRows,
   planMemory,
+  shortNote,
   type DeviceMemoryReport,
   type KnownCoopFile,
   type MemoryPlan,
@@ -89,6 +90,7 @@ export function overBudgetQuestion(name: string, inventory: Inventory, known: re
     plan.refused.length > 0
       ? `At the next power cycle the OP-1 would leave out ${listOf(plan.refused)}: it loads the plugins in name order.`
       : 'At the next power cycle the OP-1 would leave out at least one plugin, and not always the new one.',
+    ...(shortNote(plan) ? [shortNote(plan) as string] : []),
     ...(others.length > 0 ? [`The largest on the OP-1: ${others.join(', ')}. Remove or switch off one to make room.`] : []),
     'Install anyway? The file does no harm; it loads once there is room.',
   ].join('\n\n');
@@ -160,6 +162,13 @@ const LEVEL_NOTE = {
   over: 'Too much for the OP-1’s plugin memory. At the next power cycle at least one plugin will not load. Remove or switch off one to make room.',
 } as const;
 
+/** e13: a placement test file on the OP-1 is a developer's state; the owner should see it. */
+const PLACE_NOTE: Record<string, string> = {
+  file: 'A placement test file is in force on this OP-1.',
+  malformed: 'This OP-1 has a placement test file it could not read, and uses the default.',
+  marker: 'This OP-1 ignored its placement test file: the last boot with it did not finish.',
+};
+
 interface PluginMemoryProps {
   plan: MemoryPlan;
   /** The stereo clipboard's pool in bytes, where the OP-1 reports it (e12). */
@@ -178,6 +187,8 @@ function PluginMemory({ plan, clip, busy, onAsk }: PluginMemoryProps) {
   const guessed = plan.rows.filter((r) => r.counted && !r.exact);
   const largest = plan.level === 'over' ? largestRows(plan) : [];
   const loaded = plan.loadedNow;
+  // From e13 there are two memories: the bar is the one with the least room, the other gets a line.
+  const [shown, other] = plan.pools;
   return (
     <div className="plugin-memory" data-level={plan.level}>
       <div
@@ -203,12 +214,24 @@ function PluginMemory({ plan, clip, busy, onAsk }: PluginMemoryProps) {
       {LEVEL_NOTE[plan.level] && (
         <p className="memory-note">
           {LEVEL_NOTE[plan.level]}
+          {shortNote(plan) && <> {shortNote(plan)}</>}
           {plan.refused.length > 0 && <> The OP-1 loads them in name order, so it will leave out {listOf(plan.refused)}.</>}
           {largest.length > 0 && <> The largest: {largest.map((r) => `${titleOf(r.file)} (${formatKb(r.frees)})`).join(', ')}.</>}
         </p>
       )}
       <p className="muted">
         What the plugins switched on take at the next power cycle.
+        {other && (
+          <>
+            {' '}
+            The bar is the memory for {shown?.holds}. For {other.holds} the OP-1 has another:{' '}
+            <span data-level={other.level}>
+              {about(plan)}
+              {formatKb(other.used).replace(' KB', '')} of {formatKb(other.budget)}
+            </span>
+            .
+          </>
+        )}
         {(loaded.fromDevice || loaded.bytes !== plan.used) && (
           <>
             {' '}
@@ -236,6 +259,13 @@ function PluginMemory({ plan, clip, busy, onAsk }: PluginMemoryProps) {
           </>
         )}
         {clip !== undefined && <> Stereo tape lift: {clipSeconds(clip)} s.</>}
+        {plan.placeSrc && PLACE_NOTE[plan.placeSrc] && (
+          <strong>
+            {' '}
+            {PLACE_NOTE[plan.placeSrc]}
+            {plan.place && plan.placeSrc === 'file' && <> ({Object.entries(plan.place).map(([k, v]) => `${k}=${v}`).join(', ')})</>}
+          </strong>
+        )}
         {!plan.budgetKnown && <> co-op does not know this build’s limit yet; the bar uses the newest it knows.</>}{' '}
         {!(loaded.fromDevice && loaded.exact) && (
           <button type="button" className="link" disabled={busy} onClick={onAsk}>
