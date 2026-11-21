@@ -580,7 +580,10 @@ class WinMMTransport:
 
     def _check(self, code, what):
         if code:
-            raise CoopError('%s failed (MMSYSERR %d)%s' % (what, code, ': another program holds the port' if code == 4 else ''))
+            # 4 MMSYSERR_ALLOCATED; 7 MMSYSERR_NOTSUPPORTED is what the OP-1's driver returns when a browser tab
+            # (the co-op page, Web MIDI) has the port open [C, 2026-11-21: Vivaldi held it]
+            held = ': another program holds the port (close the co-op tab or the browser, a DAW, any MIDI tool)'
+            raise CoopError('%s failed (MMSYSERR %d)%s' % (what, code, held if code in (4, 7) else ''))
 
     def send(self, msg):
         ct = self.ct
