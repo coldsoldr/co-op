@@ -199,8 +199,27 @@ describe('the catalogue files', () => {
     tape_echo: 23892,
     wavefolder: 14304,
   };
-  /** The 13 files of the e11 and e12 gates: the eleven and the two effects sized to tape_echo's buffer. */
-  const ALL: Record<string, number> = { ...GATE, fickle: 35596, petri: 36104 };
+  /**
+   * The 13 files of the e11 and e12 gates of 2026-11-21 (firmware/docs/device-tests.md, the idle entry): the eight
+   * rebuilt on 2026-11-20 (tape_echo 0.4, cs_hall 0.3, cs_plate 0.3, fickle 0.3, petri 0.3, tape_drive 0.6,
+   * bitcrusher 0.3, rings 0.10) and the five that were not. GATE above keeps the e9 gate's older builds, so its
+   * test steps aside for good now.
+   */
+  const ALL: Record<string, number> = {
+    bitcrusher: 13076,
+    cs_hall: 23936,
+    cs_plate: 19956,
+    drive: 19516,
+    ensemble: 19928,
+    fickle: 38164,
+    freq_shift: 23396,
+    petri: 37792,
+    rings: 113816,
+    saw: 6520,
+    tape_drive: 22660,
+    tape_echo: 25188,
+    wavefolder: 14304,
+  };
   const unchanged = (set: Record<string, number>): boolean =>
     Object.entries(set).every(([id, size]) => existsSync(coopFile(id)) && read(id).length === size);
   const memories = (set: Record<string, number>): (readonly [string, CoopMemory])[] =>
@@ -223,22 +242,25 @@ describe('the catalogue files', () => {
     expect(blk(coopMemoryOf(read('saw')).cap + 32)).toBe(2320);
   });
 
-  /** e11: "the same set was 1,502,128 of 1,769,472" (firmware/docs/plugins.md "e12"). */
+  /**
+   * e11: `plugmem budget 1769472 used 1510352` with these 13 files, first and second boot (the builds before them:
+   * 1,502,128). e10 charges the same and allows 1,572,864.
+   */
   it.skipIf(!unchanged(ALL))('adds the 13 files up to what the e11 core reported', () => {
-    expect(setBytes(memories(ALL).map(([, m]) => m), 'heap')).toBe(1_502_128);
+    expect(setBytes(memories(ALL).map(([, m]) => m), 'heap')).toBe(1_510_352);
   });
 
   /**
-   * e12: `plugmem budget 5898240 used 980992`, need 846,208 and one buffer of 134,784; the inventory's rows
-   * `rings.coop ... 667712 0` and `tape_echo.coop ... 14592 134784` (firmware/docs/plugins.md "e12", sysex.md).
+   * e12: `plugmem budget 5898240 used 989248`: need 854,464 and one buffer of 134,784 (the builds before: 980,992).
+   * Alone on the NAND the core reported rings `used 668512` and tape_echo `used 150528` (15,744 and its buffer).
    */
   it.skipIf(!unchanged(ALL))('adds the 13 files up to what the e12 core reported', () => {
     const set = memories(ALL);
     const need = Object.fromEntries(set.map(([id, m]) => [id, ownBytes(m, 'arena')]));
-    expect(Object.values(need).reduce((a, b) => a + b, 0)).toBe(846_208);
-    expect(setBytes(set.map(([, m]) => m), 'arena')).toBe(980_992);
-    expect(need.rings).toBe(667_712);
-    expect(need.tape_echo).toBe(14_592);
+    expect(Object.values(need).reduce((a, b) => a + b, 0)).toBe(854_464);
+    expect(setBytes(set.map(([, m]) => m), 'arena')).toBe(989_248);
+    expect(need.rings).toBe(668_512);
+    expect(need.tape_echo).toBe(15_744);
     expect(set.every(([, m]) => m.controls && m.screen)).toBe(true);
   });
 });

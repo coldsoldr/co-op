@@ -13,7 +13,7 @@
     {
       "firmware": "op1/coop",
       "file": "petri.coop",
-      "version": "0.2",
+      "version": "0.3",
       "requires": "coop e10",
       "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/petri"
     },
