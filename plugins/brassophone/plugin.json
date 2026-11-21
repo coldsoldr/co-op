@@ -23,12 +23,12 @@
     {
       "firmware": "op1/op1r",
       "link": "https://pcppcp.github.io/op1r/web/",
-      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/brassophone.op1p",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/bef688f7c5082a9514077422280657f0e08145aa/data/plugins/brassophone.op1p",
       "sha256": "d4357cd93e36915a528d11fda0bd2681e0345a2d878e9e74f1f171eaa1f00ad1",
       "sizeBytes": 50944,
-      "version": "72",
-      "requires": "op1r 72",
-      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/brassophone",
+      "version": "73",
+      "requires": "op1r 73",
+      "source": "https://github.com/pcppcp/op1r-src/tree/f73bc17f98ebbcc559741accec9c068a2440be7e/synth_sdk/plugins/brassophone",
       "savedName": "brassophone"
     }
   ]

@@ -22,12 +22,12 @@
     {
       "firmware": "op1/op1r",
       "link": "https://pcppcp.github.io/op1r/web/",
-      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/snowglobe.op1p",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/bef688f7c5082a9514077422280657f0e08145aa/data/plugins/snowglobe.op1p",
       "sha256": "54f5ae7e1f03ee7841fa022837f39322fac19a3f5e6e3e3f8afd13297d1bca4b",
       "sizeBytes": 21670,
-      "version": "72",
-      "requires": "op1r 72",
-      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/snowglobe",
+      "version": "73",
+      "requires": "op1r 73",
+      "source": "https://github.com/pcppcp/op1r-src/tree/f73bc17f98ebbcc559741accec9c068a2440be7e/synth_sdk/plugins/snowglobe",
       "savedName": "snowglobe"
     }
   ]

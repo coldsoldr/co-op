@@ -23,12 +23,12 @@
     {
       "firmware": "op1/op1r",
       "link": "https://pcppcp.github.io/op1r/web/",
-      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/supersaw.op1p",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/bef688f7c5082a9514077422280657f0e08145aa/data/plugins/supersaw.op1p",
       "sha256": "e68707ed97271e245b4ab2071281db704183f7817d00f5eacbfcf13f845800da",
       "sizeBytes": 10593,
-      "version": "72",
-      "requires": "op1r 72",
-      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/supersaw",
+      "version": "73",
+      "requires": "op1r 73",
+      "source": "https://github.com/pcppcp/op1r-src/tree/f73bc17f98ebbcc559741accec9c068a2440be7e/synth_sdk/plugins/supersaw",
       "savedName": "supersaw"
     }
   ]
