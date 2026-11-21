@@ -159,7 +159,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('scenario')
     ap.add_argument('--out', required=True, help='results directory (created)')
-    ap.add_argument('--device', default='ASIO', help='input device name part (default: the ASIO driver)')
+    ap.add_argument('--device', default='Steinberg USB ASIO', help='input device name part (default: the UR44C ASIO driver)')
     ap.add_argument('--channels', default='5,6', help='interface inputs, 1-based (default 5,6)')
     ap.add_argument('--no-audio', action='store_true')
     ap.add_argument('--allow-tape', action='store_true', help='allow tape/play/stop/left/right/mixer keys')

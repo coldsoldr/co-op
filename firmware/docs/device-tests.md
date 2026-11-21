@@ -3462,3 +3462,36 @@ device, power off; recovery: hold COM at power-on and flash `op1_246_coop_e13.op
 files and the policy file are untouched.
 
 Result: (pending)
+
+## Device loop, first runs: rings at the longest damping, held 60 s and released (2026-11-22, e13, by the agent)
+
+The first scenarios played on the owner's OP-1 with nobody at the device: `tools/devloop.py` (commit 2b89187) put the
+CRUN over SysEx, recorded the line out on UR44C inputs 5-6 through ASIO, ran the coop test runner and fetched the run
+file. The sound was the owner's rings patch (string + reverb model, damping at its longest end, sustain at maximum),
+rings 0.11, core e13 default placement. Run files: `docs/device-stats/2026-11-22-e13-devloop-*-run.txt`.
+
+`tests/sim/dev_hold_chord.txt`, six keys held 60 s, then 20 s after release (whole callback per 5 s section, cycles a
+block; line-out level RMS dBFS at the interface, whose floor at this gain is -69):
+
+| section | cb_avg | line out RMS |
+|---|---|---|
+| rest | 90,818 | -69.2 (floor) |
+| held 0-20 s | 350,468-351,323 | -40.0 to -41.8 |
+| held 20-60 s | 322,312-323,065 | -40.1 to -42.0 |
+| released 0-5 s | 331,684 | -47.0 |
+| released 5-10 s | 331,939 | -57.2 |
+| released 10-20 s | 331,694-332,014 | -66.4, -68.4 (floor) |
+
+`tests/sim/dev_release_long.txt`, six keys held 10 s, then 100 s after release: held 352,387 (-40.4 dBFS); released
+0-10 s 352-361 k while the level falls -41 -> -65; released 10-30 s 330 k with the line out at the floor; at 30-35 s
+127,185 (the renders end inside that section); from 35 s on 90.6-91.0 k, rest.
+
+[C] What this settles:
+- The held chord does not fade: the line out holds -40 to -42 dBFS for the whole 60 s, so rings at the longest damping
+  sustains, as the host said (the owner's "fades in about 4 s" was not reproduced with these settings).
+- After release the OP-1 keeps rendering the six voices for about 30 s, the length of this patch's envelope release,
+  while the line out is at the interface's floor (about 29 dB under the chord) from about 12 s: the last ~18 s of
+  every release costs 240 k cycles a block (41 % of the budget) for sound below -69 dBFS at this gain. e14's
+  `env_peak` reading would show the envelope's level through it.
+- One voice set less at 20 s while held (351 k -> 322 k) is not explained by the run file (its engine lines are
+  cumulative over the run on e13, not per section); e14's per-window `peng` will tell.
