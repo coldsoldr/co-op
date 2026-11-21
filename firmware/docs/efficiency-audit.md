@@ -20,7 +20,7 @@ Effort S = hours, M = a day or two, L = a week. "Decision" = changes behaviour o
 
 | # | Finding | Where | Estimated gain | Effort | Risk | Verify with |
 |---|---|---|---|---|---|---|
-| 1 | **Done in e12.** Plugin memory sits in heap 0 beside the tape cache while 3.25 MiB of coop's own region A is unused | `plugin_host.cc:490,599,690`, `coop_cb.ld:5` | 0.67 MiB of heap 0 back at once (the position buffers), 1.0 MiB staging block gone, the budget can go from 1.5 to ~2.2 MiB with heap 0 untouched [I] | M | region A's tail is mapped [C] but only its first 0.75 MiB has run on a device | op1emu `--watch-writes` over `0x02cc0000..0x02ffffff` on a stock session, then the 13-file set |
+| 1 | **Done in e12; slower on the device; a boot policy in e13.** Plugin memory sits in heap 0 beside the tape cache while 3.25 MiB of coop's own region A is unused | `plugin_host.cc:490,599,690`, `coop_cb.ld:5` | 0.67 MiB of heap 0 back at once (the position buffers), 1.0 MiB staging block gone, the budget can go from 1.5 to ~2.2 MiB with heap 0 untouched [I] | M | region A's tail is mapped [C] but only its first 0.75 MiB has run on a device | op1emu `--watch-writes` over `0x02cc0000..0x02ffffff` on a stock session, then the 13-file set |
 | 2 | The tape record tap runs the stock record twice, with six state copies, on every block, recording or not | `tape_stereo.cc:112-175` | 4-6 k of the 7.2-7.5 k it costs a block [C device for the cost, I for the share] | M | must prove the stock function writes no lane while not recording | `rec_sum / recs` in the stats windows, `det_tape_rec*.txt` bit-exact |
 | 3 | The measuring code is always on: per-voice cost records, marks, a 63-slot scan and two folds at every block start | `stereo_bus.cc:142-161`, `engine_host.cc:166-181`, `coop_stats.cc:153-208`, `stereo_thunks.S:35-68` | 5-6 k a block while voices play [C device, m1c], more with the per-voice calls; 2-4 k idle [I] | S-M | Decision: the stats page loses its live cost table unless it is a switch | `cb_rest`, `thunk` in an m1 run with the switch off / on |
 | 4 | `coop_stats.txt` and the 8 KiB tape tail are rewritten every 5 s for the whole session | `coop_stats.cc:28,671-677,724` | ~19 KiB of NAND per 5 s (13.7 MB an hour) and a 10-50 ms main-loop stall each time [I from the recorded write times] | S | the librarian reads the file: serve it from RAM | `stats writes` count, `io_gap_max`, fps |
@@ -93,6 +93,19 @@ nothing in `0x027ffb04..0x02ffffff` through a first boot, sounds, kits, tape, li
 0 ends a first boot with 2,725,820 bytes free (e11: 1,205,596; a boot without plugins: 2,729,484). Open [I, the
 device]: region A above 0.75 MiB on real SDRAM, and what running plugin code and state from this SDRAM bank instead
 of heap 0's costs in cycles (kennel measured a slower cold line fill there).
+
+**The device on e12 (2026-11-21), and e13.** The memory side held (13 loaded, heap 0 free as without plugins) and
+the estimate of its cost was wrong: with the plugins' code and state in region A their code stall cycles about
+doubled (fickle at FX 1: 29,615 -> 43,188 cycles a block, code stalls 11,427 -> 22,398; rings a voice render: code
+stalls 6,060 -> 10,420), the callback with rings went from 367-403 k to 457-520 k a block with dropouts, and the
+owner went back to e11 (`docs/plugins.md` "e13", `docs/device-stats/e1[12]_2026-11-21_*`). The CPLB words say region A
+is cached exactly as heap 0 is, so it is not a cache-policy setting [C]; whether a line costs more to fill there or
+the plugins miss more is not known [I]. **e13** makes the placement a boot policy per class (engine images, effect
+images, voice state, position buffers; heap 0 or the arena), default images and voice state in heap 0 under e11's
+budget and guard and the buffers and cold data in the arena, and adds the measurements to decide it on the device
+(per-window engine / effect sums, a live fill probe in both regions, the SDRAM registers). What this finding still
+gives for certain: the staging block, the screen objects, the control tables and, by default, the position buffers
+out of heap 0 (the 13 files: 833,168 bytes of the 1,728 KiB heap budget against e11's 1,510,352).
 
 ### 4. The stats file every 5 seconds
 

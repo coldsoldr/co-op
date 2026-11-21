@@ -146,3 +146,35 @@ runs: a file over the budget, and a scratch effect that found no buffer at a pos
 zzover.coop | synth | zzover | failed | on | 0.1 | coldsoldr | 428 | over the plugin memory budget (needs 63 KB, 33 KB of 5760 KB left) | 64192 | 0
 tape_echo.coop | fx | tape echo | loaded | on | 0.3 | coldsoldr | 23892 | no memory for this position | 14592 | 134784
 ```
+
+## INVENTORY on e13: two budgets and the placement policy (2026-11-21)
+
+e13 (docs/plugins.md "e13") places each class of plugin memory in heap 0 or in coop's arena by a boot policy, with a
+budget for each. The inventory appends again; every e12 field keeps its place and a meaning a one-budget host can
+use [C: `coop_usb.py --transport usbip inventory` against op1emu].
+
+- **Header**, after e12's `budget used fxbuf fxbufs clip`:
+  - `budget` / `used` (e12's): now **the budget that binds**, i.e. the one with less room left: the heap budget's
+    figures when the policy puts anything in heap 0 and it has less room than the arena, else the arena's. With
+    `all=arena` they are e12's exactly;
+  - `heap_budget <bytes>` (1,769,472), `heap_used <bytes>`: what the policy put in heap 0;
+  - `arena_budget <bytes>` (5,898,240), `arena_used <bytes>`: what it put in the arena (always the screen objects
+    and control tables; one position buffer when `buf=arena`);
+  - `place eng=heap,fx=heap,voice=heap,buf=arena`: the policy in force (one field, commas, no spaces);
+  - `place_src default | file | malformed | marker`: the built-in default (no policy file), the file, the file was
+    ignored as malformed, the file was ignored because the last boot with it did not finish (delete
+    `/yaffs2/user/coop_place.try`).
+- **Rows**: column 12, `heap`: the part of the file's `need` (column 10) that is in heap 0; the arena part is
+  `need - heap`. `need` is the file's own bytes in both pools together; `scratch` as e12.
+- `reason`: `over the plugin memory budget (needs N KB, L KB of B KB left)` names the budget that refused the file
+  (B = 1728 for the heap's, 5760 for the arena's); `not enough memory left for the tape` is back for files whose
+  heap part the heap guard refuses.
+- The policy file is `/yaffs2/user/coop_place.txt`, written with PUT and applied at the next boot (tokens:
+  docs/plugins.md "e13").
+
+Example header (op1emu, e13 default, the 13 catalogue files, tabs shown as ` | `):
+```
+coop-inventory 1 | build e13 | protocol 1 | budget 1769472 | used 833168 | fxbuf 134784 | fxbufs 4 | clip 4194304 | heap_budget 1769472 | heap_used 833168 | arena_budget 5898240 | arena_used 156416 | place eng=heap,fx=heap,voice=heap,buf=arena | place_src default
+rings.coop | synth | rings | loaded | on | 0.10 | coldsoldr | 113816 |  | 668536 | 0 | 666872
+tape_echo.coop | fx | tape echo | loaded | on | 0.4 | coldsoldr | 25188 |  | 15760 | 134784 | 14096
+```

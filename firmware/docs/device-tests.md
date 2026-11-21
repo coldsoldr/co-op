@@ -2679,7 +2679,7 @@ Result (2026-11-20, the owner's OP-1; read by the agent over USB MIDI, nothing c
   and step 5 (a set past the budget). The `plugins` line's `heap_free` / `heap_largest` of this read were not noted
   down here: read them with step 4.
 
-## e12: plugin memory in coop's own SDRAM (5,760 KiB), four position buffers, the clipboard shares region B — device test (pending, 2026-11-20)
+## e12: plugin memory in coop's own SDRAM (5,760 KiB), four position buffers, the clipboard shares region B — device test (2026-11-21: memory confirmed, CPU regression with rings: not acceptable; superseded by e13)
 
 What changed (`docs/plugins.md` "e12"): no plugin byte comes from the stock heap 0 any more. The plugin images, the
 engines' voice state, the screen objects, the control tables and the effect position buffers come from one arena in
@@ -2763,7 +2763,27 @@ watch); a NAND read landing in region B on the device (the staging block; in op1
 **If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e11.op1` (or stock).
 Your plugin files are untouched by either; e11 loads the same files under its 1,728 KiB budget.
 
-Result: (pending)
+**Result (the owner's OP-1, 2026-11-21; e12 and e11 flashed back to back, the stats read over USB MIDI with
+`tools/coop_usb.py stats`, files in `docs/device-stats/e11_2026-11-21_*`, `e12_2026-11-21_*`):**
+- **Memory: confirmed.** Boots with the 13 files, all loaded: `plugmem budget 5898240 used 989248 over_budget 0
+  heap_short 0 ... heap_free_boot 16044276 scratch_files 11 fxbuf 134784 fxbuf_mem 539136 fxbuf_short 0 fxbufs 4
+  fxbuf_refused 0 arena 1393600 arena_a 1393600 arena_b 0 clip 4194304` (the catalogue's 2026-11-21 files: rings
+  0.10 etc., hence 989,248 and not the gate's 980,992). The inventory's `budget used fxbuf fxbufs clip` and the rows'
+  `need` / `scratch` read over USB MIDI. Nothing faulted: the cache sync, region A above 0.75 MiB and the staging
+  block in region B work on the device.
+- **CPU: a regression, not acceptable for rings.** rings 0.10, six voices, the tape rolling or not: the whole
+  callback 367-403 k cycles a block per 5 s window on e11 (window maxima 450-660 k, `io_gap_max` <= 25 M) against
+  **457-520 k on e12 (maxima 600-856 k: dropouts; the owner: the UI "very laggy"; `io_gap_max` up to 204 M)**.
+  `eng_rings` per voice render 24,892 / 82,178 (avg / max) on e11, 27,529 / 213,030 on e12; its code stall cycles
+  6,060 -> 10,420, data stalls 4,423 -> 5,553. Nothing sounding: 91-92 k a block on both.
+- fickle 0.2 at synth FX 1 on a sampler: playing windows 255-257 k a block on e11, 262 k on e12 (+6 k); blocks over
+  the stats mark ~300 against 971; `fx1_plugin` 29,615 -> 43,188 cycles a block, of which code stalls 11,427 ->
+  22,398 and data stalls 4,308 -> 7,742 (the stock sampler's voices got 4.8 k a block cheaper in the same windows).
+  On the device fickle costs ~30 k a block where op1emu says 18 k.
+- The CPLB tables are the same on both cores and map region A cacheable and write-back like heap 0
+  (`docs/plugins.md` "e13"): it is not a cache-policy setting. Steps 5 (the clipboard) and 7 were not done.
+- **The owner is back on e11.** e13 (below) puts the plugins' images and voice state back in heap 0 by default and
+  makes the placement a boot policy to measure.
 
 ## Plugin idle paths and the divides out of the steady block: tape_echo 0.4, cs_hall 0.3, cs_plate 0.3, fickle 0.3, petri 0.3; tape_drive 0.6, bitcrusher 0.3, rings 0.10 — device test (pending, 2026-11-20)
 
@@ -3077,5 +3097,111 @@ feedback 0.95 and over at the long times beyond what the last row shows.
 
 **If something is wrong:** reinstall the plugin's previous file (rings 0.10, tape_echo 0.4: `build/plugins-next/` or
 the catalogue); note which, the settings, and what you did just before.
+
+Result: (pending)
+
+## e13: where plugin memory goes is a boot policy; images and voice state back in heap 0 by default — device test (pending, 2026-11-21)
+
+What changed (`docs/plugins.md` "e13"): e12's arena made the plugins' code stalls about double on the device (the e12
+result above), so e13 places each class of plugin memory in heap 0 (as e11) or in the arena (as e12) by a policy read
+at boot: `eng` / `fx` (an engine's / an effect's image), `voice` (the engines' voice state), `buf` (the effect
+position buffers). **Built-in default: `eng=heap fx=heap voice=heap buf=arena`** (code and the state inside the
+images where e11 had them; the buffers, screen objects and control tables in the arena). Two budgets: the heap's
+1,769,472 bytes (e11's, with e11's tape guard), the arena's 5,898,240. The policy file `/yaffs2/user/coop_place.txt`
+is written over USB MIDI and applied at the next boot, with a boot marker that makes a policy that hangs the boot
+cost one power cycle. New measurements: per-window `eng` / `peng` / `fx` / `s2` sums on the `win` lines, a `sysex`
+line, CPLB change counters, and (policy token `probe=1`) a live fill probe and the SDRAM controller's registers.
+Build tag `e13`, the boot picture's line `coop e13 - 246`. Existing `.coop` files load unchanged.
+
+- `build/pkg/op1_246_coop_e13.op1` sha256 `efc40e65014b40b90bfed3ecb7ef2a0a5978aceae9fab6d4cfb35fbeb69e66d7`, copy in Downloads. Release image as e12
+  (`tools/build_device_package.sh ... --tape-stereo --set-word g_coop_spread=32767`): `verify_bootloader.py` PASS (no
+  te-boot.ldr), `pkg_check` = only `OP1_vdk.ldr` differs. The ELF holds the tag `e13` (and no `e12` / `e11`).
+- No web delta made; the site still computes e12's rule (it overestimates on e13's default: it warns early, never
+  late). The rule to port: `docs/plugins.md` "e13".
+
+**Gate notes (op1emu, 2026-11-21, one run at a time under the shared lock, a fresh NAND each; images `--tape-stereo
+--set-word g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`; scripts and outputs in
+`I:\op1emu-tmp\e13gate\`)** [C op1emu]. **op1emu has no caches and no SDRAM timing: it cannot show the speed
+difference between the policies.** That is the device's part, below.
+
+| Run | Result |
+|---|---|
+| pristine `det_chord.txt`, e13 vs e12 (`emu_gate.py`) | **identical over 2,381,872 frames** (max diff 0, first try) |
+| pristine `det_chord.txt`, e13 vs e11 | aligned on the onset, max diff 2 over 2,577,006 frames (the two runs' onsets one block apart, the known spread; e12 vs e11 was identical on its second try) |
+| **default (no policy file), the 13 catalogue files** (rings 0.10 ...), first boot, an effect picked and played (`det_fx_select.txt`) | 13 loaded, `fscr_built 11 scr_built 2`, no fault: `plugmem budget 1769472 used 833168 over_budget 0 heap_short 0 ... heap_free_boot 14906356 ... fxbufs 4 ... arena 560768 arena_a 560768 arena_b 0 clip 4194304 heap_budget 1769472 heap_used 833168 arena_budget 5898240 arena_used 156416 place_eng 1 place_fx 1 place_voice 1 place_buf 0 place_src 0`, `place eng=heap,fx=heap,voice=heap,buf=arena src=default marker_writes 0`; `fxctl p0=8231i6`; end `heap_largest 1891052 heap_free 1892644`; no marker written |
+| the same NAND, second boot | the same `plugmem`; end `heap_free 2222820` |
+| **`all=arena`** (e12's placement), two boots | 13 loaded: `budget 5898240 used 989248 ... heap_used 0 arena_used 989248 ... place_src 1`, `place eng=arena,fx=arena,voice=arena,buf=arena src=file marker_writes 1 marker_clears 1 marker_errors 0`; end `heap_free 2725820` / `3055996`: e12's figures to the byte; the marker gone from the NAND after each boot |
+| **`all=heap`** (e11's placement, four buffers), two boots | 13 loaded: `budget 1769472 used 1372344 ... heap_used 1372344 arena_used 21632`, `fxbufs 4`; end `heap_free 1353468` / `1683644`; an effect played (`plugin_blocks 8231`) |
+| `eng=heap fx=arena voice=heap buf=arena` | `heap_used 669192 arena_used 320096`, 13 loaded, the effect played |
+| `img=arena voice=arena buf=heap` | `heap_used 539176 arena_used 854464` (the four buffers alone in heap 0), 13 loaded, the effect played from a heap buffer |
+| a malformed file (`eng=heap fx=arena bogus=1`) | ignored whole: `place_src 2`, `src=malformed`, the default's figures (not `fx=arena`), no marker, boots |
+| a file of 270 bytes of valid tokens | `place_src 2`, the default, boots |
+| an empty file | a valid file: `src=file`, the default's figures, marker written and cleared |
+| **the marker present** with `all=arena`, two boots | `place_src 3`, `src=marker marker_writes 0`, the default's figures both boots (the policy ignored), the marker still on the NAND; inventory `place_src marker` |
+| `pf=1 probe=1` | `pf_mode 1`; `fill n 6 state 1 code_a_min 2051 code_heap_min 2051 data_a_min 518 data_heap_min 517 code_warm 2054 data_warm 518` (op1emu has no cache: cold = warm; the probe ran from region A and from its heap copy without a fault); no `sdram` line (skipped in op1emu) |
+| **the heap budget full**: default policy, the 13 + five test engines (400,000 + 400,000 + 80,000 + 50,000 + 4,000 bytes of `.bss`), `det_heap_late.txt` | **boots** (the tape's cache got its 24 nodes) and plays, no fault: 18 loaded, `heap_used 1768160` of 1,769,472 (99.9 %), `heap_short 0`, `fxbufs 4`; every late allocation given (`tank_short 0`); end **`heap_largest 214036 heap_free 215628`** (e11 at its full budget: 167220 / 201012). Second boot: end `heap_free 1286804` |
+| the same and one engine more | `over_budget 1`, `plugfile zzover.coop failed needs 64208: over the plugin memory budget`; inventory `... (needs 63 KB, 1 KB of 1728 KB left)`, the row's `need 64208 heap 64208` |
+| **the arena full**: `all=arena`, the 13 + 13 test engines + one more, `det_heap_late.txt`, two boots | as e12's gate: 26 loaded, `arena_used 5871744` (99.6 %), `zzover.coop ... over the plugin memory budget`, `fxbufs 1 fxbuf_refused 11` with eleven `plugfx ... no memory for this position: slots 4` lines, `clip 1578176`, a lift and a drop at the floor (`mono_fallbacks 0`), no fault; end `heap_free 1983796` |
+| **the heap guard alone**: `all=heap`, the heap budget set to 16 MiB (`g_coop_heap_budget`), the 13 + 13 test engines | boots, no fault: 16 loaded, ten refused `not enough memory left for the tape` (`heap_short 10`, the guard stopping at `heap_used 2572968`); end `heap_free 152844` |
+| fickle alone at every position (`det_fx_fickle.txt`), default | `heap_used 26608 arena_used 136448`; `p0=41009i2 p1=18251i2 p2=35589i2 p3=46505i1 p4=29277i1`, the words as e11 / e12; a playing window `fx 12747076 s2 16977671` |
+| the same with `all=heap` (the buffers in heap 0) | `heap_used 565784`; `p0=41010i2 p1=18256i2 p2=35593i2 p3=46509i1 p4=29281i1`, the same window sums |
+| `det_fx_two_pos.txt` (tape_echo), `det_fx_switch.txt` (cs_hall + tape_echo), default | `p0=21645i1 p3=45478i1`; `p0=81711i3 p3=57538i3`: as e12 |
+| rings, every model (`det_eng_rings.txt`), default: its image in heap 0 | `heap_used 666872`, `eng_renders 118600 eng_noteons 329`, 141 s, no fault; the windows' sums, e.g. `blocks 3446 cb_sum 365115789 ... eng 128074187 peng 126783355 fx 0 s2 0` (rings 36.8 k of the callback's 106 k a block in that window, op1emu cycles) |
+| saw (`det_eng_note.txt`), default | `heap_used 2320`, `eng_renders 11725 eng_noteons 17` |
+| the clipboard (`det_tape_relift.txt`) | `edits lifts 3 drops 2 errors 0 mono_fallbacks 0 pool 2097152 pool_used 335296 pool_moves 1`: as e12 |
+| INVENTORY over USB/IP (`coop_usb.py --transport usbip`) | header `budget 1769472, used 833168, fxbuf 134784, fxbufs 4, clip 4194304, heap_budget 1769472, heap_used 833168, arena_budget 5898240, arena_used 156416, place eng=heap,fx=heap,voice=heap,buf=arena, place_src default`; rows with `need` / `scratch` / `heap` (rings 668536 / 0 / 666872, tape_echo 15760 / 134784 / 14096); `sysex polls 28169 rx 20 drop 0 replies 20 errors 0` after the read |
+| the stats' new fields | `emu_gate.parse_stats` reads `plugmem.heap_used`, `plugmem.place_buf`, `sysex.drop`, `cplb.dcplb_changes` (0 in every run), `win[].peng`; the longest stats text of the gate 15,082 bytes |
+| host tests | `tests/host/place_test.cc`: 25 policy texts, every byte value, every prefix of a valid text: valid texts taken whole, the others refused whole |
+
+Not shown in op1emu [I]: every cycle figure; the `sdram` line and the PFCTL test that guards it (skipped in op1emu,
+read under the boot marker on the device); the fill probe's real figures (op1emu: cold = warm); whether heap 0 on the
+device has what op1emu's has (e11's question, answered once: the owner's e11 ran the 13 files at 1,510,352 of the
+same budget).
+
+**What to do: an A/B on the device, no flash between the steps.** The owner only plays; the coordinator writes the
+policy file and reads the stats **over USB MIDI** (`python firmware/tools/coop_usb.py stats -o FILE`; the OP-1's
+disk mode does not show `/yaffs2`, so there is nothing to copy by hand).
+
+0. Flash `op1_246_coop_e13.op1` (keep the plugins). The boot line reads `coop e13 - 246`. `coop_usb.py hello`,
+   `inventory`: `build e13`, 13 loaded, header `budget 1769472 used 833168 ... heap_used 833168 arena_used 156416 place
+   eng=heap,fx=heap,voice=heap,buf=arena place_src default`.
+1. For each policy below, in this order: the coordinator writes the file (`coop_usb.py --write put place.txt --to
+   /yaffs2/user/coop_place.txt`; for A, `--write delete /yaffs2/user/coop_place.txt`), **the owner power-cycles**,
+   the coordinator checks `stats` shows `place ... src=file` (`src=default` for A) and the expected `plugmem` figures,
+   then **the owner plays, each for a full minute**: (i) rings, six-note chords held and re-struck, the tape
+   stopped; (ii) a sampler sound with fickle at synth FX 1, the same kind of playing. The coordinator reads the stats
+   after (i) and after (ii) (each read takes ~10 s; the `win` lines hold the last two minutes).
+
+   | Step | `coop_place.txt` | What it is | `plugmem` expected (13 files) |
+   |---|---|---|---|
+   | A | (no file) | e13's default | `heap_used 833168 arena_used 156416` |
+   | B | `all=heap` | e11's placement (four buffers in heap 0) | `heap_used 1372344 arena_used 21632` |
+   | C | `all=arena` | e12's placement | `heap_used 0 arena_used 989248` |
+   | D | `eng=arena fx=heap voice=heap buf=arena` | only the engines' images in the arena (rings) | `heap_used 163976 arena_used 825568` |
+   | E | `eng=heap fx=arena voice=heap buf=arena` | only the effects' images in the arena (fickle's code) | `heap_used 669192 arena_used 320096` |
+   | F | `probe=1` | the default, with the live fill probe and the `sdram` line | as A; a `fill` and an `sdram` line |
+   | G | `all=arena probe=1 pf=1` | e12's placement, line fills counted instead of stall cycles | as C; `pf_mode 1` |
+   | H | `pf=1` | the default, line fills counted | as A; `pf_mode 1` |
+
+   Then delete the policy file (back to the default) and power-cycle once more.
+2. What to read, per step and per kind of playing:
+   - the playing windows' `cb_sum / blocks` (the whole callback a block), `cb_max`, `peng / blocks` (rings' own
+     renders a block), `fx / blocks` (fickle a block), `eng / blocks`; `io_gap_max` (the main loop: the UI's lag);
+   - `engines ... eng_rings=avg/max/n/p0/p1` and `cost ... fx1_plugin=avg/max/n/p0/p1` (pf mode 0: p0 code stall
+     cycles, p1 data stall cycles; mode 1: fills);
+   - `cplb ... dcplb_changes icplb_changes` (expected 0 after the first windows: the tables are not being swapped);
+   - F: `fill` (`code_a` against `code_heap`, `data_a` against `data_heap`: is a cold line dearer in region A while
+     the OP-1 plays?) and `sdram`;
+   - `sysex ... drop` (expected 0).
+3. The questions the table answers: A against B: do the buffers in the arena cost anything (fickle)? A against C:
+   is the default as good as e11 for rings? D and E against A: is it the engine's image, the effects' code, or both?
+   F, G, H: is a fill dearer in region A, or are there more of them?
+4. If a step's stats say `place ... src=marker` or `place_src 3`: the boot before did not finish with that policy.
+   The OP-1 is on the default; note it, then `coop_usb.py --write delete /yaffs2/user/coop_place.try` and go on with
+   the next step. If the OP-1 does not answer on USB MIDI after a power cycle: power-cycle once more (the marker then
+   makes it boot on the default).
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e11.op1` (or stock).
+The plugin files are untouched by either. A policy file left on the OP-1 is ignored by e11 and e12.
 
 Result: (pending)

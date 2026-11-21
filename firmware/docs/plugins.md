@@ -1071,3 +1071,216 @@ filled to 99.4 % with 13 test engines and a file over the budget named; scratch 
 once, switched repeatedly, with one buffer for five positions; the clipboard whole, at a 64 KiB test size (mono
 fallback) and at its floor; who writes the two regions; saw and rings with their voice state in the arena; the
 inventory over USB/IP.
+
+## e13 (2026-11-21): where plugin memory goes is a boot policy; images and voice state back in heap 0 by default
+
+e12 on the owner's OP-1 (2026-11-21, read over USB MIDI with `tools/coop_usb.py stats`; the four stats files are in
+`docs/device-stats/e11_2026-11-21_*` and `e12_2026-11-21_*`): **the memory side is confirmed and the CPU side is not
+acceptable.** e13 keeps what was free and makes the rest a choice that can be measured on the device with a file
+write and a power cycle, no flash. Built and gated in op1emu; the device test is pending (`docs/device-tests.md`
+"e13").
+
+### What the device said about e12 [C device]
+
+- Memory, as built: 13 loaded, `plugmem budget 5898240 used 989248 ... heap_free_boot 16044276 ... fxbufs 4 ... arena
+  1393600 arena_a 1393600 arena_b 0 clip 4194304`; the inventory's new fields read.
+- **rings 0.10, six voices** (the same file on both cores): whole audio callback per 5 s window 367-403 k cycles a
+  block on e11 (window maxima 450-660 k), **457-520 k on e12 (maxima 600-856 k: dropouts, "very laggy")**; the main
+  loop's `io_gap_max` up to 25 M cycles on e11, 204 M on e12. Nothing sounding: 91-92 k on both.
+- **fickle 0.2 at synth FX 1 on a sampler** (the same playing on both): playing windows 255-257 k a block on e11,
+  262 k on e12; blocks over the stats mark ~300 against 971.
+- The cost lines with the performance monitor's stall counters (mode 0: p0 = code fetch stall cycles, p1 = data
+  stall cycles, averages per call):
+
+  | per call | e11 (plugins in heap 0) cycles / code stall / data stall | e12 (plugins in the arena) |
+  |---|---|---|
+  | `fx1_plugin` (fickle, the same scenario) | 29,615 / 11,427 / 4,308 | **43,188 / 22,398 / 7,742** |
+  | `eng_rings` per voice render (`plugin_own`; different sessions) | 24,892 / 6,060 / 4,423 | 27,529 / **10,420** / 5,553 |
+  | `sampler` voices per block (`synth`, stock code, the fickle runs) | 49,950 / 2,253 / 4,130 | 45,172 / 2,405 / 4,123 |
+  | `stage` (core code in region A, both cores) | 12,664 / 5,498 / 1,243 | 12,993 / 6,092 / 1,145 |
+
+  **The plugins' own code stall cycles about doubled** (fickle x 1.96, rings x 1.72) and their data stalls rose by a
+  quarter (rings, whose state is `.bss` in its image) to 80 % (fickle, whose state is the position buffer); the
+  instructions executed did not change (cycles less stalls: 13.9 k and 13.0 k for fickle). Code the placement did not
+  move (the core's stage, the stock sampler) costs what it did. So the whole regression is stall time of plugin
+  code and data that moved from heap 0 to region A.
+- The session figures of the two rings runs are not like for like (the e12 session also ran effects at FX 1 and
+  instrument FX 2, `s2_instr=61395` avg a block in some windows); the windows above are the ones the coordinator
+  matched. e13 adds per-window sums so the next comparison needs no matching (below).
+
+### Why the arena is slower: what the CPLB tables say, and what they do not [C for the decode, I for the cause]
+
+The stats dump the 16 data and 16 instruction CPLB entries (address / data word). Decoded with the BF52x fields
+(DCPLB_DATA: bit 0 VALID, 1 LOCK, 2 USER_RD, 3 USER_WR, 4 SUPV_WR, 7 DIRTY, 12 L1_CHBL = cacheable, 14 WT =
+write-through, 15 L1_AOW, 17:16 page size, 3 = 4 MB; ICPLB_DATA: bit 0 VALID, 1 LOCK, 2 USER_RD, 9 LRUPRIO, 12
+L1_CHBL, 17:16 size):
+
+| Page(s) | DCPLB word | Meaning |
+|---|---|---|
+| `0x00000000..0x00C00000` (heap 0, four pages) | `0003109f` | 4 MB, valid, **locked**, user read / write, supervisor write, dirty, **cacheable, write-back** |
+| `0x01000000..0x01C00000`, `0x02400000`, **`0x02C00000`** (region A), `0x03400000..0x03C00000` | `0003109d` | the same without LOCK: **cacheable, write-back**, dirty |
+| `0x02000000`, `0x03000000` (the display buffers) | `0003501d` | cacheable, **write-through**, not locked |
+| `0xFF800000` (L1 data) | `0003401f` | locked, not cacheable (it is L1) |
+| **`0x02800000`** (region B) | no entry in either dump | 17 pages want 16 entries: the page nobody is using is out. Neither session touched region B (`arena_b 0`, `lifts 0`) |
+
+Every SDRAM instruction entry is `00031005` (4 MB, valid, user read, **cacheable**, no lock, no LRU priority), region
+A's and region B's included; `DMEM_CONTROL 0000101b` = data cache on, CPLBs on, bank A only (16 KB of data cache),
+`IMEM_CONTROL 00000007` = instruction cache and CPLBs on, no way locked. The two cores' tables are the same but for
+which instruction pages are out (e11 has `0x00000000`, where its plugins' code was, and lacks `0x00400000`; e12 the
+other way round).
+
+**So the cache policy is not the cause, and there is no CPLB fix** [C]: region A is cached exactly as heap 0 is
+(cacheable, write-back, 4 MB pages). The only difference is LOCK, which decides whether the stock's miss handler may
+swap the entry out; region A's entry is present in every dump, and e12 needed fewer instruction pages than e11, not
+more. A per-block CPLB swap is not excluded by two snapshots, so e13 counts it: every stats window the 32 address
+words are compared with the last window's (`cplb ... dcplb_changes N icplb_changes N`). No CPLB entry is written by
+e13: nothing in the data says it would help, and a wrong entry faults at boot.
+
+What is left [I]: either a cache line costs more to fetch from the `0x02xxxxxx` part of the SDRAM than from heap 0
+(kennel measured 354 against 193 cycles for a cold line on its units and moved its code arena into heap 0 for it:
+rackverb README, "K1b"; the factor matches the x 1.7-2.0 of the code stalls here), or the plugins miss the cache
+more often there. Against the first: coop's own boot probe (4 KB of NOPs in the core's text, region A) costs
+26,446 / 27,516 cycles cold on this unit (e11 / e12 stats, `icache_l0`), **199-208 stall cycles a line: kennel's
+heap-0 figure, measured in region A**. But that probe runs at boot, before the GUI, its display traffic at
+`0x02000000` and the audio exist, and it runs nothing but code from one place; the plugins fetch code and data from
+the same SDRAM bank as the core's own code and data and the display buffer the stock clears every frame, and an
+SDRAM keeps one row open per internal bank [I: the controller's registers are not known here]. e13 measures instead of
+guessing, on the device, when the policy file asks (`probe=1`):
+- **the live fill probe**: at every stats window, from the main loop while the OP-1 plays, the same 4 KB of NOPs cold
+  in region A and cold from a copy in heap 0, and 8 KB of data cold in region A and in heap 0 (`fill ... code_a_min /
+  _avg code_heap_min / _avg data_a_... data_heap_... code_warm data_warm`, cycles a pass; a cold line = (cold -
+  warm) / 128 for code, / 256 for data);
+- **the SDRAM controller and PLL registers**, read once at boot (`sdram sdgctl= sdbctl= sdrrc= sdstat= pll_ctl=
+  pll_div=`): CAS latency, tRP, tRCD and the clock ratio say what a row change costs;
+- **`pf=1`** counts cache line fills instead of stall cycles (the cost lines' p0 / p1), so stall cycles per fill and
+  fills per render can be had for the same playing under two policies.
+
+### The placement policy
+
+Four classes, each to heap 0 (as e11) or the arena (as e12): **`eng`** a synth engine's image (code, data, `.bss`),
+**`fx`** an effect's image, **`voice`** the engines' per-voice state, **`buf`** the effect position buffers. Screen
+objects, control tables and the boot scan's staging block are cold and always the arena's. The per-kind split of the
+images falls out of the loader (an engine and an effect are loaded by two functions); a split of one image into text
+and `.bss` does not: an image is one relocated block and its relocations assume one base (`plugin_load.cc`), so
+rings' ~113 KB of code cannot go to heap 0 while its ~550 KB of tables and delay lines stay in the arena without a
+change to the file format's loader. Not done.
+
+**The built-in default: `eng=heap fx=heap voice=heap buf=arena`.** Why: what the device measured as expensive is
+plugin code (stalls doubled) and the state inside the images (rings); that goes back where e11 had it, and e11's
+figures for rings are the owner's accepted ones. The position buffers stay in the arena because that is where e12's
+capacity win is cheap: fickle's data stalls rose 3.4 k cycles a block with its 135 KB state there (0.6 % of a block;
+[I] one session each), and they free 539 KB of the heap budget, which is now all for code and voice state. If the
+device says the buffers cost more than that, `buf=heap` is one token (the 13 files fit either way).
+
+**The policy file: `/yaffs2/user/coop_place.txt`** (SysEx PUT writes it: `coop_usb.py --write put FILE --to
+/yaffs2/user/coop_place.txt`; applied at the next boot). ASCII tokens separated by spaces or newlines, later ones win:
+
+| Token | Meaning |
+|---|---|
+| `eng=heap` / `eng=arena`, `fx=`, `voice=`, `buf=` | that class |
+| `img=heap` / `img=arena` | `eng` and `fx` |
+| `all=heap` / `all=arena` | all four (`all=heap` is e11's placement with four buffers, `all=arena` is e12) |
+| `pf=0`..`pf=4` | the performance monitor's mode (`docs/performance.md`; 0 stall cycles, 1 line fills) |
+| `probe=1` / `probe=0` | the live fill probe and the `sdram` line (12.3 KB of heap 0, ~3 M cycles every 5 s) |
+
+No file: the default. An empty file: a valid file that changes nothing. **An unknown token, a bad value, or 128 bytes
+or more: the whole file is ignored** (the default; `place_src 2`), never read in part. The file is read into a fixed
+buffer and compared byte by byte: no content can fault.
+
+**The boot marker.** A boot that reads a valid policy file writes `/yaffs2/user/coop_place.try` before anything is
+placed and deletes it once the main loop has run for a second after the plugin scan (the tape's cache is built by
+then: a heap policy that starved it, the e6 hang, would have halted first). A boot that finds the marker ignores the
+policy file and runs the default (`place_src 3`), every boot, until a host deletes the marker (`coop_usb.py --write
+delete /yaffs2/user/coop_place.try`) or the policy file. So a policy that hangs the boot costs one more power cycle:
+the OP-1 then boots on the default with SysEx up. (Switching off in the first seconds of a boot with a policy file
+leaves the marker too; the stats say so, delete it.) Without a policy file nothing is written. The worst case, a
+core that does not boot at all, is as always: hold COM at power-on, flash e11 or stock; te-boot is untouched.
+
+### Two budgets
+
+| | Heap budget | Arena budget |
+|---|---|---|
+| Size | **1,769,472 bytes (1,728 KiB)**, e11's | **5,898,240 bytes (5,760 KiB)**, e12's |
+| Counts | whatever the policy puts in heap 0 | whatever it puts in the arena, and always the screen objects and control tables |
+| Guard | `heap_room_ok` before every take, as e7-e11: the tape's 24 nodes, one spare and 512 KiB must still fit (`not enough memory left for the tape`) | the arena's own bounds |
+
+Why the heap budget is e11's number unchanged: it was set by what heap 0 can give, not by what kind of bytes take it
+(`docs/plugins.md` "e11": 2,729,484 bytes free after a first boot without plugins, 742,024 of late allocations by
+coop itself, each of which may fail harmlessly, 201,012 left at a full budget in op1emu). The buffers leaving it
+does not change that sum; it means the whole 1,728 KiB is now for images and voice state (on e11 the 13 files used
+1,510,352 of it, 673,960 of that the buffers; on e13's default 833,168). The control tables (e11: ~22 KB of heap 0
+the budget did not count) are in the arena since e12, which is margin gained, not spent.
+
+A file loads when its heap part fits the heap budget (and the guard) **and** its arena part fits the arena budget;
+otherwise it is refused before anything is taken, `over the plugin memory budget (needs N KB, L KB of B KB left)`
+with the figures of the budget that refused it. Files load in name order (e12).
+
+**The 13 catalogue files** (rings 0.10, the 2026-11-21 catalogue) [C op1emu, and the rule's own sum]:
+
+| Policy | heap_used of 1,769,472 | arena_used of 5,898,240 | `budget` / `used` reported |
+|---|---|---|---|
+| default `eng=heap fx=heap voice=heap buf=arena` | **833,168** (47 %) | 156,416 | 1769472 / 833168 |
+| `all=heap` (e11's placement, four buffers) | 1,372,344 (78 %) | 21,632 | 1769472 / 1372344 |
+| `all=arena` (e12) | 0 | 989,248 | 5898240 / 989248 |
+| `eng=heap fx=arena voice=heap buf=arena` | 669,192 | 320,096 | 1769472 / 669192 |
+| `eng=arena fx=heap voice=heap buf=arena` | 163,976 | 825,568 | 1769472 / 163976 |
+
+(rings is 666,872 bytes of the heap figure: its image, of which ~550 KB is `.bss`. rings and saw declare no
+per-voice state, so `voice=` moves nothing in this set.)
+
+### The rule for the site (what to compute for e13)
+
+```
+blk(n) = (n + 15) & ~7        r32(n) = (n + 31) & ~31        cap = bss_offset + bss_size + 3 + 12 * imports
+copies = 5 for an effect without the scratch flag, else 1      E = the largest r32(scratch) in the set (0: none)
+place  = the header's `place` field: eng, fx, voice, buf each heap | arena   (default eng=heap,fx=heap,voice=heap,buf=arena)
+
+heap_need(file)  = (its image is in heap ? copies * blk(cap + 32) : 0)            image: eng for a synth, fx for an effect
+                 + (synth, voice=heap, voice_bytes > 0 ? blk(6 * r32(voice_bytes) + 32) : 0)
+arena_need(file) = (its image is in the arena ? copies * r32(cap) : 0)
+                 + (synth, voice=arena ? 6 * r32(voice_bytes) : 0)
+                 + (screen ? 256 : 0) + (controls ? 1408 : 0)                     as e12
+heap_used  = sum heap_need  + (buf=heap  and E ? blk(4 * E + 32) : 0)            all four buffers
+arena_used = sum arena_need + (buf=arena ? E : 0)                                 one buffer; up to three more are carved
+fits       = heap_used <= heap_budget (1,769,472)  and  arena_used <= arena_budget (5,898,240)
+```
+Walk the files by name and leave out each one that would break either inequality (as e12's walk with one). With
+`buf=arena` the "all four positions" mark is `arena_used + 3 * E <= arena_budget` as on e12; with `buf=heap` all four
+always exist. The device may refuse earlier than the heap budget with `not enough memory left for the tape` (the
+guard); in op1emu it does not inside the budget.
+
+**What the device reports** (`docs/sysex.md` "INVENTORY on e13"): the e12 fields keep their meaning for a host that
+knows one budget: header `budget` / `used` are **the budget that binds** (the one with less room left; the arena's
+when the policy puts nothing in heap 0), a row's `need` is the file's own bytes in both pools together, `scratch` as
+e12. Added: header `heap_budget`, `heap_used`, `arena_budget`, `arena_used`, `place`, `place_src`; row column 12
+`heap` (the part of `need` in heap 0; the arena part is `need - heap`). A host that only knows e12's rule (sum of
+`need` + E against `budget`) overestimates on e13's default by the arena parts and E (about 156 KB for the 13
+files): it warns early, never late.
+
+### Stats
+
+```
+plugmem budget B used U over_budget N heap_short N ... clip C heap_budget HB heap_used HU arena_budget AB arena_used AU
+        place_eng 1 place_fx 1 place_voice 1 place_buf 0 place_src S          (1 heap 0, 0 the arena; S: 0 default, 1 file,
+                                                                               2 malformed, 3 the marker was found)
+place eng=heap,fx=heap,voice=heap,buf=arena src=default marker_writes N marker_clears N marker_errors N
+sdram sdgctl=... sdbctl=... sdrrc=... sdstat=... pll_ctl=... pll_div=...     (probe=1, the device only)
+fill n N state 1 code_a_min C code_a_avg C code_heap_min C code_heap_avg C data_a_min C data_a_avg C
+     data_heap_min C data_heap_avg C code_warm W data_warm W                 (probe=1)
+cplb dmem X imem X dcplb_changes N icplb_changes N
+sysex polls N rx N drop N replies N errors N
+win / top ... recording R eng C peng C fx C s2 C
+```
+- **`win` / `top` lines gain four per-window sums** (cycles in that 5 s window): `eng` every synth and drum voice
+  render, `peng` the plugin engines' own renders (rings), `fx` a plugin at FX 1, `s2` both FX 2 slots (stock types
+  included). With `blocks` and `cb_sum` of the same line a window's rings or effect cost a block is read directly.
+- `sysex`: the channel's counters; `drop` is a message that arrived with the queue full.
+- `heap_short` counts again. The two `pfsweep_*` lines are printed only when the sweep ran (they were zeros).
+- The text stays 16 KiB: when the windows left to print would not all fit, the oldest are left out, so it never
+  ends in half a line. `tools/emu_gate.py` `parse_stats` and `tools/coop_usb.py` read the new fields as they are.
+
+Test switches (image time): `g_coop_heap_budget`, `g_coop_plug_budget` (the arena's), `g_coop_place_word` (another
+built-in policy), and e12's. Build tag `e13`.
+
+**Gate** (op1emu; the table is in `docs/device-tests.md` "e13") [C op1emu]. op1emu has no caches and no SDRAM
+timing: **it cannot show the speed difference between the policies**; that is the device test.
