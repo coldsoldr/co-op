@@ -355,6 +355,23 @@ static __attribute__((noinline)) void voice_sum_stock(int is_drum, int16_t gain)
         bus[i] = coop_fr16_add(bus[i], coop_fr16_mul(coop_fr16_mul(VOICE_OUT[i], VOICE_ENV[i]), gain));
 }
 
+/* e14: a voice that rendered silence (asked for by rings 0.11, whose held voices render zeros once they idle; it holds
+ * for every engine, stock ones too, and needs nothing from the plugin: no ABI change). The hook adds v + v x pan to
+ * the pair with v = (out[i] x env[i]) x gain (synth) or (out[i] x gain) << 1 (drum): for out[i] = 0 every product is
+ * 0 and the pair gets + 0 (coop_pair_accum_*: fract multiplies of 0, integer multiplies of 0). So when the render's
+ * 128 samples are all zero the accumulation is left out, and the pair is not marked dirty: a block in which every
+ * voice was silent then lets the stage and the mix take their rest path too (g_coop_idle_skip). The test reads 64
+ * words in L1 and leaves at the first nonzero one, so a sounding voice pays a load and a branch.
+ * g_coop_voice_skip (--set-word): 1 (default); 0 never; 2 accumulate anyway and check the pair did not change. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_voice_skip = 1; }
+volatile uint32_t g_voice_skips, g_voice_skip_checked, g_voice_skip_bad;
+static __attribute__((noinline)) uint32_t pair_sum(void)                   /* mode 2 only */
+{
+    uint32_t s = 0;
+    for (int i = 0; i < COOP_VBLK; i++) s = (s << 1 | s >> 31) ^ (uint32_t)g_vL[i] ^ ((uint32_t)g_vR[i] * 3u);
+    return s;
+}
+
 static inline __attribute__((always_inline)) void voice_hook(coop_spread *pans, int voice, uint32_t bit, int is_drum)   /* v1: inlined per kind, so the synth hook carries no drum code */
 {
     if (!g_coop_stereo_enable) { voice_sum_stock(is_drum, *VOICE_GAIN); return; }
@@ -367,13 +384,25 @@ static inline __attribute__((always_inline)) void voice_hook(coop_spread *pans, 
         if (voice >= 0 && voice < COOP_MAX_VOICES) pans->pan[voice] = coop_drumpan_q15();   /* u6: the key's own pan; spread is the synth's */
         coop_lfo2_trigger_drum(voice);
     }
+    const uint32_t vskip = g_coop_dbg_cmp ? 0 : g_coop_voice_skip;       /* e14: a silent voice adds nothing */
+    const int vzero = vskip && all_zero16(VOICE_OUT, COOP_VBLK);
+    if (vzero && vskip == 1) {
+        g_voice_skips++;
+        uint32_t dtz = coop_cycles() - t0;
+        if (dtz > g_stereo_hook_cycles_max) g_stereo_hook_cycles_max = dtz;
+        if (dtz > g_stereo_hook_cycles_win) g_stereo_hook_cycles_win = dtz;
+        g_stereo_hook_cycles_sum_win += dtz;
+        return;
+    }
+    const uint32_t sum0 = vzero ? pair_sum() : 0;
     coop_pan_delta d = coop_pan_deltas_tab(pans->pan[voice], g_sin);
     int16_t gain = *VOICE_GAIN;
     if (g_coop_dbg_cmp && is_drum) dbg_drum_probe(gain);
     if (g_coop_dbg_cmp) voice_sum_stock(is_drum, gain);                  /* the stock bus the compare reads */
     if (is_drum) coop_pair_accum_drum(g_vL, g_vR, VOICE_OUT, gain, d);
     else         coop_pair_accum_synth(g_vL, g_vR, VOICE_OUT, VOICE_ENV, gain, d);
-    g_pair_dirty = 1;
+    if (vzero) { g_voice_skip_checked++; if (pair_sum() != sum0) g_voice_skip_bad++; }
+    else g_pair_dirty = 1;                                               /* (mode 2: a silent voice leaves the pair as it was) */
     uint32_t dt = coop_cycles() - t0;
     if (dt > g_stereo_hook_cycles_max) g_stereo_hook_cycles_max = dt;
     if (dt > g_stereo_hook_cycles_win) g_stereo_hook_cycles_win = dt;

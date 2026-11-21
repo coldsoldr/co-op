@@ -41,6 +41,8 @@ extern volatile uint32_t g_tape_idle_blocks, g_tape_idle_checked, g_tape_idle_ba
 extern "C" volatile uint32_t g_coop_tape_idle;
 extern "C" volatile uint32_t g_coop_idle_skip;                         /* stereo_bus.cc (e14) */
 extern volatile uint32_t g_stage_skips, g_mix_skips, g_skip_checked, g_skip_bad;
+extern "C" volatile uint32_t g_coop_voice_skip;
+extern volatile uint32_t g_voice_skips, g_voice_skip_checked, g_voice_skip_bad;
 extern volatile uint32_t g_tape_io_loads, g_tape_io_flushes, g_tape_io_held, g_tape_io_guarded, g_tape_io_errors;
 extern volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g_tape_io_flush_cycles_max, g_tape_io_gap_cycles_max;
 extern volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g_tape_io_flush_cycles_win, g_tape_io_gap_cycles_win;
@@ -484,7 +486,9 @@ static const char *eng_name(uint32_t fn)
 static void put_cost_lines(void)                             /* the "cost" and "engines" lines from g_cost_src */
 {
     put("mode"); kv("prof", g_coop_prof); kv("idle_skip", g_coop_idle_skip); kv("stage_skips", g_stage_skips);   /* e14 */
-    kv("mix_skips", g_mix_skips); kv("skip_checked", g_skip_checked); kv("skip_bad", g_skip_bad); put("\n");            /* e14: 0 = the cost table, the engines line, the marks and the
+    kv("mix_skips", g_mix_skips); kv("skip_checked", g_skip_checked); kv("skip_bad", g_skip_bad);
+    kv("voice_skip", g_coop_voice_skip); kv("voice_skips", g_voice_skips); kv("voice_checked", g_voice_skip_checked); kv("voice_bad", g_voice_skip_bad);
+    put("\n");            /* e14: 0 = the cost table, the engines line, the marks and the
                                                                     windows' eng / peng / fx / s2 sums are off (empty / 0) */
     put("cost avg/max/n/p0/p1"); put(" pf_mode "); putn(g_coop_pf_mode); put(" pf_live "); putn(g_coop_pf_live); put(" pf_layout "); putn(g_coop_pf_layout_used);   /* per call; slot 1's stock effect by type (stereo class); p0 / p1 the monitor's averages (coop_pf_boot) */
     put_cost("stage=", COOP_COST_STAGE); put_cost("s2_instr=", COOP_COST_S2I); put_cost("s2_master=", COOP_COST_S2M);
