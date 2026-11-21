@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { checkCoop, idFromSavedName, type HostedPluginEntry } from '@co-op/shared/plugins';
+import { checkCoop, idFromSavedName, type HostedPluginEntry, type PluginIndex } from '@co-op/shared/plugins';
 import { fetchPluginBytes } from '../core/plugins/catalogue';
 import {
   clipSeconds,
@@ -7,7 +7,6 @@ import {
   formatKb,
   largestRows,
   planMemory,
-  type DeviceCoopFile,
   type DeviceMemoryReport,
   type KnownCoopFile,
   type MemoryPlan,
@@ -22,7 +21,9 @@ import {
   readCoopMemoryReport,
   type CoopHello,
 } from '../core/usbmidi/coop';
+import { deviceFilesOf, deviceReportOf, updateCoopPlugins, updateSummary } from '../core/usbmidi/coop-update';
 import type { Inventory, InventoryRecord } from '../core/usbmidi/inventory';
+import { listUpdates } from '../core/plugins/updates';
 import { createSession, type Session } from '../core/usbmidi/session';
 import { messageOf } from '../core/util';
 import { formatSize } from './format';
@@ -57,27 +58,6 @@ export async function withCoop<T>(work: (session: Session, hello: CoopHello) => 
 
 const fileOf = (r: InventoryRecord): string => r.path.replace(/^plugins\//, '');
 const titleOf = (file: string): string => file.replace(/\.coop$/, '').replaceAll('_', ' ');
-
-/** The inventory's coop files as the memory sum takes them (memory.ts). */
-export const deviceFilesOf = (inventory: Inventory | null): DeviceCoopFile[] =>
-  (inventory?.records ?? [])
-    .filter((r) => r.source === 'coop')
-    .map((r) => ({
-      file: fileOf(r),
-      size: r.size,
-      kind: r.kind === 'feature' ? null : r.kind,
-      loaded: r.state === 'loaded',
-      enabled: r.enabled !== false,
-      reason: r.reason,
-      ...(r.need === undefined ? {} : { need: r.need, scratch: r.scratch ?? 0 }),
-    }));
-
-/** The plugin memory by the OP-1's own count, from an e12 inventory's header; null before e12. */
-export function deviceReportOf(inventory: Inventory | null): DeviceMemoryReport | null {
-  const m = inventory?.memory;
-  if (!m) return null;
-  return { budget: m.budget, used: m.used, exact: true, needs: {}, fxbuf: m.fxbuf, fxbufs: m.fxbufs, ...(m.clip === null ? {} : { clip: m.clip }) };
-}
 
 const listOf = (files: readonly string[]): string => files.map(titleOf).join(', ');
 
@@ -269,6 +249,8 @@ function PluginMemory({ plan, clip, busy, onAsk }: PluginMemoryProps) {
 
 interface CoopDeviceProps {
   inventory: Inventory | null;
+  /** The plugin catalogue, to see which files on the OP-1 have a newer build; null until it has loaded. */
+  index: PluginIndex | null;
   /** The catalogue's coop files, to add up the plugin memory of what is on the OP-1. */
   known: readonly KnownCoopFile[];
   onInventory: (inventory: Inventory | null) => void;
@@ -279,7 +261,7 @@ interface CoopDeviceProps {
  * plugin memory, switched on or off for the next boot, removable; and a .coop file from this computer installed
  * beside them.
  */
-export function CoopDevice({ inventory, known, onInventory }: CoopDeviceProps) {
+export function CoopDevice({ inventory, index, known, onInventory }: CoopDeviceProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [build, setBuild] = useState<string | null>(null);
@@ -294,6 +276,40 @@ export function CoopDevice({ inventory, known, onInventory }: CoopDeviceProps) {
   const own = deviceReportOf(inventory) ?? report;
   const plan = inventory ? planMemory(deviceFilesOf(inventory), [...sent, ...known], { build: inventory.build ?? build, report: own }) : null;
   const memoryOf = new Map(plan?.rows.map((r) => [r.file, r]));
+  /** Versions sent from here: the OP-1's inventory names the version its boot read until the next power cycle. */
+  const [updated, setUpdated] = useState<ReadonlyMap<string, string>>(new Map());
+  const list = listUpdates(inventory, index);
+  const updates = list.updates.filter((u) => updated.get(u.file) !== u.to);
+  const updateOf = new Map(updates.map((u) => [u.file, u]));
+  const waitingOf = new Map(list.updates.filter((u) => updated.get(u.file) === u.to).map((u) => [u.file, u]));
+  const blockedOf = new Map(list.blocked.map((b) => [b.file, b]));
+
+  /** Replaces every plugin the catalogue has a newer build of (or only `only`), after one question that lists them. */
+  async function update(only?: string): Promise<void> {
+    setBusy('Talking to the OP-1…');
+    setMessage(null);
+    try {
+      const outcome = await withCoop((session, hello) => {
+        setBuild(hello.build);
+        return updateCoopPlugins(session, {
+          index,
+          known: [...sent, ...known],
+          already: updated,
+          ...(only === undefined ? {} : { only }),
+          fetchBytes: (plugin) => fetchPluginBytes(base(), plugin),
+          confirm: (question) => window.confirm(question),
+          onProgress: setBusy,
+        });
+      });
+      if (outcome.inventory) onInventory(outcome.inventory);
+      if (outcome.kind === 'ran') setUpdated((before) => new Map([...before, ...outcome.done.map((u) => [u.file, u.to] as const)]));
+      setMessage({ text: updateSummary(outcome), error: outcome.kind === 'ran' && outcome.failed !== null });
+    } catch (e) {
+      setMessage({ text: messageOf(e), error: true });
+    } finally {
+      setBusy(null);
+    }
+  }
 
   /** `work` returns a note to show, null for none, or false when nothing was changed after all. */
   async function run(work: (session: Session) => Promise<string | null | false>, change: boolean, doing = 'Talking to the OP-1…'): Promise<void> {
@@ -366,6 +382,11 @@ export function CoopDevice({ inventory, known, onInventory }: CoopDeviceProps) {
             if (file) void installFile(file);
           }}
         />
+        {updates.length > 0 && (
+          <button type="button" onClick={() => void update()} disabled={busy !== null}>
+            Update all ({updates.length})
+          </button>
+        )}
         {build && <span className="pill quiet">coop {build}</span>}
       </div>
       {busy && <p role="status">{busy}</p>}
@@ -422,7 +443,20 @@ export function CoopDevice({ inventory, known, onInventory }: CoopDeviceProps) {
                       <div className="mono muted">{file}</div>
                     </th>
                     <td>{r.kind ?? '?'}</td>
-                    <td>{r.version || '–'}</td>
+                    <td>
+                      {r.version || '–'}
+                      {updateOf.has(file) && (
+                        <div className="muted">
+                          update available: {updateOf.get(file)?.from ?? '?'} → {updateOf.get(file)?.to}
+                        </div>
+                      )}
+                      {waitingOf.has(file) && <div className="muted">{waitingOf.get(file)?.to} sent, loads after a power cycle</div>}
+                      {blockedOf.has(file) && (
+                        <div className="muted">
+                          {blockedOf.get(file)?.to} needs {blockedOf.get(file)?.needs}
+                        </div>
+                      )}
+                    </td>
                     {plan && (
                       <td className={memory?.counted ? 'mono' : 'mono muted'}>
                         {!memory || (!memory.exact && memory.bytes === 0) ? '?' : `${memory.exact ? '' : 'about '}${formatKb(memory.bytes)}`}
@@ -434,6 +468,13 @@ export function CoopDevice({ inventory, known, onInventory }: CoopDeviceProps) {
                     </td>
                     <td>{r.enabled === false ? 'off' : 'on'}</td>
                     <td>
+                      {updateOf.has(file) && (
+                        <>
+                          <button type="button" disabled={busy !== null} onClick={() => void update(file)}>
+                            Update
+                          </button>{' '}
+                        </>
+                      )}
                       <button
                         type="button"
                         disabled={busy !== null}

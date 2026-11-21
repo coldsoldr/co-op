@@ -77,7 +77,7 @@ export function App() {
   // A coop OP-1's plugins are managed from the Plugins tab (firmware/docs/sysex.md, e3).
   const pluginDevice =
     device.profile.id === 'op1/coop' ? (
-      <CoopDevice inventory={device.installedPlugins} known={coopFiles} onInventory={device.setInstalledPlugins} />
+      <CoopDevice inventory={device.installedPlugins} index={device.pluginIndex} known={coopFiles} onInventory={device.setInstalledPlugins} />
     ) : null;
   const buttons = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
 

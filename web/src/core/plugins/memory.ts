@@ -346,7 +346,7 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * The memory of each file on the OP-1 and of the set the next boot loads (every file not switched off; `add` is a
- * file about to be sent, which replaces one of the same name).
+ * file about to be sent, or several, each replacing one of the same name).
  *
  * A file is exact when the OP-1 sizes it itself (e12's `need` and `scratch`) or co-op has its header: its name and
  * size match a known file's, or it is `add`. Before e12 a file that came after the boot has no size in the
@@ -357,7 +357,7 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 export function planMemory(
   files: readonly DeviceCoopFile[],
   known: readonly KnownCoopFile[],
-  options: { build?: string | null | undefined; report?: DeviceMemoryReport | null; add?: KnownCoopFile } = {},
+  options: { build?: string | null | undefined; report?: DeviceMemoryReport | null; add?: KnownCoopFile | readonly KnownCoopFile[] } = {},
 ): MemoryPlan | null {
   const report = options.report ?? reportFromInventory(files);
   const table = budgetOfCore(options.build);
@@ -388,11 +388,12 @@ export function planMemory(
     if (rest > 0 && f.loaded) return { f, cost: { own: rest, scratch: 0 }, exact: report?.exact ?? false };
     return { f, cost: estimateFromSize(f.size, f.kind, rule), exact: false };
   });
-  if (options.add) {
-    const add = options.add;
+  for (const add of options.add === undefined ? [] : Array.isArray(options.add) ? (options.add as readonly KnownCoopFile[]) : [options.add as KnownCoopFile]) {
+    // A file that replaces one switched off stays off: the switch goes by the name.
+    const enabled = entries.find((e) => e.f.file === add.file)?.f.enabled ?? true;
     entries = entries.filter((e) => e.f.file !== add.file);
     entries.push({
-      f: { file: add.file, size: add.sizeBytes, kind: add.memory.kind, loaded: false, enabled: true, reason: '' },
+      f: { file: add.file, size: add.sizeBytes, kind: add.memory.kind, loaded: false, enabled, reason: '' },
       cost: costOf(add.memory, rule),
       exact: true,
     });
