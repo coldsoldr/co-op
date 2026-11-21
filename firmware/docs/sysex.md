@@ -14,7 +14,12 @@ transport to read any file off the device while it runs.
   queue, then runs the stock parser, which ignores them.
 - Service: `coop_sysex_service` runs from the main loop (the tape I/O step, mode 0) and answers through the stock
   `usbmidi_tx_enqueue` (`0x019E0D18`) as USB-MIDI packets. Every message both ways is at most 96 bytes (the OP-1's
-  USB-MIDI input stops on longer SysEx; co-op's sysex.js), the host keeps one message in flight.
+  USB-MIDI input stops on longer SysEx; co-op's sysex.js). The queue (`QN` = 4, `coop_sysex.cc`) is first in, first
+  out: the service answers every queued message in the order it arrived, one reply each, on its next pass. A message
+  that arrives with the queue full is dropped without a reply (`g_sysex_drop`). So a host may keep more than one
+  message in flight, but never more than the queue holds: for every command but PUT_DATA the hosts keep one; for
+  `PUT_DATA` they may keep up to `QN` - 1 = 3 (the librarian since web commit `ca8cfe9`, 2026-11-20; see "File writes"
+  below).
 - Commands (replies are `cmd | 0x40` with the same seq; payload = status byte + data; status 0 ok, 1 format,
   3 path, 7 io):
   - `0x21 HELLO`: reply `"coop"`, u16 protocol (1), u8 capabilities (p6k: bit 0 file read, 1 file write, 2 SLOT2, 3 RUN; e3: 4 INVENTORY, 5 PLUGIN_SET), then the build tag text (p6k: the package tag from core/include/coop_build.h, the same the stats file prints).
@@ -22,10 +27,21 @@ transport to read any file off the device while it runs.
     the offset. The host walks the file in 64-byte steps (about 1.5 KB/s with one message in flight).
 - File writes (P1b): `0x22 PUT_BEGIN` path (under `/yaffs2/plugins/` or `/yaffs2/user/` only; the plugins directory is
   created if missing; the file is created and truncated), `0x23 PUT_DATA` u32 offset + up to 64 bytes in order (reply:
-  status, u32 next offset; a wrong offset is status 5), `0x24 PUT_END` u32 total + u32 crc32 (zlib) closes and checks
+  status, u32 next offset; a wrong offset is status 5 and the reply still carries the offset the file has reached),
+  `0x24 PUT_END` u32 total + u32 crc32 (zlib) closes and checks
   (status 4 size, 6 crc), `0x25 DELETE` path. The host page's "Install plugin" button sends a `.coop` this way; the
   loader reads the directory at boot, so a power cycle follows.
-- Counters `g_sysex_polls / rx / drop / replies / errors`.
+- **Several `PUT_DATA` in flight.** The host may send up to three chunks before the first is answered. The core
+  takes them in order: a chunk is written only at the offset the file has reached, and every reply's "next offset" is
+  cumulative, so an ok that names the end of a chunk confirms every byte before it. If one chunk is lost (the queue
+  was full: dropped, no reply) the chunks behind it arrive at the wrong offset and each gets status 5 with the offset
+  reached; nothing is written out of order. The host then resends from that offset, one chunk at a time
+  (`web/src/core/usbmidi/coop.ts` `COOP_WINDOW`, `putWindowed`). `PUT_END`'s size and CRC-32 check is unchanged and is
+  what proves the file. Why three and not four: the slot of the message being answered is free only when the service
+  has moved past it. [C device, e11, 2026-11-20: the librarian installed `rings.coop` (113 KB) in under 20 s, about
+  76 s with one chunk in flight. The drop and the wrong-offset replies: by the code and the web fakes (`web/test/fake-coop.ts`), not provoked on the device [I].]
+- Counters `g_sysex_polls / rx / drop / replies / errors` (image words; not in `coop_stats.txt`, so the drops of a
+  device session cannot be read back yet).
 
 ## Host side: `tools/coop_sysex.html`
 

@@ -9,7 +9,11 @@
  * <7-bit packed payload> F7) out of the USB-MIDI receive ring into a small queue and then runs the stock parser,
  * which ignores them. Service: coop_sysex_service runs from the main loop (the tape I/O step) and answers through the
  * stock usbmidi_tx_enqueue as USB-MIDI packets. Every message both ways stays at or below 96 bytes (the OP-1's USB-MIDI
- * input stops on longer SysEx: co-op's sysex.js), the host keeps one message in flight.
+ * input stops on longer SysEx: co-op's sysex.js). The queue holds QN messages and the service answers them in the
+ * order they came; one that arrives with the queue full is dropped without a reply (g_sysex_drop). A host may so keep
+ * up to QN - 1 = 3 PUT_DATA in flight (one for any other command): a chunk is taken only at the offset the file has
+ * reached and every reply carries that offset, so the acks are cumulative and a chunk behind a lost one is refused
+ * (ST_OFFSET), never written out of order (docs/sysex.md).
  *
  * Commands (cmd 0x20..; replies are cmd | 0x40, same seq, payload status + data):
  *   0x21 HELLO               -> status 0, "coop", u16 protocol (1), build tag text

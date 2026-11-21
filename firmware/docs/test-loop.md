@@ -39,7 +39,7 @@ as stated), [I] inferred. `docs/brick-safety.md` binds everything here.
 | op1emu headless, deterministic, guest-timed keys and encoders, audio dump, screenshots, write traces, memory dump at exit | [C] `docs/emulator.md`, patches 0001-0004 |
 | NAND with plugin files, a file read back out of the NAND | [C] `tools/make_nand.py`, `tools/nand_file.py` |
 | Gate procedure | by hand: build an image, make a NAND, run `tests/sim/hear.sh`, read the stats, compare WAVs, type the result into `docs/device-tests.md`; ad hoc `gate.sh` copies in `~/op1emu-work/e7..e9` |
-| SysEx on the device: HELLO, FILE_GET (any path), PUT / DELETE (plugins/, user/), SLOT2, RUN, INVENTORY, PLUGIN_SET | [C device for file read, file write and RUN: `docs/device-stats/p1_*`, `p5d_*`, `p5e_*`; C op1emu for INVENTORY and PLUGIN_SET; device pending for those two] |
+| SysEx on the device: HELLO, FILE_GET (any path), PUT / DELETE (plugins/, user/), SLOT2, RUN, INVENTORY, PLUGIN_SET | [C device for file read, file write and RUN: `docs/device-stats/p1_*`, `p5d_*`, `p5e_*`; C device for INVENTORY, 2026-11-20 on e11 through `coop_usb.py`; C op1emu for PLUGIN_SET, device pending] |
 | The same inputs on the device and in op1emu, block-exact, with sections and cost lines | [C] the runner, `docs/test-runner.md`; started from a browser page by the owner |
 | Device audio compared with the emulator's | [C on a simulated recording] `tools/run_compare.py`; the owner's interface is a Steinberg UR44C (its MIDI port is listed on this PC) |
 | Hosts | browser only: `tools/coop_sysex.html`, the librarian (`web/src/core/usbmidi/coop.ts`), tested against fakes (`web/test/fake-coop.ts`, `web/e2e/op1-stub.ts`) |
@@ -156,7 +156,8 @@ What can change on the real OP-1 over USB today, with no flash:
 
 Built for this tier: `tools/coop_usb.py`, the SysEx client for a command line (ports, hello, inventory, stats, get,
 run-status; put, delete, plugin-set behind `--write`). Transports: `winmm` for the OP-1 on Windows (ctypes, nothing
-to install) [I: written from the API, enumeration run, never opened on the OP-1], `usbip` for op1emu [C], `mock` [C,
+to install) [C device 2026-11-20, e11: HELLO (build `e11`, caps 63), INVENTORY and FILE_GET of the stats (11,197
+bytes) on the owner's OP-1; the write commands not yet used there], `usbip` for op1emu [C], `mock` [C,
 13 tests]. Windows gives a MIDI port to one program: the librarian's tab must not hold it.
 
 Firmware additions, as designs (not built; core source untouched):
@@ -252,7 +253,7 @@ Nothing is needed. The UR44C and a cable from the OP-1's output are already ther
 
 1. Use `emu_gate.py` for every gate from now on; add patch 0005 and `gates.json` (tier 0, S).
 2. With the OP-1 plugged in: decision 7's check, then `coop_usb.py hello`, `inventory`, `stats` (reads only): the
-   winmm transport's first device run.
+   winmm transport's first device run. **Done 2026-11-20 (the three reads, on e11); decision 7's check is open.**
 3. One dev image: boot guard, RESTART, SCREEN; gated in op1emu over USB/IP; the owner flashes it once.
 4. `tools/dev_loop.py`: the tier-1 loop end to end; from here plugin work needs the owner only to listen.
 5. The watcher script for (a), rehearsed in op1emu; core changes then cost the owner two key actions.
@@ -266,7 +267,10 @@ Nothing is needed. The UR44C and a cable from the OP-1's output are already ther
   emulator run (another agent was using the emulator; runs were kept to two).
 - `tools/coop_usb.py` and `tests/tools/test_coop_usb.py` (13 tests): framing equal to `framing.ts`, the paged reads,
   PUT with size and CRC, a lost reply, the write guard. Against op1emu over USB/IP: HELLO, INVENTORY, FILE_GET, RUN
-  status [C]. Nothing was sent to a MIDI port.
+  status [C]. Nothing was sent to a MIDI port then. **2026-11-20, the owner's OP-1 on e11: the winmm transport's
+  first device run**: `hello`, `inventory` and `stats` all work (`docs/device-tests.md`, the e11 entry's result).
+  This is how `coop_stats.txt` is read from now on: `python firmware	ools\coop_usb.py stats -o stats.txt`, the OP-1
+  plugged in normally (not disk mode), the librarian's tab closed.
 
 ## Open
 
@@ -274,4 +278,4 @@ Nothing is needed. The UR44C and a cable from the OP-1's output are already ther
   deterministic run [I]; whether op1emu models the watchdog reset [I].
 - USB audio on the device: present, usable, and which bus (decision 7).
 - The frame buffer's address and format for SCREEN; the stock flush list for RESTART.
-- INVENTORY and PLUGIN_SET on the device (e3, pending): step 2 of the order settles it without a flash.
+- PLUGIN_SET on the device (e3, pending). INVENTORY is confirmed on the device (2026-11-20, e11, `coop_usb.py`).
