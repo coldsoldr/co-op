@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "delayed_volkerjunginger",
+  "name": "Delayed",
+  "firmware": "op1/opus",
+  "kind": "fx",
+  "author": "ESC_CODE",
+  "description": "Delay with resonant feedback filter, Freeze and six LFO shapes.",
+  "license": "GPL-3.0-only",
+  "link": "https://github.com/VolkerJunginger/OP-1/tree/main/Delay-Trio",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "source": "https://github.com/VolkerJunginger/OP-1",
+  "requires": "opus 2.31",
+  "tags": [
+    "fx",
+    "delay",
+    "opus"
+  ]
+}
