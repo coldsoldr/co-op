@@ -2847,3 +2847,54 @@ never gets under any idle level.
 which effect, where, and what you did just before.
 
 Result: (pending)
+
+## rings 0.11 and tape_echo 0.5: tails that end, so both can idle — device test (pending, 2026-11-21)
+
+The two decisions left open by the entry above (2026-11-21: do both). Core unchanged; the two files load on e10, e11
+and e12 as before (the same imports). They are in `firmware/build/plugins-next2/` (`rings.coop` 114,948 bytes,
+`tape_echo.coop` 25,444 bytes), **not in the catalogue and not gated in op1emu**: everything below is host and GNU
+simulator. Both change the sound a little, on purpose.
+
+| | what changed | what was shown |
+|---|---|---|
+| rings 0.11 | The shared reverb of string + reverb writes to its buffer truncated towards zero (as upstream Rings; 0.10 floored). The steady offset a held key rested on is gone (0.10: -52 LSB with the default patch, -127 with damping 29,000) and the reverb's tail ends in exact zeros. With the tail gone, nothing sent and the voice's limiter at rest, the reverb is not run and a held, sleeping voice renders as silence. | The idle build against its twin that never idles: the same sample for sample, before, in and after the idle state (chords held 24 s and 100 s). Against 0.10: the offset (40-53 LSB mean) and 5-15 LSB RMS besides; the decay the same within the test's 0.25 s window. The reverb alone reaches exact zero 5.5 s (time 0.81) and 21.5 s (0.98) after a noise burst; 0.10 never. The other five models: 0.10's bytes. Simulator: four held voices 15,510 cycles a block before, 2,518 idle; playing +1.4 k a block. |
+| tape_echo 0.5 | While the input is silent, a block of tape written wholly within 127 (-48 dBFS) is taken one LSB towards zero. The faint endless repeat at high feedback is gone (0.4 held 4 to 47 LSB of output for good) and every echo under feedback 0.97 fades to exact zero and idles. | In lockstep with 0.4's echo over 53 settings (feedback 0.6 to 0.97, new to worn tape, four times, sync): no difference while the input plays; at the defaults 4 LSB at most; the largest differences (up to 81 LSB) where 0.4's own echo is under about 100 LSB. All 53 reach exact zero and the idle state (longest time: 25 s at feedback 0.6, 59 s at 0.87, 107 s at 0.95, 166-238 s at 0.97). The build with `-DCOOP_TAPE_ECHO_GHOST` is still bit-identical to te-op1-cfw's echo. |
+
+Details and tables: `plugins/rings/README.md` "0.11", `plugins/tape_echo/README.md` "The tail settles (0.5)".
+
+**What to do** (headphones, the volume well up):
+
+1. Install the two files from `firmware/build/plugins-next2/` (or wait for the catalogue swap). The librarian shows
+   rings 0.11 and tape_echo 0.5.
+2. **rings, a long reverb tail into silence.** String + reverb, damping at about 2 o'clock, one loud chord, the keys
+   held down. Listen to the tail to its very end and ten seconds past it. Expected: the string dies, then the reverb,
+   smoothly into nothing; no tick or step at the end (the reverb stops being computed about a third of a second
+   after its last sample), and no faint rumble or pressure left under the silence.
+3. **rings, the held chord against before.** The same with rings 0.10 if you still have it: with the keys held after
+   the sound has gone, 0.10 sat on a small constant offset (inaudible as a tone; you may hear a soft thump when
+   the keys come up after a long hold). 0.11: nothing when the keys come up. If you can't hear either, that is the
+   expected result too: say so.
+4. **rings, a note into the held chord.** Keys still held from step 2, in silence: play one soft note, then a loud
+   one. Expected: the reverb is there from the first instant of each, as ever; no click at the note.
+5. **rings, the reverb's sound.** Play string + reverb as usual for a minute, damping low and high. Expected: the
+   reverb as you know it (level, length, the slow shimmer). The other five models are untouched: play one or two.
+6. **tape_echo, high feedback, new tape.** Age at minimum, feedback at about 2 o'clock, then 3 o'clock (under the
+   howl), the time long: one note, hands off. Expected: the repeats fade as before for as long as you could hear
+   them before, and then they are gone: no faint repeat left going round after a minute or two (0.4 kept one for
+   good). Listen for the end of the tail: it should thin out, not stop short.
+7. **tape_echo, the same on an aged tape** (age at about 2 o'clock and at maximum), and once with sync on (1/4).
+   Expected: the same: a full fade to nothing, the audible part as in 0.4.
+8. **tape_echo, short time.** Time at minimum, feedback at 3 o'clock: the metallic ring after a note fades out
+   completely in a few seconds. This is the setting where 0.5 differs most from 0.4 (the last of the ring is
+   shorter); say if the ring now ends too soon for your taste.
+9. **tape_echo, what must not change:** feedback at the top still howls on for a minute; hold still holds for a
+   minute; a normal echo at the defaults sounds as it did.
+10. **The cost.** rings: with a string + reverb chord held in silence for 30 s, copy `/yaffs2/user/coop_stats.txt`
+   twice five seconds apart: the `engines` line's rings figure per render should drop to a few hundred cycles once
+   the tail has gone (it stayed near 4 k a held voice in 0.10). tape_echo at an instrument's FX with feedback at
+   3 o'clock: `fx1_plugin=` falls to about 3-4 k a minute or two after the last note (it never fell in 0.4).
+
+**If something is wrong:** reinstall the plugin's previous file (rings 0.10, tape_echo 0.4: `build/plugins-next/` or
+the catalogue); note which, the settings, and what you did just before.
+
+Result: (pending)
