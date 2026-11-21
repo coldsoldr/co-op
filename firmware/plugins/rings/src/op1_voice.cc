@@ -519,6 +519,7 @@ extern "C" { extern int32_t g_coop_voice_peak; }   // tests/host/rings rings_sle
 #endif
 #ifdef COOP_EARLY_PROBE
 extern "C" { extern int32_t g_coop_voice_gain; }   // rings_early.cc: after the render, the early cut's gain (Q30); 0 asleep
+extern "C" { extern int32_t g_coop_voice_own[]; }  // the render's own output (Q27, the Rings rate), before fade, share, limiter
 #endif
 
 void RingsVoice::RenderMono(const uint32_t* phase_increment,
@@ -567,6 +568,9 @@ void RingsVoice::RenderMono(const uint32_t* phase_increment,
       PROF_START(t_peak);
       peak = PeakOf(o, kSubblockSize, peak);
       PROF_ADD(PROF_PEAK, t_peak);
+#ifdef COOP_EARLY_PROBE
+      for (size_t k = 0; k < kSubblockSize; ++k) g_coop_voice_own[i + j + k] = o[k];
+#endif
 #if OP1RINGS_EARLY
       if (early_fading_) EarlyFade(o, o, kSubblockSize);   // after the peak: the level is the model's
 #endif

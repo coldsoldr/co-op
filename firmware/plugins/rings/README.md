@@ -720,6 +720,52 @@ block, the 16-bit output of every render compared; a render's `out` is filled wi
   four fades, a strike into a fade, a strike into a faded voice), the string model (22 s), FM with the structure
   at 0 (22 s, five fades, both strikes) and the modal model (24 s, five fades, both strikes).
 
+**What the tail at the top of the damping is** (the owner's report, 2026-11-21: on the device, string + reverb,
+the damping at its longest end, the envelope's sustain at the top, six keys held, the chord "fades in about 4
+seconds" while `peng` stays at 158-163 k for 75 s). On the host it is none of the things that could be loud and
+unheard: it is the chord. `rings_early bands | audible | dump` (a run's file per voice or summed, at the 44.1 kHz
+output or, with `EARLY_OWN=1`, the voice's own output at 22.05 kHz before the limiter):
+
+| six keys summed, damping 32,767, RMS in dBFS | DC (LSB) | under 20 Hz | 20-200 Hz | 200 Hz-2 kHz | 2-8 kHz | 8-16 kHz | over 16 kHz | peak (LSB) |
+|---|---|---|---|---|---|---|---|---|
+| string + reverb, 5 s | -10 | -58 | -50 | **-8** | -58 | -89 | -89 | 33,250 |
+| string + reverb, 30 s | -39 | -77 | -70 | **-18** | -85 | -95 | -102 | 10,701 |
+| string + reverb, 60 s | -47 | -90 | -84 | **-22** | -87 | -95 | -103 | 8,034 |
+| string + reverb, 75 s | -49 | -92 | -84 | **-26** | -88 | -95 | -104 | 5,512 |
+| string, 5 s | -46 | -88 | -28 | **-12** | -57 | -97 | -95 | 25,167 |
+| string, 60 s | -8 | -96 | -29 | **-19** | -94 | -97 | -101 | 10,893 |
+| string, 75 s | -4 | -90 | -29 | **-19** | -94 | -97 | -101 | 9,907 |
+
+- The energy is the strings' fundamentals (C3 to C5: 131 to 523 Hz), each voice a clean sine by then: one voice's
+  own output at 75 s reads 2417, 2551, 2669 ... 2969, 2967, 2942 ... LSB, a smooth wave of its note's period. No
+  DC to speak of (the sum's mean is 4 to 49 LSB, -57 dBFS at most, under a tone of 5,000 to 10,000 LSB peak),
+  nothing under 20 Hz, nothing near Nyquist, no stuck state. Per voice at 60 s: -30 to -33 dBFS each in string +
+  reverb, -22 to -50 in the string model (the low strings longest). The voice's own output before the limiter and
+  the 16-bit output after the half-band agree (-32.6 dBFS both for the reverb model's C4 at 75 s).
+- The audible band (30 Hz to 16 kHz) of the sum is above -60 dBFS for the whole 120 s (-21 dBFS at 60 s, -32 at
+  120 s in string + reverb; -20 at 60 s and at 120 s in the string model). **A listener hears this chord at 60 s.**
+  For comparison the band's last second above -60 / -70 / -80 dBFS: at 32,000 past 200 s (string + reverb) and
+  22 / 27 / 32 s (string); at 31,000 129 / 143 / 165 s and 9 / 13 / 15 s.
+- The knob's top is 32,767: the core hands the engine the slot's four knob words in the stock iter range, 0 to
+  32,767 (`docs/engines.md`), and rings takes the word as it is (`ParamToQ31`: `p << 16`). The damping is smooth
+  to the end of the control (32,500: 4,911 LSB at 80 s; 32,700: 5,407; 32,767: 5,512), and from 0 to the top no
+  value gives "gone in 4 s and never asleep", nor does any structure x brightness at the top (36 settings, 0.11's
+  rule alone; the structure at the top comes nearest: 874 LSB at 40 s, then a 6 LSB stall that 0.11 never put to
+  sleep, 0.12 does).
+- The simulator with the assembly kernels gives the host's file at 32,767 (12 s, both string models); the kernels
+  use no instruction whose result depends on the processor's rounding mode.
+- **So the device and the host disagree, and the host cannot say why** [C host, simulator; I for the cause]. What
+  the host run does not have: the stock's envelope, voice gain and decimator ramp after the render; the stock's
+  real pitch words (LFO, bend, tuning; the host's are constant); a hand-played chord's timing (keys tens of ms
+  apart: in string + reverb keys 5 and 6 then take over the strings of keys 1 and 2 with a 3 ms fade; the
+  test strikes three blocks apart); the patch's other three controls and its polyphony as they stood; the
+  real processor under the stock's state. Nothing was changed in rings for this: there is no 0.14.
+- **The measurement that tells the two apart** is in `docs/device-tests.md` ("rings at the top of the damping"):
+  rings' own screen draws each voice's level from the engine's 16-bit output before the envelope, and core e14's
+  stats give `env_peak`, `vgain` and `ramp` beside `peng`. Bars up and a closed gain: the quiet comes after rings,
+  and only the core can save the cost. Bars down within seconds and `peng` flat: rings on the device is not
+  rings on the host, and its output has to be recorded.
+
 **The second file, and why not a second plugin.** `rings60` beside `rings` would fit the memory (rings takes 668 KB
 of the 1,769,472-byte plugin budget, the 13-file set uses 834,520, so two copies come to about 1,503,000, 85 %),
 but not the L1 lease: rings leases 3,328 of the 4,096 bytes all engines share, so the copy that loads second would

@@ -19,6 +19,11 @@
 //                                  sample-to-sample step in each fade against B's in the same samples
 //   rings_early strike A B V T     voice V's strike at T seconds in A against B: the step into the strike, the
 //                                  largest difference and the level over the first 0.1 s and 1 s
+//   rings_early bands OUT V own|out T [T...]   what a tail is made of at T seconds: voice V (6: the sum), its mean
+//                                  (DC), its level without it and in six bands; `own`: OUT.own, the voice's own
+//                                  output at 22.05 kHz before the limiter (a run with EARLY_OWN=1 writes it)
+//   rings_early audible OUT V own|out   the 30 Hz - 16 kHz level per second: when it is last above -60, -70, -80 dBFS
+//   rings_early dump OUT V own|out T N  N samples from T seconds
 //
 // Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
 #include <cmath>
@@ -26,6 +31,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 #include "coop_plugin.h"
 #include "op1/op1.h"
@@ -52,6 +58,7 @@ uint32_t g_coop_idle_blocks;
 uint32_t g_coop_silent_renders[6];
 int32_t g_coop_voice_peak;
 int32_t g_coop_voice_gain;            // COOP_EARLY_PROBE: the early cut's gain after the render (Q30), 0 asleep
+int32_t g_coop_voice_own[64];         // COOP_EARLY_PROBE: the render's own output, Q27 at the Rings rate (32 samples)
 }
 
 namespace {
@@ -125,12 +132,18 @@ int Run(const char* path, int model, int poly, int damping, long hold_s, int voi
         int transpose) {
   FILE* f = nullptr;
   FILE* fg = nullptr;
+  FILE* fo = nullptr;
+  static int32_t own_record[kVoices][32];
   if (path) {
     char gain_path[512];
     std::snprintf(gain_path, sizeof(gain_path), "%s.gain", path);
     f = std::fopen(path, "wb");
     fg = std::fopen(gain_path, "wb");
     if (!f || !fg) return 2;
+    if (std::getenv("EARLY_OWN")) {      // OUT.own: per block and voice the 32 own samples, Q27 >> 8 (a 16-bit LSB = 16)
+      std::snprintf(gain_path, sizeof(gain_path), "%s.own", path);
+      fo = std::fopen(gain_path, "wb");
+    }
   }
   if (ENGINE_rings.init && ENGINE_rings.init() != 0) return 3;
 #ifdef __bfin__
@@ -190,6 +203,7 @@ int Run(const char* path, int model, int poly, int damping, long hold_s, int voi
     for (int v = 0; v < kVoices; ++v) {
       gains[v] = -1;
       for (int i = 0; i < kOut; ++i) record[v][i] = 0;
+      for (int i = 0; i < 32; ++i) own_record[v][i] = 0;
       recent_own[v][b % 172] = 0;
       if (!down[v]) continue;
       ++keys;
@@ -206,6 +220,7 @@ int Run(const char* path, int model, int poly, int damping, long hold_s, int voi
       const bool was_silent = g_coop_silent_renders[v] != seen[v];
       seen[v] = g_coop_silent_renders[v];
       const int32_t gain = was_silent ? 0 : g_coop_voice_gain;
+      if (!was_silent && gain != 0) for (int i = 0; i < 32; ++i) own_record[v][i] = g_coop_voice_own[i] >> 8;
       gains[v] = gain;
       int own = 0;
       for (int i = 0; i < kOut; ++i) {
@@ -259,6 +274,7 @@ int Run(const char* path, int model, int poly, int damping, long hold_s, int voi
     if (block_cycles > cyc_max) cyc_max = block_cycles;
     if (f) std::fwrite(record, sizeof(record), 1, f);
     if (fg) std::fwrite(gains, sizeof(gains), 1, fg);
+    if (fo) std::fwrite(own_record, sizeof(own_record), 1, fo);
     if (b % (5 * kPerSecond) == 5 * kPerSecond - 1) {
       std::printf("  %3ld s: summed peak %5d LSB (%6.1f dBFS), %d awake, %d silent renders", (b + 1) / kPerSecond, peak5,
                   Db(peak5), awake, silent);
@@ -274,6 +290,7 @@ int Run(const char* path, int model, int poly, int damping, long hold_s, int voi
   }
   if (f) std::fclose(f);
   if (fg) std::fclose(fg);
+  if (fo) std::fclose(fo);
   if (all_asleep >= 0) std::printf("  every voice asleep from %.2f s", all_asleep / double(kPerSecond)); else std::printf("  a voice still awake at the end");
   if (all_silent >= 0) std::printf("; every render silent from %.2f s\n", all_silent / double(kPerSecond)); else std::printf("; not every render silent at the end\n");
   std::printf("  silent renders: %ld, with a non-zero sample among the 64: %ld; asleep and still rendered (models without reverb): %ld\n",
@@ -447,9 +464,154 @@ int StrikeCmp(const char* pa, const char* pb, int v, const char* t) {
   return 0;
 }
 
+// --- what a tail is made of (0.14) ---------------------------------------------------------------------------------
+// One voice (0..5) or the six summed (6) of a run's file, as doubles in 16-bit LSB: the 44.1 kHz output (OUT, 64 a
+// block) or, own = true, the voice's own output at the Rings rate (OUT.own, 32 a block at 22.05 kHz, LSB / 16).
+struct Signal {
+  FILE* f = nullptr;
+  bool own = false;
+  int per_block() const { return own ? 32 : kOut; }
+  double rate() const { return own ? 22050.0 : 44100.0; }
+  bool Open(const char* path, bool o) {
+    own = o;
+    char p[512];
+    std::snprintf(p, sizeof(p), own ? "%s.own" : "%s", path);
+    f = std::fopen(p, "rb");
+    return f != nullptr;
+  }
+  // n samples from sample index `at` on; false past the end.
+  bool Read(int voice, long at, int n, double* x) {
+    const int pb = per_block();
+    const long rec = own ? long(sizeof(int32_t)) * kVoices * 32 : long(sizeof(int16_t)) * kVoices * kOut;
+    static int16_t r16[kVoices][kOut];
+    static int32_t r32[kVoices][32];
+    for (int i = 0; i < n;) {
+      const long b = (at + i) / pb;
+      const int o = static_cast<int>((at + i) % pb);
+      if (std::fseek(f, b * rec, SEEK_SET) != 0) return false;
+      if (std::fread(own ? static_cast<void*>(r32) : static_cast<void*>(r16), rec, 1, f) != 1) return false;
+      for (int k = o; k < pb && i < n; ++k, ++i) {
+        double s = 0;
+        for (int v = 0; v < kVoices; ++v) {
+          if (voice != 6 && voice != v) continue;
+          s += own ? r32[v][k] / 16.0 : r16[v][k];
+        }
+        x[i] = s;
+      }
+    }
+    return true;
+  }
+};
+
+void Fft(double* re, double* im, int n) {
+  for (int i = 1, j = 0; i < n; ++i) {
+    int bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { std::swap(re[i], re[j]); std::swap(im[i], im[j]); }
+  }
+  for (int len = 2; len <= n; len <<= 1) {
+    const double a = -2.0 * M_PI / len;
+    for (int i = 0; i < n; i += len) {
+      for (int k = 0; k < len / 2; ++k) {
+        const double wr = std::cos(a * k), wi = std::sin(a * k);
+        const double xr = re[i + k + len / 2] * wr - im[i + k + len / 2] * wi;
+        const double xi = re[i + k + len / 2] * wi + im[i + k + len / 2] * wr;
+        re[i + k + len / 2] = re[i + k] - xr; im[i + k + len / 2] = im[i + k] - xi;
+        re[i + k] += xr; im[i + k] += xi;
+      }
+    }
+  }
+}
+
+double Dbfs(double rms_lsb) { return rms_lsb > 1e-6 ? 20.0 * std::log10(rms_lsb / 32768.0) : -199.0; }
+
+// `bands OUT VOICE own|out T [T...]`: at each T seconds, over 1.49 s (65,536 samples at 44.1 kHz, 32,768 at 22.05):
+// the mean (DC), the RMS without it, and the RMS in bands (a Hann window, the bins' power summed), in dBFS where
+// 0 dBFS is 32768 LSB RMS; `audible` is 30 Hz to 16 kHz.
+int Bands(const char* path, int voice, bool own, int argc, char** argv) {
+  Signal s;
+  if (!s.Open(path, own)) return 2;
+  const int n = own ? 32768 : 65536;
+  static double x[65536], re[65536], im[65536];
+  static const double kEdge[] = { 0, 20, 200, 2000, 8000, 16000, 1e9 };
+  std::printf("  voice %d, %s: seconds | DC LSB | AC dBFS | <20 Hz | 20-200 | 200-2k | 2k-8k | 8k-16k | >16k | audible 30 Hz-16 kHz | peak LSB\n",
+              voice, own ? "own output, 22.05 kHz" : "16-bit output, 44.1 kHz");
+  for (int a = 0; a < argc; ++a) {
+    const double t = std::atof(argv[a]);
+    if (!s.Read(voice, static_cast<long>(t * s.rate()), n, x)) { std::printf("  %6.1f s: past the end\n", t); continue; }
+    double mean = 0, peak = 0;
+    for (int i = 0; i < n; ++i) mean += x[i];
+    mean /= n;
+    double ac = 0;
+    for (int i = 0; i < n; ++i) { ac += (x[i] - mean) * (x[i] - mean); if (std::fabs(x[i]) > peak) peak = std::fabs(x[i]); }
+    for (int i = 0; i < n; ++i) { re[i] = (x[i] - mean) * (0.5 - 0.5 * std::cos(2.0 * M_PI * i / n)); im[i] = 0; }
+    Fft(re, im, n);
+    double band[6] = { 0 }, audible = 0;
+    for (int k = 1; k < n / 2; ++k) {
+      const double hz = k * s.rate() / n;
+      const double p = (re[k] * re[k] + im[k] * im[k]) * 2.0 / (double(n) * n) / 0.375;   // 0.375: the Hann window
+      for (int b = 0; b < 6; ++b) if (hz >= kEdge[b] && hz < kEdge[b + 1]) band[b] += p;
+      if (hz >= 30 && hz < 16000) audible += p;
+    }
+    std::printf("  %6.1f s | %8.2f | %6.1f |", t, mean, Dbfs(std::sqrt(ac / n)));
+    for (int b = 0; b < 6; ++b) std::printf(" %6.1f |", Dbfs(std::sqrt(band[b])));
+    std::printf(" %6.1f | %.0f\n", Dbfs(std::sqrt(audible)), peak);
+  }
+  return 0;
+}
+
+// `audible OUT VOICE own|out`: per second the audible band's level (30 Hz to 16 kHz, as above over the second's first
+// 0.74 s); prints when it is last at or above -60, -70 and -80 dBFS, and the level every 10 s.
+int Audible(const char* path, int voice, bool own) {
+  Signal s;
+  if (!s.Open(path, own)) return 2;
+  const int n = own ? 16384 : 32768;
+  static double x[32768], re[32768], im[32768];
+  double last[3] = { -1, -1, -1 };
+  std::printf("  voice %d, %s, the audible band (dBFS) every 10 s:", voice, own ? "own" : "output");
+  for (int t = 0;; ++t) {
+    if (!s.Read(voice, static_cast<long>(t * s.rate()), n, x)) break;
+    double mean = 0;
+    for (int i = 0; i < n; ++i) mean += x[i];
+    mean /= n;
+    for (int i = 0; i < n; ++i) { re[i] = (x[i] - mean) * (0.5 - 0.5 * std::cos(2.0 * M_PI * i / n)); im[i] = 0; }
+    Fft(re, im, n);
+    double audible = 0;
+    for (int k = 1; k < n / 2; ++k) {
+      const double hz = k * s.rate() / n;
+      if (hz >= 30 && hz < 16000) audible += (re[k] * re[k] + im[k] * im[k]) * 2.0 / (double(n) * n) / 0.375;
+    }
+    const double db = Dbfs(std::sqrt(audible));
+    if (db >= -60) last[0] = t;
+    if (db >= -70) last[1] = t;
+    if (db >= -80) last[2] = t;
+    if (t % 10 == 0) std::printf(" %d s %.1f;", t, db);
+  }
+  std::printf("\n  last second at or above -60 dBFS: %.0f, -70: %.0f, -80: %.0f\n", last[0], last[1], last[2]);
+  return 0;
+}
+
+// `dump OUT VOICE own|out T N`: N samples from T seconds.
+int Dump(const char* path, int voice, bool own, double t, int n) {
+  Signal s;
+  if (!s.Open(path, own)) return 2;
+  static double x[4096];
+  if (n > 4096) n = 4096;
+  if (!s.Read(voice, static_cast<long>(t * s.rate()), n, x)) return 1;
+  std::printf("  voice %d, %s, %d samples from %.2f s:", voice, own ? "own (LSB)" : "output", n, t);
+  for (int i = 0; i < n; ++i) std::printf(own ? " %.1f" : " %.0f", x[i]);
+  std::printf("\n");
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc >= 6 && !std::strcmp(argv[1], "bands")) return Bands(argv[2], std::atoi(argv[3]), !std::strcmp(argv[4], "own"), argc - 5, argv + 5);
+  if (argc >= 5 && !std::strcmp(argv[1], "audible")) return Audible(argv[2], std::atoi(argv[3]), !std::strcmp(argv[4], "own"));
+  if (argc >= 7 && !std::strcmp(argv[1], "dump")) return Dump(argv[2], std::atoi(argv[3]), !std::strcmp(argv[4], "own"), std::atof(argv[5]), std::atoi(argv[6]));
+
   if (argc >= 9 && !std::strcmp(argv[1], "run")) {
     ParseScript(argv[8]);
     return Run(std::strcmp(argv[2], "-") ? argv[2] : nullptr, std::atoi(argv[3]), std::atoi(argv[4]), std::atoi(argv[5]),
