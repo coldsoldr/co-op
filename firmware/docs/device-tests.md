@@ -3244,3 +3244,86 @@ scenario of the 0.11 gate).
    (0.11: at full cost for as long as the keys are down).
 5. Strike keys again after each of these: every note sounds at once, at its usual level, with no click.
 6. By ear, any model: tails end as they did in 0.11; nothing is cut that could be heard.
+
+## rings 0.13: the early cut, a voice under -66 dBFS for 5 s is faded out over 1 s and sleeps; a -60 dBFS file to compare — device test (pending, 2026-11-21)
+
+**What it is** [C host, simulator; `plugins/rings/README.md` "0.13"]. The owner's decision after the 0.11 device run
+(a chord at a long damping: `peng` about 162 k cycles a block for minutes, "sounded like it had died down" well
+before 60-75 s): a voice whose own level has stayed under a threshold for 5 s is faded out over 1 s and then sleeps,
+key held or not, in every model. The threshold is -66 dBFS per voice (16 LSB peak of the 16-bit output) in 0.13 and
+-60 dBFS (33 LSB) in a second file built for this test. Above the threshold every sample is 0.12's (host proof); a
+note struck during the hold or the fade plays as in 0.12; a voice that was faded out is struck from rest. The
+reverb is not cut: fed nothing more, it runs its tail out and idles as since 0.11.
+
+**What the host says the test will show, before it is run** [C host]:
+
+- **At the very top of the damping, nothing changes, and the chord is loud.** Six keys, the default patch otherwise:
+  the summed output peaks at -12 dBFS 60 s after the strike and -13 dBFS at 75 s in string + reverb, -8.5 and -10
+  dBFS in the string model, and the strings ring for more than five minutes; with other settings of the structure
+  and the brightness between -3 and -27 dBFS at 75 s (only the structure at the top ends inside a minute). No
+  threshold near -60 dBFS reaches that, and 0.13 costs there what 0.12 costs. So if the chord of the 0.11 run could
+  not be heard after a minute with the damping at the top, what made it quiet came after rings (the OP-1's
+  envelope, the levels, the listening volume) [I]: step 1 below is there to settle that.
+- **Where the cut works is the top tenth below the very top.** Seconds after the strike until every voice sleeps,
+  six keys held (`peng` falls a step each time a voice sleeps, and is at its floor from the last time on):
+
+| six keys, damping (of 32,767) | 0.12 | 0.13 (-66) | the -60 file |
+|---|---|---|---|
+| string + reverb, 28,000 (85 %) | 39.0 s | 30.7 s | 27.5 s |
+| string + reverb, 30,000 (92 %): the four strings | 34.5, 61.0, 69.5, 90.2 s | 29.5, 51.1, 54.4, 72.3 s | 25.9, 45.4, 47.8, 63.7 s |
+| string + reverb, 31,000 (95 %): the four strings | 56.3, 108.6, 122.8, 171.7 s | 44.9, 88.3, 99.6, 144.3 s | 39.2, 78.0, 87.3, 126.7 s |
+| string + reverb, 32,767 (the top) | 97.8, 214.9, 255.4, 322.0 s | 77.0, 199.3, 255.4, 322.0 s | 67.0, 176.3, 254.5, 322.0 s |
+| modal, 28,000: the six together | 62.8 s | 46.7 s | 40.6 s |
+| modal, 30,000: the six together | 104.6 s | 77.5 s | 66.9 s |
+| string, 30,000 | 20.4 s | 19.0 s | 17.5 s |
+| one key (C3), string + reverb, 30,000 | 107.6 s | 84.7 s | 74.4 s |
+
+  The summed output when the last fade starts: about -67 dBFS (0.13) and -57 dBFS (the -60 file) in string +
+  reverb at 30,000; in the modal model the six voices fade together, with the sum at -57 dBFS (0.13) and -50 dBFS
+  (the -60 file). The modal chord is the case most likely to be heard.
+
+**Files** (both named `rings.coop`: the second replaces the first; side by side as `rings60` they would not cost the
+same, the second copy gets no L1 lease):
+
+| file | version | bytes | sha256 |
+|---|---|---|---|
+| `firmware/build/plugins-next4/rings.coop` | 0.13 (-66 dBFS) | 115,788 | `269258f483ef82fff0924a32dcafdba8931196cb3a4fda0b49a3294397ef7074` |
+| `firmware/build/plugins-next4/alt60/rings.coop` | 0.13-60 (-60 dBFS) | 115,796 | `94c3422ca9cfab098ca0f3a07ca2a65eed8ac6ed07e9ecca301e6bc4313b24a1` |
+| `firmware/build/plugins-next3/rings.coop` | 0.12 (the reference) | 115,036 | `d39db785bb8541723694c39a545cd6e740658241745550b30853a144aef64963` |
+
+The same imports as 0.12 (they load on e10 and later). **Not in the catalogue, and not through the op1emu gate yet**
+(another agent had the emulator): before either goes on the device, 13 files load, `det_eng_rings.txt`, and the
+held-chord scenario of the 0.11 gate with the damping at 30,000 (the voices' sleep at the times above).
+`coop_usb.py inventory` shows which version is loaded.
+
+**Owner's checklist.** Headphones; no effects, no sequencer; rings' other controls where a fresh patch has them
+unless a step says otherwise. Do each timed step once per file, in the order 0.12, 0.13, the -60 file (copy the
+file to the OP-1 as for 0.12, restart, select rings). The stats are not something to copy: they are read over USB
+MIDI by the agent with `python firmware\tools\coop_usb.py stats`, and they keep only the last two minutes in
+5-second windows, so say "done" right after each step and leave the OP-1 connected; `peng` per window should fall
+at the times in the table.
+
+1. **The longest damping** (the setting of the first run): damping fully up, string + reverb, polyphony "all",
+   a six-key chord held 90 s. At a normal listening level, then again at a high one: can you still hear the chord
+   at 60 s and at 90 s? The host says it is loud (-12 dBFS). If you cannot hear it, write down the synth's envelope
+   settings and the volume: the quiet then comes after rings, `peng` will be flat in all three files, and the cut
+   cannot help there. Expected in all three files: `peng` flat for the 90 s (0.13 and the -60 file lose the top
+   string at 77 s and 67 s).
+2. **The tail's end, string + reverb:** damping at about 92 % (write down the number the page shows), a six-key
+   chord held 100 s. Listen for how the tail ends at a normal level and at a high one. 0.12 ends by itself near
+   90 s; 0.13 fades the last string at 71-72 s, the -60 file at 63-64 s. Does either end sound cut, or shorter
+   than 0.12's? `peng` should step down at about 30, 51, 54 and 72 s (0.13); 26, 45, 48 and 64 s (-60); 35, 61, 70
+   and 90 s (0.12).
+3. **The tail's end, modal** (the most exposed case: the six voices fade in the same second): the modal model,
+   damping at about 85 %, a six-key chord held 70 s. 0.12 ends near 63 s, 0.13 fades at 45-47 s, the -60 file at
+   39-41 s. Is the fade heard as an early end at a normal level? At a high level?
+4. **A single quiet note:** string + reverb, damping about 92 %, one key (a low C) held. 0.12 rings to 108 s, 0.13
+   fades at 84-85 s, the -60 file at 73-74 s. Listen at a high level for the last ten seconds before those times:
+   is anything missed?
+5. **A note struck during the fade:** repeat step 3 with 0.13 and strike one of the held keys again at about 46 s
+   (during the fade), then repeat and strike at about 50 s (after it). Each time the note sounds at once, at its
+   usual level, with no click and nothing odd in the first moment; the other voices stay silent.
+6. **Nothing else changed:** play normally in a few models for a minute with 0.13: no note cut while it is still
+   heard, no click when a tail ends.
+7. Say which of -66 and -60 is acceptable by ear, or whether the level should move (up: the cut comes sooner;
+   down: later). It is one constant (`OP1RINGS_EARLY_LEVEL`).
