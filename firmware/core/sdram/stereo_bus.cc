@@ -124,6 +124,45 @@ static void stereo_init(void)
     g_inited = 1;
 }
 
+/* ---- e14 (docs/performance.md "e14", efficiency-audit finding 5): the instrument at rest ----
+ * The S3 stage and the two mix loops ran in full on a silent instrument. Both are skipped when their result is known
+ * exactly, with the arithmetic's own words:
+ * - The stage. Its input is the voice pair; g_pair_dirty 0 means nothing was added to the cleared pair this block, so
+ *   the decimator is fed 128 zero pairs. When the call before was fed zeros too (g_stage_zero_run), the two 32-entry
+ *   rings hold only zeros (a block pushes 64 into each) and every output is 0 x ramp = 0; the rings stay zero and
+ *   their write index, moved by 64, is where it was. The ramp word takes its 64 saturating steps: sat16(ramp + 64 x
+ *   step), the step's sign being constant. The DC blocker with x = 0: y' = sat(sat(y - xprev) + 0) - c x yq, out =
+ *   y' >> 16, xprev' = 0, yq' = out << 16; with xprev = 0, yq = 0 and 0 <= y < 65536 that is y' = y, out = 0: the
+ *   state does not move and the output is zero (dc_quiet). Then mid and both sides are 64 zeros, which is all the
+ *   skip writes, with the ramp.
+ * - The mix loops add ((m + d) x gain) x ramp to the master pair: with m and d all zero that is fr16_add(0, L[i]) =
+ *   L[i], so the pair is not written; the ramp takes its 64 saturating steps; loop A's meter is max(meter, |0 x
+ *   level|) = max(meter, 0). The three buffers are tested (all_zero16: the effects between the stage and the mix may
+ *   have put a tail there), so this holds with effects on too.
+ * g_coop_idle_skip (--set-word): 1 (default) skip; 0 never (e13); 2 never skip but check every block the skip would
+ * have taken: the real stage / loop must give exactly what the skip would have written -> g_skip_bad. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_idle_skip = 1; }
+volatile uint32_t g_stage_skips, g_mix_skips, g_skip_checked, g_skip_bad;
+static uint32_t g_stage_zero_run = 1;                  /* the rings start zero (coop_hb2_init) */
+static inline int dc_quiet(const coop_dc_state *d) { return d->xprev == 0 && d->yq == 0 && (uint32_t)d->y < 65536u; }
+static inline int16_t ramp_after64(int16_t ramp, int16_t step)
+{
+    int32_t r = (int32_t)ramp + 64 * (int32_t)step;
+    return (int16_t)(r > 32767 ? 32767 : (r < -32768 ? -32768 : r));
+}
+/* 1 = the n int16 (n a multiple of 4) are all zero; leaves at the first nonzero group */
+static inline __attribute__((always_inline)) int all_zero16(const int16_t *p, int n)
+{
+    if (((uintptr_t)p & 3) == 0) {
+        typedef uint32_t __attribute__((may_alias)) u32a;
+        const u32a *w = (const u32a *)(const void *)p;
+        for (int i = 0; i < n / 2; i += 2) if (w[i] | w[i + 1]) return 0;
+        return 1;
+    }
+    for (int i = 0; i < n; i += 4) if (p[i] | p[i + 1] | p[i + 2] | p[i + 3]) return 0;
+    return 1;
+}
+
 static void pair_clear(void)
 {
     int32_t *l = g_vL, *r = g_vR;
@@ -412,11 +451,36 @@ extern "C" void coop_instr_stage(void)
         for (int i = 0; i < COOP_VBLK; i++)
             if (coop_sat16(g_vL[i]) != s_dbg_bus[i]) { if (!g_dbg_acc_bad) g_dbg_acc_first = dbg_word(i, g_vL[i], s_dbg_bus[i]); g_dbg_acc_bad++; break; }
     }
+    /* e14: the stage at rest (the comment at g_coop_idle_skip) */
+    const uint32_t skip_mode = dbg ? 0 : g_coop_idle_skip;
+    const int clean = !g_pair_dirty;
+    const int quiet = skip_mode && clean && g_stage_zero_run && dc_quiet(g_dcL) && dc_quiet(g_dcR);
+    const uint32_t rw0 = *HB_RAMP_W;
+    const int16_t ramp_quiet = ramp_after64((int16_t)rw0, (int16_t)(rw0 >> 16));
+    if (quiet && skip_mode == 1) {
+        *(volatile int16_t *)HB_RAMP_W = ramp_quiet;
+        int16_t *m0 = MONO_BUS64, *l0 = g_decL, *r0 = g_decR;
+        for (int i = 0; i < COOP_MBLK; i++) { m0[i] = 0; l0[i] = 0; r0[i] = 0; }
+        g_stage_done = 1;
+        g_stereo_side_blocks++;
+        g_stage_skips++;
+        return;
+    }
+    const coop_dc_state dcl0 = *g_dcL, dcr0 = *g_dcR;                   /* for the check (mode 2) */
+    g_stage_zero_run = (uint32_t)clean;                                /* after this call the rings hold this block's input */
     if (!dbg && g_coop_fast_stage) {                                   /* performance step 2: the same stage in assembly
                                                                           (coop_stage.S; tests/sim/kern_check.cc) */
         struct coop_stage_io io = { g_vL, g_vR, g_hb2, HB_COEFS, *HB_RAMP_W, g_dcL, g_dcR, *DC_COEF_W,
                                     MONO_BUS64, g_decL, g_decR, g_pL, g_pR };
         *(volatile int16_t *)HB_RAMP_W = (int16_t)coop_stage_asm(&io);
+        if (quiet) {                                                   /* e14 mode 2: the real stage against the skip */
+            int bad = (int16_t)*HB_RAMP_W != ramp_quiet || !all_zero16(MONO_BUS64, COOP_MBLK) || !all_zero16(g_decL, COOP_MBLK)
+                      || !all_zero16(g_decR, COOP_MBLK) || g_dcL->xprev != dcl0.xprev || g_dcL->yq != dcl0.yq || g_dcL->y != dcl0.y
+                      || g_dcR->xprev != dcr0.xprev || g_dcR->yq != dcr0.yq || g_dcR->y != dcr0.y;
+            for (int i = 0; i < COOP_HB_TAPS && !bad; i++) bad = (g_hb2->even[i] | g_hb2->odd[i]) != 0;
+            g_skip_checked++;
+            if (bad) g_skip_bad++;
+        }
         g_pair_dirty = 0;
         g_stage_done = 1;
         g_stereo_side_blocks++;
@@ -522,20 +586,48 @@ extern "C" uint32_t coop_mix_entry(uint32_t r0, uint32_t r1, uint32_t r2)
     coop_mark_at(0x34, t0);
     g_stereo_mixes++;
     uint32_t ret;
+    const int side = side_prepare();                    /* first: the instrument's second effect may fill the buffers */
+    /* e14: nothing to add (the comment at g_coop_idle_skip): the ramp and the meter move as the loop would move them */
+    const uint32_t skip_mode = g_coop_idle_skip;
+    const int silent = skip_mode && all_zero16(MONO_BUS64, COOP_MBLK)
+                       && (!side || (all_zero16(g_decL, COOP_MBLK) && all_zero16(g_decR, COOP_MBLK)));
+    static int16_t keepL[COOP_MBLK], keepR[COOP_MBLK];  /* mode 2: the master pair before the real loop (off the interrupt stack) */
+    if (silent && skip_mode == 2) for (int i = 0; i < COOP_MBLK; i++) { keepL[i] = MBUS_L[i]; keepR[i] = MBUS_R[i]; }
     if (g_mix_site == MIX_A_SITE) {
         g_mix_p0_out = 0x01b4ef6eu;                     /* loop A reloads P0 = [FP-0x4] = the sum gain word every iteration */
         int16_t step = (int16_t)r0, gL = (int16_t)(r0 >> 16), gR = (int16_t)(r2 >> 16);
         int16_t *rec = g_mix_a_rec;
-        int16_t ramp = side_prepare()
-            ? coop_mix_a(MBUS_L, MBUS_R, MONO_BUS64, g_decL, g_decR, gL, gR, step, rec, VOICE_GAIN_W)
-            : coop_mix_a_mono(MBUS_L, MBUS_R, MONO_BUS64, gL, gR, step, rec, VOICE_GAIN_W);
+        int16_t ramp;
+        const int16_t ramp_q = ramp_after64(rec[0], step), meter_q = (int16_t)(rec[1] < 0 ? 0 : rec[1]);
+        if (silent && skip_mode == 1) { ramp = ramp_q; rec[0] = ramp_q; rec[1] = meter_q; g_mix_skips++; }
+        else {
+            ramp = side
+                ? coop_mix_a(MBUS_L, MBUS_R, MONO_BUS64, g_decL, g_decR, gL, gR, step, rec, VOICE_GAIN_W)
+                : coop_mix_a_mono(MBUS_L, MBUS_R, MONO_BUS64, gL, gR, step, rec, VOICE_GAIN_W);
+            if (silent) {
+                int bad = ramp != ramp_q || rec[0] != ramp_q || rec[1] != meter_q;
+                for (int i = 0; i < COOP_MBLK && !bad; i++) bad = keepL[i] != MBUS_L[i] || keepR[i] != MBUS_R[i];
+                g_skip_checked++;
+                if (bad) g_skip_bad++;
+            }
+        }
         ret = (r1 & 0xffffu) | ((uint32_t)(uint16_t)ramp << 16);
     } else {
         g_mix_p0_out = 0x40;                            /* loop B: P0 = its LSETUP count, used by the code after it */
         int16_t gain = (int16_t)r0, step = (int16_t)r2;
         int16_t *ramp = g_mix_ramp_ptr;
-        if (side_prepare()) coop_mix_b(MBUS_L, MBUS_R, MONO_BUS64, g_decL, g_decR, gain, ramp, step);
-        else coop_mix_b_mono(MBUS_L, MBUS_R, MONO_BUS64, gain, ramp, step);
+        const int16_t ramp_q = ramp_after64(*ramp, step);
+        if (silent && skip_mode == 1) { *ramp = ramp_q; g_mix_skips++; }
+        else {
+            if (side) coop_mix_b(MBUS_L, MBUS_R, MONO_BUS64, g_decL, g_decR, gain, ramp, step);
+            else coop_mix_b_mono(MBUS_L, MBUS_R, MONO_BUS64, gain, ramp, step);
+            if (silent) {
+                int bad = *ramp != ramp_q;
+                for (int i = 0; i < COOP_MBLK && !bad; i++) bad = keepL[i] != MBUS_L[i] || keepR[i] != MBUS_R[i];
+                g_skip_checked++;
+                if (bad) g_skip_bad++;
+            }
+        }
         ret = (uint32_t)(int32_t)*ramp;
     }
     uint32_t dt = coop_cycles() - t0;
