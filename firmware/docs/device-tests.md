@@ -3303,9 +3303,8 @@ same, the second copy gets no L1 lease):
 | `firmware/build/plugins-next4/alt60/rings.coop` | 0.13-60 (-60 dBFS) | 115,796 | `94c3422ca9cfab098ca0f3a07ca2a65eed8ac6ed07e9ecca301e6bc4313b24a1` |
 | `firmware/build/plugins-next3/rings.coop` | 0.12 (the reference) | 115,036 | `d39db785bb8541723694c39a545cd6e740658241745550b30853a144aef64963` |
 
-The same imports as 0.12 (they load on e10 and later). **Not in the catalogue, and not through the op1emu gate yet**
-(another agent had the emulator): before either goes on the device, 13 files load, `det_eng_rings.txt`, and the
-held-chord scenario of the 0.11 gate with the damping at 30,000 (the voices' sleep at the times above).
+The same imports as 0.12 (they load on e10 and later). **0.13 is in the catalogue since the op1emu gate of
+2026-11-22** (the gate notes after the checklist); the -60 file is not (copy it by hand for step 7).
 `coop_usb.py inventory` shows which version is loaded.
 
 **Owner's checklist.** Headphones; no effects, no sequencer; rings' other controls where a fresh patch has them
@@ -3339,6 +3338,115 @@ at the times in the table.
    heard, no click when a tail ends.
 7. Say which of -66 and -60 is acceptable by ear, or whether the level should move (up: the cut comes sooner;
    down: later). It is one constant (`OP1RINGS_EARLY_LEVEL`).
+
+**Gate notes (op1emu, 2026-11-22, `tools/emu_gate.py` through a wrapper that also reads `op1.db` out of the NAND, one
+run at a time under the shared lock, a fresh NAND per chain; images `~/op1emu-work/e13/e13g.ldr` and
+`~/op1emu-work/e14/f.ldr` (e14's gate image: `prof=1 statsfile=1`); scripts, scenarios and outputs in
+`I:\op1emu-tmp\r13gate\`)** [C op1emu]. No fault in any run, on either core, with either file. **0.13 is in the
+catalogue since this gate** (`plugins/rings/rings.coop`, `op1/coop` build 0.13); the -60 file is not.
+
+How it was run:
+- **Holds on a second boot.** `det_eng_rings.txt` first (it selects rings and closes the list with `tap seq`, after
+  which the stock sequencer retriggers held keys), then each hold scenario as the next boot of the same NAND, no seq
+  tap. That NAND leaves rings on verb with polyphony index 1 ("2"; the earlier gates' held chords therefore ran at
+  polyphony 2); each hold sets polyphony "all" with fn + green.
+- **The damping set with the white encoder** (`turn enc3`), measured in `op1.db` after the run: a detent (two Gray
+  steps) is 328 of the word, a fine detent (Shift held) 20; 22,937 + 21 detents + 9 fine = **30,005**; + 15 detents
+  + 7 fine = **27,997**. Every hold's `op1.db` holds the intended words (model, polyphony 3, damping).
+- Six keys **F3 G3 C4 E4 G4 C5** pressed 2 ms apart at 36 s guest (op1emu has no C3 key without an octave change;
+  string + reverb keeps the last four strikes, C4 E4 G4 C5, as the host's chord does), held 100 s (default damping
+  40 s, modal 70 s). `volume 255` (op1emu's volume knob; the default 128 leaves the tails at 1-2 LSB in the dump).
+- **The stats keep 24 windows**; a poller copied `coop_stats.txt` out of the live scratch NAND every 12 s and the
+  windows were merged by sequence number. Below, t is seconds after the strike at the window's start (window n:
+  t = 5n - 34).
+- Clicks: the dump's largest sample step per 50 ms block, at each fade against the 4.5 s before and the 4.5 s after,
+  and every block whose step is over 3 times the median of the 2 s around it. The audio dumps were deleted once
+  read, and every scratch NAND by the gate; none is left.
+
+| Run | e13 | e14 |
+|---|---|---|
+| (a) **the 13 catalogue files with rings 0.13**, first boot, `det_fx_select` (slow waits) | 13 loaded, failed 0, over_budget 0; `plugmem budget 1769472 used 835408 over_budget 0 heap_short 0 ... scratch_files 11 fxbuf 134784 fxbuf_mem 539136 fxbufs 4 ... heap_budget 1769472 heap_used 835408 arena_budget 5898240 arena_used 156416 place_src 0`; end `heap_largest 1888812 heap_free 1890404` | the same figures to the byte |
+| (a) the same NAND, second boot, `det_chord` | 13 loaded, the same `plugmem`; end `heap_free 2220580` | the same |
+| (b) `det_eng_rings` (every model, FM among them), rings alone | `heap_used 668856`, `eng_renders`/n 118,600, `eng_rings=9649/34247` | `eng_rings=9648/34240`, `eng_rings_block=54706/118329` (on e14 the same scenario with 0.12: 9616/34199, with 0.11: 9603/34183; 0.11 on e11: 9,603/34,183) |
+
+**Memory.** 835,408 is 0.11's 834,520 and 888 bytes (rings alone 668,856). e11 charges an engine's image as e13 does
+in heap 0, so the e11 sum is 1,511,704 + 888 = **1,512,592** of e10's 1,572,864 (60,272 to spare) and e11's 1,769,472
+(256,880); e12's rule 991,488. The site's sums give these to the byte (`web/src/core/plugins/memory.test.ts`,
+`memory-e13.test.ts`, the vectors moved to the new file).
+
+**(c) The held chords: rings' own cost (`peng`, cycles a block) per 5 s window, e14** (e13 the same to within 0.5 %;
+its whole callback stays higher with every voice asleep, 77.6 k for e14's 55.1 k, as e13 has no voice skip):
+
+| string + reverb, damping 30,005, t | 0.13 | 0.12 | 0.11 |
+|---|---|---|---|
+| 1-26 (four strings and the reverb) | 65,135-65,347 | 65,058-65,131 | 64,980-65,053 |
+| 31-36 | **56,373** | 65,125 | 65,041 |
+| 41 | 54,230 | 59,668 | 65,000 |
+| 46-56 | **47,404** | 56,197 | 65,032 |
+| 61 | 43,403 | 56,208 | 65,038 |
+| 66-76 | **38,432** | 47,271 | 65,020 |
+| 81 | 26,313 | 43,666 | 61,422 |
+| 86-96 (keys still down) | **4,917** (every voice asleep) | 38,372 (one string awake at the release) | 56,106 |
+
+- 0.13's steps fall at about 31, 45, 64 and 84 s (the last with the reverb's own tail), 0.12's at about 42, 49, 66 and
+  83 s with the last string still awake when the keys come up at 100 s, 0.11's (no quiet sleep) at 81 s and never.
+  The host predicted 29.5 / 51.1 / 54.4 / 72.3 s (0.13) and 34.5 / 61.0 / 69.5 / 90.2 s (0.12); op1emu's chord is
+  not the host's (F3 and G3 struck first and stolen, real pitch words, hand-made strike order) and runs about 10 s
+  longer in both builds, so the comparison is between the builds: **0.13 is at its floor 16 s or more before 0.12**,
+  as the host says (18 s).
+- The output (dump, peak per second): last second above -60 / -70 / -80 dBFS 51 / 63 / 81 s (0.13), 51 / 63 / 82 s
+  (0.12), 51 / 62 / 99 s (0.11): to -80 dBFS the three builds play the same tail.
+- **No click**: at the four fades the largest step is 11, 6, 6, 5 LSB against 15, 7, 6, 5 in the 4.5 s before and
+  8, 6, 6, 3 after (the tail falling smoothly); no block flagged after the strike.
+- Awake, 0.13 costs 216 cycles a block more than 0.12 (65,344 for 65,128: +0.3 %; the host's simulator: +0.7-1 %).
+
+| the other holds, e14 | 0.13 | 0.12 | 0.11 |
+|---|---|---|---|
+| string + reverb, default damping (22,937), t 1 / 6 / 11 / 16 / 21 / 26 | 65,340 / 61,367 / 48,659 / 22,694 / **4,917** / 4,917 | 65,123 / 61,177 / 56,207 / 49,143 / 24,371 / **4,921** | 65,045 / 61,099 / 56,131 / 52,272 / 47,229 / 47,246 (one string stalled for the rest of the hold: 0.12's case) |
+| the same, output: last second above -60 / -70 / -80 dBFS | 7 / 9 / 14 s | 7 / 9 / 13 s | 7 / 9 / 13 s |
+| **modal, damping 27,997**, six keys: t 1-41 / 46 / 51-66 | 123,843 / **16,418** / 2,765 (the six asleep at about 46.6 s) | 123,534 / 123,535 / 123,536 to t 56, 114,629 at 61, 44,700 at 66, then released (asleep about 67 s) | - |
+| the same, output | -80 dBFS last at 46 s, the floor from 47 s | -80 dBFS last at 65 s | - |
+| one key held (the C4 key after `tap left`), string + reverb, 30,005 | 22,697-22,731 flat to t 91; asleep at about 98 s (the window t 96-101 is 10,597, from the asleep render's 1,200 and the playing 22.7 k), 2 s before the release; the output at its floor from about 98 s; the host's C3: 84.7 s | - | - |
+
+- At the default damping 0.13 is at its floor about 3 s before 0.12 here (the host: 0.2 s), with the same audible
+  tail to -80 dBFS; 0.11 never sleeps one string. Not an equality, as the brief expected, but not a difference in the
+  sound.
+- The modal chord, the most exposed case: the six fade together at about 45.5-46.5 s (host 46.7 s), the output
+  falling from 8-10 LSB peak to the 1 LSB floor over that second; largest step 5 / 4 LSB in the fade against 6 before
+  and 2-4 after: **no click**.
+- The single note: whether `tap left` moved the octave is not shown (the dump's zero crossings, about 550 Hz, say
+  little about a string's pitch), so the note may be C4; the fade at about 98 s: largest step 4 LSB against 4 before
+  and 2 after, no click. Not run with 0.12 (its time, beyond the 100 s hold, would not show).
+
+**(d) Restrikes, modal at 27,997** (`rs_m28.txt`, both cores, the same in both): C5 released at 81.3 s and struck at
+81.5 s, inside the six fades (45.0-46.0 s after the strike in the hold), E4 released and struck at 86.2 s (every voice
+faded), a seventh key A4 at 90 s (a steal of a faded voice). No fault; each note starts at once at its level (peaks
+4,000 / 5,500 / 5,800 LSB in its first 50 ms, the step 0.4-0.55 of the peak as in a fresh strike's first blocks, and
+the blocks before it 2-4 LSB / 70-85 LSB); `peng` 38.9 k, 51.4 k, 63.4 k in the windows after, 0 after the release.
+
+**(e) The -60 file** (0.13-60, sha256 `94c3422ca9cfab098ca0f3a07ca2a65eed8ac6ed07e9ecca301e6bc4313b24a1`), both cores, the same runs as (a) and (c):
+- (a) 13 loaded, failed 0, first and second boot on e13 and e14: `plugmem budget 1769472 used 835416 ...
+  heap_used 835416 arena_used 156416` (8 bytes more than 0.13); e11 by the same sum 1,512,600 (60,264 under e10's
+  budget).
+- (c), e14 (e13 the same `peng` to within 0.3 %), `peng` per window:
+
+| hold | -60 | 0.13 |
+|---|---|---|
+| string + reverb, 30,005: the steps | at about 26, 36, 51 and 71 s; **4,917 from t 76** | 31, 45, 64, 84 s; 4,917 from t 86 |
+| the same, output: last second above -60 / -70 / -80 dBFS | 51 / 63 / **70** s | 51 / 63 / 81 s |
+| default damping | 4,917 from t 21 (t 11: 44,194, t 16: 13,328) | from t 21 (48,659, 22,694) |
+| modal, 27,997 | the six asleep at about 40 s (host 40.6 s), 2,765 from t 41 | about 46.6 s |
+| the same, output: -70 / -80 dBFS last | 39 / 40 s | 42 / 46 s |
+| one key, 30,005 | asleep at about 88 s | about 98 s |
+
+- No click at any -60 fade: largest step 15, 8, 6, 5 LSB at the four string + reverb fades against 18, 10, 6, 6 before;
+  modal 4-5 against 5 before and 2-4 after; the single note 4 against 4.
+- No fault in any run. `eng_rings=9649/34241` in `det_eng_rings` (0.13: 9648/34240).
+
+Not shown in op1emu [I]: every device cycle figure (op1emu has no caches and no SDRAM timing);
+how the fades sound (the owner's checklist above, unchanged); the host's exact times (op1emu's chord and pitch words
+are not the host's: the times run about 10 s longer in every build at 30,005, the modal times match the host's to
+0.5 s; the -60 file 0.6 s).
 
 ## rings at the top of the damping: the chord that fades in 4 s and costs the same for 75 s — the measurement that tells why (pending, 2026-11-21)
 
