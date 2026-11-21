@@ -35,6 +35,9 @@ export interface CoopStub {
   deepest: number;
   /** Messages dropped because the queue of four was full. */
   drops: number;
+  /** The OP-1's ports the page has open now ('in', 'out'), and how many times it opened one. */
+  openPorts: string[];
+  opens: number;
 }
 
 declare global {
@@ -105,7 +108,19 @@ export async function stubCoop(page: Page, options: CoopStubOptions): Promise<vo
         return ~c >>> 0;
       };
 
-      const stub: CoopStub = { puts: [], files: {}, deepest: 0, drops: 0 };
+      const stub: CoopStub = { puts: [], files: {}, deepest: 0, drops: 0, openPorts: [], opens: 0 };
+      /** open() and close() of one port, kept in stub.openPorts. */
+      const portState = (id: string) => ({
+        open: (): Promise<void> => {
+          stub.opens++;
+          if (!stub.openPorts.includes(id)) stub.openPorts.push(id);
+          return Promise.resolve();
+        },
+        close: (): Promise<void> => {
+          stub.openPorts = stub.openPorts.filter((p) => p !== id);
+          return Promise.resolve();
+        },
+      });
       window.coopStub = stub;
       let list = rows;
       let writing: { file: string; bytes: number[] } | null = null;
@@ -167,14 +182,12 @@ export async function stubCoop(page: Page, options: CoopStubOptions): Promise<vo
         name: 'OP-1 Midi Device',
         state: 'connected',
         onmidimessage: null,
-        open: () => Promise.resolve(),
-        close: () => Promise.resolve(),
+        ...portState('in'),
       };
       const output = {
         name: 'OP-1 Midi Device',
         state: 'connected',
-        open: () => Promise.resolve(),
-        close: () => Promise.resolve(),
+        ...portState('out'),
         send(data: Uint8Array) {
           const bytes = [...data];
           if (bytes.length > 96) throw new Error('a SysEx over 96 bytes stops the OP-1’s MIDI input');

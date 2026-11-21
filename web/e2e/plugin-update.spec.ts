@@ -48,6 +48,8 @@ test.describe('Plugins: updating the plugins on a coop OP-1', () => {
       memory: { budget: 5_898_240, used: 858_000, fxbuf: 134_784, fxbufs: 4 },
     });
     await readPlugins(page);
+    // Reading the plugins left no port open.
+    expect(await page.evaluate(() => window.coopStub.openPorts)).toEqual([]);
 
     const all = page.getByRole('button', { name: 'Update all (2)' });
     await expect(all).toBeVisible();
@@ -76,6 +78,9 @@ test.describe('Plugins: updating the plugins on a coop OP-1', () => {
     expect(stub.files['bitcrusher.coop']?.size).toBe(crusher.sizeBytes);
     expect(stub.files['tape_echo.coop']?.size).toBe(echo.sizeBytes);
     expect(stub.drops).toBe(0);
+    // Update all opened the ports once for the whole run (and the read before it once), and closed them after.
+    expect(stub.openPorts).toEqual([]);
+    expect(stub.opens).toBe(4);
 
     // The panel was read again: nothing is left to update, and the rows say what waits for the power cycle.
     await expect(page.getByRole('button', { name: /Update all/ })).toHaveCount(0);

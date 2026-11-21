@@ -1,6 +1,9 @@
 /**
  * Opens the OP-1's USB MIDI port through Web MIDI with SysEx, as a MidiPort for the usbmidi core.
  * Only works while the OP-1 is plugged in normally: in disk mode it shows no MIDI port at all.
+ *
+ * Nothing here holds MIDI while the site is idle: every operation leases a MIDI session (leaseMidi) and ends it when
+ * the operation ends, so other programs on the computer can use the OP-1 in between.
  */
 import type { MidiPort } from '../core/usbmidi/session';
 
@@ -20,6 +23,7 @@ export const MIDI_REFUSED =
   'MIDI access was refused. Allow MIDI devices (with SysEx) for this site in the browser’s site settings, then check again.';
 export const NO_OP1_PORT =
   'No OP-1 MIDI port found. Plug the OP-1 in by USB normally, not in disk mode: in disk mode it has no MIDI. If the OP-1 is plugged in, unplug the cable and plug it in again.';
+export const PORT_BUSY = 'Another program is using the OP-1’s MIDI port. Close it and try again.';
 
 const abortReason = (signal: AbortSignal): unknown => signal.reason ?? new DOMException('aborted', 'AbortError');
 
@@ -34,32 +38,95 @@ function untilAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): 
   });
 }
 
+const isOp1 = (name: string): boolean => OP1_NAME.test(name) && !FIELD_NAME.test(name);
+
 function findOp1<T extends MIDIPort>(ports: Iterable<T>): T | undefined {
   for (const port of ports) {
-    const name = port.name ?? '';
-    if (port.state !== 'disconnected' && OP1_NAME.test(name) && !FIELD_NAME.test(name)) return port;
+    if (port.state !== 'disconnected' && isOp1(port.name ?? '')) return port;
   }
   return undefined;
 }
 
 /**
- * NO_OP1_PORT plus the ports the browser does show, so a port held by another program (Windows
- * lets one program at a time use a MIDI port) or an unexpected name is visible in the message.
+ * NO_OP1_PORT plus the ports the browser does show, so an unexpected name is visible in the message. An OP-1 port
+ * that is listed but disconnected in a session that has just started is one the browser could not open: another
+ * program holds it (Windows lets one program at a time use a MIDI port), and the message says so.
  */
 function noOp1Port(access: MIDIAccess): string {
   const names = new Set<string>();
+  let held = false;
   for (const ports of [access.inputs.values(), access.outputs.values()]) {
-    for (const port of ports) if (port.state !== 'disconnected') names.add(port.name || '(unnamed)');
+    for (const port of ports) {
+      if (port.state !== 'disconnected') names.add(port.name || '(unnamed)');
+      else if (isOp1(port.name ?? '')) held = true;
+    }
   }
+  if (held) return PORT_BUSY;
   const seen = names.size > 0 ? `MIDI ports this browser sees: ${[...names].join(', ')}.` : 'This browser sees no MIDI ports at all.';
-  return `${NO_OP1_PORT} ${seen} On Windows only one program can use a MIDI port at a time: close other browsers and music software that may hold it, then quit and reopen this browser.`;
+  return `${NO_OP1_PORT} ${seen} On Windows only one program can use a MIDI port at a time: close other browsers and music software that may hold it.`;
 }
 
-async function midiAccess(signal: AbortSignal | undefined): Promise<MIDIAccess> {
+/** A MIDIAccess and the browser MIDI session behind it. `release` ends the session. */
+interface MidiLease {
+  access: MIDIAccess;
+  release(): void;
+}
+
+let leases = 0;
+/** How many MIDI sessions this page holds now: 0 whenever no operation is running. */
+export const openMidiLeases = (): number => leases;
+
+/**
+ * Chromium (Chrome, Edge, Vivaldi) on Windows opens every MIDI device with the system as soon as a page's MIDI
+ * session starts, and keeps them all open until the session ends, whatever MIDIPort.close() says: while it lasts no
+ * other program can open the OP-1 (coop_usb.py gets MMSYSERR 7). The session ends when its MIDIAccess's document
+ * goes away. So each lease asks for MIDI from a hidden frame of this page's own origin (the same site permission,
+ * no new prompt), and `release` removes the frame, which ends the session and frees the ports.
+ *
+ * A requestMIDIAccess set on `navigator` itself (a polyfill, or a test's stub) is used as it is: there is no browser
+ * session to end. Where the frame gets no MIDI, the page's own navigator is asked instead.
+ */
+async function leaseMidi(signal: AbortSignal | undefined): Promise<MidiLease> {
   if (typeof navigator === 'undefined' || typeof navigator.requestMIDIAccess !== 'function') throw new Error(NO_WEB_MIDI);
+  const own = Object.prototype.hasOwnProperty.call(navigator, 'requestMIDIAccess');
+  let frame: HTMLIFrameElement | null = null;
+  if (!own && typeof document !== 'undefined' && document.body) {
+    frame = document.createElement('iframe');
+    frame.hidden = true;
+    frame.tabIndex = -1;
+    frame.title = 'MIDI';
+    frame.setAttribute('aria-hidden', 'true');
+    frame.setAttribute('allow', 'midi');
+    document.body.append(frame);
+  }
+  leases++;
+  let released = false;
+  const dropFrame = (): void => {
+    frame?.remove();
+    frame = null;
+  };
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    leases--;
+    dropFrame();
+  };
+  const fromPage = (): Promise<MIDIAccess> => untilAborted(navigator.requestMIDIAccess({ sysex: true }), signal);
   try {
-    return await untilAborted(navigator.requestMIDIAccess({ sysex: true }), signal);
+    const framed = frame?.contentWindow?.navigator;
+    if (!framed || typeof framed.requestMIDIAccess !== 'function') {
+      dropFrame();
+      return { access: await fromPage(), release };
+    }
+    try {
+      return { access: await untilAborted(framed.requestMIDIAccess({ sysex: true }), signal), release };
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      dropFrame();
+      return { access: await fromPage(), release };
+    }
   } catch (e) {
+    release();
     if (signal?.aborted) throw e;
     throw new Error(MIDI_REFUSED, { cause: e });
   }
@@ -82,13 +149,17 @@ export interface RestartWait {
 
 /**
  * Waits for the OP-1 to restart after an install: its MIDI ports go away, then come back. Resolves
- * once both are back, rejects with RESTART_TIMEOUT after `timeoutMs`.
+ * once both are back, rejects with RESTART_TIMEOUT after `timeoutMs`. Holds a MIDI session (opening no port) for
+ * the wait only.
  */
 export async function waitForOp1Restart(signal?: AbortSignal, wait: RestartWait = {}): Promise<void> {
   const { timeoutMs = 90_000, goneMs = 15_000, pollMs = 1_000 } = wait;
-  const access = await midiAccess(signal);
+  const { access, release } = await leaseMidi(signal);
   const present = (): boolean => findOp1(access.inputs.values()) !== undefined && findOp1(access.outputs.values()) !== undefined;
-  signal?.throwIfAborted();
+  if (signal?.aborted) {
+    release();
+    throw abortReason(signal);
+  }
   return new Promise((resolve, reject) => {
     let gone = !present();
     const check = (): void => {
@@ -101,6 +172,7 @@ export async function waitForOp1Restart(signal?: AbortSignal, wait: RestartWait 
       clearInterval(poll);
       access.removeEventListener('statechange', check);
       signal?.removeEventListener('abort', onAbort);
+      release();
       if (error === undefined) resolve();
       else reject(error);
     };
@@ -115,11 +187,19 @@ export async function waitForOp1Restart(signal?: AbortSignal, wait: RestartWait 
   });
 }
 
+/**
+ * Opens the OP-1's input and output in a MIDI session of their own. `close` closes both ports, drops the listeners
+ * and ends the session, so nothing stays held; every caller closes it when its operation ends, however it ends.
+ */
 export async function openOp1Port(signal?: AbortSignal): Promise<Op1Port> {
-  const access = await midiAccess(signal);
+  const { access, release } = await leaseMidi(signal);
   const input = findOp1(access.inputs.values());
   const output = findOp1(access.outputs.values());
-  if (!input || !output) throw new Error(noOp1Port(access));
+  if (!input || !output) {
+    const message = noOp1Port(access);
+    release();
+    throw new Error(message);
+  }
 
   // Listen before opening: the input opens asynchronously, and a reply can arrive before open()
   // settles. Messages that come before onSysex has a listener wait in `early`.
@@ -130,17 +210,27 @@ export async function openOp1Port(signal?: AbortSignal): Promise<Op1Port> {
     if (listener) listener(event.data);
     else early.push(event.data);
   };
+  const watchers = new Set<() => void>();
   input.onmidimessage = receive;
+  let closed = false;
   const close = (): void => {
+    if (closed) return;
+    closed = true;
+    listener = null;
+    early.length = 0;
     if (input.onmidimessage === receive) input.onmidimessage = null;
+    for (const changed of watchers) access.removeEventListener('statechange', changed);
+    watchers.clear();
     void input.close().catch(() => undefined);
     void output.close().catch(() => undefined);
+    release();
   };
   try {
     await untilAborted(Promise.all([input.open(), output.open()]), signal);
   } catch (e) {
     close();
-    throw e;
+    if (signal?.aborted) throw e;
+    throw new Error(PORT_BUSY, { cause: e });
   }
 
   return {
@@ -153,8 +243,12 @@ export async function openOp1Port(signal?: AbortSignal): Promise<Op1Port> {
     close,
     watch(cb) {
       const changed = (): void => cb(input.state !== 'disconnected' && output.state !== 'disconnected');
+      watchers.add(changed);
       access.addEventListener('statechange', changed);
-      return () => access.removeEventListener('statechange', changed);
+      return () => {
+        watchers.delete(changed);
+        access.removeEventListener('statechange', changed);
+      };
     },
   };
 }
