@@ -365,6 +365,25 @@ static __attribute__((noinline)) void voice_sum_stock(int is_drum, int16_t gain)
  * g_coop_voice_skip (--set-word): 1 (default); 0 never; 2 accumulate anyway and check the pair did not change. */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_voice_skip = 1; }
 volatile uint32_t g_voice_skips, g_voice_skip_checked, g_voice_skip_bad;
+/* The same for a synth voice whose ENVELOPE block is all zero (a held key on a zero sustain, a release that has
+ * reached zero while the voice is still active): v = (out x 0) x gain = 0 whatever the engine rendered. The stock
+ * fills the block (0xff801d50, 128 x int16) before it calls the render: its sum loop reads it through P5, loaded at
+ * 0xffa00d18 before the CALL at 0xffa00d28, and starts at 0xffa00d2c right after the return [C, the L1 disassembly].
+ * In op1emu this never happens: the stock stops running a voice (no render, no hook) as soon as its envelope has
+ * ended, key held or not (docs/performance.md, e14), so the test is exact but idle there. g_voice_env_skips counts
+ * the hooks left out for a zero envelope: a count on the device would say the stock does render under a closed
+ * envelope after all. No render is skipped: the engine is called whenever the stock calls it. */
+volatile uint32_t g_voice_env_skips;
+/* A diagnostic for the question "which gain closed a voice the engine still renders loud" (while the profile is on):
+ * the largest |envelope| at a synth voice block's first and last sample over the stats window, with the two gains
+ * that follow it: the voice sum gain word (0x01b4ef6e) and the decimator's ramp word (0xff80107c, low half). The
+ * stats' mode line prints the last finished window's: env_peak, vgain, ramp. */
+static uint32_t g_env_peak_cur, g_env_peak_last;
+extern "C" void coop_voice_diag_window(void) { g_env_peak_last = g_env_peak_cur; g_env_peak_cur = 0; }
+extern "C" void coop_voice_diag(uint32_t out3[3])
+{
+    out3[0] = g_env_peak_last; out3[1] = (uint16_t)*VOICE_GAIN; out3[2] = (uint16_t)*HB_RAMP_W;
+}
 static __attribute__((noinline)) uint32_t pair_sum(void)                   /* mode 2 only */
 {
     uint32_t s = 0;
@@ -385,7 +404,15 @@ static inline __attribute__((always_inline)) void voice_hook(coop_spread *pans, 
         coop_lfo2_trigger_drum(voice);
     }
     const uint32_t vskip = g_coop_dbg_cmp ? 0 : g_coop_voice_skip;       /* e14: a silent voice adds nothing */
-    const int vzero = vskip && all_zero16(VOICE_OUT, COOP_VBLK);
+    if (g_coop_prof && !is_drum) {
+        int32_t e0 = VOICE_ENV[0], e1 = VOICE_ENV[COOP_VBLK - 1];
+        uint32_t a0 = (uint32_t)(e0 < 0 ? -e0 : e0), a1 = (uint32_t)(e1 < 0 ? -e1 : e1);
+        if (a1 > a0) a0 = a1;
+        if (a0 > g_env_peak_cur) g_env_peak_cur = a0;
+    }
+    const int ezero = vskip && !is_drum && all_zero16(VOICE_ENV, COOP_VBLK);   /* the envelope closed (synth voices) */
+    const int vzero = ezero || (vskip && all_zero16(VOICE_OUT, COOP_VBLK));
+    if (ezero) g_voice_env_skips++;
     if (vzero && vskip == 1) {
         g_voice_skips++;
         uint32_t dtz = coop_cycles() - t0;

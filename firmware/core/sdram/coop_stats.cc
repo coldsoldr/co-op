@@ -43,6 +43,9 @@ extern "C" volatile uint32_t g_coop_idle_skip;                         /* stereo
 extern volatile uint32_t g_stage_skips, g_mix_skips, g_skip_checked, g_skip_bad;
 extern "C" volatile uint32_t g_coop_voice_skip;
 extern volatile uint32_t g_voice_skips, g_voice_skip_checked, g_voice_skip_bad;
+extern volatile uint32_t g_voice_env_skips;                             /* stereo_bus.cc */
+extern "C" void coop_voice_diag_window(void);
+extern "C" void coop_voice_diag(uint32_t out3[3]);
 extern volatile uint32_t g_tape_io_loads, g_tape_io_flushes, g_tape_io_held, g_tape_io_guarded, g_tape_io_errors;
 extern volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g_tape_io_flush_cycles_max, g_tape_io_gap_cycles_max;
 extern volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g_tape_io_flush_cycles_win, g_tape_io_gap_cycles_win;
@@ -490,6 +493,8 @@ static void put_cost_lines(void)                             /* the "cost" and "
     put("mode"); kv("prof", g_coop_prof); kv("statsfile", g_coop_statsfile); kv("ram_reads", g_stats_ram_reads); kv("idle_skip", g_coop_idle_skip); kv("stage_skips", g_stage_skips);   /* e14 */
     kv("mix_skips", g_mix_skips); kv("skip_checked", g_skip_checked); kv("skip_bad", g_skip_bad);
     kv("voice_skip", g_coop_voice_skip); kv("voice_skips", g_voice_skips); kv("voice_checked", g_voice_skip_checked); kv("voice_bad", g_voice_skip_bad);
+    kv("env_skips", g_voice_env_skips);
+    { uint32_t vd[3]; coop_voice_diag(vd); kv("env_peak", vd[0]); kv("vgain", vd[1]); kv("ramp", vd[2]); }
     put("\n");            /* e14: 0 = the cost table, the engines line, the marks and the
                                                                     windows' eng / peng / fx / s2 sums are off (empty / 0) */
     put("cost avg/max/n/p0/p1"); put(" pf_mode "); putn(g_coop_pf_mode); put(" pf_live "); putn(g_coop_pf_live); put(" pf_layout "); putn(g_coop_pf_layout_used);   /* per call; slot 1's stock effect by type (stereo class); p0 / p1 the monitor's averages (coop_pf_boot) */
@@ -892,6 +897,7 @@ extern "C" void coop_stats_tick(int recording)
     w->s2 = cost_delta(COOP_COST_S2I) + cost_delta(COOP_COST_S2M);
     cplb_watch();
     fill_probe();
+    coop_voice_diag_window();                                      /* e14: the envelope peak of the window just closed */
     g_stats_windows++;
     keep_if_heavy(w);
     if (!recording && g_coop_statsfile) write_file();              /* e14: the text is served from RAM without it */
