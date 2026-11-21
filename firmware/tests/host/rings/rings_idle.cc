@@ -47,7 +47,11 @@ extern "C" void* coop_l1_scratch(uint32_t* bytes) {
   return l1_scratch;
 }
 // The engine's probe (COOP_IDLE_PROBE): renders that took the idle state's silent path.
-extern "C" { uint32_t g_coop_idle_blocks; }
+extern "C" {
+uint32_t g_coop_idle_blocks;
+uint32_t g_coop_silent_renders[6];   // every silent render, per voice (rings_sleep.cc reads it)
+int32_t g_coop_voice_peak;           // the last render's own peak, Q27 (the same)
+}
 
 namespace {
 

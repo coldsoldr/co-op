@@ -133,7 +133,7 @@ class SharedReverb {
 class RingsVoice {
  public:
   void Init(int32_t resolution);
-  void NoteOn() { strum_ = true; silent_blocks_ = 0; }
+  void NoteOn() { strum_ = true; silent_blocks_ = 0; quiet_renders_ = 0; }
 
   // Any model (RenderMono only; Render is modal).
   void set_model(ResonatorModel model) { model_ = model; }
@@ -147,12 +147,28 @@ class RingsVoice {
   // RenderMono's voice has been below kSleepLevel long enough to stop
   // computing until its next note (it renders silence, or only its share
   // of the shared reverb).
+  // coop 0.12: or it has stayed below kQuietLevel for kQuietRendersToSleep. A tail does not always end at zero: the
+  // strings and the modes can settle in a small cycle that never decays (the arithmetic's rounding), and the FM
+  // voice's envelope stops falling at a floor set by the damping; from about three quarters of the damping's range
+  // these sit between half an LSB and a few LSB of the 16-bit output for as long as the key is held, and the voice
+  // computed at full cost for nothing anyone hears. A tail that is still falling passes from kQuietLevel to
+  // kSleepLevel (18 dB) well inside the time unless the whole decay takes about a minute or more.
+#if defined(OP1RINGS_NO_SLEEP)       // a host test's twin (tests/host/rings rings_sleep.cc): the voice never sleeps
+  bool asleep() const { return false; }
+#elif defined(OP1RINGS_NO_QUIET_SLEEP)   // the same test's other twin: 0.11's rule alone
   bool asleep() const { return !strum_ && silent_blocks_ >= kSilentBlocksToSleep; }
+#else
+  bool asleep() const {
+    return !strum_ && (silent_blocks_ >= kSilentBlocksToSleep || quiet_renders_ >= kQuietRendersToSleep);
+  }
+#endif
   // coop 0.11: asleep, and the limiter the reverb's share passes has nothing left either: rendering this voice with
   // a silent share gives zeros and changes nothing in it.
   bool at_rest() const { return asleep() && mono_limiter_.at_rest(); }
   static const int32_t kSleepLevel = 1 << 11;      // Q27 peak: ~ -96 dBFS (Test 29: -72 cut tails short)
   static const int32_t kSilentBlocksToSleep = 8;   // RenderMono calls (~12 ms)
+  static const int32_t kQuietLevel = 1 << 14;      // Q27 peak: 4 LSB of the 16-bit output, -78 dBFS
+  static const int32_t kQuietRendersToSleep = 6890;   // RenderMono calls: 10 s
   // Modal model: keep the resonator's coefficients this render even if the
   // parameters move (a strike always updates them); see
   // op1/coefficient_budget.h.
@@ -219,6 +235,7 @@ class RingsVoice {
   int32_t cutoff_brightness_;
   FFloat cutoff_fc_;
   int32_t silent_blocks_;               // consecutive renders below the sleep level
+  int32_t quiet_renders_;               // consecutive renders below the quiet level, up to kQuietRendersToSleep
   ModalResonator resonator_;
   FmVoiceFixed fm_voice_;
   ExcitationFilter excitation_filter_;

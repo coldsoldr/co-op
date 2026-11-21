@@ -391,6 +391,109 @@ option 1 of 0.10's note.
   comparison with it: see 0.10's note on `make -C tests/host/rings`).
 - File 114,948 bytes, `.text` 46,148, `.bss` 572,544; imports unchanged.
 
+## 0.12: a tail that stalls under 4 LSB sleeps (2026-11-21)
+
+**Why.** On the owner's OP-1 (rings 0.11, core e13) a chord held 75 s in string + reverb cost the same in every
+5-second window (`peng` 158-160 k cycles a block), although it "sounded like it had died down". What the source and
+the host say about that [C host, simulator; the device's settings are not known]:
+
+- **When a voice sleeps (0.11, every model).** `RingsVoice::asleep()`: the voice's own output (Q27, before the
+  reverb's share and the limiter) has peaked under 2,048 (half an LSB of the 16-bit output, -96 dBFS) for 8 renders
+  in a row (12 ms), and no strike is pending. Asleep, a voice of the five models without reverb renders zeros at
+  once (`rings.cc`). In string + reverb the string stops, the voice goes on playing its share of the reverb, and
+  0.11's idle state ends that: 207 runs (0.3 s) with nothing sent and an all-zero wet block, and the voice's limiter
+  at rest. A new note wakes the voice in the block it arrives.
+- **What a held key feeds.** Nothing. The core calls `note_on` once, when the voice starts
+  (`core/sdram/engine_host.cc` `voice_start`), and then `render` every block with the pitch words and the four
+  controls; rings has no audio input and does not use the velocity. Nothing on the device path strikes a held
+  string again.
+- **So the sleep already follows the 16-bit output.** Six keys held, the default patch: the last non-zero output
+  sample comes 17.1 s after the strike and the last voice renders silence from 17.4 s (the reverb's 0.3 s). The
+  simulator, with the assembly kernels, gives the same samples as the host over those 25 s and the same times; its
+  cost falls from 67.7 k cycles a block (first 5 s) through 50 k (10-15 s, the strings going to sleep one by one) to
+  5.6 k asleep. A rule "sleep once the 16-bit output has been exactly zero" would sleep later than this, or never:
+  the upsampler floors (`in >> 12`), so a tail far under one LSB still gives 0 and -1, and a twin that never sleeps
+  (`-DOP1RINGS_NO_SLEEP`) plays 0/-1 from every voice for good.
+- **A flat cost for 75 s needs a tail that is really that long.** String + reverb, six keys ("all" plays four),
+  the other three controls at their defaults: time until the last voice is asleep
+
+| damping | 16,384 | 22,937 (default) | 26,000 | 28,000 | 29,500 | 30,000 | 31,000 | 32,000 and up |
+|---|---|---|---|---|---|---|---|---|
+| asleep after | 11.6 s | 17.4 s | 20.7 s | 39.3 s | 67.1 s | 90.9 s | 176 s | not in 300 s |
+
+  From about 29,800 (the top tenth of the control) all four strings are awake for 75 s. At 30,000 the four voices'
+  sum peaks at 84 LSB (-52 dBFS) around 60 s and 18 LSB (-65 dBFS) at 75 s: died down to the ear, not to the
+  arithmetic. An exponential tail spends the last third of its life under -60 dBFS. Structure and register move the
+  table (damping 28,000: 16.9 s with the structure at the top, 28.7 s with position 0, 52.6 s two octaves down; with
+  the structure at 0 it never ends, below). That is the likely cause on the device, and 0.12 does not change it:
+  those strings still sound in 16 bits, and cutting them is a change of the sound (rings' Test 29 found -72 dBFS
+  cut tails short).
+- **What the search did find: tails that never end.** A tail does not always fall to zero. The strings and the
+  modes can settle in a small cycle that the rounding keeps alive, and the FM voice's envelope stops falling at a
+  floor set by the damping. Held, such a voice computed at full cost for as long as the key was down. Seen from
+  damping 26,000 up, mostly with the structure away from its default: FM, structure 0 or 16,384, damping 26,000 and
+  28,000: all six voices on 1 and 2 LSB for good; string + reverb, structure 0, damping 28,000: the top voice on
+  -3..2 LSB, and the reverb fed by it never idle; modal, brightness at the top, damping 28,000: one voice on 2 to 3 LSB.
+  (Higher still, the same floors are loud and meant: FM from damping 29,500 holds its note, strings at structure 0
+  hold theirs.)
+
+**What changed.** `src/op1_voice.h`, `op1_voice.cc`: a second way to sleep. A voice whose own output has peaked
+under `kQuietLevel` (16,384 in Q27: 4 LSB of the 16-bit output, -78 dBFS) for `kQuietRendersToSleep` renders in a row
+(6,890: 10 s) is asleep, like one under half an LSB for 12 ms. Everything after that is 0.11's: silence at once in
+five models, the reverb's share and then the idle state in string + reverb. A strike wakes it as before and the
+count starts again. One compare and one add a render.
+
+- A tail that is still falling crosses from 4 LSB to half an LSB (18 dB) inside 10 s unless the whole decay takes
+  about a minute or more, so it ends where it ended in 0.11. A slower one is cut 10 s after it went under 4 LSB,
+  somewhere between 4 and half an LSB (modal, damping 28,000: asleep at 62.7 s where 0.11 slept at 69.3 s; at the
+  top 217 s for 251 s).
+- A stalled voice above 4 LSB is left alone (string + reverb, structure 0, brightness at the top, damping 28,000:
+  -15..13 LSB for good). The level is one constant.
+- What is frozen while a voice sleeps is what 0.11 froze: the string or the modes as they stood. Struck again, the
+  voice starts from that, at most 4 LSB of it.
+
+**Proof** (`make -C tests/host/rings sleep OLD=<0.11's folder>`, `rings_sleep.cc`: six keys struck three blocks
+apart and held, every voice rendered every block, the 16-bit output compared render by render):
+
+- As it ships against its twin with 0.11's rule alone (`-DOP1RINGS_NO_QUIET_SLEEP`), the default patch, 60 s, voice
+  0 struck again every 7 s and voice 1 at 40 s: **the same sample for sample**, all six models at the four
+  polyphony settings (24 runs); the same at damping 28,000 in 23 of 24 (modal at polyphony 4: 2 LSB from 55.9 s, a
+  voice the twin leaves on its cycle). The twin against 0.11's sources: the same samples in all 48.
+- Where tails stall (models x polyphony 4 and "all" x structure 0 and 8,192 x brightness 19,660 and 32,767 x
+  damping 26,000 to 31,000, 150 s held, no second strike: 192 runs): 149 the same sample for sample; 43 differ, by
+  **at most 5 LSB** in one voice (12 by 1, 10 by 2, 11 by 3, 6 by 4, 4 by 5), from the moment the voice sleeps: the
+  stalled tail the twin goes on playing.
+- A strike into a voice that slept this way (the same 192 with voice 0 struck again every 40 s and voice 1 at
+  100 s): the samples after it are not the twin's and cannot be: the strings' noise comes from one generator that
+  every awake string draws from, as upstream's, and the FM voice's phases stood still. That was already so for
+  0.11's own sleep. The level agrees: the summed output's RMS over 0.1 s windows above -54 dBFS is the same in 156
+  of 192; in the rest the mean difference is 0.1 to 1.8 dB, the largest single window 9.1 dB (string + reverb). The
+  same measure between 0.11 and a twin that never sleeps: mean up to 6.3 dB, largest window 25.5 dB.
+- `make idle` (0.11's test, the reverb's idle state against its twin): 0 samples differ, as before. `make models
+  OLD=<0.11>`: the five models without reverb give 0.11's bytes on that scenario.
+- The assembly is untouched. Simulator against host, string + reverb, 25 s held: the same file, and the same file
+  as 0.11's.
+
+**Cost** (simulator, compute only, cycles a block for six held keys, `make sleep-sim`).
+
+| six keys held | 0.11 | 0.12 |
+|---|---|---|
+| string + reverb, default patch: playing (first 5 s) | 67,717 | 67,889 |
+| the same, asleep (from 17.4 s) | 5,627 | 5,619 |
+| string or FM, asleep (five models: 426 a voice) | 2,545 | 2,557 |
+| FM, structure 0, damping 26,000: playing | 74,786 | 74,915 |
+| the same from 21.5 s (all six on 1 LSB) | **74,864, for as long as the keys are down** | **2,701** |
+| string + reverb, structure 0, damping 28,000: playing | 88,642 | 88,804 |
+| the same from 69 s (the top voice on -3..2 LSB) | 51,037 at 75-80 s (one string and the reverb never stop) | **5,671** |
+
+Awake, the count costs 20 to 40 cycles a render. Asleep, a voice still costs its render call: the engine's block
+clock, the control smoother, and 64 zeros written to `out`. **Every sample of a sleeping voice's block is zero**,
+written by the engine (the block is not left untouched), which is what the core's e14 test of the render's samples
+needs to see.
+
+**The same imports as 0.11** (it loads on e10 and later). Not on the device yet; `docs/device-tests.md` "rings
+0.12".
+
 ## Building and checking
 
 ```sh

@@ -15,7 +15,7 @@ SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree
 PROFILE_BLOCKS ?= 62010
 PROFILE_MODEL ?=
 
-.PHONY: voice44 all clean profile halfband-check halved batched footprint dirty idle idle-sim models
+.PHONY: voice44 all clean profile halfband-check halved batched footprint dirty idle idle-sim models sleep sleep-sim
 all: $(BUILD)/rings_ref $(BUILD)/rings_coop $(BUILD)/rings_coop_m14
 	$(BUILD)/rings_ref $(BUILD)/ref.raw
 	$(BUILD)/rings_coop $(BUILD)/coop.raw
@@ -199,3 +199,56 @@ endif
 	  $(BUILD)/rings_coop $(BUILD)/m_new.raw 8000 $$m $$q > /dev/null 2>&1; \
 	  $(BUILD)/rings_coop_old $(BUILD)/m_old.raw 8000 $$m $$q > /dev/null 2>&1; \
 	  cmp $(BUILD)/m_new.raw $(BUILD)/m_old.raw; echo "model $$m, polyphony setting $$q: the same bytes"; done; done
+
+# rings 0.12: a held voice whose tail stays under 4 LSB for 10 s sleeps (src/op1_voice.h kQuietLevel; rings_sleep.cc).
+#   make sleep                     six keys held, every model: as it ships against its twin with 0.11's rule alone
+#                                  (-DOP1RINGS_NO_QUIET_SLEEP): the default patch (the same samples), then settings
+#                                  whose tails stall (the difference, and when each voice sleeps)
+#   make sleep OLD=<0.11's plugin folder>   and the twin against 0.11's sources: the same samples
+#   make sleep-sim                 cycles a block in the simulator, six keys held: the reverb model's default patch,
+#                                  and an FM patch whose envelope stalls at 1 LSB
+SLEEP_DEPS := rings_sleep.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
+SLEEP_SRC = rings_sleep.cc $(1)/rings.cc $(addprefix $(1)/,$(DSP))
+$(BUILD)/rings_sleep: $(SLEEP_DEPS)
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -I$(COOP) -I../../../sdk $(call SLEEP_SRC,$(COOP)) -o $@
+
+$(BUILD)/rings_sleep_twin: $(SLEEP_DEPS)
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -DOP1RINGS_NO_QUIET_SLEEP -I$(COOP) -I../../../sdk $(call SLEEP_SRC,$(COOP)) -o $@
+
+# One comparison, nothing kept on disk: $(1) = the two programs, $(2) = the run's arguments, $(3) = its environment.
+SLEEP_CMP = bash -c "$(BUILD)/rings_sleep cmp <($(3) $(word 1,$(1)) run /dev/fd/3 $(2) 3>&1 >/dev/null) \
+	  <($(3) $(word 2,$(1)) run /dev/fd/3 $(2) 3>&1 >/dev/null) 6"
+
+sleep: $(BUILD)/rings_sleep $(BUILD)/rings_sleep_twin
+	@echo "the default patch, 60 s, voice 0 struck again every 7 s, voice 1 at 40 s: as it ships / its twin"
+	@set -e; for m in 0 1 2 3 4 5; do for q in 0 1 2 3; do printf "model $$m, polyphony setting $$q:"; \
+	  $(call SLEEP_CMP,$(BUILD)/rings_sleep $(BUILD)/rings_sleep_twin,$$m $$q 22937 60 6 7,env); done; done
+ifneq ($(OLD),)
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -I$(OLD) -I../../../sdk $(call SLEEP_SRC,$(OLD)) -o $(BUILD)/rings_sleep_old
+	@echo "the twin / $(OLD):"
+	@set -e; for m in 0 1 2 3 4 5; do for q in 0 3; do for d in 22937 28000; do printf "model $$m, polyphony setting $$q, damping $$d:"; \
+	  $(call SLEEP_CMP,$(BUILD)/rings_sleep_twin $(BUILD)/rings_sleep_old,$$m $$q $$d 60 6 7,env); done; done; done
+endif
+	@echo "tails that stall, 150 s held (a difference is the stalled tail the twin goes on playing):"
+	@for c in "0 28000 8192 32767" "3 26000 0 19660" "3 28000 16384 19660" "5 28000 0 19660" "1 28000 0 32767"; do set -- $$c; \
+	  printf "model $$1, damping $$2, structure $$3, brightness $$4:"; \
+	  $(call SLEEP_CMP,$(BUILD)/rings_sleep $(BUILD)/rings_sleep_twin,$$1 3 $$2 150 6,env SLEEP_STRUCTURE=$$3 SLEEP_BRIGHTNESS=$$4) || true; \
+	  SLEEP_QUIET=1 SLEEP_STRUCTURE=$$3 SLEEP_BRIGHTNESS=$$4 $(BUILD)/rings_sleep run - $$1 3 $$2 150 6 | grep voice; \
+	  echo " its twin:"; \
+	  SLEEP_QUIET=1 SLEEP_STRUCTURE=$$3 SLEEP_BRIGHTNESS=$$4 $(BUILD)/rings_sleep_twin run - $$1 3 $$2 150 6 | grep voice; done
+
+$(BUILD)/rings_sleep.elf: $(SLEEP_DEPS)
+	@mkdir -p $(BUILD)
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) $(IDLE_FLAGS) -I$(COOP) -I../../../sdk $(call SLEEP_SRC,$(COOP)) $(ASM) -o $@
+
+$(BUILD)/rings_sleep_twin.elf: $(SLEEP_DEPS)
+	@mkdir -p $(BUILD)
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) $(IDLE_FLAGS) -DOP1RINGS_NO_QUIET_SLEEP -I$(COOP) -I../../../sdk \
+	  $(call SLEEP_SRC,$(COOP)) $(ASM) -o $@
+
+sleep-sim: $(BUILD)/rings_sleep.elf $(BUILD)/rings_sleep_twin.elf
+	$(BFIN)/bfin-elf-run $(BUILD)/rings_sleep.elf run - 5 3 22937 25 6
+	$(BFIN)/bfin-elf-run $(BUILD)/rings_sleep.elf run - 3 3 26000 35 6 0 0
+	$(BFIN)/bfin-elf-run $(BUILD)/rings_sleep_twin.elf run - 3 3 26000 35 6 0 0

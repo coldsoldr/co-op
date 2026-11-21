@@ -290,6 +290,7 @@ void RingsVoice::Init(int32_t resolution) {
   coefficient_hold_ = false;
   cutoff_valid_ = false;
   silent_blocks_ = 0;
+  quiet_renders_ = 0;
   resonator_.Init();
   resonator_.set_resolution(resolution);
   fm_voice_.Init();
@@ -304,6 +305,7 @@ void RingsVoice::CopyFrom(const RingsVoice& other) {
   polyphony_ = other.polyphony_;
   strum_ = other.strum_;
   silent_blocks_ = other.silent_blocks_;
+  quiet_renders_ = other.quiet_renders_;
   cutoff_valid_ = other.cutoff_valid_;
   cutoff_f0_ = other.cutoff_f0_;
   cutoff_brightness_ = other.cutoff_brightness_;
@@ -461,6 +463,10 @@ void RingsVoice::RenderStringBlock(uint32_t phase_increment,
   }
 }
 
+#ifdef COOP_IDLE_PROBE
+extern "C" { extern int32_t g_coop_voice_peak; }   // tests/host/rings rings_sleep.cc: the last render's own peak, Q27
+#endif
+
 void RingsVoice::RenderMono(const uint32_t* phase_increment,
                             const VoicePatch& patch, int32_t* out, size_t size, int32_t* send,
                             const int32_t* wet) {
@@ -510,6 +516,14 @@ void RingsVoice::RenderMono(const uint32_t* phase_increment,
     }
   }
   silent_blocks_ = peak < kSleepLevel ? silent_blocks_ + 1 : 0;
+  if (peak >= kQuietLevel) {
+    quiet_renders_ = 0;
+  } else if (quiet_renders_ < kQuietRendersToSleep) {
+    ++quiet_renders_;
+  }
+#ifdef COOP_IDLE_PROBE
+  g_coop_voice_peak = peak;
+#endif
 }
 
 }  // namespace op1rings

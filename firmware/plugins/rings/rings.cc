@@ -27,7 +27,10 @@
 #include "op1/param_smoother.h"
 #include "op1/reverb_bus.h"
 #ifdef COOP_IDLE_PROBE   /* tests/host/rings rings_idle.cc: the renders the reverb's idle state made silent */
-extern "C" { extern uint32_t g_coop_idle_blocks; }
+extern "C" {
+extern uint32_t g_coop_idle_blocks;          /* the reverb's idle state's silent renders */
+extern uint32_t g_coop_silent_renders[6];    /* tests/host/rings rings_sleep.cc: every silent render, per voice */
+}
 #endif
 #include "op1/settings.h"
 #include "op1/voice_allocator.h"
@@ -396,6 +399,9 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
     for (int32_t i = 0; i < kOutSamples; ++i) out[i] = 0;
     upsamplers[v].Init();
     ScreenQuiet(v);
+#ifdef COOP_IDLE_PROBE
+    ++g_coop_silent_renders[v];
+#endif
     return;
   }
   PROF_START(t_smooth);
@@ -435,6 +441,7 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
     ScreenQuiet(v);
 #ifdef COOP_IDLE_PROBE
     ++g_coop_idle_blocks;
+    ++g_coop_silent_renders[v];
 #endif
     return;
   }
