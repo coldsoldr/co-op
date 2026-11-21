@@ -3327,3 +3327,38 @@ at the times in the table.
    heard, no click when a tail ends.
 7. Say which of -66 and -60 is acceptable by ear, or whether the level should move (up: the cut comes sooner;
    down: later). It is one constant (`OP1RINGS_EARLY_LEVEL`).
+
+## rings at the top of the damping: the chord that fades in 4 s and costs the same for 75 s — the measurement that tells why (pending, 2026-11-21)
+
+**The device** [C device, the owner, rings 0.11 on e13]: string + reverb, the damping at its longest end, the
+envelope's sustain at the top, six keys held: the chord fades in about 4 seconds; `peng` 158-163 k cycles a block
+for 75 s, `eng_noteons 6`.
+
+**The host and the simulator** [C; `plugins/rings/README.md` "0.13", "What the tail at the top of the damping is"]:
+the same chord at damping 32,767 (which is what the knob's top sends: the stock iter range is 0 to 32,767 and
+rings takes the word as it is) is the chord itself for minutes: the strings' fundamentals at -8 dBFS RMS in
+200 Hz - 2 kHz at 5 s, -22 dBFS at 60 s, -26 dBFS at 75 s; no DC (under 50 LSB), nothing under 20 Hz or near
+Nyquist, no stuck state; each voice a clean sine. A listener would hear it at 60 s. The simulator with the assembly
+kernels gives the host's samples. No damping value from 0 to the top, and no structure or brightness at the top,
+gives "gone in 4 s and never asleep" on the host. So either something after the engine closes the sound while rings
+plays on, or rings on the device does not do what it does on the host. No rule in rings can be chosen before that
+is known, and no rings 0.14 was built.
+
+**Two observations, the first without any tool** (0.13 or 0.12 in place; e14 with the profile on, `prof=1`, for the
+second; no effects, no sequencer, sustain at the top, the damping at its longest end, string + reverb, six keys held
+60 s):
+
+1. **Look at rings' own screen while the chord is held.** Its voice levels are drawn from the engine's 16-bit
+   output before the OP-1's envelope. Do they stay up after the sound has gone (at 10 s, 30 s, 60 s), or do they
+   fall with the sound in the first seconds?
+2. Say "done" and leave the OP-1 connected: the agent reads `python firmware\tools\coop_usb.py stats` within two
+   minutes: `peng` per 5-second window, and on the mode line `env_peak`, `vgain`, `ramp` (e14: the largest
+   envelope value in the window, the voice sum gain, the decimator's ramp), with `env_skips`.
+3. Write down the other three rings controls and the polyphony as the patch has them, the octave played, and whether
+   the synth's LFO or the element is assigned to anything.
+
+| what is seen | what it means | what follows |
+|---|---|---|
+| the screen's levels stay up, `env_peak` (or `vgain`, `ramp`) falls within seconds | rings plays the chord; the stock closes it afterwards | the cost can only be saved in the core (it knows the envelope); rings' early cut never sees it |
+| the levels stay up, `env_peak`, `vgain` and `ramp` stay up too | the chord is in the output; the fade is in the listening (level, speaker) or the report | repeat on headphones at a fixed volume |
+| the levels fall within seconds, `peng` stays flat | rings on the device decays where the host rings on, and its voices do not sleep | record the device's output (or dump a voice's `out` on the device) with this patch and compare with the host run of the same control words |
