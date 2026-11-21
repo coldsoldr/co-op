@@ -45,6 +45,7 @@ extern volatile int g_l1_lease_open;                                       /* l1
 /* e4: cost per engine, per voice render and per block (all its voices in one block), for the stats `engines` line */
 struct ecost { uint64_t sum, bsum; uint32_t n, max, bn, bmax, bacc; };
 static struct ecost g_ecost[SLOTS];
+static uint32_t g_ecost_dirty;                                            /* e14: a record was folded since the last block end */
 static uint32_t g_peng_blk, g_peng_blk_pf[2];                             /* m1: this block's plugin renders and their counters */
 
 extern "C" const coop_engine_t *coop_engine_at(int n) { return (n > 0 && n < SLOTS) ? g_eng[n].e : 0; }
@@ -134,6 +135,7 @@ static __attribute__((noinline)) void prec_fold(void)
         struct ecost *c = &g_ecost[r->n];
         c->sum += dt; c->n++; if (dt > c->max) c->max = dt;
         c->bacc += dt;
+        g_ecost_dirty = 1;
     }
     g_prec_n = 0;
 }
@@ -146,6 +148,12 @@ extern "C" COOP_HOT_VOICE void coop_eng_render(void *self, int16_t *out, const i
     int n = engine_of(params);
     if (n != g_voice_eng[v]) voice_start(self, params, v, n);            /* the engine changed under a live voice */
     if (!n) { g_eng_iter_renders++; ITER_RENDER(self, out, params); return; }
+    if (!g_coop_prof) {                                                   /* e14: the render alone, nothing recorded */
+        g_eng[n].e->render(v, state_of(n, v), out, PITCH_INC, params);
+        if (g_eng[n].f44k) coop_voice_44k_to_88k(out);
+        g_eng_renders++;
+        return;
+    }
     uint32_t a0 = 0, a1 = 0, b0 = 0, b1 = 0;
     if (g_coop_pf_live) { a0 = COOP_PFCNTR0; a1 = COOP_PFCNTR1; }
     uint32_t c0 = coop_cost_now();
@@ -172,6 +180,10 @@ extern "C" void coop_engine_block_end(void)
         c->p0 += g_peng_blk_pf[0]; c->p1 += g_peng_blk_pf[1];
         g_peng_blk = 0; g_peng_blk_pf[0] = 0; g_peng_blk_pf[1] = 0;
     }
+    if (!g_ecost_dirty) return;                                           /* e14: the 63-slot walk (2.5 KB of table: on the
+                                                                             device most of the block start's 4.5 k cycles)
+                                                                             only in a block that rendered a plugin engine */
+    g_ecost_dirty = 0;
     for (int n = 1; n < SLOTS; n++) {
         struct ecost *c = &g_ecost[n];
         if (!c->bacc) continue;

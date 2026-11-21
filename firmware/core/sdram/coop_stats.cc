@@ -121,6 +121,7 @@ static void put_window(const char *tag, const struct window *w)
 }
 
 #include "coop_cost.h"
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_prof = 1; }   /* e14: coop_cost.h */
 struct coop_cost g_coop_cost[COOP_COST_N];
 uint32_t g_coop_eng_fn[COOP_ENG_N];
 static uint32_t g_eng_blk[2];                                     /* this block's synth / drum render cycles */
@@ -133,6 +134,7 @@ static uint32_t g_eng_last;                                       /* the entry t
 extern "C" COOP_HOT_VOICE void coop_eng_pf_start(void) { coop_pf_now(g_eng_pf0); }
 static inline __attribute__((always_inline)) void cost_add_d(int i, uint32_t dt, uint32_t d0, uint32_t d1)
 {
+    if (!g_coop_prof) return;
     struct coop_cost *c = &g_coop_cost[i];
     c->sum += dt; c->n++;
     if (dt > c->max) c->max = dt;
@@ -206,6 +208,7 @@ extern "C" COOP_HOT_VOICE void coop_eng_cost(uint32_t fn, uint32_t dt, int drum)
 extern "C" void coop_engine_block_end(void);                              /* engine_host.cc (e4): per-engine block totals */
 extern "C" void coop_eng_block_end(void)
 {
+    if (!g_coop_prof) { g_vrec_n = 0; return; }                    /* e14: nothing was recorded, nothing to fold */
     eng_fold();
     coop_engine_block_end();
     for (int k = 0; k < 2; k++) {
@@ -233,6 +236,7 @@ static void slow_copy(struct slow *d, uint32_t dt)
 /* From CoopAudioCb (the audio interrupt) when a block ran over the threshold. */
 extern "C" void coop_slow_keep(uint32_t dt)
 {
+    if (!g_coop_prof) return;                                      /* e14: there are no marks to keep */
     slow_copy(&g_slow[g_slow_next % SLOW_KEEP], dt);
     g_slow_next++; g_slow_count++;
     if (dt > g_slow[SLOW_KEEP].dt) slow_copy(&g_slow[SLOW_KEEP], dt);
@@ -477,6 +481,8 @@ static const char *eng_name(uint32_t fn)
 
 static void put_cost_lines(void)                             /* the "cost" and "engines" lines from g_cost_src */
 {
+    put("mode"); kv("prof", g_coop_prof); put("\n");            /* e14: 0 = the cost table, the engines line, the marks and the
+                                                                    windows' eng / peng / fx / s2 sums are off (empty / 0) */
     put("cost avg/max/n/p0/p1"); put(" pf_mode "); putn(g_coop_pf_mode); put(" pf_live "); putn(g_coop_pf_live); put(" pf_layout "); putn(g_coop_pf_layout_used);   /* per call; slot 1's stock effect by type (stereo class); p0 / p1 the monitor's averages (coop_pf_boot) */
     put_cost("stage=", COOP_COST_STAGE); put_cost("s2_instr=", COOP_COST_S2I); put_cost("s2_master=", COOP_COST_S2M);
     put_cost("master=", COOP_COST_MASTER); put_cost("fx1_plugin=", COOP_COST_PLUG);

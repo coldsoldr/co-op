@@ -8,7 +8,8 @@
 enum { COOP_PLACE_DEFAULT = 0, COOP_PLACE_FILE = 1, COOP_PLACE_MALFORMED = 2, COOP_PLACE_MARKER = 3 };
 /* eng / fx: an engine's / an effect's image; voice: the engines' voice state; buf: the effect position buffers.
  * src: where the policy came from (the enum); probe: the live fill probe is on. */
-struct coop_place { uint8_t eng, fx, voice, buf, src, probe; };
+struct coop_place { uint8_t eng, fx, voice, buf, src, probe;
+                    uint8_t prof_set, prof; };                            /* e14: prof=0|1, when the file names it */
 #ifdef __cplusplus
 extern "C" {
 #endif

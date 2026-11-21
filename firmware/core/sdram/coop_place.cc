@@ -17,6 +17,7 @@
  *   pf=0..4         the performance monitor's mode (coop_stats.cc g_coop_pf_mode; 1 = line fills counted)
  *   probe=0|1       the live fill probe (coop_stats.cc: a cold code and data pass in region A and in heap 0, every
  *                   stats window)
+ *   prof=0|1        e14: the measuring code (coop_cost.h g_coop_prof): the cost table, marks and per-voice records
  * Later tokens win. No file: the built-in default. An unknown token, a bad value or a file of 128 bytes or more: the
  * whole file is ignored (the default), never a partial reading. Nothing here can fault on a bad file: it is read into
  * a fixed buffer and compared byte by byte.
@@ -43,10 +44,11 @@
 #define DONE_CYCLES 400000000u                                            /* ~1 s at 400 MHz */
 
 extern volatile uint32_t g_coop_pf_mode;                                  /* coop_stats.cc */
+extern "C" volatile uint32_t g_coop_prof;                                 /* coop_stats.cc (e14) */
 extern volatile uint32_t g_plugins_scan_done;                             /* plugin_host.cc */
 /* The built-in default (docs/plugins.md "e13"): images and voice state in heap 0, as e11 ran them on the device;
  * the position buffers in the arena. */
-struct coop_place g_coop_place = { COOP_IN_HEAP, COOP_IN_HEAP, COOP_IN_HEAP, COOP_IN_ARENA, COOP_PLACE_DEFAULT, 0 };
+struct coop_place g_coop_place = { COOP_IN_HEAP, COOP_IN_HEAP, COOP_IN_HEAP, COOP_IN_ARENA, COOP_PLACE_DEFAULT, 0, 0, 0 };
 /* Image-time test switch (--set-word g_coop_place_word=0x1EFVB: bit 16 set, then one hex digit each for eng, fx,
  * voice, buf, 1 = heap): another built-in default, for the gates. 0 = the default above. */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_place_word = 0; }
@@ -92,6 +94,7 @@ static int token(const char *t, int n, struct coop_place *p, int *pf, int *probe
     int vn = n - eq - 1;
     if (same(t, "pf", eq)) { if (vn != 1 || v[0] < '0' || v[0] > '4') return 0; *pf = v[0] - '0'; return 1; }
     if (same(t, "probe", eq)) { if (vn != 1 || (v[0] != '0' && v[0] != '1')) return 0; *probe = v[0] - '0'; return 1; }
+    if (same(t, "prof", eq)) { if (vn != 1 || (v[0] != '0' && v[0] != '1')) return 0; p->prof_set = 1; p->prof = (uint8_t)(v[0] - '0'); return 1; }
     int where;
     if (same(v, "heap", vn)) where = COOP_IN_HEAP; else if (same(v, "arena", vn)) where = COOP_IN_ARENA; else return 0;
     if (same(t, "eng", eq)) p->eng = (uint8_t)where;
@@ -135,6 +138,7 @@ extern "C" void coop_place_boot(void)                                     /* mai
     p->src = COOP_PLACE_FILE;
     if (pf >= 0) g_coop_pf_mode = (uint32_t)pf;                            /* before coop_pf_boot programs the monitor */
     if (probe >= 0) p->probe = (uint8_t)probe;
+    if (p->prof_set) g_coop_prof = p->prof;                                /* e14: the image's default, unless the file says */
     mk = Y_OPEN(PLACE_TRY, 0x242, 0x180);                                  /* O_RDWR | O_CREAT | O_TRUNC */
     if (mk >= 0) { int ok = Y_WRITE(mk, "1", 1) == 1; Y_CLOSE(mk); if (ok) { g_marker_pending = 1; g_place_marker_writes++; } else g_place_marker_errors++; }
     else g_place_marker_errors++;

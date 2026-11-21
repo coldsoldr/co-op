@@ -33,7 +33,12 @@ _coop_synth_render_thunk:
 .Lsyn_noprof:
     R0 = R7;
     CALL _coop_lfo2_pre_render_synth; /* second LFO slot, stage 0: knobs / pitch / volume before the render */
+    P1.L = _g_coop_prof; P1.H = _g_coop_prof;
+    R0 = [P1];
+    CC = R0 == 0;
+    IF CC JUMP .Lsyn_nopf;           /* e14: nothing is recorded while the profile is off */
     CALL _coop_eng_pf_start;         /* p6e: the performance counters at the render's start (coop_stats.cc) */
+.Lsyn_nopf:
     SP += 12;
     R2 = [SP++];
     R1 = [SP++];
@@ -63,7 +68,12 @@ _coop_synth_render_thunk:
     R0 = [SP++];
     R2 = 0;
     SP += -12;
+    P1.L = _g_coop_prof; P1.H = _g_coop_prof;
+    R3 = [P1];
+    CC = R3 == 0;
+    IF CC JUMP .Lsyn_nocost;         /* e14 */
     CALL _coop_eng_cost;             /* (render, cycles, 0 = synth) */
+.Lsyn_nocost:
     R0 = R7;
     CALL _coop_synth_voice_hook;
     SP += 12;
@@ -87,7 +97,12 @@ _coop_drum_render_thunk:
     R0 = 12;
     R0 = R0 - R7;                    /* voice = 12 - R7 */
     CALL _coop_lfo2_pre_render_drum; /* second LFO slot, stage 3, before the render */
+    P1.L = _g_coop_prof; P1.H = _g_coop_prof;
+    R0 = [P1];
+    CC = R0 == 0;
+    IF CC JUMP .Ldrm_nopf;           /* e14 */
     CALL _coop_eng_pf_start;         /* p6e: the counters at the render's start */
+.Ldrm_nopf:
     SP += 12;
     R2 = [SP++];
     R1 = [SP++];
@@ -107,7 +122,12 @@ _coop_drum_render_thunk:
     SP += -12;
     R0 = P0;
     R2 = 1;
+    P1.L = _g_coop_prof; P1.H = _g_coop_prof;
+    R3 = [P1];
+    CC = R3 == 0;
+    IF CC JUMP .Ldrm_nocost;         /* e14 */
     CALL _coop_eng_cost;             /* (render, cycles, 1 = drum) */
+.Ldrm_nocost:
     R1 = [SP+12];                    /* active: the stock sums the voice only when the render returned nonzero */
     R0 = R7;
     CALL _coop_drum_voice_hook;

@@ -12,12 +12,13 @@
 
 #pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
 volatile uint32_t g_coop_pf_mode, g_plugins_scan_done;
+extern "C" { volatile uint32_t g_coop_prof = 1; }
 #include "../../core/sdram/coop_place.cc"
 
 static int fails;
 static void expect(const char *text, int ok, const char *want, int pf, int probe)
 {
-    struct coop_place p = { COOP_IN_HEAP, COOP_IN_HEAP, COOP_IN_HEAP, COOP_IN_ARENA, 0, 0 };
+    struct coop_place p = { COOP_IN_HEAP, COOP_IN_HEAP, COOP_IN_HEAP, COOP_IN_ARENA, 0, 0, 0, 0 };
     const struct coop_place before = p;
     int f = -7, pr = -7;
     int got = coop_place_parse(text, (int)strlen(text), &p, &f, &pr);
@@ -45,6 +46,13 @@ int main(void)
     expect("pf=1", 1, def, 1, -1);
     expect("probe=1 pf=4 all=arena", 1, "eng=arena,fx=arena,voice=arena,buf=arena", 4, 1);
     expect("probe=0", 1, def, -1, 0);
+    expect("prof=0", 1, def, -1, -1);                                     /* e14 */
+    expect("all=arena prof=1", 1, "eng=arena,fx=arena,voice=arena,buf=arena", -1, -1);
+    { struct coop_place p = { 1, 1, 1, 0, 0, 0, 0, 0 }; int f, pr;
+      if (!coop_place_parse("prof=0", 6, &p, &f, &pr) || !p.prof_set || p.prof != 0) { fails++; printf("FAIL prof=0 not taken\n"); }
+      if (!coop_place_parse("prof=1 prof=0 prof=1", 20, &p, &f, &pr) || p.prof != 1) { fails++; printf("FAIL prof: the later token\n"); } }
+    expect("prof=2", 0, 0, 0, 0);
+    expect("prof=", 0, 0, 0, 0);
     /* refused whole */
     expect("all=arena bogus=1", 0, 0, 0, 0);
     expect("eng=heap fx=aren", 0, 0, 0, 0);
@@ -65,7 +73,7 @@ int main(void)
     expect(any, 0, 0, 0, 0);
     const char *full = "eng=arena fx=arena voice=arena buf=heap pf=1 probe=1";
     for (int n = 0; n <= (int)strlen(full); n++) {
-        struct coop_place p = { 1, 1, 1, 0, 0, 0 };
+        struct coop_place p = { 1, 1, 1, 0, 0, 0, 0, 0 };
         int f = -1, pr = -1;
         (void)coop_place_parse(full, n, &p, &f, &pr);
         if (p.eng > 1 || p.fx > 1 || p.voice > 1 || p.buf > 1) { fails++; printf("FAIL prefix %d\n", n); }

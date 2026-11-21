@@ -34,10 +34,21 @@ struct coop_cost { uint64_t sum; uint32_t n, max; uint64_t p0, p1; };   /* p0 / 
 extern uint32_t g_coop_eng_fn[COOP_ENG_N];   /* the render function of each COOP_COST_ENG entry (0 = free) */
 
 extern struct coop_cost g_coop_cost[COOP_COST_N];
+/* e14 (efficiency-audit finding 3): the measuring code behind a switch. 0 = nothing is recorded: no cost entry, no
+ * mark, no per-voice record, no fold at the block start, no performance counter read; the callback's own totals
+ * (cb_sum, cb_max, cb_over: two CYCLES reads and five word updates a block) and the three window timers (record tap,
+ * mix, voice hook: two CYCLES reads and three word updates a call) stay. The image's word (coop_stats.cc, 1 in the
+ * ELF; a release package sets 0 with --set-word g_coop_prof=0), then the policy file's `prof=0|1` (coop_place.cc). */
+#ifdef __cplusplus
+extern "C" volatile uint32_t g_coop_prof;
+#else
+extern volatile uint32_t g_coop_prof;
+#endif
 
 static inline uint32_t coop_cost_now(void) { uint32_t v; __asm__ __volatile__("%0 = CYCLES;" : "=d"(v)); return v; }
 static inline void coop_cost_add(int i, uint32_t dt)
 {
+    if (!g_coop_prof) return;
     struct coop_cost *c = &g_coop_cost[i];
     c->sum += dt; c->n++;
     if (dt > c->max) c->max = dt;
@@ -55,10 +66,11 @@ static inline void coop_cost_add(int i, uint32_t dt)
 extern volatile uint32_t g_coop_pf_live;
 static inline void coop_pf_now(uint32_t p[2])
 {
-    if (g_coop_pf_live) { p[0] = COOP_PFCNTR0; p[1] = COOP_PFCNTR1; } else { p[0] = 0; p[1] = 0; }
+    if (g_coop_pf_live && g_coop_prof) { p[0] = COOP_PFCNTR0; p[1] = COOP_PFCNTR1; } else { p[0] = 0; p[1] = 0; }
 }
 static inline void coop_cost_add_pf(int i, uint32_t dt, const uint32_t p0[2])
 {
+    if (!g_coop_prof) return;
     struct coop_cost *c = &g_coop_cost[i];
     c->sum += dt; c->n++;
     if (dt > c->max) c->max = dt;
@@ -80,6 +92,7 @@ extern uint32_t g_mk_pf[COOP_MK_N][2];       /* m1: the two counters at each mar
 extern "C" volatile uint32_t g_coop_gap_prof;
 static inline void coop_mark_at_pf(uint32_t id, uint32_t t, uint32_t p0, uint32_t p1)
 {
+    if (!g_coop_prof) return;                                  /* e14: no marks, so no slow-block lines either */
     uint32_t n = g_mk_n;
     if (n < COOP_MK_N) { g_mk[n][0] = id; g_mk[n][1] = t; g_mk_pf[n][0] = p0; g_mk_pf[n][1] = p1; g_mk_n = n + 1; } else g_mk_lost++;
 }
