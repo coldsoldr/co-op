@@ -57,6 +57,8 @@ extern "C" void coop_slot2_get(int pos, uint8_t *out10);
 extern "C" int coop_slot2_save(void);
 extern "C" int coop_plugin_list(char *out, int cap);
 extern "C" int coop_inventory_text(char *out, int cap, const char *build);   /* plugin_host.cc (e3) */
+extern "C" int coop_stats_is_path(const char *path);                   /* coop_stats.cc (e14): the stats file's path */
+extern "C" int coop_stats_ram(uint32_t off, const char **text);
 extern "C" int coop_settings_set_plugin(const char *fname, int enable);  /* coop_settings.cc (e3) */
 extern "C" int coop_runner_start(const char *path);                 /* coop_runner.cc, p5b */
 extern "C" void coop_runner_abort(void);
@@ -213,6 +215,15 @@ static void handle(const uint8_t *m, int n)
         int pl = pn - 4;
         for (int i = 0; i < pl; i++) path[i] = (char)in[4 + i];
         path[pl] = 0;
+        if (coop_stats_is_path(path)) {                             /* e14: the stats text, from RAM (coop_stats.cc) */
+            const char *text = 0;
+            int total = coop_stats_ram(off, &text), got = 0;
+            if (off < (uint32_t)total) { got = total - (int)off; if (got > CHUNK) got = CHUNK; for (int i = 0; i < got; i++) out[5 + i] = (uint8_t)text[off + i]; }
+            out[0] = ST_OK;
+            out[1] = (uint8_t)total; out[2] = (uint8_t)(total >> 8); out[3] = (uint8_t)(total >> 16); out[4] = 0;
+            reply(cmd, seq, out, 5 + got);
+            return;
+        }
         int fd = Y_OPEN(path, 0, 0);
         if (fd < 0) { out[0] = ST_PATH; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
         int32_t total = Y_LSEEK(fd, 0, 2);

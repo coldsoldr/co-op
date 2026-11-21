@@ -126,6 +126,8 @@ static void put_window(const char *tag, const struct window *w)
 
 #include "coop_cost.h"
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_prof = 1; }   /* e14: coop_cost.h */
+extern "C" volatile uint32_t g_coop_statsfile;                    /* e14: below (the text in RAM) */
+extern volatile uint32_t g_stats_ram_reads, g_stats_ram_texts;
 struct coop_cost g_coop_cost[COOP_COST_N];
 uint32_t g_coop_eng_fn[COOP_ENG_N];
 static uint32_t g_eng_blk[2];                                     /* this block's synth / drum render cycles */
@@ -485,7 +487,7 @@ static const char *eng_name(uint32_t fn)
 
 static void put_cost_lines(void)                             /* the "cost" and "engines" lines from g_cost_src */
 {
-    put("mode"); kv("prof", g_coop_prof); kv("idle_skip", g_coop_idle_skip); kv("stage_skips", g_stage_skips);   /* e14 */
+    put("mode"); kv("prof", g_coop_prof); kv("statsfile", g_coop_statsfile); kv("ram_reads", g_stats_ram_reads); kv("idle_skip", g_coop_idle_skip); kv("stage_skips", g_stage_skips);   /* e14 */
     kv("mix_skips", g_mix_skips); kv("skip_checked", g_skip_checked); kv("skip_bad", g_skip_bad);
     kv("voice_skip", g_coop_voice_skip); kv("voice_skips", g_voice_skips); kv("voice_checked", g_voice_skip_checked); kv("voice_bad", g_voice_skip_bad);
     put("\n");            /* e14: 0 = the cost table, the engines line, the marks and the
@@ -690,7 +692,38 @@ extern "C" int coop_stats_run_section(char *out, int cap, const char *name, cons
     return n;
 }
 
-static void write_file(void)
+/* e14 (efficiency-audit finding 4): the text is made in RAM and served from there. Until e13 every 5 s window ended
+ * with ~15 KB written to /yaffs2/user/coop_stats.txt and 8 KiB into the tape image's tail (13.7 MB of NAND an hour,
+ * a main-loop stall each time). Now:
+ * - the windows tick as before (coop_stats_tick: the ring, the heaviest windows, the fill probe), without a write;
+ * - a host's FILE_GET of the stats path is answered from RAM (coop_sysex.cc -> coop_stats_ram): the text is made
+ *   afresh when the read starts (offset 0, or the first request after ~2 s without one) and the following pieces come
+ *   from that same text, so a paged read is consistent. tools/coop_usb.py `stats` and the site read that path;
+ * - the file and the tape tail are written only when g_coop_statsfile is set: 1 in the ELF (the op1emu gate reads the
+ *   file out of the NAND after a run), 0 in the device packages (--set-word g_coop_statsfile=0), the policy token
+ *   `statsfile=0|1` either way; and after a runner script (coop_stats_write_now), which is a test tool's own request. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_statsfile = 1; }
+volatile uint32_t g_stats_ram_reads, g_stats_ram_texts;
+static void format_text(void);
+static void store_text(void);
+static void write_file(void) { format_text(); store_text(); }
+static uint32_t g_ram_tick;                                        /* g_stats_ticks at the last RAM request */
+extern "C" int coop_stats_is_path(const char *path)
+{
+    const char *s = STATS_PATH;
+    while (*s && *s == *path) { s++; path++; }
+    return *s == 0 && *path == 0;
+}
+/* Main loop (the SysEx service): the text for a read at offset `off`; returns its length. */
+extern "C" int coop_stats_ram(uint32_t off, const char **text)
+{
+    if (off == 0 || !g_stats_ram_texts || g_stats_ticks - g_ram_tick > 240u) { format_text(); g_stats_ram_texts++; }
+    g_ram_tick = g_stats_ticks;
+    g_stats_ram_reads++;
+    *text = g_text;
+    return g_len;
+}
+static void format_text(void)
 {
     g_out = g_text; g_cap = (int)sizeof g_text; g_len = 0; g_cost_src = g_coop_cost;
     put("coop_stats 3 build " STATS_BUILD "\n");
@@ -785,6 +818,9 @@ static void write_file(void)
         put_window("win", w);
     }
     g_text[g_len] = 0;
+}
+static void store_text(void)
+{
     if (coop_tape_write_tail(g_text, g_len + 1) == 0) g_stats_tail_writes++; else g_stats_tail_errors++;   /* the channel disk mode copies */
     int fd = Y_OPEN(STATS_PATH, 0x242, 0x180);                        /* O_RDWR | O_CREAT | O_TRUNC, as the tape marker (not visible in disk mode) */
     if (fd < 0) { g_stats_errors++; return; }
@@ -823,7 +859,7 @@ extern "C" void coop_stats_tick(int recording)
     if (!g_started) { g_started = 1; g_window_start = now; }
     g_stats_ticks++;
     if (recording) g_win_recording = 1;
-    if (g_stats_ticks == FIRST_WRITE_PASSES && !recording) write_file();
+    if (g_stats_ticks == FIRST_WRITE_PASSES && !recording && g_coop_statsfile) write_file();
     if (now - g_window_start < WINDOW_CYCLES) return;
     g_window_start = now;
     struct window *w = &g_ring[g_ring_next];
@@ -858,5 +894,5 @@ extern "C" void coop_stats_tick(int recording)
     fill_probe();
     g_stats_windows++;
     keep_if_heavy(w);
-    if (!recording) write_file();
+    if (!recording && g_coop_statsfile) write_file();              /* e14: the text is served from RAM without it */
 }
