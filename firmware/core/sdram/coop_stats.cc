@@ -37,6 +37,8 @@ extern volatile uint32_t g_stereo_stage_cycles_max, g_stereo_stage_calls;   /* s
 extern volatile uint32_t g_lfo2_cycles_max;
 extern volatile uint32_t g_tape_rec_calls, g_tape_rec_cycles_max, g_tape_rec_cycles_win, g_tape_rec_cycles_sum_win, g_tape_rec_side_blocks, g_tape_l1;
 extern volatile uint32_t g_tape_state_mismatch, g_tape_state_mismatch2, g_tape_mismatch_word, g_tape_seam_fills;
+extern volatile uint32_t g_tape_idle_blocks, g_tape_idle_checked, g_tape_idle_bad;   /* tape_stereo.cc (e14) */
+extern "C" volatile uint32_t g_coop_tape_idle;
 extern volatile uint32_t g_tape_io_loads, g_tape_io_flushes, g_tape_io_held, g_tape_io_guarded, g_tape_io_errors;
 extern volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g_tape_io_flush_cycles_max, g_tape_io_gap_cycles_max;
 extern volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g_tape_io_flush_cycles_win, g_tape_io_gap_cycles_win;
@@ -738,7 +740,9 @@ static void write_file(void)
     put("\n");
     put("tape"); kv("rec_calls", g_tape_rec_calls); kv("rec_side_blocks", g_tape_rec_side_blocks);
     kv("mismatch", g_tape_state_mismatch); kv("mismatch2", g_tape_state_mismatch2); kv("mismatch_word", g_tape_mismatch_word);
-    kv("seam_fills", g_tape_seam_fills); put("\n");
+    kv("seam_fills", g_tape_seam_fills);
+    kv("idle_mode", g_coop_tape_idle); kv("idle_blocks", g_tape_idle_blocks); kv("idle_checked", g_tape_idle_checked); kv("idle_bad", g_tape_idle_bad);   /* e14 */
+    put("\n");
     put("io"); kv("loads", g_tape_io_loads); kv("flushes", g_tape_io_flushes); kv("held", g_tape_io_held); kv("guarded", g_tape_io_guarded); kv("errors", g_tape_io_errors);
     kv("step_max", g_tape_io_step_cycles_max); kv("gap_max", g_tape_io_gap_cycles_max);
     kv("load_max", g_tape_io_load_cycles_max); kv("flush_max", g_tape_io_flush_cycles_max); put("\n");

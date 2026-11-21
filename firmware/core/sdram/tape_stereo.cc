@@ -42,6 +42,20 @@ __attribute__((section(".data"))) volatile uint32_t g_coop_tape_stereo_in = 1;  
 volatile uint32_t g_tape_rec_calls, g_tape_rec_cycles_max, g_tape_state_mismatch, g_tape_gains_calls;
 volatile uint32_t g_tape_rec_cycles_win, g_tape_rec_cycles_sum_win, g_tape_l1;   /* stats v3; g_tape_l1 = buffers in L1 */
 volatile uint32_t g_tape_rec_side_blocks, g_tape_mono_ptr, g_tape_state_mismatch2, g_tape_mismatch_word;
+/* e14 (docs/performance.md "e14", efficiency-audit finding 2): the tape not recording.
+ * The stock function, read in the decrypted L1 (0xffa06334..0xffa067a8): its first test is the tape state word
+ * [0xff802960] == 1 (-> 0xffa0677a, the record path) and then the recording byte B[0x018c17d8] != 0 (-> 0xffa063a0,
+ * the block that ends a take). With neither it goes to 0xffa0675e and returns after exactly two stores, both in the
+ * tape state: W[0xff8029e2] = W[0xff8029e0] (0xffa06388) and [0xff80298c] = [0xff802974] - [0x018c17e0], 0 when
+ * that is negative (0xffa0676c). It reads no input sample and touches neither the input ring, nor the record state
+ * at 0x018c17d8, nor a cache node. So in such a block the two passes of the stereo tap do the same two stores twice
+ * and leave the ring words as they found them, and one stock call on its own is the same block. The audio interrupt
+ * cannot be preempted by the thread that sets the two words, so the test here sees what the stock's test will.
+ * g_coop_tape_idle (--set-word): 1 (default) one call; 0 the two passes always (e13); 2 the two passes with a check
+ * of the claim: the idle test held but the input ring, the record state or any tape state word other than the two
+ * changed -> g_tape_idle_bad. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_tape_idle = 1; }
+volatile uint32_t g_tape_idle_blocks, g_tape_idle_checked, g_tape_idle_bad;
 
 /* --- state: in the L1 pool (coop_l1.h, T4) when it is there, else these SDRAM copies --- */
 static int16_t s_inL[COOP_MBLK], s_inR[COOP_MBLK];
@@ -123,15 +137,7 @@ extern "C" void coop_tape_record(const int16_t *mono)
     }
     const int16_t *dL = 0, *dR = 0;
     int side = g_coop_tape_stereo_in && coop_stereo_side_bufs(&dL, &dR);
-    if (side) {
-        g_tape_rec_side_blocks++;
-        for (int i = 0; i < COOP_MBLK; i++) {
-            g_inL[i] = coop_fr16_add(mono[i], dL[i]);
-            g_inR[i] = coop_fr16_add(mono[i], dR[i]);
-        }
-    } else {
-        for (int i = 0; i < COOP_MBLK; i++) { g_inL[i] = mono[i]; g_inR[i] = mono[i]; }
-    }
+    if (side) g_tape_rec_side_blocks++;
     if (!g_rings_inited) {                     /* both channels start from the stock ring's history */
         copy_words(g_ringL, REC_RING, REC_RING_WORDS);
         copy_words(g_ringR, REC_RING, REC_RING_WORDS);
@@ -139,12 +145,44 @@ extern "C" void coop_tape_record(const int16_t *mono)
     }
     int32_t track = *TAPE_TRACK;
     if ((uint32_t)track >= TRACKS) { STOCK_RECORD(mono); return; }
+    const int idle = TAPE_STATE[0] != 1u && *(volatile uint8_t *)REC_STATE == 0;   /* e14: the stock's own two tests */
+    if (idle) g_tape_idle_blocks++;
+    if (idle && g_coop_tape_idle == 1) {               /* nothing to record: the stock call is two state stores, and
+                                                          the two channels' input is not built */
+        STOCK_RECORD(mono);
+        uint32_t dti = coop_cycles() - t0;
+        if (dti > g_tape_rec_cycles_max) g_tape_rec_cycles_max = dti;
+        if (dti > g_tape_rec_cycles_win) g_tape_rec_cycles_win = dti;
+        g_tape_rec_cycles_sum_win += dti;
+        return;
+    }
+    if (side) {
+        for (int i = 0; i < COOP_MBLK; i++) {
+            g_inL[i] = coop_fr16_add(mono[i], dL[i]);
+            g_inR[i] = coop_fr16_add(mono[i], dR[i]);
+        }
+    } else {
+        for (int i = 0; i < COOP_MBLK; i++) { g_inL[i] = mono[i]; g_inR[i] = mono[i]; }
+    }
 
     copy_words(g_rec_snap, REC_STATE, REC_STATE_WORDS);
     copy_words(g_tape_snap, TAPE_STATE, TAPE_STATE_WORDS);
     /* pass 1: left lane = the stock pass on track t */
     copy_words(REC_RING, g_ringL, REC_RING_WORDS);
     STOCK_RECORD(g_inL);
+    if (idle && g_coop_tape_idle == 2) {               /* e14 check: an idle pass changed only the two words */
+        int bad = 0;
+        for (int i = 0; i < REC_RING_WORDS; i++) if (REC_RING[i] != g_ringL[i]) bad = 1;
+        for (int i = 0; i < REC_STATE_WORDS; i++) if (REC_STATE[i] != g_rec_snap[i]) bad = 1;
+        for (int i = 0; i < TAPE_STATE_WORDS; i++) {
+            uint32_t d = TAPE_STATE[i] ^ g_tape_snap[i];
+            if (i == 11) continue;                     /* [0xff80298c], the record position */
+            if (i == 32) d &= 0x0000FFFFu;             /* W[0xff8029e2], the upper half of word 32 */
+            if (d) bad = 1;
+        }
+        g_tape_idle_checked++;
+        if (bad) g_tape_idle_bad++;
+    }
     copy_words(g_ringL, REC_RING, REC_RING_WORDS);
     copy_words(g_rec_after, REC_STATE, REC_STATE_WORDS);
     copy_words(g_tape_after, TAPE_STATE, TAPE_STATE_WORDS);
