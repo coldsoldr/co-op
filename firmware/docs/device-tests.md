@@ -2963,8 +2963,8 @@ Result: (pending)
 
 The two decisions left open by the entry above (2026-11-21: do both). Core unchanged; the two files load on e10, e11
 and e12 as before (the same imports). They are in `firmware/build/plugins-next2/` (`rings.coop` 114,948 bytes,
-`tape_echo.coop` 25,444 bytes), **not in the catalogue and not gated in op1emu**: everything below is host and GNU
-simulator. Both change the sound a little, on purpose.
+`tape_echo.coop` 25,444 bytes), **in the catalogue since 2026-11-21, after the op1emu gate on e11 and e12** ("Gate
+notes" below); the table is host and GNU simulator. Both change the sound a little, on purpose.
 
 | | what changed | what was shown |
 |---|---|---|
@@ -2973,9 +2973,78 @@ simulator. Both change the sound a little, on purpose.
 
 Details and tables: `plugins/rings/README.md` "0.11", `plugins/tape_echo/README.md` "The tail settles (0.5)".
 
+**Gate notes (op1emu, 2026-11-21, `tools/emu_gate.py`, one run at a time, a fresh NAND each; the e11 and e12 gate
+images as in the entry above; scenarios, scripts and stats in `I:\op1emu-tmp\gate2\`)** [C op1emu]. No fault in any
+run on either core. **Both files are in the catalogue since this gate** (`plugins/rings/rings.coop` 0.11,
+`plugins/tape_echo/tape_echo.coop` 0.5).
+
+| Run | e11 | e12 |
+|---|---|---|
+| (a) **the 13 catalogue files with these two**, first boot, `det_fx_select.txt` (the longer wall wait) | `plugins seen 13 loaded 13 failed 0 ... over_budget 0`, `fscr_built 11 scr_built 2`; `plugmem budget 1769472 used 1511704 over_budget 0 heap_short 0 skipped 0 badname 0 tape_node 524288 heap_free_boot 14212948 scratch_files 11 fxbuf 134784 fxbuf_mem 673960 fxbuf_short 0`; end `heap_largest 1102900 heap_free 1196020` | 13 loaded; `plugmem budget 5898240 used 990592 over_budget 0 ... heap_free_boot 15739524 scratch_files 11 fxbuf 134784 fxbuf_mem 539136 fxbuf_short 0 fxbufs 4 fxbuf_refused 0 arena 1394944 arena_a 1394944 arena_b 0 clip 4194304` |
+| (a) the same NAND, second boot, `det_chord.txt` | 13 loaded, the same `plugmem` (`heap_free_boot 14543124`); end `heap_largest 1433540 heap_free 1526196` | 13 loaded, the same `plugmem` (`heap_free_boot 16069700`) |
+| (b) rings 0.11: `det_eng_rings.txt` (every model, FM and string + reverb among them) | `plugmem ... used 668216`, `eng_renders 118594 eng_noteons 329`, `eng_rings=9603/34183 eng_rings_block=54452/117934` (0.10: 9513/34173, 53934/115493), `scr_built 1` | `used 669600` (0.10: 668512), `eng_renders 118594 eng_noteons 329`, `eng_rings=9601/34187 eng_rings_block=54437/115613` |
+| (c) tape_echo 0.5: `det_fx_tape_echo_tempo.txt` | `tempo_q16 9502720 tempo_inc 241011616 p0=59873i1:16384/8/0/0`, `fx1_plugin=8030/19140` (0.4: 7902/18468) | `p0=59869i1:16384/8/0/0`, `fx1_plugin=7976/18590` |
+| (c) tape_echo: `det_fx_two_pos.txt`; `det_fx_tape_echo.txt` | `p0=21646i1 p3=38591i1`; the control walk `p0=36117i2:11197/0/1/0 p1=49410i2:17749/0/1/0 p2=68153i1:15019/0/0/1 p3=77871i1:19114/0/1/0 p4=59610i1:16384/3/2/0` (0.4's words), `fx1_plugin=9085/17920 s2_instr=3931/16328 s2_master=4161/16116` | `p0=21645i1 p3=35152i1`, `fxbufs 4`; the same control words, `fx1_plugin=9318/17914 s2_instr=4009/16273 s2_master=4264/16108` |
+
+**The 13-file set and e10.** `used 1511704` of e10's 1,572,864 (e10 charges what e11 charges): 61,160 bytes to spare;
+257,768 on e11. The two files are 1,352 bytes of heap larger together (1,344 of e12's arena). The site's memory sums
+give both cores' figures to the byte (`web/src/core/plugins/memory.test.ts`).
+
+**rings: the held reverb voice idles** (`gate2/scen/rings_hold3b.txt`: the second boot of the NAND `det_eng_rings.txt`
+leaves, so the sound is rings on string + reverb and no sequencer key was pressed; damping turned down, two keys held
+from 32 s to 92 s, a third key at 82 s). The stats' 5-second windows, the whole callback's cycles a block; no key
+down is 45,670.
+
+| | 0.10 | 0.11 |
+|---|---|---|
+| the chord just struck (first 10 s) | 91,508 / 90,132 | 92,687 / 91,304 (the rounding's and the idle state's ~1.2 k) |
+| the keys still down, 13 s after the strike and on (seven windows, all the same) | **72,430** | **57,030** |
+| the same, over no key down | 26,760 | 11,360 (two held voices through the stock's voice path, rings idle in each) |
+| the third key struck into the held chord | 86,773 | 88,003 |
+| `eng_rings_block=` avg / max over the 42,270 blocks of the hold | 22,295 / 47,021 | 12,892 / 48,482 (e12: 12,886 / 48,476) |
+
+- The cost falls by 15,400 cycles a block once the strings are asleep and the reverb has run out, stays there for as
+  long as the keys are down, and comes back in full with the new note. 0.10 pays for the reverb the whole minute.
+  (The host's figure was 15,510 -> 2,518 for four voices; here two voices, measured with the stock's voice path
+  around them.)
+- In the dumped output both versions end on the same silence (0.10's -52 LSB offset is not in the output: the DC is
+  taken out after the engine [I]).
+- **A scenario trap found on the way:** after `tap seq` (how `det_eng_rings.txt` and the FX scenarios close a list) a
+  held key is retriggered by the stock sequencer for as long as it is down (`eng_noteons 980` for four keys in a
+  minute). A "held chord" in those scenarios never goes quiet; the hold was therefore run as a second boot.
+- **The other five models against 0.10, sample for sample: the emulator does not allow it.** rings' output depends
+  on where in its own run a strike falls: the same 0.11 file on e11 and on e12 differs by thousands of LSB in every
+  section (4,545 to 7,193). In the one pair whose timing matched up to the first note (0.11 and 0.10 on e11), FM,
+  the model without a noise burst, is within 2 LSB of 0.10 (the output's flicker), the others differ like any two
+  runs. So nothing here contradicts "the same bytes as 0.10", and the proof stays the host's (`make models`).
+
+**tape_echo: idle at the defaults and with the feedback up** (alone at synth FX 1; windows as above, no effect on is
+45,675):
+
+| Scenario | 0.4 | 0.5 |
+|---|---|---|
+| the defaults: a chord, 40 s nothing, a chord (`idle_tape_echo.txt`) | idle: 49,643 (the entry above) | **idle: 49,642** (e12: 49,636), the second chord's window 95,505, idle again; `fx1_plugin=5637/18175` |
+| **a new tape (white at the bottom), the shortest time, feedback up** (green 22 detents: `te_hf_short.txt`): a short note, 45 s nothing, a note | **never idle**: 62,570 in every silent window to the end, `fx1_plugin=15241/18012`; the output rests on 62 / 64 LSB (a 1 LSB ghost) | **idle within the note's own 5-second window**: 49,643 in every window after it, and after the second note again; `fx1_plugin=4708/18169` (e12: 49,636, 4706/18105); the output rests on 63 / 64 as with no effect |
+| the same, feedback higher (green 32 detents: `te_hf64_short.txt`) | never idle: 62,570, `fx1_plugin=15243/17705` | idle a few seconds later (the next window 52,502, then 49,643), `fx1_plugin=5532/18339` |
+| **a new tape, the longest time (1.5 s a repeat), feedback up** (22 detents, each repeat 0.73 of the one before: `te_hf_long.txt`): a note, 106 s nothing, a note | **never idle**: 62,598 in every window of the last two minutes, `fx1_plugin=15833/17686`; a 1-2 LSB ghost | the last sample over the flicker 42 s after the note; **idle before the second note** (49,648), awake for it (67,880, then 63,100 for eight windows), **idle again about 46 s after it**; `fx1_plugin=10401/18575` (e12 the same: 49,640, 10394/18594) |
+| the same, feedback higher (32 detents, each repeat 0.86 of the one before) | - | **not idle within the 106 s** (63,023 throughout; the tail still 24 LSB and falling 96 s after the note): the host's time to zero at feedback 0.95 is 107 s. A run with a longer silence was queued behind another gate and not made. |
+
+- The feedback's value is not in the stats; "0.73" and "0.86" are the repeats' measured ratios (the tape's loss is in
+  them, so the knob is higher: [I] about 0.8 and 0.93).
+- **With the input playing, against 0.4** (`held_tape_echo.txt`: a chord retriggered for 23 s, then released): the
+  timing-matched pair on e11 is **identical** from the boot through the whole chord; in the 3 s after the release
+  6,892 frames differ by 1 LSB (the tail on a silent input, where 0.5 nudges: by design), then identical again.
+  Cost while playing: `fx1_plugin=12610/17859` against 0.4's 12573/17937.
+- The defaults' idle scenario and the tempo scenario against 0.4 gave no matched pair (the note landed a block
+  apart); the tempo run's repeats are the same intervals as before (`tempo_q16` and the sync word as 0.4).
+
+Not shown in op1emu [I]: the device's cycle figures; the sound of the shorter last tail and of the reverb's end by
+ear (the checklist below); rings' reverb with damping near the top (the string itself rings for minutes); idle at
+feedback 0.95 and over at the long times beyond what the last row shows.
+
 **What to do** (headphones, the volume well up):
 
-1. Install the two files from `firmware/build/plugins-next2/` (or wait for the catalogue swap). The librarian shows
+1. Install the two files with the librarian (the catalogue has them). The librarian shows
    rings 0.11 and tape_echo 0.5.
 2. **rings, a long reverb tail into silence.** String + reverb, damping at about 2 o'clock, one loud chord, the keys
    held down. Listen to the tail to its very end and ten seconds past it. Expected: the string dies, then the reverb,
