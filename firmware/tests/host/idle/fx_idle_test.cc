@@ -22,8 +22,8 @@
 //   4. the states that hold a sound (freeze, hold, a playing loop, feedback at or over 1, infinite decay): a note,
 //      the state engaged, a minute of silence: never idle, no difference. And engaged while idle: the idle state ends
 //      on that block and does not come back.
-//   4b. where the DSP's own rounding holds a tail over the idle level for ever (tape_echo at high feedback on a new
-//      tape): three minutes of silence, never idle, no difference.
+//   4b. where the DSP's own rounding holds a tail over the idle level for ever: three minutes of silence, never
+//      idle, no difference (none of the five has such a setting since tape_echo 0.5's tail settles).
 //   5. the controls moving every block while idle, then a note: the difference stays under the bound.
 //
 // In the Blackfin simulator (`make sim`): the render's cycles a block playing, silent before the idle state, idle, and
@@ -46,6 +46,7 @@ extern "C" {
 int g_coop_idle_off;            // 1: the render never enters (or stays in) the idle state
 uint32_t g_coop_idle_blocks;    // blocks rendered through the idle path
 int32_t g_coop_idle_level;      // the level the last silent block's check saw (the effect's own unit)
+int g_coop_te_ghost;            // tape_echo 0.5: 1 keeps 0.4's tail (tests/host/tape_echo `make tail`); 0 here
 }
 // The effects' clocks (their half-rate paths restart after a pause): stepped here.
 uint32_t g_tape_echo_host_cycles;
@@ -79,18 +80,17 @@ struct Cfg {
 #define E(n, e) { n, { 16384, 13107, 13107, 16384 }, e, 30000, 8000, 0 }
 Cfg kCfg =
 #if FXID == 1
-{ "tape_echo", 0, 60000, 4, {
+{ "tape_echo", 0, 60000, 6, {
     { "defaults", { 16384, 14746, 9830, 13107 }, 16384, 0, 0, 0 },
+    { "longest time, feedback 0.6, age 8000, wet", { 32767, 18000, 8000, 32767 }, 16384, 0, 0, 0 },   // 0.4: never idle
+    { "longest time, feedback 0.87, new tape, wet", { 32767, 26000, 0, 32767 }, 16384, 0, 0, 0 },    // (its ghost)
     { "time 0.6 s, feedback 0.6, wet", { 25000, 18000, 16000, 32767 }, 16384, 0, 0, 0 },
     { "short, worn tape, three heads", { 3000, 20000, 32767, 20000 }, 20000, 0, 2, 0 },
     { "sync 1/4, feedback 0.95, two heads", { 16384, 28300, 16000, 26000 }, 16384, 8, 1, 0 } },
   3, {
     { "hold", { 16384, 14746, 9830, 32767 }, 16384, 0, 0, 1 },
     { "feedback at 1.0", { 16384, 29789, 9830, 32767 }, 16384, 0, 0, 0 },
-    { "feedback at the top (1.1)", { 16384, 32767, 9830, 32767 }, 16384, 0, 0, 0 } },
-  2, {
-    { "longest time, feedback 0.6, age 8000, wet", { 32767, 18000, 8000, 32767 }, 16384, 0, 0, 0 },
-    { "longest time, feedback 0.87, new tape, wet", { 32767, 26000, 0, 32767 }, 16384, 0, 0, 0 } } };
+    { "feedback at the top (1.1)", { 16384, 32767, 9830, 32767 }, 16384, 0, 0, 0 } }, 0, {} };
 #elif FXID == 2
 { "cs_hall", 0, 90000, 3, {
     { "defaults", { 19661, 16384, 9830, 11469 }, 3277, 16384, 32767, 0 },

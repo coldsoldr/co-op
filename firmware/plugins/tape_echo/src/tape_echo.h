@@ -103,8 +103,10 @@ class TapeEcho {
   // tape, its write position and its two filters: the glide, the smoothers, the wow and flutter, and the heads'
   // delays, weights and the input gain as the run kernel would have left them after n samples.
   void Idle(const TapeEchoParams& p, int32_t n);
-  // True when the n pairs the last Process wrote to the tape are all zero (both channels).
-  bool WroteSilence(int32_t n) const;
+  // After a Process whose input was silence: the n pairs it wrote to the tape. With `settle` (coop 0.5) each sample
+  // of them is first taken a step towards zero (SettleStep in tape_echo_core.cc), so the loop's rounding cannot hold
+  // a tail for ever. Returns true when the n pairs are all zero (both channels).
+  bool SettleTail(int32_t n, bool settle);
 
  private:
   void Control(const TapeEchoParams& p, int32_t n);

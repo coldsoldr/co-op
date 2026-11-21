@@ -485,15 +485,53 @@ void TapeEcho::Idle(const TapeEchoParams& p, int32_t n) {
   k_.gain += k_.gstep * n;
 }
 
-bool TapeEcho::WroteSilence(int32_t n) const {
+namespace {
+
+// coop 0.5: the tail settles. The loop rounds to nearest at each of its stages (the heads' interpolation, their sum,
+// the loss filter's step), so with feedback g a repeat under about 1 / (2 (1 - g)) LSB a stage came round unchanged
+// for ever (0.4: 9 LSB of output at feedback 0.87 on a new tape, 45 at 0.97). While the input is silent, a block of
+// tape written wholly within kSettleLevel is taken one LSB towards zero, sample by sample: nothing a repeat can come
+// round on. Louder blocks are written as they were.
+#ifndef TE_SETTLE_LEVEL
+#define TE_SETTLE_LEVEL 127
+#endif
+const int32_t kSettleLevel = TE_SETTLE_LEVEL;      // tape samples (int16 at 22.05 kHz): -48 dBFS
+
+// v - sign(v), without a branch (v >> 31 is -1 for a negative v, -v >> 31 for a positive one).
+inline int32_t SettleStep(int32_t v) { return v - ((v >> 31) - (-v >> 31)); }
+inline int32_t SettlePair(int32_t w) { return Pack(SettleStep(Lo(w)), SettleStep(Hi(w))); }
+// True when both halves are within +-kSettleLevel (x + level and level - x are both non-negative exactly then).
+inline int32_t OverLevel(int32_t w) {
+  const int32_t a = Lo(w), c = Hi(w);
+  return (a + kSettleLevel) | (kSettleLevel - a) | (c + kSettleLevel) | (kSettleLevel - c);
+}
+
+}  // namespace
+
+bool TapeEcho::SettleTail(int32_t n, bool settle) {
   // Process writes downwards from ptr_ - 1 and leaves ptr_ on its last write (TE_TAPE_SIZE standing for 0): the
   // call's n pairs are the n from there up, round the ring (two runs at most).
-  int32_t i = ptr_ == TE_TAPE_SIZE ? 0 : ptr_;
+  const int32_t i = ptr_ == TE_TAPE_SIZE ? 0 : ptr_;
   int32_t first = TE_TAPE_SIZE - i;
   if (first > n) first = n;
-  int32_t any = 0;
-  for (int32_t j = 0; j < first; ++j) any |= tape_[i + j];
-  for (int32_t j = 0; j < n - first; ++j) any |= tape_[j];
+  int32_t any = 0, over = 0;
+  for (int32_t j = 0; j < first; ++j) {
+    const int32_t w = tape_[i + j];
+    any |= w;
+    over |= OverLevel(w);
+  }
+  for (int32_t j = 0; j < n - first; ++j) {
+    const int32_t w = tape_[j];
+    any |= w;
+    over |= OverLevel(w);
+  }
+  if (any == 0) return true;
+  if (settle && over >= 0) {      // a quiet block, not yet silent: a step towards zero
+    any = 0;
+    for (int32_t j = 0; j < first; ++j) any |= (tape_[i + j] = SettlePair(tape_[i + j]));
+    for (int32_t j = 0; j < n - first; ++j) any |= (tape_[j] = SettlePair(tape_[j]));
+    tape_[TE_TAPE_SIZE] = tape_[0];   // the mirror pair
+  }
   return any == 0;
 }
 

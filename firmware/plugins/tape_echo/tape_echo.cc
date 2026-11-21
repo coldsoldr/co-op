@@ -112,9 +112,9 @@ typedef coop_tape_echo::Instance Instance;
  * (TapeEcho::Idle: the time's glide, the smoothers, the wow and flutter in phase, the mix's smoothing), so a note
  * comes back into an echo that is where it would have been. The first block with any input, hold, or the feedback
  * turn at kIdleFeedback or over, is rendered in full (the check is before the DSP: no sample of a new note is lost).
- * A tape of zeros gives zeros, so the idle blocks are what the echo would have given; what is not carried on is the
- * two filters' last sub-LSB state. A tail the loop's rounding holds for ever (high feedback on a new tape: a ghost
- * of a few LSB) never passes the check: such an echo stays awake, as before.
+ * A tape of zeros gives zeros, so the idle blocks are what the echo would have given. 0.4's echo could hold a tail
+ * for ever (the loop's rounding: a ghost of a few LSB at high feedback) and then never passed the check; 0.5's tail
+ * settles (TapeEcho::SettleTail, called here on every silent block), so every echo under kIdleFeedback gets there.
  * Tiny per-slot values in .bss (guidelines 2.3), cleared by init and by a restart. */
 const int32_t kIdleHold = TE_TAPE_SIZE / kHalfN + 9;   /* blocks: 1,047 (1.52 s), the tape once round is 1,038 */
 const int32_t kIdleFeedback = 29000;                   /* the turn, Q15: 0.97 (1.0 is 29789); from here it never idles */
@@ -123,6 +123,19 @@ struct IdleState {
     int32_t on;
 };
 IdleState g_idle[COOP_FX_SLOTS];
+
+/* 0.5: the tape's tail settles (TapeEcho::SettleTail). COOP_TAPE_ECHO_GHOST builds the echo as 0.4 had it, sample for
+ * sample (tests/host/tape_echo compares that build with te-op1-cfw's echo); the probe build switches at run time. */
+#if defined(COOP_TAPE_ECHO_GHOST)
+#define TE_SETTLE false
+#elif defined(COOP_IDLE_PROBE)
+}  // namespace
+extern "C" { extern int g_coop_te_ghost; }
+namespace {
+#define TE_SETTLE (g_coop_te_ghost == 0)
+#else
+#define TE_SETTLE true
+#endif
 
 #if defined(COOP_FX_NO_IDLE)                           /* tests/host/tape_echo: the echo against te-op1-cfw's, sample */
 #define IDLE_OFF true                                  /* for sample (the idle path has its own test) */
@@ -320,7 +333,7 @@ void render(int slot, int32_t *l, int32_t *r, const int16_t *params, int n)
     }
     g->echo.Process(g->gained[0], g->gained[1], g->half.wet(0), g->half.wet(1), kHalfN, q);
     if (__builtin_expect(may_idle, 0)) {                /* a silent block: did the echo write silence too? */
-        const bool zeros = g->echo.WroteSilence(kHalfN);
+        const bool zeros = g->echo.SettleTail(kHalfN, TE_SETTLE);
         IDLE_LEVEL(zeros ? 0 : 1);
         idle.quiet = zeros ? idle.quiet + 1 : 0;
         if (idle.quiet >= kIdleHold && !IDLE_OFF) idle.on = 1;
