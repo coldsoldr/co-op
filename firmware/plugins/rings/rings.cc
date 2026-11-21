@@ -26,6 +26,9 @@
 #include "op1/op1.h"
 #include "op1/param_smoother.h"
 #include "op1/reverb_bus.h"
+#ifdef COOP_IDLE_PROBE   /* tests/host/rings rings_idle.cc: the renders the reverb's idle state made silent */
+extern "C" { extern uint32_t g_coop_idle_blocks; }
+#endif
 #include "op1/settings.h"
 #include "op1/voice_allocator.h"
 #include "src/fixed.h"
@@ -415,8 +418,26 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
   int32_t* out_buffer = op1rings::scratch()->render_out;
   int32_t* wet_share = op1rings::scratch()->wet_share;
   PROF_START(t_bus);
-  const bool shared = reverb_bus.Render(v, op1::Cycles(), patch, carrier, wet_share);
+  const bool shared = reverb_bus.Render(v, op1::Cycles(), patch, carrier, wet_share, !voices[v]->asleep());
   PROF_ADD(PROF_REVERB_BUS, t_bus);
+  if (carrier && reverb_bus.idle() && voices[v]->at_rest()) {
+    // 0.11: a held key whose string is asleep, the shared reverb's tail gone too (op1/reverb_bus.h, the idle state)
+    // and nothing left in the voice's limiter: what the rest of this render would make is silence, and it would
+    // change nothing. The smoother and the bus above have had their block.
+#if OP1RINGS_CONTROL_BATCHED
+    last_inc[v] = rings_inc;
+    last_patch[v] = patch;
+    have_last[v] = true;
+#endif
+    for (int32_t i = 0; i < kOutSamples; ++i) out[i] = 0;
+    upsamplers[v].Init();
+    allocator.Rendered(v);
+    ScreenQuiet(v);
+#ifdef COOP_IDLE_PROBE
+    ++g_coop_idle_blocks;
+#endif
+    return;
+  }
   // The modal model recomputes its coefficients within a budget per block (op1/coefficient_budget.h); a voice fading
   // out after a steal keeps its own and asks for none.
   const bool fading = allocator.fading(v);

@@ -101,6 +101,8 @@ class MonoLimiter {
  public:
   void Init();
   void Process(int32_t* x, size_t size, const LimiterGains& gains);
+  // coop 0.11: the peak follower has come all the way down (silence in then changes nothing in here).
+  bool at_rest() const { return peak_ == 0; }
 
  private:
   int32_t peak_;   // Q27
@@ -117,6 +119,7 @@ class SharedReverb {
  public:
   void Init();
   void Clear() { reverb_.Clear(); }
+  void Resume(uint32_t samples) { reverb_.Resume(samples); }   // coop 0.11: after an idle time (reverb_fixed.h)
   // in_out: kControlBlockSize Q27 samples, the voices' summed dry signal;
   // replaced by amount * wet (the voices' limiters come after).
   void Process(const VoicePatch& patch, int32_t* in_out);
@@ -145,6 +148,9 @@ class RingsVoice {
   // computing until its next note (it renders silence, or only its share
   // of the shared reverb).
   bool asleep() const { return !strum_ && silent_blocks_ >= kSilentBlocksToSleep; }
+  // coop 0.11: asleep, and the limiter the reverb's share passes has nothing left either: rendering this voice with
+  // a silent share gives zeros and changes nothing in it.
+  bool at_rest() const { return asleep() && mono_limiter_.at_rest(); }
   static const int32_t kSleepLevel = 1 << 11;      // Q27 peak: ~ -96 dBFS (Test 29: -72 cut tails short)
   static const int32_t kSilentBlocksToSleep = 8;   // RenderMono calls (~12 ms)
   // Modal model: keep the resonator's coefficients this render even if the

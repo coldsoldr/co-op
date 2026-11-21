@@ -83,11 +83,21 @@ inline int32_t Lfo(uint32_t phase) {
   return (1 << 30) + (s >> 1);
 }
 
-// Upstream's 16-bit format: value * 32768, clipped (Q27 -> Q15, floored).
+// Upstream's 16-bit format: value * 32768, clipped (Q27 -> Q15), truncated
+// towards zero as upstream does (coop 0.11). Until 0.10 this floored: every
+// write then leaned half an LSB down, the lean went round the loop, and a
+// held key's reverb settled on a steady offset (-52 LSB of the voice's
+// output with the default patch) instead of on silence. Towards zero, a
+// value can only come back smaller: the tail dies to exact zeros.
+// OP1RINGS_REVERB_FLOOR builds 0.10's rounding (the C path only: a test's
+// reference on the host).
 // On Blackfin the saturating shift is one instruction (ShlSat's generic
 // code branches, and GCC 14's builtin can't be trusted with constant shifts:
 // fixed.h).
 inline int16_t Compress(int32_t acc) {
+#ifndef OP1RINGS_REVERB_FLOOR
+  acc += (acc >> 31) & 0xfff;
+#endif
 #ifdef __bfin__
   int32_t r;
   __asm__("%0 = %1 << 4 (S);" : "=d"(r) : "d"(acc));
@@ -116,6 +126,20 @@ void ReverbFixed::Clear() {
   // first step).
   lfo_phase_[0] = lfo_phase_[1] = 0;
   lfo_value_[0] = lfo_value_[1] = INT32_MAX;
+}
+
+void ReverbFixed::Resume(uint32_t samples) {
+  // The LFOs step where the write pointer passes a multiple of 32 (ProcessInternal): once every 32 samples. Each
+  // step takes the value at the phase and moves the phase on.
+  const uint32_t steps = samples >> 5;
+  if (steps) {
+    for (int32_t i = 0; i < 2; ++i) {
+      lfo_value_[i] = Lfo(lfo_phase_[i] + kLfoIncrement[i] * (steps - 1));
+      lfo_phase_[i] += kLfoIncrement[i] * steps;
+    }
+  }
+  write_ptr_ = static_cast<int32_t>((static_cast<uint32_t>(write_ptr_) - samples) & static_cast<uint32_t>(kMask));
+  age_ = 0;
 }
 
 void ReverbFixed::Process(int32_t* in_out, size_t size) {

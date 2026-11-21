@@ -35,6 +35,10 @@ class ReverbFixed {
   void Init();
   // Forgets the reverb's contents (no memory traffic).
   void Clear();
+  // coop 0.11, after an idle time (op1/reverb_bus.h): as if `samples` (a multiple of 32) of silence had been run
+  // through a reverb whose contents were all zero. The write pointer and the two LFOs are where they would be; the
+  // contents are forgotten as Clear forgets them; the two low-pass states stay (at rest by then).
+  void Resume(uint32_t samples);
 
   // Upstream's parameters, Q31 in [0, 1).
   void set_amount(int32_t amount) { amount_ = amount; }

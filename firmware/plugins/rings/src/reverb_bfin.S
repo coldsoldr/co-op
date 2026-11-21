@@ -63,14 +63,23 @@
 	A1 = A1 >>> 15;                                                    \
 	d = (A0 += A1);
 
+/* R2 = R0 as the buffer stores it: Q27 -> Q15, towards zero (coop 0.11, as
+ * upstream; 0.10 floored: reverb_fixed.cc Compress), clipped. 4095 is added
+ * to a negative value before the shift. */
+#define COMPRESS                                                           \
+	R2 = R0 >>> 31;                                                    \
+	R2 >>= 20;                                                         \
+	R2 = R0 + R2 (NS);                                                 \
+	R2 = R2 << 4 (S);                                                  \
+	R2 >>>= 16;
+
 /* Read(line TAIL, rs); WriteAllPass(line, ws). */
 #define ALLPASS(base, length, rs, ws)                                      \
 	R1 = W[P2 + 2 * ((base) + (length) - 1)] (X);                      \
 	R1 <<= 12;                                                         \
 	MUL(R2, R1, rs)                                                    \
 	R0 = R0 + R2 (NS);                                                 \
-	R2 = R0 << 4 (S);                                                  \
-	R2 >>>= 16;                                                        \
+	COMPRESS                                                           \
 	W[P2 + 2 * (base)] = R2;                                           \
 	W[P3 + 2 * (base)] = R2;                                           \
 	MUL(R0, R0, ws)                                                    \
@@ -78,8 +87,7 @@
 
 /* Write(line, 2.0): the store; the caller doubles R0. */
 #define WRITE(base)                                                        \
-	R2 = R0 << 4 (S);                                                  \
-	R2 >>>= 16;                                                        \
+	COMPRESS                                                           \
 	W[P2 + 2 * (base)] = R2;                                           \
 	W[P3 + 2 * (base)] = R2;
 

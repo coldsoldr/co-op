@@ -301,7 +301,8 @@ render (0.9: 8,548), the heaviest render 14,810 (15,726): 911 less a voice, 3.6-
 the two builds' output files are identical. [C host] the 90 s scenario's output (`rings_coop`, every model) is 0.9's
 byte for byte. File 113,816 bytes, `.text` 45,072; imports unchanged.
 
-**The reverb model's idle path (`docs/efficiency-audit.md` finding 6): not done, and why.** The core renders a voice
+**The reverb model's idle path (`docs/efficiency-audit.md` finding 6): not done in 0.10, and why (done in 0.11,
+below, by the first of the two ways).** The core renders a voice
 for as long as its key is down, so in string + reverb the shared reverb, and each held voice's limiter and upsampler,
 run on after the string has gone to sleep. The plan was to stop them once the reverb's tail is under the voices' own
 sleep level (half a 16-bit LSB). [C host, measured with the build as it ships: a chord struck and held 24 s] the
@@ -319,6 +320,76 @@ the offset out over some tens of ms when the ripple has gone, which changes the 
 Found while checking: `make -C tests/host/rings` (this engine against te-op1-cfw's) no longer reports bit-identical
 at HEAD before this change (the two outputs first differ at byte 3,786,753 of the 90 s scenario); 0.10 gives the
 same bytes as 0.9 there, so the difference is older than this version and is not looked into here.
+
+## 0.11: the reverb's tail dies, and a held chord idles (2026-11-21)
+
+**What changed in the sound.** In string + reverb, a held key used to leave the output on a faint constant offset
+once the note had died (-52 LSB with the default patch, -127 with more damping), for as long as the key was down:
+0.10's note above. That offset is gone: the reverb's tail now fades to digital silence. The reverb itself sounds as
+it did (the same decay, the same level). The other five models are untouched. The owner's decision (2026-11-21):
+option 1 of 0.10's note.
+
+- **The rounding** (`src/reverb_fixed.cc` `Compress`, `src/reverb_bfin.S` `COMPRESS`): what the reverb writes to
+  its 16-bit buffer is truncated towards zero, as upstream Rings does, where 0.10 (and te-op1-cfw's fixed-point
+  version) floored. Floored, every write leaned half an LSB down and the lean went round the loop. Rounding to
+  nearest would have removed the lean but left a dead band (a tail that stops falling a few LSB up and stays);
+  towards zero a value can only come back smaller, so the tail ends in exact zeros. Three instructions more a
+  write, ten writes a sample.
+- **The idle state** (`op1/reverb_bus.h`, `rings.cc`): the core renders a voice for as long as its key is down, so
+  the reverb, and each held voice's limiter and upsampler, ran on after the sound had gone. Now, 207 runs in a row
+  (0.3 s) with nothing sent (no carrier's string awake) and an all-zero wet block, and the reverb is no longer run;
+  a held voice whose string is asleep and whose limiter has come to rest then renders as silence, as a sleeping
+  voice of any other model does. The voice's smoother and the bus's block clock still run. The block in which a
+  string wakes (a new note) ends it: the reverb takes up empty, which is what it held, with its write pointer and
+  its two LFOs where the skipped blocks would have left them (`ReverbFixed::Resume`), so the modulation keeps its
+  phase. It never idles while anything is sent to it.
+- **Proof** (`make -C tests/host/rings idle OLD=<0.10's folder>`, `rings_idle.cc`: four voices, every key held
+  throughout; a note every 0.2 s for 10 s, a chord held, then a soft and a loud note into it):
+  - As it ships against its twin that never idles (`-DOP1RINGS_NO_REVERB_IDLE`): **the same sample for sample** in
+    every part, 0 samples differ, with the chord held 24 s (damping 24,000) and 100 s (damping 29,000): before the
+    idle state, in it, on the note that wakes it and after. No idle render while notes play or in the half second
+    after the soft note.
+  - The held chord's last non-zero sample comes 14.5 s after it is struck (damping 24,000), the idle state 0.3 s
+    later (14.8 s); with damping 29,000 at 42.0 s and 42.3 s. With damping at the top the string itself rings for
+    more than four minutes (never idle, as it should be).
+  - Against 0.10, the four voices summed, 16-bit LSB:
+
+| Part (damping 24,000) | 0.10's offset (the mean difference) | the rest of the difference, RMS | the signal's RMS |
+|---|---|---|---|
+| a note every 0.2 s | 39.7 | 15.0 | 6,837 |
+| the chord held, first 3 s | 49.9 | 6.1 | 2,865 |
+| the chord held, its tail | 51.0 | 4.7 | 194 |
+| the chord held, after the tail | 52.7 | 0.8 | 0 (0.10: 52.7) |
+| the soft note | 51.1 | 10.4 | 2,512 |
+| the loud note | 48.9 | 11.4 | 1,069 |
+
+    The largest single difference is 82 LSB (damping 29,000: 191, with 0.10 resting on -127). Decay: the held
+    chord's swing falls under 2,048 LSB at 3.74 s in both, under 256 at 6.99 s in both, under 32 at 10.48 s (0.10:
+    10.73 s); with damping 29,000 at 9.49 / 17.72 / 28.21 s (0.10: 9.49 / 17.97 / 28.96 s): the same to within 0.25 s
+    at the first two levels (the test's window) and 0.75 s at the last, where 0.10 is on its offset.
+  - The reverb alone (`rings_idle reverb`: a quarter second of noise, then ten minutes of silence): exact zero for
+    good 5.5 s after the noise at the test patch's reverb time (0.81) and 21.5 s at the longest (0.98); nothing
+    after, no limit cycle. 0.10 on the same: never zero, resting on a mean of -92 LSB (0.81) and -887 LSB (0.98) of
+    its wet output.
+  - The other models (`make models OLD=...`): modal, sympathetic, string, FM and quantised, 8,000 blocks each at
+    polyphony "all" and 4: the same bytes as 0.10.
+  - The assembly against the C: the string + reverb model's 6,000-block scenario in the simulator (the reverb's
+    kernel) and on the host (its C loop) give the same file. `tools/asm_lint.py`: 0 packets flagged.
+- **Cost** (simulator, compute only). Playing string + reverb: 86,086 cycles a block on `make profile
+  PROFILE_MODEL='5 0'` (0.10: 84,649): +1.4 k a block, the rounding's instructions and the idle state's two scans of
+  32 words; the render that runs the reverb 38,673 at most (37,106). A block of four held voices
+  (`make idle-sim`): playing 24,747; the chord asleep, the reverb still running 15,510 (what 0.10 paid for as long
+  as the keys were down); **idle 2,518** on average, 11,311 at most (the blocks the batched control work falls in).
+  The block of the note that wakes costs 33,548 (29,892 without an idle time before it): the reverb's first 0.14 s
+  after it run in its C loop, as after any restart.
+- **What the engine cannot save.** The core still calls `render` for every held voice (the 2.5 k above is four
+  calls: the settings, the block clock and the batch, the smoother, the bus, 64 zeros), and then runs the stock
+  envelope, coop's stereo placement and the mix on those zeros. For that to go, the core would need to know a
+  voice gave silence: a return value or a flag from `render`, or the core testing the 64 samples itself
+  (`docs/efficiency-audit.md` finding 5 is the same question for the whole instrument).
+- te-op1-cfw's reverb floors, so string + reverb is no longer bit-identical to it by design (the other models'
+  comparison with it: see 0.10's note on `make -C tests/host/rings`).
+- File 114,948 bytes, `.text` 46,148, `.bss` 572,544; imports unchanged.
 
 ## Building and checking
 

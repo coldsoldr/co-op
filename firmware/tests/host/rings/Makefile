@@ -15,7 +15,7 @@ SIMFLAGS := -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree
 PROFILE_BLOCKS ?= 62010
 PROFILE_MODEL ?=
 
-.PHONY: voice44 all clean profile halfband-check halved batched footprint dirty
+.PHONY: voice44 all clean profile halfband-check halved batched footprint dirty idle idle-sim models
 all: $(BUILD)/rings_ref $(BUILD)/rings_coop $(BUILD)/rings_coop_m14
 	$(BUILD)/rings_ref $(BUILD)/ref.raw
 	$(BUILD)/rings_coop $(BUILD)/coop.raw
@@ -135,3 +135,67 @@ $(BUILD)/rings_dirty.elf: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/*
 dirty: $(BUILD)/rings_dirty.elf
 	$(BFIN)/bfin-elf-run $< $(BUILD)/dirty.raw $(DIRTY_BLOCKS) $(DIRTY_MODEL) 0 | \
 	  python3 -I dirty_lines.py $< $(BFIN)
+
+# 0.11: the shared reverb's rounding and its idle state (rings_idle.cc), the string + reverb model with keys held.
+#   make idle                      the build as it ships against its twin that never idles: every sample the same
+#   make idle OLD=<0.10's plugin folder>   and against 0.10: the change in the sound
+#   make idle IDLE_DAMPING=32767 IDLE_HOLD=240    the longest decay, the chord held four minutes
+#   make idle-sim                  cycles a block before the idle state and in it (the simulator)
+#   make models OLD=<0.10's plugin folder>   the other five models against 0.10: byte for byte
+IDLE_DAMPING ?= 24000
+IDLE_HOLD ?= 24
+IDLE_FLAGS := -DOP1_COOP -DCOOP_IDLE_PROBE -DOP1RINGS_CONTROL_HALVED=1 -DOP1RINGS_CONTROL_BATCHED=1 \
+              -DOP1RINGS_COOP_POLY4=1 -DOP1RINGS_COOP_POLY_ALL=1 -DOP1RINGS_VOICE_44K=1
+IDLE_DEPS := rings_idle.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
+$(BUILD)/rings_idle: $(IDLE_DEPS)
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -I$(COOP) -I../../../sdk rings_idle.cc $(COOP)/rings.cc \
+	  $(addprefix $(COOP)/,$(DSP)) -o $@
+
+$(BUILD)/rings_idle_twin: $(IDLE_DEPS)
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -DOP1RINGS_NO_REVERB_IDLE -I$(COOP) -I../../../sdk rings_idle.cc \
+	  $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) -o $@
+
+IDLE_BLOCK = `sed -n 's/.*IDLE_BLOCK \([0-9]*\).*/\1/p' $(BUILD)/idle.txt`
+idle: $(BUILD)/rings_idle $(BUILD)/rings_idle_twin
+	$(BUILD)/rings_idle run $(BUILD)/idle.raw $(IDLE_DAMPING) $(IDLE_HOLD) | tee $(BUILD)/idle.txt
+	$(BUILD)/rings_idle_twin run $(BUILD)/idle_twin.raw $(IDLE_DAMPING) $(IDLE_HOLD)
+	@echo "as it ships / its twin that never idles:"
+	$(BUILD)/rings_idle twin $(BUILD)/idle.raw $(BUILD)/idle_twin.raw $(IDLE_BLOCK) $(IDLE_HOLD)
+	$(BUILD)/rings_idle reverb
+ifneq ($(OLD),)
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -I$(OLD) -I../../../sdk rings_idle.cc $(OLD)/rings.cc \
+	  $(addprefix $(OLD)/,$(DSP)) -o $(BUILD)/rings_idle_old
+	$(BUILD)/rings_idle_old run $(BUILD)/idle_old.raw $(IDLE_DAMPING) $(IDLE_HOLD)
+	@echo "as it ships / $(OLD):"
+	$(BUILD)/rings_idle cmp $(BUILD)/idle.raw $(BUILD)/idle_old.raw $(IDLE_BLOCK) $(IDLE_HOLD)
+	$(BUILD)/rings_idle_old reverb
+endif
+
+$(BUILD)/rings_idle.elf: $(IDLE_DEPS)
+	@mkdir -p $(BUILD)
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) $(IDLE_FLAGS) -I$(COOP) -I../../../sdk rings_idle.cc $(COOP)/rings.cc \
+	  $(addprefix $(COOP)/,$(DSP)) $(ASM) -o $@
+
+$(BUILD)/rings_idle_twin.elf: $(IDLE_DEPS)
+	@mkdir -p $(BUILD)
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) $(IDLE_FLAGS) -DOP1RINGS_NO_REVERB_IDLE -I$(COOP) -I../../../sdk rings_idle.cc \
+	  $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) $(ASM) -o $@
+
+idle-sim: $(BUILD)/rings_idle.elf $(BUILD)/rings_idle_twin.elf
+	$(BFIN)/bfin-elf-run $(BUILD)/rings_idle.elf
+	$(BFIN)/bfin-elf-run $(BUILD)/rings_idle_twin.elf
+
+# The models the reverb has no part in (modal, sympathetic, string, FM, quantised) against an older version's sources:
+# rings_compare.cc's scenario, 8,000 blocks a model at polyphony "all" and 4, the two outputs compared byte for byte.
+models: $(BUILD)/rings_coop
+ifeq ($(OLD),)
+	@echo "make models OLD=<the older version's plugin folder>"; exit 2
+endif
+	$(HOST_CXX) $(CXXFLAGS) -DOP1_COOP -I$(OLD) -I../../../sdk rings_compare.cc $(OLD)/rings.cc \
+	  $(addprefix $(OLD)/,$(DSP)) -o $(BUILD)/rings_coop_old
+	@set -e; for m in 0 1 2 3 4; do for q in 0 3; do \
+	  $(BUILD)/rings_coop $(BUILD)/m_new.raw 8000 $$m $$q > /dev/null 2>&1; \
+	  $(BUILD)/rings_coop_old $(BUILD)/m_old.raw 8000 $$m $$q > /dev/null 2>&1; \
+	  cmp $(BUILD)/m_new.raw $(BUILD)/m_old.raw; echo "model $$m, polyphony setting $$q: the same bytes"; done; done
