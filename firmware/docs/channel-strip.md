@@ -193,6 +193,6 @@ while open, T1-T4 (0x06..0x09), pushes and turns are coop's, drawn over 0x1F; th
 untouched for non-split lanes; L0-L3 = 0 in the master-stage thunks; split pairs zeroed every block; device cost of
 SDRAM resampler passes unknown (sim floor 14.3 k for four).
 
-**Owner question (send returns):** the stock effects carry their own dry. Kennel's aux returns add FX(send) - send
+**Send returns (owner, 2026-11-22: wet only):** the return is FX(send) - send, as kennel's aux returns. The stock effects carry their own dry; kennel's aux returns add FX(send) - send
 (a pure wet return for delay / reverb; filter / punch / phone types return only "the change"); adding FX(send) instead
 doubles the dry when the track also has dry > 0.
