@@ -355,3 +355,10 @@ $(BUILD)/modal_check.elf: modal_check.cc $(COOP)/src/modal_resonator.cc $(COOP)/
 
 modal-check: $(BUILD)/modal_check.elf
 	$(BFIN)/bfin-elf-run $<
+
+# rings 0.14: code per render and per block (code_footprint.py) and compute per render, in the simulator, for a plugin
+# folder (v014fp.sh): make v014-footprint [FP_SRC=<plugin folder>] [FP_TAG=name]   (~6 min, 36 runs at once)
+FP_SRC ?= $(COOP)
+FP_TAG ?= new
+v014-footprint:
+	bash v014fp.sh $(BUILD)/fp $(BFIN) $(FP_SRC) $(FP_TAG)

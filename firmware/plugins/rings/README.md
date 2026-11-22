@@ -778,6 +778,107 @@ File 115,788 bytes (`.text` 46,940, +704 on 0.12; `.bss` 572,640, +72); the -60 
 0.12**, the same ten names in the same order (it loads on e10 and later). Not on the device yet, and not through the
 op1emu gate: `docs/device-tests.md` "rings 0.13".
 
+## 0.14: half the memory, the FM and modal coefficient kernels, less code a render (2026-11-22)
+
+**Nothing changes in the sound**: every model, polyphony, steal, restrike, idle, sleep and early cut plays 0.13's
+samples bit for bit (proof below). What changes is what rings costs: the memory it takes (audit finding 11) and the
+work and code a sounding render runs (finding 15). Why (the owner's OP-1, core e14, `docs/device-tests.md`
+2026-11-22): a six-key chord in string + reverb costs 168,800 (0.11) / 174,400 (0.13) cycles a block on the device,
+28-29 k a render, where op1emu says ~9.6 k; rings' cost on the device is mostly code and data fetched from SDRAM, and
+0.13's small additions cost 3.5 % there for 0.5 % in op1emu. So 0.14 cuts the code a render runs as well as its
+instructions.
+
+**Memory** [C packed file]:
+- **The reverb's ring halved** (`src/reverb_fixed.h`): upstream's buffer is 32,768 samples and its lines take 21,632;
+  at 22.05 kHz each line is half as long and they end at 10,816, so the ring is 16,384 (`kSize = 32768 /
+  OP1RINGS_REVERB_DIV`, the buffer `kSize + 10,816`). A line's samples are overwritten only by the line itself a ring
+  later, or by a line above it more than its length later, so every read is the sample it was; the LFOs step on the
+  same samples (the ring is a multiple of 32). 54,400 bytes.
+- **The strings in a pool** (`src/string_voice.h` `StringPool`, `rings.cc` `ReclaimStrings`): each of the six voice
+  states held eight strings of 8.3 KB (48, ~400 KB). Now there are 16, which the voice states take as they are
+  configured (`HoldStrings`) and give back when reset. The bound: a polyphony of p keeps p voices in the allocator's
+  list, and a fade starts only by stealing a voice of the list that has rendered 8 times, and lasts 2 renders, so at
+  most p voices fade at once; with 8 / p strings a voice (sympathetic; one for the string models) that is 2p x 8 / p =
+  16, and "all" (no steals) six of two. A string's samples from before its Init are never read (0.8's `clean_`), so
+  which string a voice gets changes nothing. When the pool is empty, what is taken back: the strings of silent voices
+  (they are reset before they sound again), then those of a fade that has had two blocks and has not ended (the core
+  stopped rendering that voice; it renders it again only after a note on, which overwrites or resets its state). As a
+  last resort the oldest fade would be cut short (never seen with 16; a pool of 15 cuts fades at polyphony 2, below).
+- **.bss 572,640 -> 248,756 bytes**; the e13 heap need (`docs/plugins.md` "The rule for the site", synth image in heap
+  0, no voice bytes) **668,856 -> 344,656 bytes** (`blk(cap + 32)`, cap = 95,736 + 248,756 + 3 + 12 x 10).
+
+**Kernels** (Blackfin assembly, each bit-exact with the C the host runs):
+- **The FM voice's sample loop** (`src/fm_voice_bfin.S` `FmLoopAsm`, from `FmVoiceFixed::Process`): the state, the
+  call's values and the constants in one 108-byte block the loop reaches from two pointers, the C's operations in its
+  order (the one exact `MulQ31` as GCC emits it). The modulator's increment (FFloat work) is kept while the pitch and
+  the ratio hold (`ModulatorIncrement`, out of line). FM's stage 7,780 -> 4,548 cycles a render (`make profile`,
+  model 3 polyphony 4, all renders).
+- **The modal coefficient update** (`src/modal_bfin.S`, `ModalResonator::RecomputeFilters`): the loop is now three
+  passes, each mode's arithmetic as it was (a mode depends on its own state and on two running products only): A the
+  state translation from the old coefficients (`ModalTranslateAsm`), B the partials' geometry when it changed (C:
+  FFloat), C the new coefficients and the state (`ModalCoeffsAsm`). RecomputeFilters' C was 3.4 KB, run whole at every
+  update. The four pf tables (sin, cos, sec, tan of phi) are one interleaved table (`kPhiQ`, the same 16 KB), so a
+  mode's four reads at one index touch one or two cache lines instead of four to eight. `make modal-check`: the two
+  kernels against their C on 4,000 random updates, every output word the same (1,751,716 words).
+- **The upsampler and the screen's peak in one call** (`src/upsampler_bfin.S` `UpsampleAsm`): 0.2's half-band
+  kernel's two passes as one loop body, and the C around it (the 16-bit input, the shifted copy, the 44.1 kHz output,
+  the histories) and `ScreenRendered`'s 64-sample peak. `src/halfband_bfin.S` is no longer in the plugin (the host's
+  `halfband-check` still checks it).
+- **The sub-block tail in one call** (`src/limiter_bfin.S` `MonoLimiterPeakAsm`): the voice's own peak, the reverb's
+  share and the limiter loop; the early cut's fading renders take the old steps.
+- Out of line, so a sounding render runs less code: the silent, idle and fade-out paths of `Render`, the setting
+  decode (`FollowNewSetting`: a render compares the two words with the last ones), the limiter's loud gain (FFloat
+  reciprocal), the reverb bus's block end; the strings' 32 unused noise draws a render in one step (the LCG to its
+  32nd power).
+
+**Code a render and compute** [C simulator, `make v014-footprint`: `code_footprint.py`, 32-byte lines of rings code
+executed, per render that runs the voice and per block; compute: CYCLES around each render, renders over 2,000 cycles;
+polyphony 4]. "chord" is the device's chord (six keys C3 .. C5 three blocks apart and held, damping at the top, knobs
+still: `rings_compare.cc -DRINGS_CHORD`, blocks 260-299, 0.4 s after the strike); "play" the random scenario, knobs
+still; "walk" with the knob walk and jumps.
+
+| model | chord: lines a render | lines a block | compute a render | play: lines a render | compute | walk: lines a render | lines a block | compute |
+|---|---|---|---|---|---|---|---|---|
+| string + reverb | 144 -> **136** | 249 -> 244 | 16,560 -> **15,913** | 179 -> 173 | 16,962 -> 16,343 | 165 -> 158 | 291 -> 289 | 21,176 -> 20,690 |
+| string | 130 -> 121 | 193 -> 188 | 13,490 -> 12,988 | 159 -> 152 | 13,781 -> 13,316 | 151 -> 141 | 231 -> 226 | 18,284 -> 17,924 |
+| sympathetic | 149 -> 141 | 230 -> 226 | 13,110 -> 12,806 | 183 -> 177 | 15,605 -> 15,266 | 196 -> 190 | 321 -> 320 | 16,349 -> 15,990 |
+| quantised | 146 -> 139 | 231 -> 228 | 13,064 -> 12,748 | 185 -> 178 | 15,539 -> 15,183 | 189 -> 181 | 291 -> 288 | 16,193 -> 15,827 |
+| modal | 134 -> 129 | 153 -> 154 | 13,731 -> 13,340 | 148 -> 145 | 14,306 -> 13,939 | 163 -> 153 | 257 -> 250 | 16,479 -> 15,773 |
+| FM | 128 -> **117** | 141 -> 134 | 12,523 -> **10,654** | 135 -> 126 | 12,797 -> 10,982 | 138 -> 128 | 160 -> 157 | 12,982 -> 11,406 |
+
+A line is 32 bytes (144 lines: 4.5 KB). What a string + reverb render still runs (chord, 0.14, bytes): the engine's
+`Render` ~1,080 (the smoother, the reverb bus, the control decision, the records, the screen), `RenderMono` ~490, the
+string kernel 460, the plucker 330 (0.4 s after the strike it still rings; held longer it goes quiet), the upsampler
+330, the strings' C ~720 (`StringVoice::Process`, `StringFixed::Process`, `RenderStringBlock`), the limiter call 260;
+once a block the reverb (kernel 930, its C 610) and the batch's string parameters (~700). The gains are modest: most
+of what a render runs is the engine's own C glue, which is spread over many small decisions; what 0.14 could put in
+kernels or out of line, it did. Whether the device gains more than the simulator's 2-15 % (compute) and 3-9 % (lines
+a render) is what the device measurement is for.
+
+**Proof** [C host, simulator]:
+- `make v014 OLD=<0.13's folder>`: `rings_compare.cc`'s scenario (notes on any voice, steals, fades, restrikes, voices
+  the "stock" stops rendering, knob jumps and walks, bends, quiet gaps), the build as it ships against 0.13 as it
+  ships: the whole 90 s with eight seeds, with a poisoned pool (every string taken from the pool full of junk,
+  `OP1RINGS_POOL_POISON`), with every lease refused, in te-op1-cfw's configuration; every model x polyphony setting
+  alone (8,000 blocks, two seeds); every struck voice rendered every block (`RINGS_LONG`, the sympathetic models): **the
+  same bytes in all 74**. The pool's reclaim ran (fades taken back 0-4 a run in the random scenario, where voices stop
+  being rendered), never cut a fade short; a pool of 15 cuts 11 fades at polyphony 2 (`rings_v14s`): 16 is the bound.
+- `make v014-long OLD=<0.13's folder>`: rings_early's, rings_sleep's and rings_idle's drivers as they ship, every
+  voice rendered every block: six models x four polyphonies x three dampings x three scripts (restrikes every 4 s, left
+  to die 60 s, strikes into fades), the sleep scenarios with restrikes and four stalled tails held 150 s, the reverb's
+  idle state at 24 s and 100 s: **270 runs, the same bytes**.
+- `make v014-sim`: the simulator (every kernel) against the host (the C), each model at polyphony 4 and "all" in
+  `rings_compare.cc`'s scenario (knob walk and jumps: the modal update runs), and six held-chord runs with fades and
+  strikes: **24, the same bytes**. `make modal-check`: 0 words differ. `tools/asm_lint.py`: 0 packets flagged.
+- `make -C tests/host/rings` (te-op1-cfw's engine): first difference at byte 3,786,753, as since 0.10.
+
+**File** `build/plugins-next6/rings.coop` (0.14): 115,712 bytes, `.text` 46,624, `.rodata` 49,088, `.bss` 248,756;
+sha256 `ad7969ac021f1a699300b8a7e9f8fd430340d6ea758484a87120b6b2033c1bfc`. Packed with `tools/plugin/pack.py` at
+8ea3078 (it drops what nothing reaches: 0.13 packed with it has `.text` 45,468; without it 0.14's is 48,304).
+**The same imports as 0.13**, the same ten names in the same order, and the same engine flags (the 44.1 kHz voice): it
+loads on e10 and later. Not through the op1emu gate, not on the device yet: the chord above (string + reverb, six
+keys, damping longest) against 0.13's 174,400 cycles a block, `plugmem used`, and the heap at boot.
+
 ## Building and checking
 
 ```sh
@@ -795,6 +896,11 @@ make -C tests/host/rings sleep       # 0.12: the 4 LSB rule against its twin (OL
 make -C tests/host/rings early       # 0.13: the early cut: above the level, the fades, the strikes, the steal
 make -C tests/host/rings early-table # 0.13: when each voice fades and sleeps, 0.12 / -66 / -60 (host, ~10 min)
 make -C tests/host/rings early-sim   # 0.13: simulator against host, and the cost curves (~30 min, 30 runs at once)
+make -C tests/host/rings v014 OLD=<0.13's folder>       # 0.14: against 0.13, rings_compare's scenarios (seeds, a poisoned pool)
+make -C tests/host/rings v014-long OLD=<0.13's folder>  # 0.14: the held-key drivers (early, sleep, idle) against 0.13
+make -C tests/host/rings v014-sim     # 0.14: the simulator (the kernels) against the host
+make -C tests/host/rings modal-check  # 0.14: the modal coefficient kernels against their C
+make -C tests/host/rings v014-footprint [FP_SRC=<folder>]   # 0.14: code a render and a block, compute a render
 ```
 
 The two files of 0.13 (the second from a copy of the folder with `-DOP1RINGS_EARLY_LEVEL=134218` added to
@@ -804,6 +910,8 @@ The two files of 0.13 (the second from a copy of the folder with `-DOP1RINGS_EAR
 python3 -I tools/plugin/pack.py plugins/rings -o build/plugins-next4/rings.coop --toolchain ~/op1-toolchain
 python3 -I tools/plugin/pack.py /tmp/p60/plugins/rings -o build/plugins-next4/alt60/rings.coop --toolchain ~/op1-toolchain
 ```
+
+0.14, one file: `python3 -I tools/plugin/pack.py plugins/rings -o build/plugins-next6/rings.coop --toolchain ~/op1-toolchain`.
 
 ## Differences from te-op1-cfw
 
