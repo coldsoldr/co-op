@@ -172,6 +172,60 @@ void StringVoice::Init() {
   state_.glide_valid = false;
   state_.plucker.Init();
   state_.dc_blocker.Init(2146509733 /* Q(1.0 - 10.0 / OP1RINGS_SAMPLE_RATE, 31) */);
+  ReleaseStrings();
+}
+
+void StringVoice::ReleaseStrings() {
+  for (int32_t i = 0; i < held_; ++i) StringPool::Release(strings_[i]);
+  held_ = 0;
+  state_.model = -1;   // configured again, and strings taken, before it next plays
+}
+
+// The voice holds n strings from the pool, as far as there are any (there always are: string_voice.h, rings.cc); with
+// fewer it plays that many (none: silence).
+void StringVoice::HoldStrings(int32_t n) {
+  while (held_ > n) StringPool::Release(strings_[--held_]);
+  while (held_ < n) {
+    StringFixed* s = StringPool::Acquire(this);
+    if (!s) break;
+    strings_[held_++] = s;
+  }
+  if (state_.num_strings > held_) state_.num_strings = held_;
+}
+
+StringFixed* StringPool::strings_;
+uint32_t StringPool::free_;
+
+void StringPool::Bind(StringFixed* strings) {
+  strings_ = strings;
+  free_ = (1u << kStrings) - 1;
+}
+
+StringFixed* StringPool::Acquire(const StringVoice* requester) {
+  if (!free_) ReclaimStrings(requester);
+  for (int32_t i = 0; i < kStrings; ++i) {
+    if ((free_ >> i) & 1) {
+      free_ &= ~(1u << i);
+#ifdef OP1RINGS_POOL_POISON
+      // tests/host/rings (0.14): a string taken from the pool full of something else, so that a sample read before
+      // Init's clean_ allows it shows in the output.
+      {
+        int32_t* w = reinterpret_cast<int32_t*>(&strings_[i]);
+        for (uint32_t j = 0; j < sizeof(StringFixed) / 4; ++j) w[j] = static_cast<int32_t>(0x5a5a5a5u + j * 977u);
+      }
+#endif
+      return &strings_[i];
+    }
+  }
+  return nullptr;
+}
+
+void StringPool::Release(StringFixed* string) { free_ |= 1u << (string - strings_); }
+
+int32_t StringPool::free_count() {
+  int32_t n = 0;
+  for (int32_t i = 0; i < kStrings; ++i) n += (free_ >> i) & 1;
+  return n;
 }
 
 void StringVoice::Configure(ResonatorModel model, int32_t polyphony) {
@@ -187,8 +241,9 @@ void StringVoice::Configure(ResonatorModel model, int32_t polyphony) {
   state_.glide_valid = false;
   state_.frequencies_valid = false;
   state_.next_update = 1;
+  HoldStrings(state_.num_strings);
   for (int32_t i = 0; i < state_.num_strings; ++i) {
-    strings_[i].Init();
+    strings_[i]->Init();
     state_.lfo_phase[i] = 0;
   }
   if (state_.dispersion) stretch_.Init();
@@ -196,9 +251,12 @@ void StringVoice::Configure(ResonatorModel model, int32_t polyphony) {
 
 void StringVoice::CopyFrom(const StringVoice& other) {
   state_ = other.state_;
+  // As many strings as the other holds (none for a voice that has not played a string model since its reset: its
+  // string state is then unconfigured and nothing of it is read).
+  HoldStrings(other.held_);
   int32_t reach = 0;
   for (int32_t i = 0; i < state_.num_strings; ++i) {
-    const int32_t r = strings_[i].CopyRecentFrom(other.strings_[i]);
+    const int32_t r = strings_[i]->CopyRecentFrom(*other.strings_[i]);
     if (i == 0) reach = r;
   }
   // The stretch allpass reads at most half of string 0's delay back.
@@ -317,7 +375,7 @@ uint32_t StringVoice::SetParameters(int32_t f0, const VoicePatch& patch, size_t 
 
   // Every string's parameters for this block first.
   for (int32_t k = 0; k < n; ++k) {
-    StringFixed& s = strings_[k];
+    StringFixed& s = *strings_[k];
     const int32_t lfo = Lfo(state_.lfo_phase[k]);
     if (advance_lfo) state_.lfo_phase[k] += kLfoIncrements[k] * static_cast<uint32_t>(size);
 
@@ -360,7 +418,7 @@ uint32_t StringVoice::SetParameters(int32_t f0, const VoicePatch& patch, size_t 
     int32_t updates = 0;
     int32_t k = state_.next_update;
     for (int32_t j = 0; j < n - 1 && updates < kMaxSympatheticUpdates; ++j) {
-      if (strings_[k].needs_tone_update()) {
+      if (strings_[k]->needs_tone_update()) {
         allowed |= 1u << k;
         ++updates;
         state_.next_update = k + 1 < n ? k + 1 : 1;
@@ -377,7 +435,7 @@ uint32_t StringVoice::SetParameters(int32_t f0, const VoicePatch& patch, size_t 
 // (set_hold) and runs the strings only.
 void StringVoice::Control(int32_t f0, const VoicePatch& patch, size_t size) {
   const uint32_t allowed = SetParameters(f0, patch, size, false);
-  for (int32_t k = 0; k < state_.num_strings; ++k) strings_[k].Prepare((allowed >> k) & 1, state_.dispersion);
+  for (int32_t k = 0; k < state_.num_strings; ++k) strings_[k]->Prepare((allowed >> k) & 1, state_.dispersion);
 }
 
 void StringVoice::Process(int32_t f0, const VoicePatch& patch, int32_t* out, size_t size) {
@@ -403,7 +461,7 @@ void StringVoice::Process(int32_t f0, const VoicePatch& patch, int32_t* out, siz
     // A held block: the strings keep their parameters; only the LFOs advance (their pace is per sample).
     for (int32_t k = 0; k < n; ++k) state_.lfo_phase[k] += kLfoIncrements[k] * static_cast<uint32_t>(size);
     for (int32_t k = 0; k < n; ++k) {
-      strings_[k].Process(k == 0 ? excitation : sympathetic, mono, size,
+      strings_[k]->Process(k == 0 ? excitation : sympathetic, mono, size,
                           state_.dispersion ? &stretch_ : nullptr, false);
       if (k == 0 && n > 1) {
         int32_t log2_n = 0;
@@ -422,7 +480,7 @@ void StringVoice::Process(int32_t f0, const VoicePatch& patch, int32_t* out, siz
   const int32_t string_index_shift = 31 - log2_n;
 
   for (int32_t k = 0; k < n; ++k) {
-    strings_[k].Process(k == 0 ? excitation : sympathetic, mono, size,
+    strings_[k]->Process(k == 0 ? excitation : sympathetic, mono, size,
                         state_.dispersion ? &stretch_ : nullptr, (allowed >> k) & 1);
     if (k == 0 && n > 1) {
       // Was 0.1f, Ben Wilson -> 0.2f (upstream).

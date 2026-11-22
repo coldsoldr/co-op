@@ -160,9 +160,13 @@ class Upsampler {
 extern "C" void* copa_alloc_audio(uint32_t bytes);
 uint8_t* states_memory;
 uint8_t* reverb_memory;
+uint8_t* strings_memory;
 #else
 alignas(RingsVoice) uint8_t states_memory[sizeof(RingsVoice) * op1::kNumVoices];
 alignas(op1::ReverbBus) uint8_t reverb_memory[sizeof(op1::ReverbBus)];
+// rings 0.14: the string models' strings, a pool the voice states take them from (src/string_voice.h StringPool):
+// 16 strings instead of eight in each of the six voice states.
+alignas(op1rings::StringFixed) uint8_t strings_memory[sizeof(op1rings::StringFixed) * op1rings::StringPool::kStrings];
 #endif
 #define states (reinterpret_cast<RingsVoice*>(states_memory))
 #define reverb_bus (*reinterpret_cast<op1::ReverbBus*>(reverb_memory))   // string + reverb's, shared by the voices
@@ -218,6 +222,8 @@ Hot* hot = &hot_fallback;
 // the voice list, reset when next struck). Left ringing, the old setting's voices kept their cost (a polyphony-1 voice
 // is 60 modes) beside the new setting's six, and on an Opus 2 OP-1 that overran the audio block (2026-11-13).
 int8_t struck_setting[op1::kNumVoices] = { -1, -1, -1, -1, -1, -1 };
+// rings 0.14: the block (clock_block) in which each voice's fade after a steal began (ReclaimStrings).
+uint32_t fade_start[op1::kNumVoices];
 int8_t current_setting = -1;
 #define voices (hot->voices)
 #define upsamplers (hot->upsamplers)
@@ -243,12 +249,8 @@ int8_t current_setting = -1;
 #endif
 const int32_t kL1Modes = OP1RINGS_L1_MODES;
 
-#if OP1RINGS_CONTROL_HALVED
-// The control rate halved (the owner's choice, 2026-11-10: the device ran out of cycles): each voice does its control
-// work (coefficients, cutoff, string parameters: src/op1_voice.h set_control_hold) every other OP-1 block, 2.9 ms
-// apart instead of 1.45 ms, the voices offset so half of them do it in any block, and a strike always does. A block
-// is told by the render order, as op1/coefficient_budget.h tells it: a voice rendered twice, or a lower index.
-// Before voice v renders: true when it starts a new OP-1 block.
+// Before voice v renders: true when it starts a new OP-1 block (a voice rendered twice, or a lower index). The halved
+// schedule's block clock; 0.14's string pool reads it in every build (ReclaimStrings).
 bool NewBlock(int32_t v) {
   const bool fresh = ((clock_rendered >> v) & 1) || v < clock_last;
   if (fresh) {
@@ -259,6 +261,12 @@ bool NewBlock(int32_t v) {
   clock_last = v;
   return fresh;
 }
+
+#if OP1RINGS_CONTROL_HALVED
+// The control rate halved (the owner's choice, 2026-11-10: the device ran out of cycles): each voice does its control
+// work (coefficients, cutoff, string parameters: src/op1_voice.h set_control_hold) every other OP-1 block, 2.9 ms
+// apart instead of 1.45 ms, the voices offset so half of them do it in any block, and a strike always does. A block
+// is told by the render order, as op1/coefficient_budget.h tells it: a voice rendered twice, or a lower index.
 inline bool Turn(int32_t v) { return ((clock_block + static_cast<uint32_t>(v)) & 1) == 0; }
 #endif
 
@@ -343,6 +351,14 @@ int Init() {
     kSoftLimitTable = table;
     g_rings_l1 |= L1_TABLE;
   }
+#if defined(COPA_OPUS)
+  if (!strings_memory) {
+    strings_memory = static_cast<uint8_t*>(
+        copa_alloc_audio(sizeof(op1rings::StringFixed) * op1rings::StringPool::kStrings));
+  }
+  if (!strings_memory) return -1;
+#endif
+  op1rings::StringPool::Bind(reinterpret_cast<op1rings::StringFixed*>(strings_memory));
   op1rings::g_scratch = &scratch_fallback;   // Init below may touch it: not inside a note_on or render yet
   for (int32_t v = 0; v < op1::kNumVoices; ++v) {
     voices[v] = &states[v];
@@ -372,6 +388,46 @@ void FollowSetting(const int16_t* params) {
   }
 }
 
+}  // namespace
+
+// rings 0.14: the string pool is empty (src/string_voice.h StringPool). What can be taken back without changing a
+// sample: the strings of a silent voice (it is reset when next struck), then those of a fading voice whose fade has
+// had two blocks to end and has not (a fade is two renders: the core has stopped rendering that voice, and renders it
+// again only after a note on, which takes another voice's state over into it or resets it). By the count in
+// string_voice.h the second never runs while the core renders every sounding voice every block, and the pool is
+// never short after it; g_rings_pool counts each kind (the tests check them), and as the last resort the oldest fade
+// is cut short rather than a voice left without its strings.
+extern "C" { uint32_t g_rings_pool[3]; }   // fades taken back: [0] stale, [1] cut short; [2] the pool still empty
+void op1rings::ReclaimStrings(const op1rings::StringVoice* requester) {
+  for (int32_t u = 0; u < op1::kNumVoices; ++u) {
+    if (allocator.silent(u) && !voices[u]->holds(requester)) voices[u]->ReleaseStrings();
+  }
+  if (op1rings::StringPool::free_count()) return;
+  for (int32_t u = 0; u < op1::kNumVoices; ++u) {
+    if (allocator.fading(u) && fade_start[u] + 2 < clock_block && !voices[u]->holds(requester)) {
+      allocator.Forget(u);
+      voices[u]->ReleaseStrings();
+      ++g_rings_pool[0];
+    }
+  }
+  if (op1rings::StringPool::free_count()) return;
+  int32_t oldest = -1;
+  for (int32_t u = 0; u < op1::kNumVoices; ++u) {
+    if (allocator.fading(u) && !voices[u]->holds(requester) &&
+        (oldest < 0 || static_cast<int32_t>(fade_start[u] - fade_start[oldest]) < 0)) {
+      oldest = u;
+    }
+  }
+  if (oldest >= 0) {
+    allocator.Forget(oldest);
+    voices[oldest]->ReleaseStrings();
+    ++g_rings_pool[1];
+  }
+  if (!op1rings::StringPool::free_count()) ++g_rings_pool[2];
+}
+
+namespace {
+
 void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const int16_t* params) {
   (void)state;
   const int32_t v = voice;
@@ -390,6 +446,8 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
 #else
   NewBlock(v);
 #endif
+#else
+  NewBlock(v);
 #endif
   if (allocator.silent(v) ||
       (voices[v]->asleep() && !allocator.fading(v) &&
@@ -516,6 +574,7 @@ void NoteOn(int voice, void* state, int32_t velocity, const int16_t* params) {
     voices[u] = voices[v];
     voices[v] = ringing;
     // A stolen voice that never sounded goes silent at once (no fade), and is reset when struck again: no copy.
+    fade_start[u] = clock_block;   // before the copy: it may take strings (ReclaimStrings)
     if (!allocator.silent(u)) voices[u]->CopyFrom(*ringing);
     upsamplers[v] = upsamplers[action.copy_from];
     // The shared reverb's share goes with the ring.

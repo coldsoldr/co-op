@@ -238,6 +238,11 @@ class RingsVoice {
   // up to ~70 KB.
   void CopyFrom(const RingsVoice& other);
 
+  // coop 0.14: the string models' strings come from a pool (src/string_voice.h StringPool); a silent voice gives
+  // them back (rings.cc ReclaimStrings).
+  void ReleaseStrings() { string_voice_.ReleaseStrings(); }
+  bool holds(const StringVoice* strings) const { return strings == &string_voice_; }
+
   // phase_increment: size values (f / fs * 2^32); out, aux: size Q27 samples
   // (after the limiter, ~[-1, 1]). size must be a multiple of
   // kControlBlockSize.

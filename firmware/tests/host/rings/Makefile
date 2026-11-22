@@ -300,3 +300,50 @@ early-table: $(EARLY_BINS)
 
 early-sim: $(EARLY_BINS) $(BUILD)/rings_early.elf $(BUILD)/rings_early60.elf $(BUILD)/rings_early_twin.elf
 	bash early.sh $(BUILD) sim $(BFIN)
+
+# rings 0.14 against 0.13 (v014.sh): make v014 OLD=<0.13's plugin folder> [V14_BLOCKS=n]. The build as it ships
+# (SHIP_FLAGS: plugin.json's cflags), with the string pool poisoned (OP1RINGS_POOL_POISON), with every lease refused,
+# and the te-op1-cfw configuration; each against the same build of OLD: every sample the same.
+SHIP_FLAGS := -DOP1_COOP -DOP1RINGS_CONTROL_HALVED=1 -DOP1RINGS_CONTROL_BATCHED=1 -DOP1RINGS_COOP_POLY4=1 \
+              -DOP1RINGS_COOP_POLY_ALL=1 -DOP1RINGS_VOICE_44K=1
+V14_BLOCKS ?= 62010
+V14_SRC = rings_compare.cc $(1)/rings.cc $(addprefix $(1)/,$(DSP))
+v014: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
+ifeq ($(OLD),)
+	@echo "make v014 OLD=<0.13's plugin folder>"; exit 2
+endif
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) $(SHIP_FLAGS) -I$(COOP) -I../../../sdk $(call V14_SRC,$(COOP)) -o $(BUILD)/rings_v14
+	$(HOST_CXX) $(CXXFLAGS) $(SHIP_FLAGS) -DOP1RINGS_POOL_POISON -I$(COOP) -I../../../sdk $(call V14_SRC,$(COOP)) -o $(BUILD)/rings_v14p
+	$(HOST_CXX) $(CXXFLAGS) -DOP1_COOP -DOP1RINGS_POOL_POISON -I$(COOP) -I../../../sdk $(call V14_SRC,$(COOP)) -o $(BUILD)/rings_v14n
+	$(HOST_CXX) $(CXXFLAGS) $(SHIP_FLAGS) -DOP1RINGS_POOL_STRINGS=15 -I$(COOP) -I../../../sdk $(call V14_SRC,$(COOP)) -o $(BUILD)/rings_v14s
+	$(HOST_CXX) $(CXXFLAGS) $(SHIP_FLAGS) -I$(OLD) -I../../../sdk $(call V14_SRC,$(OLD)) -o $(BUILD)/rings_v13
+	$(HOST_CXX) $(CXXFLAGS) -DOP1_COOP -I$(OLD) -I../../../sdk $(call V14_SRC,$(OLD)) -o $(BUILD)/rings_v13n
+	bash v014.sh $(BUILD) $(OLD) $(V14_BLOCKS)
+
+# rings 0.14 against 0.13 on the long held-key scenarios (v014long.sh: rings_early, rings_sleep, rings_idle as they
+# ship, early cut on): make v014-long OLD=<0.13's plugin folder>
+v014-long:
+ifeq ($(OLD),)
+	@echo "make v014-long OLD=<0.13's plugin folder>"; exit 2
+endif
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) $(EARLY_FLAGS) -I$(COOP) -I../../../sdk rings_early.cc $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) -o $(BUILD)/early_v14
+	$(HOST_CXX) $(CXXFLAGS) $(EARLY_FLAGS) -I$(OLD) -I../../../sdk rings_early.cc $(OLD)/rings.cc $(addprefix $(OLD)/,$(DSP)) -o $(BUILD)/early_v13
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -I$(COOP) -I../../../sdk $(call SLEEP_SRC,$(COOP)) -o $(BUILD)/sleep_v14
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -I$(OLD) -I../../../sdk $(call SLEEP_SRC,$(OLD)) -o $(BUILD)/sleep_v13
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -I$(COOP) -I../../../sdk rings_idle.cc $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) -o $(BUILD)/idle_v14
+	$(HOST_CXX) $(CXXFLAGS) $(IDLE_FLAGS) -I$(OLD) -I../../../sdk rings_idle.cc $(OLD)/rings.cc $(addprefix $(OLD)/,$(DSP)) -o $(BUILD)/idle_v13
+	bash v014long.sh $(BUILD)
+
+# rings 0.14: the simulator (the assembly kernels) against the host (their C), the build as it ships, rings_compare's
+# scenario for each model at polyphony 4 and "all" (V14_SIM_BLOCKS each), and a held six-key chord per model
+# (rings_early, 20 s, keys struck again every 4 s and left to die): the same bytes. make v014-sim
+V14_SIM_BLOCKS ?= 4000
+v014-sim:
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) $(CXXFLAGS) $(SHIP_FLAGS) -I$(COOP) -I../../../sdk $(call V14_SRC,$(COOP)) -o $(BUILD)/rings_v14
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) $(SHIP_FLAGS) -I$(COOP) -I../../../sdk $(call V14_SRC,$(COOP)) $(ASM) -o $(BUILD)/rings_v14.elf
+	$(HOST_CXX) $(CXXFLAGS) $(EARLY_FLAGS) -I$(COOP) -I../../../sdk $(EARLY_SRC) -o $(BUILD)/early_v14
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DM_PI=3.14159265358979323846 $(EARLY_FLAGS) -I$(COOP) -I../../../sdk $(EARLY_SRC) $(ASM) -o $(BUILD)/early_v14.elf
+	bash v014sim.sh $(BUILD) $(BFIN) $(V14_SIM_BLOCKS)

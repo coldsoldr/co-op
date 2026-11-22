@@ -45,6 +45,7 @@ alignas(32) static uint8_t l1_lease[4096];
 alignas(32) static uint8_t l1_scratch[1312];
 static uint32_t leased;
 extern "C" __attribute__((weak)) uint32_t g_rings_l1;   // rings.cc (0.4): what the lease got; weak for older ones
+extern "C" __attribute__((weak)) uint32_t g_rings_pool[3];   // rings.cc (0.14): the string pool's reclaims
 // RINGS_NO_LEASE (environment, or -D for the simulator): every lease refused, the engine's SDRAM fallbacks only.
 extern "C" void* coop_l1_lease(uint32_t bytes) {
 #ifdef RINGS_NO_LEASE
@@ -64,7 +65,13 @@ extern "C" void* coop_l1_scratch(uint32_t* bytes) {
 #endif
 
 #ifdef RINGS_PROFILE
+#ifdef RINGS_CYCLES
+// 0.14: the driver's timing alone (the driver built with -DRINGS_PROFILE -DRINGS_CYCLES, the plugin without: no stage
+// timers inside it, so the compute is the shipped code's).
+namespace op1rings { uint64_t g_profile[15]; }
+#else
 namespace op1rings { extern uint64_t g_profile[15]; }
+#endif
 namespace prof {
 inline uint32_t Now() {
   uint32_t c;
@@ -76,13 +83,14 @@ struct Stat {
   uint32_t max;
   void Add(uint32_t c) { ++n; total += c; if (c > max) max = c; }
 };
-Stat render[6][4], block[6][4], note_on[6][4];
+Stat render[6][4], block[6][4], note_on[6][4], voiced[6][4];   // voiced: renders over 2,000 cycles (not silent)
 struct Spike { uint32_t cycles; int kind, model, poly, voice; long block; };
 Spike top[10];
 long cur_block;
 uint32_t block_sum;
 void Record(uint32_t c, int kind, int model, int poly, int voice) {
   (kind ? note_on : render)[model][poly].Add(c);
+  if (!kind && c > 2000) voiced[model][poly].Add(c);
   if (!kind) block_sum += c;
   int k = 9;
   if (c <= top[k].cycles) return;
@@ -244,6 +252,8 @@ int main(int argc, char** argv) {
     __asm__ __volatile__("SYSCFG = %0; CSYNC;" : : "d"(s));
   }
 #endif
+  // RINGS_SEED (0.14): another scenario of the same kind (the default seed's is the one the older tests ran).
+  if (const char* seed = std::getenv("RINGS_SEED")) rng = static_cast<uint32_t>(std::strtoul(seed, nullptr, 0));
   FILE* f = std::fopen(argv[1], "wb");
   // OUT.raw.mix: the six voices summed per block (what is heard, before the envelope), int32, for spectral checks.
   char mix_name[512];
@@ -293,10 +303,29 @@ int main(int argc, char** argv) {
     // Notes: on a random voice, more often in bursts (steals and fades with polyphony 1, 2, 4); a quiet gap of a few
     // seconds now and then (the shared reverb restarts empty after its idle gap).
     const bool gap = (b / 689) % 15 == 14;
+#ifdef RINGS_CHORD
+    // 0.14, the device's chord (docs/device-tests.md, 2026-11-22): six keys (C3 G3 C4 E4 G4 C5) struck three blocks
+    // apart and held, the knobs still at the defaults but the damping at its longest; nothing else.
+    {
+      static const int kChord[kVoices] = { 48, 55, 60, 64, 67, 72 };
+      knobs[0] = 8192; knobs[1] = 19660; knobs[2] = 32767; knobs[3] = 9830;
+      bend_blocks = 1;
+      if (b % 3 == 0 && b / 3 < kVoices) {
+        const int v = b / 3;
+        note[v] = kChord[v];
+        left[v] = 1 << 30;
+        DriveNoteOn(v, knobs, model, poly);
+        ++notes;
+      }
+    }
+    if (false) {
+#else
     if (!gap && Below((b / 345) % 3 == 0 ? 6 : 40) == 0) {
+#endif
       const int v = Below(kVoices);
       note[v] = 36 + Below(48);
       left[v] = 40 + Below(600);
+      if (std::getenv("RINGS_LONG")) left[v] = 1 << 30;   // 0.14: every struck voice rendered every block from then on
       DriveNoteOn(v, knobs, model, poly);
       ++notes;
     }
@@ -325,6 +354,10 @@ int main(int argc, char** argv) {
   const uint32_t got = &g_rings_l1 ? g_rings_l1 : 0;
   std::fprintf(stderr, "rings L1: %s%s%s(%u bytes leased)\n", got & 1 ? "state " : "", got & 2 ? "modes " : "",
                got & 4 ? "table " : "", leased);
+  if (&g_rings_pool[0]) {
+    std::fprintf(stderr, "rings string pool: fades taken back %u, cut short %u, still empty %u\n",
+                 g_rings_pool[0], g_rings_pool[1], g_rings_pool[2]);
+  }
 #endif
 #ifdef RINGS_DIRTY
   dirty::Print(blocks);
@@ -343,6 +376,10 @@ int main(int argc, char** argv) {
                   (unsigned long)(r.total / r.n), (unsigned long)r.max,
                   (unsigned long)(bl.n ? bl.total / bl.n : 0), (unsigned long)bl.max,
                   (unsigned long)(no.n ? no.total / no.n : 0), (unsigned long)no.max);
+      const prof::Stat& vo = prof::voiced[m][p];
+      if (vo.n) std::printf("%-7s %-4s voiced renders (over 2,000 cycles): %lu, avg %lu
+", kModel[m], kPoly[p],
+                            (unsigned long)vo.n, (unsigned long)(vo.total / vo.n));
     }
   {
     static const char* const kStage[15] = { "smoother", "reverb bus", "voice (all below)", "upsampler",

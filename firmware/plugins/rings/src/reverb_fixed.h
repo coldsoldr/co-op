@@ -25,12 +25,19 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "src/rate_config.h"
+
 namespace op1rings {
 
 class ReverbFixed {
  public:
-  static const int32_t kSize = 32768;          // upstream's buffer
-  static const int32_t kBufferSize = 54400;    // see buffer_
+  // Upstream's ring is 32768 samples and its lines take 21,632 of them. At 22.05 kHz every line is half as long
+  // (src/rate_config.h OP1RINGS_REVERB_DIV) and they end at 10,816, so coop 0.14 halves the ring too: a line's
+  // samples are overwritten only by the line itself kSize samples later, or by a line above it more than its own
+  // length later (reverb_fixed.cc's asserts), so every read is the same sample whatever the ring's size, and the
+  // LFOs step on the same samples (kSize is a multiple of 32). 54,400 bytes less (0.13: 32768 / 54400).
+  static const int32_t kSize = 32768 / OP1RINGS_REVERB_DIV;
+  static const int32_t kBufferSize = kSize + 21632 / OP1RINGS_REVERB_DIV;   // see buffer_
 
   void Init();
   // Forgets the reverb's contents (no memory traffic).
