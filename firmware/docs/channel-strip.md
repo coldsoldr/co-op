@@ -136,3 +136,63 @@ paths 0. As the other DSP in this tree (docs/performance.md "Fractional-MAC rewr
 - The meters the stock lane loop writes (`[SP+0x60]`) must keep coming for the tape screen when tracks leave the sum.
 - How the stock master effects behave on a send bus: their wet/dry is their own (an effect that leaves its dry in
   adds that dry again). Possibly a "100 % wet" override per type in strip mode; ask the owner after hearing it.
+
+## CS3 / CS4 hook map (research, 2026-11-22; stock L1 addresses, unpatched by coop unless noted)
+
+Prior art: kennel 3.3.1 (GPL) ships a tape mix takeover with per-track outs and a tape strip insert
+(`synth_sdk/hook.S`, `screens/usbtrack.c`, `fxroute.c`), proven on devices. Two op1emu write traces on the stock image.
+
+**Per-track split (tape tick `0xffa067a8`).** Play pair `[FP-0x64]` = `0x01b5ef94` (L), `[FP-0x60]` = `0x01b5f444`
+(R), 600 samples each, resampler bases 8 lower (`0x01b5ef84` / `0x01b5f434`) [C]; the tick re-fetches ~9 samples
+before the position each block, so no history to keep [I]. Lane gains: the pan law `0xffa06d3e..dc2` (level
+`0xff801928` x pan `0xff801930` x mute fade `0xff8018b4`), pointer `[SP+0x5c]`, swapped by coop for `g_lane_gains`;
+meters `[SP+0x60]` = `0xff802990`, swapped for `g_lane_meters` [C]. Main lane loop `LSETUP(0xffa0711a, 0xffa07176)`
+(P1+2 source, M0 / I1 L / R destinations, P0 gains, P4 meters, R3 lane, R6 count, R7.H destination offset); its meter
+MAX `0xffa0712c` (`06c4 0100`) then `IF CC JUMP 0xffa0716e` (CC = count <= 0) [C]. Seam loop
+`LSETUP(0xffa0707a, 0xffa070e0)`, meter MAX `0xffa0709c` (`06c4 1000`), `IF CC JUMP 0xffa070da` [C].
+**Hook:** each meter MAX becomes `CALL tramp`; the thunk does the MAX, copies a split lane's R6 samples at unity into
+its track pair at offset R7.H (lane t -> L[t], 4+t -> R[t]) and returns CC = 1 so the stock MAC skips that lane
+(neutral tracks stay bit-exact in the stock sum); every other register and CC preserved. Main site: P2 free
+(12-byte `P2 = thunk; JUMP (P2)`); seam site: all P live (`[--SP] = P2; ...`, the thunk pops). `coop_tape_gains`
+zeroes the split pairs each block and hands the split mask and per-track gL / gR to the strips. L1 room: the tape
+build's free range `0xffa0bfb4..c000` is full; loop B's dead body `0xffa00fb4..0xffa00fdb` (40 B, unreached [C])
+holds three 12-byte trampolines, the voice-sum skip leaves `0xffa00d2e..0xffa00d71` (68 B) in reserve.
+
+**Resampler `0xffa06194`** (`CALL` at `0xffa07250`): R0 = position (1/64 sample), R1 = increment (~130 at speed 1),
+R2 = gain-ramp step pointer; gain from `W[0xff8029dc]`; 16 taps x 64 phases at `0xff802154`; writes all 64 of
+d34 / db4; returns pos + 64 x inc [C]. Sources and outputs are immediates (`0xffa061b4..d0`), 0xb4 bytes, otherwise
+position independent: a coop copy with pointers passed in (as kennel's `tr_rs_pair`). **3,583 sim cycles a stereo
+pass** [C bfin-sim]: four split tracks +14.3 k (2.5 %); kennel's packed kernel ~1.8 k a pass [I]. **Hook:** retarget
+the CALL at `0xffa07250` (P2 free) to a thunk: the stock pass, then each split pair with the same pos / inc / ramp,
+the strips, dry into d34 / db4, sends into buses 1 / 2; the stock tape level stage `0xffa072c4..314` then runs on the
+sum as before.
+
+**Master FX 1** (gate `0xffa01202..121e`: `[0x01aaad68]` instance, `B[0x01aaac40]` on -> `JUMP.S 0xffa017b8`):
+`0xffa017b8..e6` calls render(this + adjust, d34, db4, params `0xff8016c4`), then `JUMP.S 0xffa01220` [C]. Order in
+the master stage: master EQ `CALL 0xffa030f0` at `0xffa01118` -> FX 1 -> getter site `0xffa017a4`
+(`coop_master_apply`: FX 2) -> `0xffa04280`. **Hook:** overwrite `0xffa017b8..` with `P2 = coop_master_fx1;
+CALL (P2); JUMP.S 0xffa01220` (12 B): strip off = the stock call, strip on = render send bus 1 and add the return.
+**FX 2:** `coop_slot2_render(1, l, r)` renders any 64-sample pair in place (stock types and plugins) [C]: pass send
+bus 2 and add it back (mind the `g_coop_s2_live[1]` early-out).
+
+**Master EQ (CS4)** [C trace]: three words `0xff8017cc / ce / d0` (low / mid / high; orange moves all three), default
+0x3fff, 0x4000 exactly flat [I strong]; DSP `0xffa030f0`, called unconditionally from `0xffa01118`. **Bypass:** rewrite
+`0xffa0110e..0xffa0111b` (`P1 = 0x010004cc; CALL (P1); CALL 0xffa030f0`, 14 B) as `P1 = coop_master_eq; CALL (P1)`
++ NOPs, skipping the stock EQ while the strip is on (words, UI and save untouched). **Comp:** four words
+`0xff80189c / 9e / a0 / a2` read by `0xffa04280` (defaults 0x7fff, 0x7fff, 0x2000, 0x2800; word 3 >>> 10 indexes
+`0x0106a8f4`) [C]; the stage cannot be skipped (it writes e34 / f34), so the bypass is by values: **neutral values
+not settled** (an op1emu sine sweep per word). Mixer subscreen word `[0x01aad5f0]` (T1 0, T2 1 EQ, T4 3 comp), knob
+handler `0x19da2bc`, key-down `0x19db7c4` [C].
+
+**Mixer UI:** coop already owns keys (`coop_ui_key`), turns (`coop_ui_knob`) and drawing (`coop_ui_frame`). Mixer =
+`CUR_MODE 0xFF907D58 == 3`, screen 0x1F; encoder pushes are key codes 0x3b..0x3e, which the stock MasterController
+ignores [I strong]. Hook: in strip mode with the mixer's T1 page up, a push opens strip `code - 0x3b` and is swallowed;
+while open, T1-T4 (0x06..0x09), pushes and turns are coop's, drawn over 0x1F; the mixer key (0x05) closes and passes.
+
+**Risks:** thunks inside the tick's hardware loops (LC1 live: asm, or C with LC0/LC1/LT/LB and ASTAT saved); CC
+untouched for non-split lanes; L0-L3 = 0 in the master-stage thunks; split pairs zeroed every block; device cost of
+SDRAM resampler passes unknown (sim floor 14.3 k for four).
+
+**Owner question (send returns):** the stock effects carry their own dry. Kennel's aux returns add FX(send) - send
+(a pure wet return for delay / reverb; filter / punch / phone types return only "the change"); adding FX(send) instead
+doubles the dry when the track also has dry > 0.
