@@ -44,6 +44,7 @@ class FmVoiceFixed {
   static const int32_t kOne = 0x7fffffff;
 
   void UpdateDecays();
+  uint32_t ModulatorIncrement() const;   // coop 0.14: for the carrier frequency and the ratio
 
   int32_t carrier_frequency_;    // Q31
   int32_t ratio_;
@@ -60,6 +61,11 @@ class FmVoiceFixed {
   // Decay coefficients for the current damping (per sample, Q31).
   int32_t decays_damping_;
   bool decays_valid_;
+  // coop 0.14: the modulator increment for modulator_carrier_ and modulator_ratio_ (Process).
+  bool modulator_valid_;
+  int32_t modulator_carrier_;
+  int32_t modulator_ratio_;
+  uint32_t modulator_increment_;
   int32_t amplitude_decay_;
   int32_t brightness_decay_;
 

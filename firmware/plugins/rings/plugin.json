@@ -18,7 +18,9 @@
     "src/string_kernel_bfin.S",
     "src/limiter_bfin.S",
     "src/reverb_bfin.S",
-    "src/halfband_bfin.S"
+    "src/upsampler_bfin.S",
+    "src/fm_voice_bfin.S",
+    "src/modal_bfin.S"
   ],
   "include_dirs": [
     "."

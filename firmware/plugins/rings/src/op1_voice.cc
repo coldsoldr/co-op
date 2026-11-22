@@ -258,14 +258,22 @@ void MonoLimiter::Process(int32_t* x, size_t size, const LimiterGains& gains) {
 #else
   MonoLimiterLoopC(x, static_cast<int32_t>(size), &peak_, gain_, gains.pre_q28);
 #endif
-  const int32_t peak = peak_;
-  // Gain for the next sub-block: pre-gain * 0.8 / max(peak, 1). Once per
-  // sub-block, so FFloat's self-seeding reciprocal is affordable.
-  if (peak <= (1 << 27)) {
-    gain_ = gains.out_q30;
-  } else {
-    gain_ = (gains.out * FFloat::Reciprocal(FFloat::FromQ(peak, 27))).ToQ(30);
-  }
+  UpdateGain(gains);
+}
+
+#if OP1RINGS_LIMIT_PEAK_ASM
+int32_t MonoLimiter::ProcessPeak(int32_t* x, size_t size, const LimiterGains& gains, const int32_t* wet,
+                                 int32_t peak_in) {
+  const int32_t peak = MonoLimiterPeakAsm(x, static_cast<int32_t>(size), &peak_, gain_, gains.pre_q28, wet, peak_in);
+  UpdateGain(gains);
+  return peak;
+}
+#endif
+
+// Gain for the next sub-block: pre-gain * 0.8 / max(peak, 1). Once per sub-block, so FFloat's self-seeding reciprocal
+// is affordable; 0.14: out of line, as a voice only above full scale needs it (the code a render runs, smaller).
+__attribute__((noinline)) int32_t MonoLimiter::LoudGain(const LimiterGains& gains, int32_t peak) {
+  return (gains.out * FFloat::Reciprocal(FFloat::FromQ(peak, 27))).ToQ(30);
 }
 
 // --- SharedReverb ---------------------------------------------------------
@@ -565,6 +573,19 @@ void RingsVoice::RenderMono(const uint32_t* phase_increment,
         // Both outputs summed by the mode bank itself (out == aux).
         RenderSubblock(phase_increment[i], patch, o, o);
       }
+#if OP1RINGS_LIMIT_PEAK_ASM
+      // 0.14: the peak, the reverb's share and the limiter in one call (src/limiter_bfin.S MonoLimiterPeakAsm), the
+      // same samples as the steps below, which a fading render (the early cut's) still takes.
+#if OP1RINGS_EARLY
+      if (!early_fading_)
+#endif
+      {
+        PROF_START(t_lim);
+        peak = mono_limiter_.ProcessPeak(o, kSubblockSize, gains, wet ? wet + i + j : nullptr, peak);
+        PROF_ADD(PROF_LIMITER, t_lim);
+        continue;
+      }
+#endif
       PROF_START(t_peak);
       peak = PeakOf(o, kSubblockSize, peak);
       PROF_ADD(PROF_PEAK, t_peak);

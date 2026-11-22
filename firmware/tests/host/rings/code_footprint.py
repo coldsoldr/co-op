@@ -13,7 +13,7 @@ in the list: it is not rings'. NM: bfin-elf-nm. Stdlib only, Python 3.8.
 """
 import bisect, collections, re, subprocess, sys
 
-DRIVER = re.compile(r'^_(main|_malloc_r|_free_r|memchr|strlen|_fflush_r|_?_?sfvwrite|_?_?swrite|RingsBlockMarker|_?coop_l1|_?Z.*Drive(NoteOn|Render)|.*printf|.*fwrite|.*fopen|.*fclose|.*snprintf|.*atoi|.*getenv|.*exit|_?_?start)')
+DRIVER = re.compile(r'^_(main|memmove|_?_write|_?_write_r|_malloc_r|_free_r|memchr|strlen|_fflush_r|_?_?sfvwrite|_?_?swrite|RingsBlockMarker|_?coop_l1|_?Z.*Drive(NoteOn|Render)|.*printf|.*fwrite|.*fopen|.*fclose|.*snprintf|.*atoi|.*getenv|.*exit|_?_?start)')
 
 
 def symbols(nm, elf):

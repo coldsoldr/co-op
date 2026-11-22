@@ -19,12 +19,13 @@ namespace {
 const int32_t kOne = INT32_MAX;  // ~1.0 in Q31
 
 // Linear interpolation in a pf table (1024 + 1 entries over [0, 0.5]).
+// coop 0.14: the interleaved table (fixed_tables.h kPhiQ), column c of entry i at table[4 i + c].
 inline int32_t InterpPf(const int32_t* table, int32_t pf) {
-  if (pf >= (1 << 30)) return table[1 << kPfTableBits];
+  if (pf >= (1 << 30)) return table[4 << kPfTableBits];
   if (pf < 0) pf = 0;
   int32_t i = pf >> 20;
   int32_t frac = (pf & 0xfffff) << 11;
-  return table[i] + MulQ31Fast(table[i + 1] - table[i], frac);
+  return table[4 * i] + MulQ31Fast(table[4 * i + 4] - table[4 * i], frac);
 }
 
 // Linear interpolation in a 256 + 1 table over [0, 1) (x in Q31).
@@ -78,6 +79,122 @@ const int32_t k0_25Q31 = 1 << 29;                // 0.25
 const int32_t k0_02Q31 = 42949673;               // 0.02
 
 }  // namespace
+
+#ifndef OP1RINGS_NO_STATE_TRANSLATION
+// coop 0.14: RecomputeFilters' passes A and C (above it), in C for the host and as the reference of src/modal_bfin.S.
+// geometry: per mode sin, cos, sec, tan, rho, x (ModalResonator::Geometry); modes: lp, bp, half_f, half_q, ...
+struct ModalCoeffs {
+  Mode* modes;                  // 0
+  int32_t* geometry;            // 4
+  int32_t* log2_pf;             // 8
+  int32_t* gain;                // 12
+  int32_t n;                    // 16
+  int32_t u0;                   // 20
+  int32_t log2_q;               // 24
+  int32_t q_loss;               // 28
+  int32_t q_loss_damping_rate;  // 32
+  const int32_t* exp2neg;       // 36
+  const int32_t* recip1p;       // 40
+  const int32_t* rho;           // 44
+  const int32_t* inv_rho;       // 48
+  const int32_t* recip1m;       // 52
+  const int32_t* log2_mantissa; // 56
+};
+extern "C" void ModalTranslateAsm(Mode* modes, const int32_t* geometry, int32_t n, int32_t u0);
+extern "C" void ModalCoeffsAsm(ModalCoeffs* k);
+
+namespace {
+
+enum { G_SIN, G_COS, G_SEC, G_TAN, G_RHO, G_X, G_WORDS };
+
+// A: s1, s2 of each mode from its old coefficients (into bp, lp), or zeros before the first update.
+void ModalTranslateC(Mode* modes, const int32_t* geometry, int32_t n, int32_t u0) {
+  for (int32_t i = 0; i < n; ++i) {
+    const int32_t* o = geometry + G_WORDS * i;
+    Mode& mode = modes[i];
+    // A = cos^2 - sin^2 - x lies in about [-1.4, 1]: Q30.
+    const int32_t a_old = (MulQ31Fast(o[G_COS], o[G_COS]) >> 1) - (MulQ31Fast(o[G_SIN], o[G_SIN]) >> 1) -
+                          (o[G_X] >> 1);
+    const int32_t k1 = MulQ31Fast(MulQ31Fast(o[G_RHO], a_old), o[G_SEC]);             // Q27
+    const int32_t s1 = ShlSat(MulQ31Fast(mode.bp, k1), 3) +                            // /2, Q23 -> Q27
+                       ShlSat(MulQ31Fast(u0 - mode.lp, o[G_TAN]), 3);
+    const int32_t s2 = MulQ31Fast(mode.bp, mode.half_f) + mode.lp;
+    mode.bp = s1;
+    mode.lp = s2;
+  }
+}
+
+// C: the coefficients and the translated state of each mode (s1, s2 in bp, lp from A).
+void ModalCoeffsC(ModalCoeffs* k) {
+  int32_t log2_q = k->log2_q;
+  int32_t q_loss = k->q_loss;
+  const int32_t u0 = k->u0;
+  for (int32_t i = 0; i < k->n; ++i) {
+    int32_t* g = k->geometry + G_WORDS * i;
+    Mode& mode = k->modes[i];
+    const int32_t sin = g[G_SIN], cos = g[G_COS];
+    // r = 1 / (1 + pf q), from L = log2(pf q).
+    const int32_t l = k->log2_pf[i] + log2_q;
+    int32_t r_m, r_shift;
+    if (l <= 0) {
+      r_m = Interp8(kRecip1pQ31, Exp2NegQ31(-l));
+      r_shift = 0;
+    } else {
+      r_shift = l >> 24;
+      const int32_t t_m = Exp2NegQ31(l & 0xffffff);                                    // 2^-frac
+      r_m = MulQ31Fast(t_m, Interp8(kRecip1pQ31, ShiftRight(t_m, r_shift)));
+    }
+    const int32_t sc = MulQ31Fast(sin, cos);
+    const int32_t x = ShiftRight(MulQ31Fast(r_m, sc), r_shift);
+    const int32_t rho = InterpHalf(kRhoQ31, x);
+    const int32_t half_f = MulQ31Fast(sin, rho);
+    const int32_t half_q = ShiftRight(MulQ31Fast(MulQ31Fast(r_m, cos), rho), 1 + r_shift);
+    k->gain[i] = MulQ31Fast(cos, rho) >> 1;
+    const int32_t s1 = mode.bp, s2 = mode.lp;
+    const int32_t a_new = (MulQ31Fast(cos, cos) >> 1) - (MulQ31Fast(sin, sin) >> 1) - (x >> 1);
+    const int32_t inv_b = InterpHalf(kRecip1mQ30, x);                                   // Q30
+    const int32_t inv_rho = InterpHalf(kInvRhoQ30, x);                                  // Q30
+    const int32_t s_sq_u0 = MulQ31Fast(MulQ31Fast(sin, sin), u0);                       // Q27
+    // s2 A - 2 sin cos s1 + 2 sin^2 u0, in Q26.
+    const int32_t sum_lp = MulQ31Fast(s2, a_new) - (MulQ31Fast(s1, ShlSat(sc, 1)) >> 1) + s_sq_u0;
+    mode.lp = ShlSat(MulQ31Fast(sum_lp, inv_b), 2);                                     // Q25 -> Q27
+    const int32_t sum_bp = MulQ31Fast(s1, cos) + MulQ31Fast(s2 - u0, sin);
+    mode.bp = ShlSat(MulQ31Fast(sum_bp, MulQ31Fast(inv_b, inv_rho)), 3);
+    mode.half_f = half_f;
+    mode.half_q = half_q;
+    g[G_RHO] = rho;
+    g[G_X] = x;
+    q_loss += MulQ31Fast(k->q_loss_damping_rate, kOne - q_loss);
+    // q only shrinks (q_loss <= 1). Q24 holds +-128: clamp well before that; below 2^-64, r = 1 / (1 + pf q) is 1.
+    log2_q += Log2Q24(q_loss);
+    if (log2_q < -(64 << 24)) log2_q = -(64 << 24);
+  }
+  k->log2_q = log2_q;   // (as the kernel leaves them; RecomputeFilters does not read them back)
+  k->q_loss = q_loss;
+}
+
+#if defined(__bfin__) && !defined(OP1RINGS_NO_ASM)
+inline void ModalTranslate(Mode* modes, const int32_t* geometry, int32_t n, int32_t u0, bool first) {
+  if (first) {
+    for (int32_t i = 0; i < n; ++i) modes[i].lp = modes[i].bp = 0;
+  } else {
+    ModalTranslateAsm(modes, geometry, n, u0);
+  }
+}
+inline void ModalCoeffsRun(ModalCoeffs* k) { ModalCoeffsAsm(k); }
+#else
+inline void ModalTranslate(Mode* modes, const int32_t* geometry, int32_t n, int32_t u0, bool first) {
+  if (first) {
+    for (int32_t i = 0; i < n; ++i) modes[i].lp = modes[i].bp = 0;
+  } else {
+    ModalTranslateC(modes, geometry, n, u0);
+  }
+}
+inline void ModalCoeffsRun(ModalCoeffs* k) { ModalCoeffsC(k); }
+#endif
+
+}  // namespace
+#endif
 
 uint32_t (*profile_clock)() = nullptr;
 uint32_t profile_update_cycles = 0;
@@ -175,6 +292,7 @@ int32_t ModalResonator::RecomputeFilters() {
 
   const int32_t u0 = previous_input_;
 
+#ifdef OP1RINGS_NO_STATE_TRANSLATION
   int32_t num_modes = geometry_changed ? 0 : num_modes_;
   Mode* const bank_modes = bank();
   for (int32_t i = 0; i < resolution_; ++i) {
@@ -188,10 +306,10 @@ int32_t ModalResonator::RecomputeFilters() {
       }
       const int32_t pf = partial_frequency.ToQ31();
       log2_pf_[i] = Log2Q24(pf);
-      g.sin = InterpPf(kSinPhiQ31, pf);
-      g.cos = InterpPf(kCosPhiQ31, pf);
-      g.sec = InterpPf(kSecPhiQ28, pf);
-      g.tan = InterpPf(kTanPhiQ28, pf);
+      g.sin = InterpPf(kPhiQ, pf);
+      g.cos = InterpPf(kPhiQ + 1, pf);
+      g.sec = InterpPf(kPhiQ + 2, pf);
+      g.tan = InterpPf(kPhiQ + 3, pf);
     } else {
       const Geometry& o = geometry_[i];
       g.sin = o.sin;
@@ -258,6 +376,43 @@ int32_t ModalResonator::RecomputeFilters() {
     log2_q += Log2Q24(q_loss);
     if (log2_q < -(64 << 24)) log2_q = -(64 << 24);
   }
+
+#else
+  // coop 0.14: the loop below in three passes, each mode's arithmetic as it was in one (every mode's values depend
+  // on its own state and two running products only, so their order across modes changes nothing): A the state
+  // translation from the old coefficients (s1, s2, put where lp, bp are), B the partials' geometry when it changed
+  // (FFloat, C), C the new coefficients and the state from s1, s2. A and C in Blackfin assembly (src/modal_bfin.S,
+  // bit-exact with ModalTranslateC / ModalCoeffsC below, which the host runs).
+  (void)translate_state;
+  Mode* const bank_modes = bank();
+  int32_t* const geometry = &geometry_[0].sin;
+  static_assert(sizeof(Geometry) == 24 && sizeof(Mode) == 24, "src/modal_bfin.S's layouts");
+  ModalTranslate(bank_modes, geometry, resolution_, u0, first_update);
+  int32_t num_modes = geometry_changed ? 0 : num_modes_;
+  if (geometry_changed) {
+    for (int32_t i = 0; i < resolution_; ++i) {
+      FFloat partial_frequency = harmonic * stretch_factor;
+      if (partial_frequency >= k049) {
+        partial_frequency = k049;
+      } else {
+        num_modes = i + 1;
+      }
+      const int32_t pf = partial_frequency.ToQ31();
+      log2_pf_[i] = Log2Q24(pf);
+      Geometry& g = geometry_[i];
+      g.sin = InterpPf(kPhiQ, pf);
+      g.cos = InterpPf(kPhiQ + 1, pf);
+      g.sec = InterpPf(kPhiQ + 2, pf);
+      g.tan = InterpPf(kPhiQ + 3, pf);
+      stretch_factor += stiffness;
+      stiffness *= stiffness.is_negative() ? k093 : k098;
+      harmonic += f0;
+    }
+  }
+  ModalCoeffs k = { bank_modes, geometry, log2_pf_, gain_, resolution_, u0, log2_q, q_loss, q_loss_damping_rate,
+                    kExp2NegQ31, kRecip1pQ31, kRhoQ31, kInvRhoQ30, kRecip1mQ30, kLog2MantissaQ30 };
+  ModalCoeffsRun(&k);
+#endif
 
   computed_frequency_ = frequency_;
   computed_structure_ = structure_;

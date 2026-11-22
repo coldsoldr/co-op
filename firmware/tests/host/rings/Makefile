@@ -49,8 +49,7 @@ $(BUILD)/rings_coop: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(CO
 $(BUILD)/rings_profile.elf: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DOP1_COOP -DRINGS_PROFILE $(PROFILE_FLAGS) -I$(COOP) -I../../../sdk rings_compare.cc \
-	  $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) $(COOP)/src/mode_bank_bfin.S $(COOP)/src/string_kernel_bfin.S \
-	  $(COOP)/src/limiter_bfin.S $(COOP)/src/reverb_bfin.S $(COOP)/src/halfband_bfin.S -o $@
+	  $(COOP)/rings.cc $(addprefix $(COOP)/,$(DSP)) $(ASM) -o $@
 
 profile: $(BUILD)/rings_profile.elf
 	$(BFIN)/bfin-elf-run $< $(BUILD)/profile.raw $(PROFILE_BLOCKS) $(PROFILE_MODEL)
@@ -114,7 +113,7 @@ batched: $(BUILD)/rings_halved $(BUILD)/rings_batched $(BUILD)/rings_shipped
 SHIPPED_FLAGS := -DOP1RINGS_CONTROL_HALVED=1 -DOP1RINGS_CONTROL_BATCHED=1 -DOP1RINGS_COOP_POLY4=1
 FOOTPRINT_MODEL ?= 0
 ASM := $(COOP)/src/mode_bank_bfin.S $(COOP)/src/string_kernel_bfin.S $(COOP)/src/limiter_bfin.S \
-       $(COOP)/src/reverb_bfin.S $(COOP)/src/halfband_bfin.S
+       $(COOP)/src/reverb_bfin.S $(COOP)/src/halfband_bfin.S $(wildcard $(COOP)/src/fm_voice_bfin.S $(COOP)/src/upsampler_bfin.S $(COOP)/src/modal_bfin.S)
 $(BUILD)/rings_trace.elf: rings_compare.cc $(wildcard $(COOP)/*.cc $(COOP)/src/* $(COOP)/op1/*)
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DOP1_COOP -DRINGS_TRACE $(SHIPPED_FLAGS) $(FOOTPRINT_FLAGS) -I$(COOP) -I../../../sdk \
@@ -347,3 +346,12 @@ v014-sim:
 	$(HOST_CXX) $(CXXFLAGS) $(EARLY_FLAGS) -I$(COOP) -I../../../sdk $(EARLY_SRC) -o $(BUILD)/early_v14
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DM_PI=3.14159265358979323846 $(EARLY_FLAGS) -I$(COOP) -I../../../sdk $(EARLY_SRC) $(ASM) -o $(BUILD)/early_v14.elf
 	bash v014sim.sh $(BUILD) $(BFIN) $(V14_SIM_BLOCKS)
+
+# rings 0.14: the modal coefficient kernels against their C, in the simulator (modal_check.cc).
+$(BUILD)/modal_check.elf: modal_check.cc $(COOP)/src/modal_resonator.cc $(COOP)/src/modal_bfin.S $(COOP)/src/fixed_tables.cc
+	@mkdir -p $(BUILD)
+	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DOP1_COOP -I$(COOP) modal_check.cc $(COOP)/src/fixed_tables.cc \
+	  $(COOP)/src/mode_bank_bfin.S $(COOP)/src/modal_bfin.S -o $@
+
+modal-check: $(BUILD)/modal_check.elf
+	$(BFIN)/bfin-elf-run $<

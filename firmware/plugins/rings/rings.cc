@@ -19,6 +19,7 @@
  * Rings and stmlib: MIT, (c) Emilie Gillet; the fixed-point port: coldsoldr (te-op1-cfw), same terms. This file:
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
+#include <cstddef>
 #include <cstdint>
 
 #include "coop_plugin.h"
@@ -46,6 +47,16 @@ static_assert(OP1RINGS_UPSAMPLE == 4 && OP1RINGS_SAMPLE_RATE == 22050, "the coop
 // The upsampler's half-band stage in Blackfin assembly (src/halfband_bfin.S, from gen_halfband_asm.py): the C loop
 // below with every product on the MAC units, bit-identical (tests/host/rings/halfband_check.cc).
 extern "C" void HalfbandAsm(const int16_t* x, const int16_t* xs, int32_t* mid3);
+// rings 0.14: the whole upsampler of the 44.1 kHz voice and the screen's peak in one kernel (src/upsampler_bfin.S):
+// the C below, bit-identical (tests/host/rings v014-sim), one call where the C around HalfbandAsm was ~0.5 KB of
+// code run every render.
+extern "C" int32_t UpsampleAsm(const int32_t* in, int16_t* history, int32_t* mid_history, int16_t* out,
+                               int16_t* work);
+#if defined(__bfin__) && !defined(OP1RINGS_NO_ASM) && OP1RINGS_VOICE_44K
+#define OP1RINGS_UPSAMPLE_ASM 1
+#else
+#define OP1RINGS_UPSAMPLE_ASM 0
+#endif
 
 extern "C" const int32_t* kSoftLimitTable;           // src/op1_voice.cc: the limiter kernel's table
 
@@ -96,8 +107,15 @@ class Upsampler {
     mid_history_[0] = mid_history_[1] = mid_history_[2] = 0;
   }
 
-  // in: kRingsBlockSize Q27 samples; out: 4 * kRingsBlockSize samples.
-  void Process(const int32_t* in, int16_t* out) {
+  // in: kRingsBlockSize Q27 samples; out: 4 * kRingsBlockSize samples (88.2 kHz) or 2 * (OP1RINGS_VOICE_44K).
+  // Returns the peak of |out| (the screen's).
+  int32_t Process(const int32_t* in, int16_t* out) {
+#if OP1RINGS_UPSAMPLE_ASM
+    static_assert(sizeof(op1rings::Scratch::upsampler.x) == 112 && sizeof(op1rings::Scratch::upsampler.xs) == 112 &&
+                  offsetof(op1rings::Scratch, upsampler.mid) - offsetof(op1rings::Scratch, upsampler.x) == 224,
+                  "src/upsampler_bfin.S's work block");
+    return UpsampleAsm(in, history_, mid_history_, out, op1rings::scratch()->upsampler.x);
+#else
     const int32_t kHistory = op1rings::kScratchHalfbandHistory;   // 24 = 2 x 12 taps
     // The 22.05 kHz samples are clamped to 16 bits, so they are kept as int16 and every product is a 16 x 16
     // multiply (the MAC units') instead of a 32 x 32 one; c (x[-j] + x[1 + j]) is computed as c x[-j] + c x[1 + j],
@@ -138,6 +156,17 @@ class Upsampler {
     mid_history_[0] = mid[2 * kRingsBlockSize];
     mid_history_[1] = mid[2 * kRingsBlockSize + 1];
     mid_history_[2] = mid[2 * kRingsBlockSize + 2];
+    return Peak(out);
+#endif
+  }
+
+  static int32_t Peak(const int16_t* out) {
+    int32_t peak = 0;
+    for (int32_t i = 0; i < kOutSamples; ++i) {
+      const int32_t a = out[i] < 0 ? -out[i] : out[i];
+      if (a > peak) peak = a;
+    }
+    return peak;
   }
 
  private:
@@ -298,12 +327,7 @@ void ScreenQuiet(int32_t v) { screen_level[v] = static_cast<int16_t>(screen_leve
 // The level is the block's peak before the stock envelope (applied after render), so a released voice reads loud
 // until its ring dies: after the key up the level is let go by a quarter a block (~12 ms to a tenth) and the peak no
 // longer tops it up, the way the heard note stops.
-void ScreenRendered(int32_t v, const int16_t* out) {
-  int32_t peak = 0;
-  for (int32_t i = 0; i < kOutSamples; ++i) {
-    const int32_t a = out[i] < 0 ? -out[i] : out[i];
-    if (a > peak) peak = a;
-  }
+void ScreenRendered(int32_t v, int32_t peak) {   // peak: of the render's out (0.14: the upsampler's)
   const int32_t level = screen_level[v];
   if (screen_released[v]) {
     screen_level[v] = static_cast<int16_t>(level - (level >> 2));
@@ -379,7 +403,24 @@ inline int8_t Setting(const int16_t* params) {
 }
 
 // A new model or polyphony: the voices struck with another setting stop now (rings 0.6, above).
-void FollowSetting(const int16_t* params) {
+// 0.14: every render and note on asks; the two words are compared as they came the last time, and only a change
+// decodes them (out of line: the code a render runs, smaller). The same settings, so the same voices forgotten.
+uint32_t setting_words;
+bool setting_words_valid;
+__attribute__((noinline)) void FollowNewSetting(const int16_t* params);
+static_assert(op1::kNumModels == 6, "op1/settings.h");
+#if !defined(OP1_COOP) && !defined(OP1_KENNEL)
+#error "FollowSetting: the setting is words 5 and 6 (op1/settings.h OP1_COOP)"
+#endif
+inline void FollowSetting(const int16_t* params) {
+  const uint32_t words = (static_cast<uint32_t>(static_cast<uint16_t>(params[5])) << 16) |
+                         static_cast<uint16_t>(params[6]);
+  if (words == setting_words && setting_words_valid) return;
+  setting_words = words;
+  setting_words_valid = true;
+  FollowNewSetting(params);
+}
+void FollowNewSetting(const int16_t* params) {
   const int8_t setting = Setting(params);
   if (setting == current_setting) return;
   current_setting = setting;
@@ -428,6 +469,53 @@ void op1rings::ReclaimStrings(const op1rings::StringVoice* requester) {
 
 namespace {
 
+// 0.14: the render's paths that are not a sounding voice's, out of line (the code a render runs, smaller; the same
+// steps in the same order).
+// Its note was taken over by another voice and has faded out, or its tail has gone quiet (the shared reverb's
+// carriers keep rendering: a share of the reverb plays through them).
+__attribute__((noinline, cold)) void RenderSilent(int32_t v, int16_t* out) {
+  for (int32_t i = 0; i < kOutSamples; ++i) out[i] = 0;
+  upsamplers[v].Init();
+  ScreenQuiet(v);
+#ifdef COOP_IDLE_PROBE
+  ++g_coop_silent_renders[v];
+#endif
+}
+
+// 0.11: a held key whose string is asleep, the shared reverb's tail gone too (op1/reverb_bus.h, the idle state) and
+// nothing left in the voice's limiter: what the rest of this render would make is silence, and it would change
+// nothing. The smoother and the bus have had their block.
+__attribute__((noinline, cold)) void RenderIdle(int32_t v, int16_t* out, uint32_t rings_inc, const VoicePatch& patch) {
+#if OP1RINGS_CONTROL_BATCHED
+  last_inc[v] = rings_inc;
+  last_patch[v] = patch;
+  have_last[v] = true;
+#else
+  (void)rings_inc;
+  (void)patch;
+#endif
+  for (int32_t i = 0; i < kOutSamples; ++i) out[i] = 0;
+  upsamplers[v].Init();
+  allocator.Rendered(v);
+  ScreenQuiet(v);
+#ifdef COOP_IDLE_PROBE
+  ++g_coop_idle_blocks;
+  ++g_coop_silent_renders[v];
+#endif
+}
+
+// Linear fade-out (Q15 gain) of a voice whose note was taken over; returns the faded block's peak.
+__attribute__((noinline, cold)) int32_t FadeOut(int32_t v, int16_t* out) {
+  int32_t gain = allocator.fade_gain(v);
+  const int32_t step = allocator.fade_step(v) * kOutStep;            // the step stays per 88.2 kHz sample
+  for (int32_t i = 0; i < kOutSamples; ++i) {
+    out[i] = static_cast<int16_t>((out[i] * (gain > 0 ? gain : 0)) >> 15);
+    gain -= step;
+  }
+  allocator.AdvanceFade(v, op1::kBlockSize);
+  return Upsampler::Peak(out);
+}
+
 void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const int16_t* params) {
   (void)state;
   const int32_t v = voice;
@@ -449,17 +537,11 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
 #else
   NewBlock(v);
 #endif
+  RingsVoice* const voice_state = voices[v];
+  const bool asleep = voice_state->asleep();
   if (allocator.silent(v) ||
-      (voices[v]->asleep() && !allocator.fading(v) &&
-       voices[v]->model() != op1rings::MODEL_STRING_AND_REVERB)) {
-    // Its note was taken over by another voice and has faded out, or its tail has gone quiet (the shared reverb's
-    // carriers keep rendering: a share of the reverb plays through them).
-    for (int32_t i = 0; i < kOutSamples; ++i) out[i] = 0;
-    upsamplers[v].Init();
-    ScreenQuiet(v);
-#ifdef COOP_IDLE_PROBE
-    ++g_coop_silent_renders[v];
-#endif
+      (asleep && !allocator.fading(v) && voice_state->model() != op1rings::MODEL_STRING_AND_REVERB)) {
+    RenderSilent(v, out);
     return;
   }
   PROF_START(t_smooth);
@@ -478,34 +560,19 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
   const uint32_t rings_inc = inc < 0x40000000u ? inc << 2 : 0xffffffffu;
   // String + reverb sends to the shared reverb and plays a share of it (op1/reverb_bus.h); a voice fading out after a
   // steal does neither (the voice that took over carries the ring on).
-  const bool carrier = voices[v]->model() == op1rings::MODEL_STRING_AND_REVERB && !allocator.fading(v);
+  const bool fading = allocator.fading(v);
+  const bool carrier = voice_state->model() == op1rings::MODEL_STRING_AND_REVERB && !fading;
   int32_t* out_buffer = op1rings::scratch()->render_out;
   int32_t* wet_share = op1rings::scratch()->wet_share;
   PROF_START(t_bus);
-  const bool shared = reverb_bus.Render(v, op1::Cycles(), patch, carrier, wet_share, !voices[v]->asleep());
+  const bool shared = reverb_bus.Render(v, op1::Cycles(), patch, carrier, wet_share, !asleep);
   PROF_ADD(PROF_REVERB_BUS, t_bus);
-  if (carrier && reverb_bus.idle() && voices[v]->at_rest()) {
-    // 0.11: a held key whose string is asleep, the shared reverb's tail gone too (op1/reverb_bus.h, the idle state)
-    // and nothing left in the voice's limiter: what the rest of this render would make is silence, and it would
-    // change nothing. The smoother and the bus above have had their block.
-#if OP1RINGS_CONTROL_BATCHED
-    last_inc[v] = rings_inc;
-    last_patch[v] = patch;
-    have_last[v] = true;
-#endif
-    for (int32_t i = 0; i < kOutSamples; ++i) out[i] = 0;
-    upsamplers[v].Init();
-    allocator.Rendered(v);
-    ScreenQuiet(v);
-#ifdef COOP_IDLE_PROBE
-    ++g_coop_idle_blocks;
-    ++g_coop_silent_renders[v];
-#endif
+  if (carrier && reverb_bus.idle() && voice_state->at_rest()) {
+    RenderIdle(v, out, rings_inc, patch);
     return;
   }
   // The modal model recomputes its coefficients within a budget per block (op1/coefficient_budget.h); a voice fading
   // out after a steal keeps its own and asks for none.
-  const bool fading = allocator.fading(v);
 #if OP1RINGS_CONTROL_BATCHED
   // The batch did this voice's control already (or it isn't its turn): hold. A strike, or a turn the batch couldn't
   // take, does its own. No coefficient budget (above).
@@ -525,31 +592,22 @@ void Render(int voice, void* state, int16_t* out, const int32_t* pitch, const in
   voices[v]->RenderMono(&rings_inc, patch, out_buffer, kRingsBlockSize,
                         carrier ? reverb_bus.send() : nullptr, shared ? wet_share : nullptr);
   PROF_ADD(PROF_VOICE, t_voice);
-  const int32_t demand = voices[v]->TakeCoefficientDemand();
 #if OP1RINGS_CONTROL_BATCHED
-  (void)demand;
+  // (0.14: the coefficient demand is not asked for: the budget is not used, and the flag it clears is read by nothing
+  // else.)
   last_inc[v] = rings_inc;
   last_patch[v] = patch;
   have_last[v] = true;
 #else
-  coefficient_budget.Report(v, demand, fading);
+  coefficient_budget.Report(v, voices[v]->TakeCoefficientDemand(), fading);
 #endif
   PROF_START(t_up);
-  upsamplers[v].Process(out_buffer, out);
+  int32_t peak = upsamplers[v].Process(out_buffer, out);
   PROF_ADD(PROF_UPSAMPLE, t_up);
   PROF_START(t_tail);
   allocator.Rendered(v);
-  if (allocator.fading(v)) {
-    // Linear fade-out (Q15 gain) of a voice whose note was taken over.
-    int32_t gain = allocator.fade_gain(v);
-    const int32_t step = allocator.fade_step(v) * kOutStep;            // the step stays per 88.2 kHz sample
-    for (int32_t i = 0; i < kOutSamples; ++i) {
-      out[i] = static_cast<int16_t>((out[i] * (gain > 0 ? gain : 0)) >> 15);
-      gain -= step;
-    }
-    allocator.AdvanceFade(v, op1::kBlockSize);
-  }
-  ScreenRendered(v, out);
+  if (allocator.fading(v)) peak = FadeOut(v, out);
+  ScreenRendered(v, peak);
   PROF_ADD(PROF_TAIL, t_tail);
 }
 

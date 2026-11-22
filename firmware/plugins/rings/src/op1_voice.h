@@ -94,6 +94,15 @@ struct LimiterGains {
 void MonoLimiterLoopC(int32_t* x, int32_t size, int32_t* peak, int32_t gain, int32_t pre_gain);
 extern "C" void MonoLimiterAsm(int32_t* x, int32_t size, int32_t* peak, int32_t gain,
                                int32_t pre_gain);
+// coop 0.14 (src/limiter_bfin.S): max(peak_in, |x|), then x += wet (when wet), then MonoLimiterAsm's loop; returns
+// the peak. RenderMono's sub-block tail in one call.
+extern "C" int32_t MonoLimiterPeakAsm(int32_t* x, int32_t size, int32_t* peak, int32_t gain, int32_t pre_gain,
+                                      const int32_t* wet, int32_t peak_in);
+#if defined(__bfin__) && !defined(OP1RINGS_NO_ASM) && !defined(COOP_EARLY_PROBE)
+#define OP1RINGS_LIMIT_PEAK_ASM 1   // (the early cut's test probe reads the own output between the steps)
+#else
+#define OP1RINGS_LIMIT_PEAK_ASM 0
+#endif
 
 // Mono limiter for the OP-1 build (the voice's two outputs are summed): same
 // peak follower as Rings' limiter, with the gain (1 / peak) updated once per
@@ -102,10 +111,17 @@ class MonoLimiter {
  public:
   void Init();
   void Process(int32_t* x, size_t size, const LimiterGains& gains);
+#if OP1RINGS_LIMIT_PEAK_ASM
+  // coop 0.14: the voice's own peak (from peak_in, before the share), x += wet when wet, then Process; returns the peak.
+  int32_t ProcessPeak(int32_t* x, size_t size, const LimiterGains& gains, const int32_t* wet, int32_t peak_in);
+#endif
   // coop 0.11: the peak follower has come all the way down (silence in then changes nothing in here).
   bool at_rest() const { return peak_ == 0; }
 
  private:
+  void UpdateGain(const LimiterGains& gains) { gain_ = peak_ <= (1 << 27) ? gains.out_q30 : LoudGain(gains, peak_); }
+  static int32_t LoudGain(const LimiterGains& gains, int32_t peak);
+
   int32_t peak_;   // Q27
   int32_t gain_;   // pre-gain * 0.8 / max(peak, 1), Q30
 };

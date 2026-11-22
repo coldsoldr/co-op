@@ -57,6 +57,15 @@ class RandomFixed {
   static int32_t GetSigned() { return static_cast<int32_t>(GetWord() ^ 0x80000000u); }
   static uint32_t state() { return state_; }
   static void set_state(uint32_t state) { state_ = state; }
+  // coop 0.14: n draws unused (the stretch-only loop: one a sample). 32 in one step, the LCG taken to its 32nd power
+  // (a^32, and c (a^31 + ... + 1), mod 2^32): the same state as 32 GetWord calls.
+  static void Skip(int32_t n) {
+    if (n == 32) {
+      state_ = state_ * 666245249u + 95141024u;
+      return;
+    }
+    for (int32_t i = 0; i < n; ++i) GetWord();
+  }
 
  private:
   static uint32_t state_;

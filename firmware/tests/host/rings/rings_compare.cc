@@ -377,8 +377,7 @@ int main(int argc, char** argv) {
                   (unsigned long)(bl.n ? bl.total / bl.n : 0), (unsigned long)bl.max,
                   (unsigned long)(no.n ? no.total / no.n : 0), (unsigned long)no.max);
       const prof::Stat& vo = prof::voiced[m][p];
-      if (vo.n) std::printf("%-7s %-4s voiced renders (over 2,000 cycles): %lu, avg %lu
-", kModel[m], kPoly[p],
+      if (vo.n) std::printf("%-7s %-4s voiced renders (over 2,000 cycles): %lu, avg %lu\n", kModel[m], kPoly[p],
                             (unsigned long)vo.n, (unsigned long)(vo.total / vo.n));
     }
   {

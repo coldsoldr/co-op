@@ -131,7 +131,8 @@ class ReverbBus {
   int32_t clears() const { return clears_; }
 
  private:
-  void EndBlock(uint32_t now, const op1rings::VoicePatch& patch) {
+  // (0.14: out of line, once a block; the per-render part of Render stays small.)
+  __attribute__((noinline)) void EndBlock(uint32_t now, const op1rings::VoicePatch& patch) {
     int32_t n = 0;
     for (int32_t v = 0; v < kNumVoices; ++v) {
       if (carriers_ & (1u << v)) {
