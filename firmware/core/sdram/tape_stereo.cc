@@ -89,6 +89,7 @@ static void tape_bufs_init(void)
 static volatile int16_t *g_stock_meters;  /* the 4 stock peak words the UI reads */
 
 extern "C" int coop_stereo_side_bufs(const int16_t **l, const int16_t **r);   /* stereo_bus.cc */
+extern "C" void coop_strip_tape_gains(const int16_t *g, int stereo);         /* coop_strip.cc (CS3): the split tracks */
 
 static inline uint32_t coop_cycles(void)
 {
@@ -251,6 +252,7 @@ extern "C" void coop_tape_gains(uint32_t sp)
         g_stock_meters = stock_m;
         for (int i = 0; i < 8; i++) g_lane_meters[i] = 0;
     }
+    coop_strip_tape_gains(g, stereo);          /* CS3: the tracks that leave the stock sum this tick, their (gL, gR) */
     *slot_g = g_lane_gains;
     *slot_m = g_lane_meters;
     *SEAM_VALID &= 0x000f;                     /* the fill decision (== 0xf) sees the stock nibble; hook B mirrors it */

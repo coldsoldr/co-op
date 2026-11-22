@@ -462,27 +462,46 @@ static inline int32_t strip_bf_level(int pct)
     return pct * pct * 32768 / 10000;
 }
 
-static inline void coop_strip_bf_update(coop_strip_bf *s)
+/* One EQ band's coefficients (the expensive part of an update: the reference's five int64 divides) into c[18];
+ * returns whether the band runs. Depends only on the band's own fields of p (eq_cut, eq_freq, eq_gain, eq_q). */
+static inline int coop_strip_bf_band(const coop_strip_params *p, int b, uint32_t *c)
+{
+    coop_strip_bq q;
+    int on = strip_band_coefs(p, b, &q);
+    if (on) {
+        /* the b's scaled by 2^-k so that |b| < 2 at Q29 (a boost up to +18 dB has b up to 16: k <= 3) */
+        int64_t mb = 0, bb[3] = { q.b2, q.b1, q.b0 };
+        for (int i = 0; i < 3; i++) { int64_t v = bb[i] < 0 ? -bb[i] : bb[i]; if (v > mb) mb = v; }
+        int k = 0;
+        while (((mb * 4) >> k) > (1LL << 30) - (1LL << 16)) k++;
+        c[0] = strip_bf_coef(-(int64_t)q.a1 * 4); c[1] = strip_bf_coef(-(int64_t)q.a2 * 4);
+        for (int i = 0; i < 3; i++) c[2 + i] = strip_bf_coef((bb[i] * 4) >> k);
+        c[5] = (uint32_t)k;
+        strip_bf_ring(c, k);
+    }
+    return on;
+}
+
+/* The bands' fields that coop_strip_bf_band reads are the same in a and b */
+static inline int coop_strip_bf_band_same(const coop_strip_params *a, const coop_strip_params *b, int k)
+{
+    return a->eq_cut[k] == b->eq_cut[k] && a->eq_freq[k] == b->eq_freq[k] && a->eq_gain[k] == b->eq_gain[k] &&
+           a->eq_q[k] == b->eq_q[k];
+}
+
+/* The rest of an update, cheap: s->p is the new form and s->eqc[b] holds the coefficients of every band with
+ * on[b] (coop_strip_bf_band). CS3 (core/sdram/coop_strip.cc) computes the bands one a block and commits with this;
+ * coop_strip_bf_update does both at once. */
+static inline void coop_strip_bf_commit(coop_strip_bf *s, const uint8_t *on)
 {
     const coop_strip_params *p = &s->p;
     s->nbands = 0;
     for (int b = 0; b < 4; b++) {
-        coop_strip_bq q;
-        int on = strip_band_coefs(p, b, &q);
-        if (on) {
-            /* the b's scaled by 2^-k so that |b| < 2 at Q29 (a boost up to +18 dB has b up to 16: k <= 3) */
-            int64_t mb = 0, bb[3] = { q.b2, q.b1, q.b0 };
-            for (int i = 0; i < 3; i++) { int64_t v = bb[i] < 0 ? -bb[i] : bb[i]; if (v > mb) mb = v; }
-            int k = 0;
-            while (((mb * 4) >> k) > (1LL << 30) - (1LL << 16)) k++;
-            s->eqc[b][0] = strip_bf_coef(-(int64_t)q.a1 * 4); s->eqc[b][1] = strip_bf_coef(-(int64_t)q.a2 * 4);
-            for (int i = 0; i < 3; i++) s->eqc[b][2 + i] = strip_bf_coef((bb[i] * 4) >> k);
-            s->eqc[b][5] = (uint32_t)k;
-            strip_bf_ring(s->eqc[b], k);
+        if (on[b]) {
             if (!s->band_on[b]) for (int i = 0; i < 7; i++) s->eqs[b][i] = 0;
             s->band_idx[s->nbands++] = (uint8_t)b;
         }
-        s->band_on[b] = (uint8_t)on;
+        s->band_on[b] = on[b];
     }
     strip_bf_comp *c = &s->comp;
     c->thr = -strip_hdb_l2(p->c_thresh);
@@ -534,6 +553,13 @@ static inline void coop_strip_bf_update(coop_strip_bf *s)
     if (p->sat_on && !s->sat_was) { s->sat.lp = 0; s->sat.dc[0] = s->sat.dc[1] = 0; }
     s->eq_was = p->eq_on; s->comp_was = p->comp_on; s->sat_was = p->sat_on;
     s->dirty = 0;
+}
+
+static inline void coop_strip_bf_update(coop_strip_bf *s)
+{
+    uint8_t on[4];
+    for (int b = 0; b < 4; b++) on[b] = (uint8_t)coop_strip_bf_band(&s->p, b, s->eqc[b]);
+    coop_strip_bf_commit(s, on);
 }
 
 
