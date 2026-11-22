@@ -238,6 +238,11 @@ static inline void coop_strip_update(coop_strip *s)
     s->lvl_fx2 = strip_level_q30(p->fx2);
     /* a section switched on starts from rest */
     if (p->comp_on && !s->comp_was) { s->gr = 0; s->cg = strip_exp2_q26(s->makeup_l2); }
+    if (p->eq_on && !s->eq_was) {
+        for (int b = 0; b < 4; b++) for (int c = 0; c < 2; c++) {
+            coop_strip_bqs *z = &s->bs[b][c]; z->x1 = z->x2 = z->y1 = z->y2 = 0; z->e = 0;
+        }
+    }
     if (p->sat_on && !s->sat_was) { s->lp[0] = s->lp[1] = s->dc[0] = s->dc[1] = 0; }
     s->eq_was = p->eq_on; s->comp_was = p->comp_on; s->sat_was = p->sat_on;
     s->dirty = 0;
