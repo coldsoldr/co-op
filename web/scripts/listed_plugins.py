@@ -323,6 +323,9 @@ AUTHORS = {
     'fungiboletus': ['moai'],
     'SquareWave Studio': ['gin'],
     'Nicolas Franck Pauly': ['ploc'],
+    'zvenson': ['oxbow'],
+    'ESC_CODE': ['lineclock'],
+    'Maiko Pruett': ['crush', 'warble', 'plate', 'file', 'scale', 'naming', 'undo', 'tapes', 'sampletools'],
 }
 AUTHOR_OF = {i: a for a, ids in AUTHORS.items() for i in ids}
 SOURCE = {
@@ -330,6 +333,7 @@ SOURCE = {
     'hollowsaint': 'https://github.com/SammiBabe666/Project_Hollow_Saint',
     'bloodmoon': 'https://github.com/SammiBabe666/Project_Bloodmoon',
     'ploc': 'https://github.com/nicolasfpauly/ploc',
+    'lineclock': 'https://github.com/VolkerJunginger/OP-1/tree/main/Pulse-Sync/Source',
     'mixtur': 'https://github.com/ultralazr/op1-musica-obscura',
     'arc': 'https://github.com/ultralazr/op1-musica-obscura',
     'palme': 'https://github.com/ultralazr/op1-musica-obscura',
@@ -360,19 +364,18 @@ CREDITS = {
     'quad': 'Lorenz waves and the Pond LFO by xoza; from op1r',
     'oblique': 'Cards by Brian Eno and Peter Schmidt; idea and card screen from ultralazr\'s op1-oblique-strategies',
     'hail': 'Port of Mutable Instruments Beads by Émilie Gillet (MIT)',
-    'oxbow': 'Port of OberVave by zvenson (GPL-3.0)',
+    'oxbow': 'OberVave by zvenson (GPL-3.0), ported to kennel by Hundekraft',
     'sid': 'Adapts Hermit (Mihaly Horvath)\'s cRSID 1.58 light renderer',
     'father': 'Concept and visual reference by xylograph; an original kennel reverb',
-    'lineclock': 'Port of Pulse Sync by Volker Junginger (ESC_CODE), GPL-3.0, used with the author\'s permission',
+    'lineclock': 'Pulse Sync by Volker Junginger (ESC_CODE), GPL-3.0, ported to kennel by Hundekraft with the author\'s permission',
     'strum': 'Guitar: Jeff Learman\'s Martin HD28 recordings from the Discord SFZ GM Bank (CC0)',
     'rackverb': 'Written from Eric Brombaugh\'s and thement\'s published Midiverb research; no Alesis ROM data',
-    'crush': 'Reconstructs Maiko Pruett\'s #250 algorithm and artwork, used with permission',
-    'warble': 'Reconstructs Maiko Pruett\'s #250 algorithm and artwork, used with permission',
-    'plate': 'Reconstructs Maiko Pruett\'s #250 algorithm and artwork, used with permission',
     'chord': 'Voicings and strums from op1r',
 }
+for i in ('crush', 'warble', 'plate'):
+    CREDITS[i] = "Maiko Pruett's #250 algorithm and artwork, reconstructed in kennel by Hundekraft with Maiko's permission"
 for i in ('file', 'scale', 'naming', 'undo', 'tapes', 'sampletools'):
-    CREDITS[i] = 'Rebuilt by hundekraft from how Maiko Pruett\'s #249 and #250 work; none of Maiko\'s code is used'
+    CREDITS[i] = "Maiko Pruett's #249 and #250 feature, rebuilt in kennel by Hundekraft from how it works; none of Maiko's code is used"
 for i in ('supersaw', 'fmbell', 'granular', 'tape', 'drumplus', 'midiseq', 'midicc', 'euclid', 'dots', 'oracle', 'peal',
           'countin', 'markers', 'punch', 'sysmon', 'usbout', 'ente', 'dddd', 'steve', 'samplerplus'):
     CREDITS.setdefault(i, 'From op1r, ported to kennel by Hundekraft')

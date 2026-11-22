@@ -6,7 +6,7 @@ A short delay whose time wobbles in two uneven rhythms, so the movement never re
 
 ## Who made it
 
-Reconstructs Maiko Pruett's #250 algorithm and artwork, used with permission.
+Maiko Pruett's #250 algorithm and artwork, reconstructed in kennel by Hundekraft with Maiko's permission.
 
 ## Get it
 
