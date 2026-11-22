@@ -3603,3 +3603,31 @@ block; line-out level RMS dBFS at the interface, whose floor at this gain is -69
   `env_peak` reading would show the envelope's level through it.
 - One voice set less at 20 s while held (351 k -> 322 k) is not explained by the run file (its engine lines are
   cumulative over the run on e13, not per section); e14's per-window `peng` will tell.
+
+## e14 on the device, by the device loop: rest, held chord, release; rings 0.11 against 0.13 (2026-11-22)
+
+The owner flashed `op1_246_coop_e14_dev.op1` (prof on). Runs by `tools/devloop.py` with the owner's rings patch
+(string + reverb, damping at the longest end, sustain at maximum, no effect), `tests/sim/dev_hold_chord.txt` and
+`dev_release_long.txt`. rings 0.11 was put back over SysEx (PUT) for one run and 0.13 restored after it. Run files:
+`docs/device-stats/2026-11-22-e14*-run.txt`. Cycles a block; rings = `plugin_own_block` / per render (six renders a block).
+
+| | e13 + rings 0.11 | e14 + rings 0.11 | e14 + rings 0.13 |
+|---|---|---|---|
+| rest | 90,818 | 62,869 | 63,744 |
+| held 0-20 s, whole block | 350,468-351,323 | 354,101-354,697 | 366,650-368,017 |
+| held 0-20 s, rings | 161,431-162,362 (27.0 k) | 168,833-168,978 (28.1 k) | 174,284-174,530 (29.1 k) |
+| held 20-60 s, whole block | 322,312-323,065 | 354,291-355,670 | 366,690-367,880 |
+| held 20-60 s, rings | 138,125-138,307 (23.0 k) | 168,782-168,995 (28.1 k) | 174,276-174,517 (29.1 k) |
+| released (envelope still running) | 331,684-332,014 | 359,123-359,877 | 369,457-370,355 |
+| line out while held, RMS dBFS | -40 to -42 | -34 to -36 | -36 to -39 |
+
+[C] What it shows:
+- e14 saves 27-28 k cycles a block at rest (91 k -> 63-64 k): the stage, mix and tap changes, on the device.
+- Sounding, e14 is about neutral against e13 for the same rings file in the first 20 s (+3 k whole block; rings +4 %,
+  28.1 k against 27.0 k a render: e14's measuring or code layout).
+- rings 0.13 costs about 3.5 % more than 0.11 while sounding on e14 (+5.6 k rings, +13 k whole block), against the
+  emulator's +0.5 %: the 0.12/0.13 additions cost more on the device (cache).
+- e13 + 0.11 dropped from 27.0 k to 23.0 k a render at about 20 s and stayed there; neither e14 run did. Not explained:
+  the line-out levels differ by up to 6 dB between the three runs, so the patch was not identical (the owner changed
+  the damping between runs and set it back); the drop may be the sound's, not the core's.
+- Released voices render for about 30 s (this patch's envelope release) on every core.
