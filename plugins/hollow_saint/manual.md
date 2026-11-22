@@ -6,7 +6,7 @@ A haunted hurdy-gurdy for the original Teenage Engineering OP-1: a kennel synth 
 
 ## Who made it
 
-Cathedral of the Hollow Saint is by cathedral of the hollow saint ([SammiBabe666/Project_Hollow_Saint](https://github.com/SammiBabe666/Project_Hollow_Saint), GPL-3.0-or-later).
+Cathedral of the Hollow Saint is by SammiBabe666 ([SammiBabe666/Project_Hollow_Saint](https://github.com/SammiBabe666/Project_Hollow_Saint), GPL-3.0-or-later).
 
 ## Get it
 
