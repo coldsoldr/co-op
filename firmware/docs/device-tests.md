@@ -3829,3 +3829,30 @@ Flashing back to e15 or stock brings Tombola back with its knob settings (they s
 nophysics is one build away (`NOPHYSICS=0 tools/build_device_package.sh ...`).
 
 Result: (pending)
+
+## e16 combined: tail skip + yaffs alignment + nophysics in one image — device test (pending, 2026-11-22)
+
+The two e16 sections above were built and gated separately. They now ship as one core, with the odd-buffer bounce for
+the stock yaffs calls (`core/include/coop_yio.h`, the link-time `tools/even_bufs.py` check: 735 objects, none odd), and
+with saw 0.4 (`-funswitch-loops`, docs/plugin-performance.md) as its plugin. **These packages replace the earlier e16
+and e16-nophysics ones; flash these.**
+
+- `op1_246_coop_e16.op1` (release, `prof=0 statsfile=0`): sha256 `2fa1c773cc8bf4077795174371acb009f7b9b8c9555ecd4b4f58c39e1e6f7dc4`.
+- `op1_246_coop_e16_dev.op1` (dev, `prof=1 statsfile=0`): sha256 `e70e70dc6e215bab039961c96086fbc2aad64d83ba8cc87eb59931b3f7885cae`.
+
+Both: `ELF=<abs> STOCK_DIR=<op1_246> tools/build_device_package.sh OUT --tape-stereo --set-word g_coop_spread=32767
+--set-word g_coop_statsfile=0` (release adds `--set-word g_coop_prof=0`). `verify_bootloader.py` PASS, `pkg_check` shows
+three files differing (`OP1_vdk.ldr`, `lander.svg` and `tombola.svg`), all 57 nophysics edits are present, and the ELF
+holds `build e16`.
+
+Before the device (op1emu and host):
+- `make host-test`: 93 tool tests OK and all C++ tests pass.
+- `tools/nophysics_prove.py` on the combined image built with `NOPHYSICS=0`: PASS, with 144,998 dead bytes around the
+  144,888 removed. The e16 core code adds no reference into the removed ranges.
+- `emu_gate.py --elf coop_combined.elf --plugins saw.coop` (0.4):
+  - `det_chord` and `det_eng_tail` pass (`eng_noteons 39`, no fault).
+  - `det_lander_combo` passes with `lander_swallowed 2` and `set_opens 1`. Its first run ended at 34.7 s of guest time,
+    before its last event at 37 s; this is the known wall-timed quit on a loaded host.
+  - `heap_free` is 3,051,212.
+
+The device steps are the union of the two sections above: e16 steps first, then nophysics steps 1-6.
