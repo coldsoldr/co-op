@@ -195,3 +195,49 @@ also refuses combinations that decode cleanly: a P-register store in slot 2 besi
 after every emulator gate had passed. The stock compiler's ~860 parallel P-register stores all have NOP beside them.
 Rule for hand-written packets: copy combinations the stock code uses; `tools/asm_lint.py` (run by the build) flags
 the known bad one. A plugin's assembly should go through the same lint.
+
+## Loop unswitching (2026-11-22)
+
+Tried because op1-sdk (MIT, `features/fxpack/fxpack_core.c`, `docs/performance.md`) put
+`#pragma GCC optimize ("unswitch-loops", "no-tree-loop-distribute-patterns")` on its effects file and got 15-25 % on
+DJ, TEXTURE, FUZZ and AUTO-WAH (with losses elsewhere: shimmer +3 %). Credit to op1-sdk for the idea. Method: every
+plugin packed with `-funswitch-loops`, with `-fno-tree-loop-distribute-patterns` and with both (`tools/plugin/pack.py`
+flags, section GC on), the surviving functions compared; then each plugin's own simulator bench (`tests/host/<id>`,
+`bfin-elf-run`, CYCLES around the render, no cache model) with the flag on that plugin's C/C++ sources only, and its
+digest / comparison check. Rule: keep only a win of 3 % or more, modest growth, identical output.
+
+- **`-fno-tree-loop-distribute-patterns` alone changes nothing**: every plugin packs byte-identical with it (nine already
+  set it; for bitcrusher, drive, freq_shift, saw, stereo_delay and wavefolder GCC finds no memset / memcpy loop).
+- **Where the C still runs per sample on the device**: bitcrusher (all C), saw (all C), fickle (all passes but the
+  diffusers' `FickleApAsm`), petri's engine around its voice and space kernels, rings' control code around its
+  kernels. Everywhere else the per-sample loops are the `*_bfin.S` kernels (and `shared/halfband_bfin.S`) and the C is
+  per-block control; the C references (`TapeDelayRunC`, `HallXfadeRunC`, ...) are either not linked (`#ifdef __bfin__`)
+  or not run (`use_asm_`). drive, freq_shift and stereo_delay: no DSP function changed at all (only the screen's init).
+- **The pragma is not the flag.** On bfin GCC 14 `#pragma GCC optimize ("unswitch-loops")` at the top of a file builds
+  different code from `-funswitch-loops` on the command line, and slower: saw lost its hardware loop and spilled to the
+  stack (+17 %), bitcrusher's common loop doubled (+34 %), fickle +11 %. Use the command line: plugin.json
+  `"source_cflags": {"file.cc": ["-funswitch-loops"]}` (pack.py accepts the flag from 2026-11-22).
+
+Cycles a block (64 samples; saw: one voice render of 128 samples, six a block), simulator, before -> after with
+`-funswitch-loops` on the command line; .text of the packed plugin:
+
+| Plugin | Bench | Before | After | Change | .text | Output | Kept |
+|---|---|---|---|---|---|---|---|
+| saw 0.4 | `tests/host/saw` (new), 18,000 renders, 3 shapes | 10,733 / voice | 9,211 | **-14.2 %** (saw -7.1, square -15.5, triangle -17.9) | 1,708 -> 2,036 (+328; render 460 -> 786, three loops, one runs) | digest 967d6f58 both | **yes** |
+| bitcrusher | `profile`, 4000 blocks | 5,426 | 5,378 | -0.9 % (max 8,020 -> 8,224) | 2,944 -> 3,100 | 0 mismatches | no: under 3 % |
+| cs_hall | `sim`, 9 scenes | 15,374-19,326 | 15,436-19,439 | +0.4..+0.6 % | 11,088 -> 11,564 | bit-identical | no: slower |
+| cs_plate | `all` | 15,002 | 14,799 | -1.4 % | 9,576 -> 9,600 | bit-identical | no: under 3 % |
+| ensemble | `sim` | 10,592 | 10,507 | -0.8 % | 6,620 -> 6,620 | bit-identical | no: under 3 % |
+| fickle | `sim`, 40 scenes | sum 848,612 | 852,462 | +0.45 % (slip frozen -2.3, slip listening +2.0) | 23,640 -> 24,880 | digest 3959750b0ea1de10 both | no: slower |
+| petri | `sim`, 11 effects | all 18,126 | 18,094 | -0.2 % | 23,696 -> 24,500 | digest 474736ab08745fff both | no: under 3 % |
+| rings | `profile`, 62,010 blocks | modal all 118,385 | 118,021 | -0.3 % (all 24 model x poly rows -0.0..-0.5 %) | 46,624 -> 47,176 | profile.raw (77 MB) identical | no: under 3 % |
+| tape_drive | `all` | 8,689 | 8,632 | -0.7 % | 10,796 -> 11,168 | bit-identical | no: under 3 % |
+| tape_echo | `sim` | 12,802 | 12,738 | -0.5 % | 10,240 -> 10,408 | bit-identical | no: under 3 % |
+| wavefolder | `sim` | 5,749 | 5,687 | -1.1 % | 4,112 -> 4,168 | bit-identical | no: under 3 % |
+| drive, freq_shift, stereo_delay | | | | DSP code unchanged | -16, -12, 0 | | no: nothing to gain |
+
+saw: six voices a block is about 64.4 k -> 55.3 k cycles of the engine's own compute. The win is the shape switch
+(`wave()` tests `shape` up to twice a call, two calls a sample); unswitching gives each shape its own loop. Only one
+loop runs in a render, so the code one render runs stays about the size it was (guideline 2.4). Device figure still
+to come (stats `engines` line): `build/plugins-next8/saw.coop`, 0.4, 6,848 bytes (0.3: 6,520), sha256
+`7ca0dc9face778d2150c1d61319360a0818ce4da521aeab96662606df34eda2f`.
