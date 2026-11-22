@@ -1684,3 +1684,17 @@ the per-engine audit (state outside the voice, re-struck notes), which is why th
   which asserts on an odd buffer); `odd_io` printed once `coop_yio.h` (another branch) is in the tree.
 - `sdk/coop_plugin.h`: `COOP_ENGINE_F_KEEP_TAILS` (0x2), in `COOP_ENGINE_FLAGS`.
 - `tests/sim/det_eng_tail.txt`, `det_eng_tail_rings.txt`, `det_dsynth_tail.txt`: the long-release scenarios.
+
+## e16 (2026-11-22): nophysics, TE's Box2D out (Tombola and the Lander game with it)
+
+op1-sdk's `nophysics` (BertBrandstifter, MIT) applied in coop's image pipeline: 144,888 bytes of TE code (Box2D, dead
+Lander / Tombola code) become RTS, no physics world is built at boot, picking Tombola gives pattern. The whole account,
+the reachability proof against coop's image and the gates: `docs/nophysics.md`. Measured in op1emu [C op1emu]:
+- **heap 0 free after boot +324,336 bytes** (316.7 KiB; the largest free block +260-302 KB), the same on a fresh, a
+  second-boot and the pristine NAND, with the stereo tape cache placed;
+- **the GUI's first frame 13-38 ms sooner, 76-87 ms with the stub SVGs** (`lander.svg` / `tombola.svg` not parsed);
+  coop's boot hook and first audio block do not move;
+- audio identical against the image without it (`det_drum`, `det_tape_play`; `det_chord` within its known spread);
+- code: 144,888 bytes freed (115,042 contiguous from `0x0191fe8e`), not used yet; the package 89 KB smaller.
+
+The device test: `docs/device-tests.md` "e16-nophysics".

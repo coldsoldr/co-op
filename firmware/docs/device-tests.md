@@ -3787,4 +3787,45 @@ ignored as a whole, e13).
    the same; otherwise leave it off.
 3. The stock tails: stay off until each stock engine is listened to (step 8 for DSynth first).
 
+## e16-nophysics: TE's Box2D out (Tombola and the Lander game) — device test (pending, 2026-11-22)
+
+What changed (`docs/nophysics.md`): e15 dev plus op1-sdk's `nophysics` (BertBrandstifter, MIT): 144,888 bytes of TE
+code (Box2D and the dead Lander / Tombola code) become RTS, Box2D's 30 boot initialisers and the Lander / Tombola
+screens' draw and SVG-loaded slots return at once, choosing Tombola (or a saved Tombola setting) gives the pattern
+sequencer, and `content/display/lander.svg` / `tombola.svg` are an empty 303-byte SVG. Nothing else of e15 changes;
+this test package is **not the tagged e16** (the main session merges it with the core e16 work): its boot line and
+HELLO still say **e15**. Branch `worktree-agent-a727bcc35558cf1fa` (on dev).
+
+Package: **`op1_246_coop_e16-nophysics.op1`** (copy in Downloads), sha256
+`2ba189f3d93fb1081ad77ffe512fe37794a1a3f5c6b9795ec2e72cf3b4add83e`, 11,992,912 bytes (e15 dev: 12,082,114). The dev
+flavour, as e15 dev: `tools/build_device_package.sh OUT --tape-stereo --set-word g_coop_spread=32767 --set-word
+g_coop_statsfile=0`. `verify_bootloader.py` PASS (no te-boot.ldr); `pkg_check` = `OP1_vdk.ldr`, `lander.svg`,
+`tombola.svg` differ from stock, nothing else; `tools/nophysics.py --verify` on the package's LDR: 57/57 sites.
+
+**Gate notes (op1emu): `docs/nophysics.md` "Measurements" and "Gates"** (heap 0 +324,336 bytes after boot; the GUI's
+first frame 13-87 ms sooner; audio identical; saved Tombola boots as pattern).
+
+**What to do** (stats over USB MIDI: `python firmware/tools/coop_usb.py stats -o FILE`):
+0. **Before flashing**, on e15 dev as it is now: read the stats once after a fresh power-on (nothing played) and note
+   the `plugins` line's `heap_largest heap_free heap_top`. Then pick **Tombola** for the synth (shift + seq, the blue
+   encoder to TOMBOLA, push), let it play a few seconds and **power off normally**, so the saved setting is Tombola.
+1. Flash `op1_246_coop_e16-nophysics.op1` through the te-boot menu (keep the plugins and any policy file). It must
+   boot as before; boot line `coop e15 - 246`. If you can, time power-on to the first screen against e15 (a phone
+   stopwatch, twice each): op1emu says about 0.08 s sooner, the device may differ.
+2. **The old Tombola setting:** on the synth page press seq: the **pattern** sequencer comes up (not Tombola), no
+   freeze, no error screen; play a few notes through it.
+3. **The picker:** shift + seq: the list still shows TOMBOLA. Pick it: pattern comes up and plays. Pick pattern,
+   finger, endless, arpeggio, sketch in turn: each as on e15. Do the same on the drum side once.
+4. **Power off and on:** the synth sequencer is still pattern; boots normally. The Lander combo (synth + drum + tape +
+   mixer held) still opens coop's settings menu.
+5. **Heap over SysEx**, after a fresh power-on (nothing played): `stats` -> `plugins ... heap_largest heap_free
+   heap_top`. Expected `heap_free` about **324 KB higher** than step 0 (op1emu: +324,336 to the byte on every NAND);
+   `l1 state 1` (coop's L1 pool still taken). Then load a tape project that fills the tape cache and play: no fault.
+6. Use it as usual for a while (plugins, tape, effects): nothing that e15 did differently, no fault. Power off
+   normally (the exit path).
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e15_dev.op1` (or stock).
+Flashing back to e15 or stock brings Tombola back with its knob settings (they stay in `op1.db`). An image without
+nophysics is one build away (`NOPHYSICS=0 tools/build_device_package.sh ...`).
+
 Result: (pending)

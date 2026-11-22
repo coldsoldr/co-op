@@ -54,6 +54,9 @@ python3 -I "$here/tools/l1_decrypt.py" decrypt-ldr "$work/inj.ldr" "$key" "$work
 python3 -I "$here/tools/l1_insert.py" "$work/plain.ldr" "$work/master.ldr" \
     --imm-pair-site 0xffa017a4 --imm-stock 0x019d90e8 --fn "$master_fn"
 python3 -I "$here/tools/l1_stereo_insert.py" "$work/master.ldr" "$work/stereo.ldr" --elf "$ELF" $tape
+# e16: TE's Box2D out, with Tombola and the Lander game (op1-sdk's nophysics, docs/nophysics.md). After every other
+# SDRAM patch, so its stock-byte checks also prove coop changed nothing it blanks. NOPHYSICS=0 builds without (A/B).
+[ "${NOPHYSICS:-1}" = 0 ] || python3 -I "$here/tools/nophysics.py" "$work/stereo.ldr" "$work/stereo.ldr"
 # The boot picture (e10): coop's logo at 0x02000000 and the version line from core/include/coop_build.h; plain SDRAM
 # blocks appended before FINAL and the stock console string, both checked against the stock bytes (tools/boot_logo.py).
 python3 -I "$here/tools/boot_logo.py" "$work/stereo.ldr" "$OUT"
