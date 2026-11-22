@@ -27,6 +27,7 @@
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
 #include <stdint.h>
+#include "../include/coop_yio.h"            /* Y_READ / Y_WRITE: odd buffers never reach the stock */
 #include "coop_cost.h"
 extern "C" void coop_pf_set_mode(uint32_t m);                    /* coop_stats.cc (m1) */
 
@@ -35,8 +36,8 @@ extern "C" void coop_pf_set_mode(uint32_t m);                    /* coop_stats.c
 #define ADD_KNOB  ((void (*)(int, int))0x019C3044u)               /* KeyHandler::AddKnob(knob, delta) */
 #define Y_OPEN    ((int (*)(const char *, int, int))0x01A997F4u)
 #define Y_CLOSE   ((int (*)(int))0x01A99908u)
-#define Y_READ    ((int (*)(int, void *, int))0x01A99C90u)
-#define Y_WRITE   ((int (*)(int, const void *, int))0x01A99F84u)
+#define Y_READ    coop_y_read
+#define Y_WRITE   coop_y_write
 #define RUN_PATH  "/yaffs2/user/coop_run.txt"
 
 #define MAX_EV    2048
@@ -55,13 +56,13 @@ struct snap { struct coop_cost cost[COOP_COST_N]; uint32_t blocks, cb_max; uint6
               struct coop_gap gaps[COOP_GAP_N]; uint32_t gap_blocks; };
 
 static struct ev g_ev[MAX_EV];
-static uint8_t g_file[FILE_MAX];
+static uint8_t g_file[FILE_MAX] __attribute__((aligned(4)));
 static char g_name[NAME_LEN + 1];
 static char g_marks[MAX_MARKS][MARK_LEN + 1];
 static uint16_t g_nev, g_nmarks;
 static struct snap g_snap[SNAPS];
 static volatile uint32_t g_snap_w, g_snap_r;
-static char g_run_text[131072];                                   /* p5g: a gaps line per section (m1: with the stall columns) */
+static char g_run_text[131072] __attribute__((aligned(4)));                                /* p5g: a gaps line per section (m1: with the stall columns) */
 static int g_run_len;
 
 volatile uint32_t g_run_state, g_run_block, g_run_idx, g_run_sections, g_run_abort, g_run_click, g_run_error;
@@ -233,7 +234,7 @@ extern "C" void coop_runner_service(void)
     uint32_t st = g_run_state;
     if ((st == RS_DONE || st == RS_ABORTED) && !g_written && g_snap_r == g_snap_w) {
         g_written = 1;
-        static char head[640];
+        static char head[640] __attribute__((aligned(4)));
         int hl = coop_stats_run_header(head, (int)sizeof head, g_name, g_nev, g_run_block, st, g_run_lost);
         int fd = Y_OPEN(RUN_PATH, 0x242, 0x180);                  /* O_RDWR | O_CREAT | O_TRUNC */
         if (fd >= 0) { Y_WRITE(fd, head, hl); Y_WRITE(fd, g_run_text, g_run_len); Y_CLOSE(fd); }

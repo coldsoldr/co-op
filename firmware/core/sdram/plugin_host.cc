@@ -554,7 +554,7 @@ static const char *load_one(const char *fname, uint8_t *stage)
     int fd = Y_OPEN(path, 0, 0);
     if (fd < 0) return "cannot open";
     int got = Y_READ(fd, stage, (int)FILE_MAX), more = 0;
-    if (got == (int)FILE_MAX) { uint8_t b; more = Y_READ(fd, &b, 1) > 0; }
+    if (got == (int)FILE_MAX) { uint8_t b __attribute__((aligned(4))); more = Y_READ(fd, &b, 1) > 0; }
     Y_CLOSE(fd);
     if (got <= 0) return "cannot read";
     if (more) return "file larger than 1 MiB";
@@ -1653,7 +1653,7 @@ volatile int g_s2_save_req;                                               /* u7:
 extern "C" void coop_slot2_request_save(void) { g_s2_save_req = 1; }
 extern "C" int coop_slot2_save(void)
 {
-    uint8_t b[S2_LEN_X];
+    uint8_t b[S2_LEN_X] __attribute__((aligned(4)));
     for (int i = 0; i < S2_LEN_X; i++) b[i] = 0;
     b[0] = 'C'; b[1] = 'S'; b[2] = '2'; b[3] = 3;
     coop_slot2_get(0, b + 4); coop_slot2_get(1, b + 14);
@@ -1670,7 +1670,7 @@ extern "C" int coop_slot2_save(void)
 
 static void slot2_load(void)
 {
-    uint8_t b[S2_LEN_X];
+    uint8_t b[S2_LEN_X] __attribute__((aligned(4)));
     int fd = Y_OPEN(S2_FILE, 0, 0);
     if (fd < 0) return;
     int got = Y_READ(fd, b, S2_LEN_X);

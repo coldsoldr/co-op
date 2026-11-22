@@ -20,12 +20,13 @@
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
 #include <stdint.h>
+#include "../include/coop_yio.h"            /* Y_READ / Y_WRITE: odd buffers never reach the stock */
 
 /* ---- stock entry points and state (kennel kn_tapes.c / kn_tape.c, docs/tape-stereo.md) [C] ---- */
 #define Y_OPEN        ((int (*)(const char *, int, int))0x01A997F4u)
 #define Y_CLOSE       ((int (*)(int))0x01A99908u)
-#define Y_READ        ((int (*)(int, void *, int))0x01A99C90u)
-#define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
+#define Y_READ        coop_y_read
+#define Y_WRITE       coop_y_write
 #define Y_LSEEK       ((int32_t (*)(int, int32_t, int))0x01A9A0E4u)
 #define Y_ACCESS      ((int (*)(const char *, int))0x01A9A6B0u)
 #define PRESIZE       ((int (*)(int))0x01A99FB4u)                     /* tape_image_presize: 0x18000000 bytes */
@@ -165,7 +166,7 @@ static int marker_ok(void)
 {
     int fd = Y_OPEN(MARKER_PATH, 0, 0);
     if (fd < 0) return 0;
-    char got[32];
+    char got[32] __attribute__((aligned(4)));                                          /* a yaffs buffer: even (coop_yio.h) */
     int n = Y_READ(fd, got, sizeof got - 1);
     Y_CLOSE(fd);
     if (n <= 0) return 0;
@@ -180,7 +181,8 @@ static int write_marker(void)
     int fd = Y_OPEN(MARKER_PATH, 0x242, 0x180);
     if (fd < 0) return -1;
     int len = sizeof MARKER_TEXT - 1;
-    int ok = Y_WRITE(fd, MARKER_TEXT, len) == len;
+    static const char text[] __attribute__((aligned(4))) = MARKER_TEXT;   /* not the literal: .rodata.str can be odd */
+    int ok = Y_WRITE(fd, text, len) == len;
     return Y_CLOSE(fd) == 0 && ok ? 0 : -1;
 }
 
@@ -323,7 +325,7 @@ static int g_load_part;
 #define NODE_STRIDE   0x28
 #define NODE_SLOTS    32
 static uint32_t g_saved_at[NODE_SLOTS];
-static uint8_t g_saved_once[NODE_SLOTS];
+static uint8_t g_saved_once[NODE_SLOTS] __attribute__((aligned(4)));   /* even: tools/even_bufs.py */
 static uint8_t g_was_recording;
 volatile uint32_t g_tape_io_held, g_tape_io_guarded;                /* guarded: flushes the tail guard started */
 volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g_tape_io_flush_cycles_max;   /* CYCLES per step / node load / chunk flush */

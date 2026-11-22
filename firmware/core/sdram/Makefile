@@ -31,6 +31,7 @@ define link_combined
 	python3 -I ../../tools/asm_lint.py *.S >/dev/null || python3 -I ../../tools/asm_lint.py *.S   # packets the device refuses (p5b crash)
 	$(BFIN_CXX) $(CXXFLAGS) -DCOOP_COMBINED $(1) -I../include -I../../sdk $(COMBINED_SRCS) ../../sdk/coop_exports.cc $(LDFLAGS) -Wl,--undefined=_coop_master_apply $(STEREO_KEEP) -o $@ -lgcc
 	$(BFIN_BIN)/bfin-elf-size $@
+	python3 -I ../../tools/even_bufs.py $@ || { rm -f $@; exit 1; }   # no odd buffer for the stock's NAND driver (brick-safety.md)
 endef
 $(BUILD)/coop_combined.elf: $(COMBINED_DEPS) | $(BUILD)
 	$(call link_combined,-DCOOP_DIAG=1)

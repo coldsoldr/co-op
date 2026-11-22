@@ -26,6 +26,7 @@
  * The marker geometry follows hundekraft's markers.c (GPL-3.0-or-later).
  */
 #include <stdint.h>
+#include "../include/coop_yio.h"            /* Y_READ / Y_WRITE: odd buffers never reach the stock */
 
 #define CUR_MODE     (*(volatile int *)0xFF907D58u)
 #define CUR_SCREEN   (*(volatile int *)0x018B65C8u)
@@ -41,8 +42,8 @@
 #define KEY_DISPATCH ((void (*)(int, int))0x019B6C74u)
 #define Y_OPEN   ((int (*)(const char *, int, int))0x01A997F4u)
 #define Y_CLOSE  ((int (*)(int))0x01A99908u)
-#define Y_READ   ((int (*)(int, void *, int))0x01A99C90u)
-#define Y_WRITE  ((int (*)(int, const void *, int))0x01A99F84u)
+#define Y_READ   coop_y_read
+#define Y_WRITE  coop_y_write
 #define KEY_HELP 0x00
 #define KEY_T1   0x06
 #define KEY_ENC0 0x3B
@@ -103,7 +104,7 @@ static int32_t zoom_q10(void)                                           /* float
 }
 static int save_markers(void)                                           /* main thread */
 {
-    uint8_t b[20] = { 'C', 'M', 'K', 1 };
+    uint8_t b[20] __attribute__((aligned(4))) = { 'C', 'M', 'K', 1 };          /* a yaffs buffer: even (coop_yio.h) */
     for (int i = 0; i < 4; i++) for (int k = 0; k < 4; k++) b[4 + 4 * i + k] = (uint8_t)((uint32_t)s_mk[i] >> (8 * k));
     int fd = Y_OPEN(MK_FILE, 0x242, 0x180);
     if (fd < 0) return 0;
@@ -118,7 +119,7 @@ extern "C" void coop_markers_service(void)                              /* main 
 }
 extern "C" void coop_tape_ui_boot(void)                                 /* main thread, after the tape mounts */
 {
-    uint8_t b[20];
+    uint8_t b[20] __attribute__((aligned(4)));
     int fd = Y_OPEN(MK_FILE, 0, 0);
     if (fd < 0) return;
     int got = Y_READ(fd, b, 20);

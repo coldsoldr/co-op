@@ -24,10 +24,11 @@
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
 #include <stdint.h>
+#include "../include/coop_yio.h"            /* Y_READ / Y_WRITE: odd buffers never reach the stock */
 #include "coop_arena.h"
 
-#define Y_READ        ((int (*)(int, void *, int))0x01A99C90u)
-#define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
+#define Y_READ        coop_y_read
+#define Y_WRITE       coop_y_write
 #define Y_LSEEK       ((int32_t (*)(int, int32_t, int))0x01A9A0E4u)
 #define INVALIDATE    ((void (*)(uint32_t, uint32_t))0x01A540C0u)    /* tape_cache_invalidate_clean_range(from, to) */
 #define INVALIDATE_ALL ((void (*)(void))0x01A54078u)

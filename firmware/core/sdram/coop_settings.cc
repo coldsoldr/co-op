@@ -99,7 +99,7 @@ static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v
  * it was the likeliest cause of the device crash leaving the menu after a plugin toggle (e2, two plugin files; not
  * reproduced in op1emu). It also held 8 + names where the file has 10 + names (2 bytes short with 16 disabled). */
 #define FILE_MAX_BYTES (10 + DIS_MAX * NAME_LEN)
-static uint8_t s_filebuf[FILE_MAX_BYTES];                               /* save (main loop) and boot (main thread): never at once */
+static uint8_t s_filebuf[FILE_MAX_BYTES] __attribute__((aligned(4)));                            /* save (main loop) and boot (main thread): never at once */
 static int save_file(void)
 {
     uint8_t *b = s_filebuf;                                             /* zeroed by hand: no libc, so no memset */

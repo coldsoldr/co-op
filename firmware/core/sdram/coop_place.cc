@@ -36,12 +36,13 @@
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
 #include <stdint.h>
+#include "../include/coop_yio.h"            /* Y_READ / Y_WRITE: odd buffers never reach the stock */
 #include "coop_place.h"
 
 #define Y_OPEN   ((int (*)(const char *, int, int))0x01A997F4u)           /* plugin_host.cc's */
 #define Y_CLOSE  ((int (*)(int))0x01A99908u)
-#define Y_READ   ((int (*)(int, void *, int))0x01A99C90u)
-#define Y_WRITE  ((int (*)(int, const void *, int))0x01A99F84u)
+#define Y_READ   coop_y_read
+#define Y_WRITE  coop_y_write
 #define Y_UNLINK ((int (*)(const char *))0x01A9A3FCu)                     /* coop_sysex.cc's */
 #define PLACE_FILE "/yaffs2/user/coop_place.txt"
 #define PLACE_TRY  "/yaffs2/user/coop_place.try"
@@ -136,7 +137,7 @@ extern "C" void coop_place_boot(void)                                     /* mai
     struct coop_place *p = &g_coop_place;
     uint32_t w = g_coop_place_word;
     if (w & 0x10000u) { p->eng = (w >> 12) & 1; p->fx = (w >> 8) & 1; p->voice = (w >> 4) & 1; p->buf = w & 1; }
-    static char text[FILE_CAP];
+    static char text[FILE_CAP] __attribute__((aligned(4)));               /* a yaffs buffer: even (coop_yio.h) */
     int fd = Y_OPEN(PLACE_FILE, 0, 0);
     if (fd < 0) return;                                                    /* no file: the default, no marker, no write */
     int got = Y_READ(fd, text, FILE_CAP);
@@ -154,7 +155,8 @@ extern "C" void coop_place_boot(void)                                     /* mai
     if (p->strike_set) g_coop_strike_spread = p->strike;
     if (p->stock_set) g_coop_stock_tail = p->stock;
     mk = Y_OPEN(PLACE_TRY, 0x242, 0x180);                                  /* O_RDWR | O_CREAT | O_TRUNC */
-    if (mk >= 0) { int ok = Y_WRITE(mk, "1", 1) == 1; Y_CLOSE(mk); if (ok) { g_marker_pending = 1; g_place_marker_writes++; } else g_place_marker_errors++; }
+    static const char one[4] __attribute__((aligned(4))) = "1";            /* not a literal: .rodata.str can be odd */
+    if (mk >= 0) { int ok = Y_WRITE(mk, one, 1) == 1; Y_CLOSE(mk); if (ok) { g_marker_pending = 1; g_place_marker_writes++; } else g_place_marker_errors++; }
     else g_place_marker_errors++;
     if (p->probe && g_marker_pending) read_sdram_mmrs();                   /* only under the marker's protection */
 }
