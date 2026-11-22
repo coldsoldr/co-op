@@ -9,7 +9,8 @@ enum { COOP_PLACE_DEFAULT = 0, COOP_PLACE_FILE = 1, COOP_PLACE_MALFORMED = 2, CO
 /* eng / fx: an engine's / an effect's image; voice: the engines' voice state; buf: the effect position buffers.
  * src: where the policy came from (the enum); probe: the live fill probe is on. */
 struct coop_place { uint8_t eng, fx, voice, buf, src, probe;
-                    uint8_t prof_set, prof, statsfile_set, statsfile; };   /* e14: prof=0|1, statsfile=0|1, when the file names them */
+                    uint8_t prof_set, prof, statsfile_set, statsfile;      /* e14: prof=0|1, statsfile=0|1, when the file names them */
+                    uint8_t tail_set, tail, strike_set, strike, stock_set, stock; };   /* e16: tail=0..2, strike=0..6, stocktail=0..2 */
 #ifdef __cplusplus
 extern "C" {
 #endif

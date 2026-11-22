@@ -23,6 +23,10 @@
 #define STATS_PATH    "/yaffs2/user/coop_stats.txt"
 #include "coop_build.h"
 #include "fw_addrs.h"                                                  /* e10: FW_TEMPO_LFO_INC */
+#if __has_include("coop_yio.h")                                         /* the yaffs buffer guard (its own branch): counted */
+#include "coop_yio.h"                                                    /* once both are in (g_coop_odd_io) */
+#define COOP_HAVE_ODD_IO 1
+#endif
 extern "C" uint32_t coop_tempo_bpm_q16(void);                         /* plugin_host.cc (e10) */
 #define STATS_BUILD   COOP_BUILD_TAG                                  /* the package tag (one place, p6k): proves which image wrote the file */
 #define WINDOW_CYCLES 2000000000u                                     /* 5 s at 400 MHz */
@@ -45,6 +49,13 @@ extern volatile uint32_t g_stage_skips, g_mix_skips, g_skip_checked, g_skip_bad;
 extern "C" volatile uint32_t g_coop_voice_skip;
 extern volatile uint32_t g_voice_skips, g_voice_skip_checked, g_voice_skip_bad;
 extern volatile uint32_t g_voice_env_skips;                             /* stereo_bus.cc */
+extern "C" volatile uint32_t g_coop_tail_skip, g_tail_skips, g_tail_checked, g_tail_peak, g_tail_on7, g_tail_on_other;   /* engine_host.cc (e16) */
+extern "C" volatile int32_t g_coop_tail_q30;
+extern "C" volatile uint32_t g_tail_on_states;
+extern "C" volatile uint32_t g_coop_strike_spread;
+extern volatile uint32_t g_strike_held, g_strike_late_max;              /* engine_host.cc (e16) */
+extern "C" volatile uint32_t g_coop_stock_tail;
+extern volatile uint32_t g_stock_tail_skips, g_stock_tail_checked, g_stock_tail_peak;
 extern "C" void coop_voice_diag_window(void);
 extern "C" void coop_voice_diag(uint32_t out3[3]);
 extern volatile uint32_t g_tape_io_loads, g_tape_io_flushes, g_tape_io_held, g_tape_io_guarded, g_tape_io_errors;
@@ -100,7 +111,7 @@ static uint32_t g_window_start;
 static uint32_t g_prev_hooks, g_prev_side, g_prev_recs, g_prev_loads, g_prev_flushes;
 static int g_started;
 static uint8_t g_win_recording;
-static char g_text[16384];                                      /* p5a: the whole file over SysEx; the tape tail keeps the first 8 KiB */
+static char g_text[16384] __attribute__((aligned(4)));   /* e16: handed to the stock yaffs write, which asserts on an odd buffer */                                      /* p5a: the whole file over SysEx; the tape tail keeps the first 8 KiB */
 static int g_len;
 
 static inline uint32_t now_cycles(void) { uint32_t v; __asm__ __volatile__("%0 = CYCLES;" : "=d"(v)); return v; }
@@ -506,6 +517,13 @@ static void put_cost_lines(void)                             /* the "cost" and "
     kv("voice_skip", g_coop_voice_skip); kv("voice_skips", g_voice_skips); kv("voice_checked", g_voice_skip_checked); kv("voice_bad", g_voice_skip_bad);
     kv("env_skips", g_voice_env_skips);
     { uint32_t vd[3]; coop_voice_diag(vd); kv("env_peak", vd[0]); kv("vgain", vd[1]); kv("ramp", vd[2]); }
+    kv("tail_skip", g_coop_tail_skip); kv("tail_q30", (uint32_t)g_coop_tail_q30); kv("tail_skips", g_tail_skips);   /* e16 */
+    kv("tail_checked", g_tail_checked); kv("tail_peak", g_tail_peak); kv("tail_on7", g_tail_on7); kv("tail_on_other", g_tail_on_other); kv("tail_on_states", g_tail_on_states);
+    kv("strike_spread", g_coop_strike_spread); kv("strike_held", g_strike_held); kv("strike_late_max", g_strike_late_max);
+    kv("stock_tail", g_coop_stock_tail); kv("stock_tail_skips", g_stock_tail_skips); kv("stock_tail_checked", g_stock_tail_checked); kv("stock_tail_peak", g_stock_tail_peak);
+#ifdef COOP_HAVE_ODD_IO
+    kv("odd_io", g_coop_odd_io);                                              /* the yaffs buffer guard (coop_yio.h) */
+#endif
     put("\n");            /* e14: 0 = the cost table, the engines line, the marks and the
                                                                     windows' eng / peng / fx / s2 sums are off (empty / 0) */
     put("cost avg/max/n/p0/p1"); put(" pf_mode "); putn(g_coop_pf_mode); put(" pf_live "); putn(g_coop_pf_live); put(" pf_layout "); putn(g_coop_pf_layout_used);   /* per call; slot 1's stock effect by type (stereo class); p0 / p1 the monitor's averages (coop_pf_boot) */

@@ -3708,3 +3708,83 @@ further (the device stays cache-bound). The line out was about 6 dB louder than 
 the patch was close but not identical. e15's effect wrap was not exercised (no effect on); `l1 ... wrap 0` at boot.
 One earlier attempt on e15 (rings 0.13 still loaded, a different sound) lost the OP-1's USB about 2 s into the run;
 the owner power-cycled; not reproduced, cause unknown.
+
+## e16: released plugin voices under -60 dB not rendered; the strike spread and the stock tails behind switches — device test (pending, 2026-11-22)
+
+What changed (`docs/performance.md` "e16", `docs/engines.md` "Released voices below -60 dB"): e15 with (1) a plugin
+voice whose stock envelope is releasing and under -60 dB gets 128 zeros instead of a render (default **on**,
+`g_coop_tail_skip`, token `tail=0|1|2`; 2 renders and measures what the skip would remove); (2) at most N plugin
+note_ons a block, the rest one block later (default **off**, `g_coop_strike_spread`, token `strike=0..6`); (3) the
+same skip as (1) for the stock engines' voices (default **off**, `g_coop_stock_tail`, token `stocktail=0|1|2`). A new
+engine flag `COOP_ENGINE_F_KEEP_TAILS` (no plugin sets it yet). The tokens go in `/yaffs2/user/coop_place.txt`
+(e13's policy file, read at the next boot; later tokens win; a bad token makes the whole file ignored). Build tag `e16`,
+the boot picture's line `coop e16 - 246`. Existing `.coop` files load unchanged. The stats `mode` line gains
+`tail_skip tail_q30 tail_skips tail_checked tail_peak tail_on7 tail_on_other tail_on_states strike_spread strike_held
+strike_late_max stock_tail stock_tail_skips stock_tail_checked stock_tail_peak`.
+
+Two packages in the worktree's `firmware/build/pkg/` (branch `worktree-agent-aed152934cbc5b074`; not in Downloads):
+- **`op1_246_coop_e16.op1`, the release flavour** (`coop_combined_release.elf`, `COOP_DIAG=0`; `prof=0 statsfile=0`).
+  sha256 `360f28ccc91c5ea014ccd28842ed8fa7c7b24042900ba8ac2d2e254f4a914ddc`.
+- **`op1_246_coop_e16_dev.op1`, the dev flavour** (`coop_combined.elf`, `COOP_DIAG=1`; `prof=1 statsfile=0`).
+  sha256 `cc9c415790f12c4e3b7f0b5352393fe072bfc2e1a1b35763893679e39f093a83`.
+Both: `ELF=<abs> STOCK_DIR=<op1_246> tools/build_device_package.sh OUT --tape-stereo --set-word g_coop_spread=32767
+--set-word g_coop_statsfile=0` (release adds `--set-word g_coop_prof=0`); `verify_bootloader.py` PASS (no
+te-boot.ldr), `pkg_check` = only `OP1_vdk.ldr` differs; both ELFs hold the tag `e16` (and no `e15`).
+
+**Gate notes (op1emu): `docs/performance.md` "e16".**
+
+**What to do** (the owner plays; the coordinator reads the stats over USB MIDI, `coop_usb.py stats`, or runs
+`tools/devloop.py`; nothing in disk mode). The rings patch as in the e14 / e15 device-loop runs (string + reverb,
+damping at the longest end, sustain at maximum, no effect). **Turn the envelope's release (orange knob on the
+envelope page) to where a release runs ~30 s** (as the e14 run: the voices rendered ~30 s after the keys).
+1. Flash **`op1_246_coop_e16_dev.op1`** (keep the plugins and the policy file). Boot line `coop e16 - 246`; `hello` ->
+   `build e16`. `stats` `mode` line: `tail_skip 1 tail_q30 1048576 ... strike_spread 0 ... stock_tail 0`.
+2. **At rest** a minute: `cb_sum / blocks` against e15's 62.3 k (rest section): expected the same (nothing of e16 runs
+   at rest).
+3. **Held chord and release, rings** (`tests/sim/dev_release_long.txt`: six keys 10 s, then 100 s in 5 s sections):
+   - held sections: whole block and `plugin_own_block` against e15's 352-353 k / 169 k: expected the same (the skip
+     only acts in release);
+   - release sections: e15 rendered the six voices ~30 s at ~169 k (whole ~359 k). **Expected: the same until the
+     envelope passes -60 dB, then `plugin_own_block` 0 and the whole block near rest + the stock's per-voice loop**
+     (op1emu: 14.7 k over rest for six voices) until the envelope ends. Read the section where `tail_skips` starts to
+     grow (it counts voice blocks: six a block) and the sections' cost after it;
+   - the onset section: whole-block max against e15's 789 k (unchanged expected: (2) is off).
+   - **Listen** through the release with the line out recorded (devloop's capture): the last audible part of the
+     release must not change; the cut sits under -60 dB of the voice (op1emu: the removed part peaks at 2 LSB,
+     -84 dBFS on the output).
+4. **Measuring mode**: put `tail=2` in the policy file, power-cycle, run step 3 again: the voices render as on e15;
+   read `tail_checked` and `tail_peak` (the largest `|out x env| >> 15` of the blocks a skip would remove, LSB of the
+   voice; op1emu: 6 for saw, 0 for a sleeping rings). Then remove the token (or `tail=1`).
+5. **String + reverb with a held note** (the case `docs/engines.md` rings point 1 names): hold one low key, play and
+   release short chords over it on rings' string + reverb for a minute, once with `tail=1` and once with `tail=0`.
+   Listen for the reverb of the released chords ending sooner, or the held note's reverb getting louder, with
+   `tail=1`. Report what is heard: this decides whether rings sets `COOP_ENGINE_F_KEEP_TAILS` (see "For the owner").
+6. **Re-struck notes** (rings point 3): play a chord, release, wait until the release is under -60 dB (step 3 told
+   when), play the same chord again; `tail=1` against `tail=0`. The voice rings on from where its tail was frozen
+   instead of from where 20-odd more seconds of decay would have left it. Listen for a difference.
+7. **Strike spread**: `strike=2` in the policy file, power-cycle, step 3's onset only (a few six-key chords): the onset
+   section's whole-block max and `plugin_own_block` max against step 3's (e15: 789 k / 579 k; op1emu: -11 % / -17 %);
+   `strike_held` counts the held notes, `strike_late_max` must be 1 (one block). Listen to the chord's attack (each
+   held note starts 1.45 ms late). Then try `strike=3`. Report whether the onset drops under 580 k.
+8. **Stock tails**: `stocktail=1`, DSynth (the factory slot 5 sound), the release long, `dev_release_long.txt`: the
+   release sections' `synth` cost against `stocktail=0` (op1emu: 109 k a block for six voices, then 0 once under
+   -60 dB; the whole block 49.9 k against rest 34.8 k). Listen to the release and to re-struck notes as in step 6.
+   `stocktail=2` measures (`stock_tail_peak`; op1emu: 1 LSB). Only DSynth was gated; the other engines are untested.
+9. Then **`op1_246_coop_e16.op1`** (release): step 3 with `prof=1` in the policy file, then without, `cb_sum / blocks`
+   at rest and in the release sections against e15 release.
+
+**If something is wrong:** `tail=0` in the policy file turns (1) off at the next boot without a reflash (and
+`strike=0 stocktail=0`, their defaults). On the device, power off; recovery: hold COM at power-on and flash
+`op1_246_coop_e15.op1` or stock. The plugin files and the policy file are untouched (a bad token makes the file
+ignored as a whole, e13).
+
+**For the owner** (decisions, recommended option first):
+1. rings and the skip: (a) keep rings as it is (the skip on for every rings model) if steps 5 and 6 sound the same;
+   (b) a rings release that sets `COOP_ENGINE_F_KEEP_TAILS` (no skip for rings at all: no saving); (c) a rings change
+   that strikes a voice from rest when the core skipped its tail (rings can tell: no render for more than a block
+   since its note off), which makes step 6 deterministic but is a sound change of its own.
+2. The strike spread: on by default at N = 2 or 3 only if step 7 shows the onset under 580 k and the attack sounds
+   the same; otherwise leave it off.
+3. The stock tails: stay off until each stock engine is listened to (step 8 for DSynth first).
+
+Result: (pending)
