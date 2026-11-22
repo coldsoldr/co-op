@@ -5,7 +5,7 @@
 // ports/clouds/src/core/halfband.h the hall's half-rate path uses, with
 // Rings' soft-limit table and Clouds' crossfade tables as constant data
 // (halfband.cc; the upstream built its soft-limit table at run time). The
-// kernels are halfband_bfin.S, unchanged; their C references are host only.
+// kernels are ../shared/halfband_bfin.S (0.4); their C references are host only.
 //
 // The filter is a 19-tap halfband FIR (Blackman-windowed sinc, DC gain 1):
 // only the odd taps around the centre (0.5) are non-zero. int16 samples,
@@ -27,7 +27,7 @@ const int16_t kHalfbandTaps[5] = { 10019, -2397, 710, -151, 11 };
 const int32_t kHalfbandMaxIn = 64;   // input samples per call
 
 // 2 x upstream's SoftLimit over [0, 4] as int16 output samples, clipped
-// (257 points), then the steps between them (256). halfband_bfin.S reads
+// (257 points), then the steps between them (256). ../shared/halfband_bfin.S reads
 // step at +514 bytes.
 struct SoftLimitTable {
   int16_t value[257];
@@ -93,7 +93,7 @@ class HalfbandDecimator {
 
  private:
   static const int32_t kHistory = 18;
-  int16_t x_[kHistory + kHalfbandMaxIn];
+  alignas(4) int16_t x_[kHistory + kHalfbandMaxIn];   // the kernels read words (../shared/halfband_bfin.S)
 };
 
 class HalfbandInterpolator {
@@ -111,7 +111,7 @@ class HalfbandInterpolator {
 
  private:
   static const int32_t kHistory = 9;
-  int16_t x_[kHistory + kHalfbandMaxIn / 2];
+  alignas(4) int16_t x_[kHistory + kHalfbandMaxIn / 2];
 };
 
 // stmlib's (a x b) >> 31 the Blackfin way (te-op1-cfw ports/rings/src/fixed.h

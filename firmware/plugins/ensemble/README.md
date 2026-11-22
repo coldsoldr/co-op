@@ -105,6 +105,7 @@ The render is unchanged apart from the new `coop_fx_t` fields (`COOP_FX_F_SCREEN
 bit-identical (Tests below).
 
 ## Memory, L1, cost
+- **0.5 (2026-11-22, `docs/efficiency-audit.md` findings 14 and 15):** the half-band decimator and interpolator are the five half-band plugins' one kernel file, `../shared/halfband_bfin.S`, rewritten (two outputs a pass, one in each MAC, the taps from a circular stream, the loads in the parallel slots): 926 -> 313 cycles a call in the simulator (`make -C tests/host/halfband`, bit for bit against the C over random and edge input), four calls a block. Simulator 10,592 avg / 12,346 max (0.4: 12,815 / 14,824): 2,223 less a block; bit-identical to te-op1-cfw as before. And the packer drops what nothing reaches (`tools/plugin/pack.py` section GC, audit finding 14) (five unused functions). File 19,592 bytes (0.4: 19,928), `.text` 6,620 (7,052), `.rodata` 4,220 (4,124), `.bss` 121 (124).
 - **e9 (2026-11-11, 0.4, the screen):** file 19,928 bytes (SVG 6,415), `.text` 7,052, `.rodata` 4,124, `.bss` 124 (the buffer pointers and the screen's node tables); load 11,300 bytes once (+2,304 over e8's 8,996 with the e9 `coop_fx_t` field); no display data, the state and `"scratch": 10400` unchanged.
 - **e8 (2026-11-11):** the lines, filters and control state are in the slot's position buffer (plugin.json `"scratch": 10400`, `coop_fx_scratch`), as kennel had them; the file is relocated once and its `.bss` is the five buffer pointers (20 bytes); init resets the state there at every selection. The figures below are from before e8 (state in `.bss`, five relocations). File 9,736 bytes, load 8,992 once.
 
@@ -124,6 +125,7 @@ bit-identical (Tests below).
   | upstream, bfin-elf-run: core alone, stereo, 3 voices | 3,759 | 3,879 |
   | upstream, half-rate path (decimate, interpolate, mix, stereo) | ~7,700 [I, from the plate's 5.3 MHz] | |
   | **coop render, bfin-elf-run** (`make -C tests/host/ensemble sim`: all scenarios, stereo every block) | **12,801** | **14,823** |
+  | **0.5, coop render, bfin-elf-run** (the same; the shared half-band kernel) | **10,592** | **12,346** |
   | op1emu (`fx1_plugin=`) | pending (gate) | |
   | device | pending | |
 
@@ -139,7 +141,7 @@ bit-identical (Tests below).
 | `ensemble_screen.cc`, `gen_ensemble_svg.py` | `ports/knl/ensemble/ensemble_knl.cc` (screen), `gen_ensemble_knl_svg.py` | e9 calls; page 2 is fn held; readout glyphs dropped; coop colours |
 | `src/ensemble_core.cc`, `src/ensemble.h`, `src/ensemble_layout.h` | `ports/fx/src/ensemble/` | namespace `coop_ensemble`; tables from `src/ensemble_tables.cc`; C side kernel host-only |
 | `src/ensemble_bfin.S` | `ports/fx/src/ensemble/ensemble_bfin.S` | symbols `EnsSide3Asm` / `EnsSide1Asm` |
-| `src/halfband.h`, `src/halfband.cc`, `src/halfband_bfin.S` | `ports/clouds/src/core/halfband.*` | cut to the ensemble's use; symbols prefixed `Ens`; C host-only |
+| `src/halfband.h`, `src/halfband.cc`, `../shared/halfband_bfin.S` | `ports/clouds/src/core/halfband.*` | cut to the ensemble's use; C host-only; 0.5: the kernels are the five half-band plugins' shared file (until 0.4 a copy with its symbols prefixed `Ens`) |
 | `src/half_rate.h` | `ports/fx/op1/half_rate.h` | stereo only; const soft-limit table; the shared decimator pass |
 | `src/ensemble_tables.cc` (generated) | constexpr double tables in `ensemble.cc`, Rings' `kSoftLimitQ30`, Clouds' crossfades | `gen_tables.py`: integers, no float |
 | `op1/support.cc` | `ports/rings/op1/support.cc` (as `plugins/rings`) | none |

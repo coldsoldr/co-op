@@ -89,8 +89,9 @@ so it is kept as it is: **a §2.2 exception, accepted by the owner (2026-11-11)*
 
 No libc, no static constructors (the state objects have trivial constructors and live in `.bss`), no division in a
 per-sample loop (one divide for a turn whose word moved: 0.3 keeps the four values per slot; none in a steady block). The C reference kernels are compiled for the host only. The
-Blackfin always runs the assembly (`plate_bfin.S`, `halfband_bfin.S`, unchanged from upstream but for an include path;
-`tools/asm_lint.py`: 0 packets flagged). `PlateTankRunMonoAsm` stays in `plate_bfin.S` unused.
+Blackfin always runs the assembly (`plate_bfin.S`, unchanged from upstream but for an include path and a section per
+kernel; `../shared/halfband_bfin.S`, the five half-band plugins' kernels, 0.4; `tools/asm_lint.py`: 0 packets
+flagged). `PlateTankRunMonoAsm` stays in `plate_bfin.S` unused; 0.4's packer leaves it out of the file.
 
 ## Init and memory (guidelines §2.3)
 - **e9 (2026-11-11, 0.2, the screen):** file 19,332 bytes (SVG 4,507), `.text` 9,576, `.rodata` 2,562, `.bss` 164
@@ -113,6 +114,9 @@ Blackfin always runs the assembly (`plate_bfin.S`, `halfband_bfin.S`, unchanged 
 
 ## Cost
 
+**0.4 (2026-11-22, `docs/efficiency-audit.md` findings 14 and 15):** the half-band decimator and interpolator are the five half-band plugins' one kernel file, `../shared/halfband_bfin.S`, rewritten (two outputs a pass, one in each MAC, the taps from a circular stream, the loads in the parallel slots): 926 -> 313 cycles a call in the simulator (`make -C tests/host/halfband`, bit for bit against the C over random and edge input), four calls a block: 2,582 less a block, bit-identical to te-op1-cfw as before (host and simulator). And the packer drops what nothing reaches (`tools/plugin/pack.py` section GC, audit finding 14): `PlateTankRunMonoAsm` (504 bytes, no caller) and two unused functions leave the file. File 19,628 bytes (0.3: 19,956), `.text` 9,576 (10,040), `.rodata` 2,668 (2,578), `.bss` 341 (344).
+
+
 | | cycles a block (64 samples) |
 |---|---|
 | upstream, bfin-elf-run, stereo, 32-sample call at 22.05 kHz (`docs/plate-port.md`) | 7,994 avg, 8,123 max (plate only) |
@@ -120,6 +124,7 @@ Blackfin always runs the assembly (`plate_bfin.S`, `halfband_bfin.S`, unchanged 
 | this port, GNU simulator, 11,352 random blocks (moving controls, size changes, freezes) | 17,912 avg, 19,828 max; the first block after a clear 18,178; a clear block 2,152 |
 | **0.3** (2026-11-20, `docs/efficiency-audit.md` finding 8: the turns' four divides only when a word moves), still knobs | **16,788** (0.2 on the same script: 17,419) |
 | **0.3**, 10,829 random blocks (moving controls, stretches with every turn moving every block, size changes, freezes) | 17,379 avg, 19,935 max (0.2 on the same script: 17,873 / 19,780); the first block after a clear 18,324; a clear block 2,167 |
+| **0.4** (2026-11-22, `docs/efficiency-audit.md` finding 15: the shared half-band kernel), the same 10,829 random blocks | **15,002 avg, 17,424 max** (0.3 on the same build of the test: 17,584 / 20,008); the first block after a clear 16,324; a clear block 2,167 |
 | op1emu (`fx1_plugin=`) | pending (gate) |
 | device | pending |
 
@@ -277,5 +282,5 @@ File 19,956 bytes, `.text` 10,040, `.bss` 344; imports unchanged.
 ## Files
 
 `cs_plate.cc` (the glue), `plate.h` / `plate.cc` / `plate_layout.h` / `plate_bfin.S` (the plate), `halfband.h` /
-`halfband.cc` / `halfband_bfin.S` / `half_rate.h` (the half-rate path), `LICENSE-MIT` (the Clouds-derived parts),
+`halfband.cc` / `half_rate.h` (the half-rate path; its kernels in `../shared/halfband_bfin.S`), `LICENSE-MIT` (the Clouds-derived parts),
 `cs_plate_screen.cc` / `cs_plate.svg` / `gen_cs_plate_svg.py` (the screen, e9).

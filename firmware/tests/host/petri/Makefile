@@ -16,7 +16,7 @@ SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin
 CXXFLAGS := -DCOOP_FX_NO_IDLE -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wextra -Wno-unused-parameter
 COOP_SRC := $(COOP)/petri.cc $(COOP)/petri_screen.cc $(COOP)/src/petri_engine.cc $(COOP)/src/halfband.cc \
             ../fx_scratch_host.cc ../screen_host.cc
-COOP_DEPS := $(wildcard $(COOP)/*.cc $(COOP)/*.h $(COOP)/src/*) ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h \
+COOP_DEPS := $(wildcard $(COOP)/*.cc $(COOP)/*.h $(COOP)/src/*) $(COOP)/../shared/halfband_bfin.S ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h \
              ../../../sdk/coop_plugin.h
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
@@ -35,7 +35,7 @@ $(BUILD)/petri_test: petri_test.cc $(COOP_DEPS)
 $(BUILD)/petri_test.elf: petri_test.cc $(COOP_DEPS)
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DCOOP_PETRI_HOST_CLOCK -DCOOP_PETRI_REF -I$(COOP) -I../../../sdk -I../../../core/include petri_test.cc \
-	  $(COOP_SRC) $(COOP)/src/halfband_bfin.S $(COOP)/src/voice_bfin.S $(COOP)/src/space_bfin.S -o $@
+	  $(COOP_SRC) $(COOP)/../shared/halfband_bfin.S $(COOP)/src/voice_bfin.S $(COOP)/src/space_bfin.S -o $@
 
 sim: $(BUILD)/petri_test.elf
 	$(BFIN)/bfin-elf-run $(BUILD)/petri_test.elf - $(SIM_BLOCKS)

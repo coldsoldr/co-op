@@ -135,6 +135,7 @@ The render's only addition is the meter (a peak over the block's 64 samples befo
 the simulator, below); the audio is bit-identical (host test below).
 
 ## Memory, L1, cost
+- **0.3 (2026-11-22, `docs/efficiency-audit.md` finding 14):** the same code, repacked: `tools/plugin/pack.py` now compiles every function into its own section and drops what nothing reaches (op1/support.cc's unused `memcpy`, `memmove`, `memset` and the unused `ShiftIncrement`). File 23,396 -> 23,016 bytes, `.text` 8,172 -> 7,792; `.rodata` 4,856, imports and the audio unchanged (`tools/plugin/same_code.py`: every function and object that is left is the same bytes with the same targets). The cost figures below stand.
 - **e9 (2026-11-11, 0.2, the screen):** file 23,396 bytes (SVG 7,711), `.text` 8,172 (the screen 2,884 of it),
   `.rodata` 4,856, `.bss` 200 (the screen's node tables and ripple state, the five buffer pointers); load 13,228 bytes
   once (+3,560 over e8's 9,668 with the e9 `coop_fx_t` field); the state grew by the level word (4 bytes, `"scratch":

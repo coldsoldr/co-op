@@ -7,7 +7,7 @@
     "petri_screen.cc",
     "src/petri_engine.cc",
     "src/halfband.cc",
-    "src/halfband_bfin.S",
+    "../shared/halfband_bfin.S",
     "src/voice_bfin.S",
     "src/space_bfin.S"
   ],
@@ -37,6 +37,6 @@
     {"id": "hold", "name": "hold", "action": "click", "encoder": "orange", "kind": "latch", "bit": 0}
   ],
   "author": "coldsoldr",
-  "version": "0.3",
+  "version": "0.4",
   "description": "petri: a granular micro-loop effect, inspired by the signal flow of a granular micro-loop pedal. The input is recorded continuously into a 1.36 s stereo buffer at 22.05 kHz; one of eleven effects (mosaic, seq, glide, haze, tunnel, strum, blocks, cut, arp, pattern, warp) plays it back through up to eight loop and grain voices; the wet passes a tone section (an envelope on every repeat, a gentle pitch drift, a resonant low-pass, a small space) and an equal-power mix with the untouched dry. Blue time, green activity, white repeats, orange mix; fn + blue effect, fn + white filter, fn + orange space (shift + fn for fine); blue click reverse, orange click hold (latches). The half-rate path follows Mutable Instruments Clouds (Emilie Gillet, MIT)."
 }

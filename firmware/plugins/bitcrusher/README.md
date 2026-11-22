@@ -105,6 +105,7 @@ The render's only addition is the meter (a peak over the block's 128 samples bef
 block [I]); the audio is bit-identical (host test below).
 
 ## Memory, L1, cost
+- **0.4 (2026-11-22, `docs/efficiency-audit.md` finding 14):** the same code, repacked: `tools/plugin/pack.py` now compiles every function into its own section and drops what nothing reaches (op1/support.cc's unused `memcpy`, `memmove`, `memset`). File 13,076 -> 12,796 bytes, `.text` 3,224 -> 2,944; `.rodata` 744, imports and the audio unchanged (`tools/plugin/same_code.py`: every function and object that is left is the same bytes with the same targets). The cost figures below stand.
 - **e9 (2026-11-11, 0.2, the screen):** file 12,292 bytes (SVG 6,995), `.text` 2,728, `.rodata` 744, `.bss` 168 (the
   screen's node tables); load 3,640 bytes once (+2,164 over e8); the state 20 bytes (the crusher's 16 and the level
   word: `"scratch": 32` unchanged). The SVG parses to 15,744 bytes of the stock TE heap (op1emu `fscr_te`), not heap 0.

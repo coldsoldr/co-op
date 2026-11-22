@@ -95,6 +95,7 @@ What changed from kennel's screen:
 - SVG 7,567 bytes (kennel's 18,132), checked by `tools/plugin/pack.py` (R246's parser rules) and by the generator.
 
 ## Memory, L1, cost
+- **0.3 (2026-11-22, `docs/efficiency-audit.md` finding 14):** the same code, repacked: `tools/plugin/pack.py` now compiles every function into its own section and drops what nothing reaches (op1/support.cc's unused `memcpy`, `memmove`, `memset`). File 19,516 -> 19,236 bytes, `.text` 8,288 -> 8,008; `.rodata` 1,608, imports and the audio unchanged (`tools/plugin/same_code.py`: every function and object that is left is the same bytes with the same targets). The cost figures below stand.
 - **e9 (2026-11-11, 0.2, the screen):** file 19,516 bytes (SVG 7,567), `.text` 8,288, `.rodata` 1,608, `.bss` 76 (the
   five buffer pointers and the screen's node table and palette); load 9,972 bytes once (+1,488 over e8's 8,484 with
   `coop_fx_t`'s new screen word); the state unchanged (no display words: `"scratch": 1600` unchanged). The SVG is

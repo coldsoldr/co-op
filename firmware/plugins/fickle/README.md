@@ -270,6 +270,18 @@ the clearing blocks included. The screen reads them through `Published<>` while 
     The output and the display words are 0.2's bit for bit: the test's digest (below) over the whole stress run and
     in the simulator, 0.2's sources against 0.3's. With this change alone: file 36,124 bytes, `.text` 22,312, `.bss`
     476. 0.3 also has the idle path ("Idle" below, with the file as it ships and its figures).
+  - **0.4 (2026-11-22, `docs/efficiency-audit.md` findings 14 and 15): the reverb's four diffusers in assembly**
+    (`fickle_bfin.S`, `FickleApAsm`: both sides in one pass, 7 packets a clock sample, the ring wrapped by the
+    hardware, so no run splits; `ApPass` in C stays the reference and the host build). One diffuser of 48 clock
+    samples: 454 cycles against the C's 1,804 (`make -C tests/host/fickle ap`, bit for bit over random and edge
+    blocks, every gain, ring and head position). The reverb while listening, avg / max: 16,153 / 16,611 at 24 kHz
+    (0.3 on the same build of the test: 19,420 / 19,928), 18,607 / 19,157 at 32 kHz (22,994 / 23,768); reverb +
+    loop + dub about 3.3 k (24 kHz) and 4.4 k (32 kHz) less, e.g. tape_1 21,466 / 32,674 and 25,077 / 37,399;
+    env hard 23,852 / 39,078 and 29,804 / 45,703; the other wet modes and the freeze as before (no diffusers).
+    With the clock at 24 kHz every scene but the env modes' and stretch's capture block is now under the 30 k
+    SHOULD. The output is 0.3's bit for bit: `make -C tests/host/fickle sim` prints 0.3's digest
+    `3959750b0ea1de10`, the host build (the C) `efcf17611b46da51`. File 37,572 bytes (0.3: 38,164), `.text`
+    23,640 (24,232), `.bss` 513 (516); the packer's section GC found nothing else to drop.
   - **Device figures: pending.**
 - **How it got there** (`make -C tests/host/fickle prof`: each pass's cycles):
   - Every product in a per-sample loop is a single 16 x 16 multiply. GCC drops `int16` casts once it can prove the
@@ -283,8 +295,8 @@ the clearing blocks included. The screen reads them through `Published<>` while 
   - The soft knee's common case falls through.
   - Steady states skip their ramps: the loop at full level, the dub at full level, the routing settled.
   - From the first version (reverb + loop + dub 55-63 k at 32 kHz) to this: about -45 %.
-- No assembly files (nothing for `tools/asm_lint.py`). The two inline instructions are single packets with no parallel
-  slots.
+- One assembly file, `fickle_bfin.S` (0.4; `tools/asm_lint.py`: 0 packets flagged). The two inline instructions are
+  single packets with no parallel slots.
 
 ## Idle (0.3)
 
@@ -364,7 +376,7 @@ File 38,164 bytes, `.text` 24,232, `.bss` 516 (+40: 8 bytes a slot); imports unc
 - **The digest (0.3):** every rendered block's output and display words are folded into one number, printed last
   (`output digest ...`). Two builds of the plugin that print the same digest for the same `BLOCKS` and `SEED` gave the
   same samples in every check: `make -C tests/host/fickle COOP=<the older sources' folder> BUILD=<another>` builds an
-  older version under the same test. 0.2 and 0.3: `efcf17611b46da51` (host, 60,000 blocks, seed 1) and
+  older version under the same test. 0.2, 0.3 and 0.4: `efcf17611b46da51` (host, 60,000 blocks, seed 1) and
   `3959750b0ea1de10` (`sim`). In the stress run the turns walk every block in half the segments and jump in the rest.
 - `make -C tests/host/fickle sim` gives the cycles above in `bfin-elf-run`. `prof` gives the same per pass.
 - `make -C tests/host/fickle screens` writes the screen PNGs (above).

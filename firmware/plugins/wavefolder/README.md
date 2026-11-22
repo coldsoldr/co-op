@@ -63,6 +63,7 @@ held). No other page word, press or latch upstream, so nothing else to map.
 
 ## Stereo and cost
 
+- **0.3 (2026-11-22, `docs/efficiency-audit.md` finding 14):** the same code, repacked: `tools/plugin/pack.py` now compiles every function into its own section and drops what nothing reaches (nothing: only the order of its sections and 3 bytes of `.bss` padding moved). File 14,304 -> 14,304 bytes, `.text` 4,112 -> 4,112; `.rodata` 6,244, imports and the audio unchanged (`tools/plugin/same_code.py`: every function and object that is left is the same bytes with the same targets). The cost figures below stand.
 The upstream is stereo (kennel `op1_fx_stereo_t`, `render_stereo` at the master; the mono render at the instrument
 positions). coop runs the stereo path at every position (synth, drum, master, both FX 2 slots): the instruments now
 hear their own stereo pair folded per side (two channel states, shared controls), as the master did on kennel.

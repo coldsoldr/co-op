@@ -583,7 +583,16 @@ void WetModeEnter(State *s, int32_t m, int32_t time)
 }
 
 /* One allpass diffuser over the block: v (tl, tr) in and out, its ring at ap + off (read m back, written at n0; the
- * two runs are cut where either wraps). */
+ * two runs are cut where either wraps). 0.4: on the Blackfin the kernel in fickle_bfin.S (the same numbers, the ring
+ * wrapped by the hardware); FICKLE_AP_C builds this C there too (tests/host/fickle). */
+#if defined(__bfin__) && !defined(FICKLE_AP_C)
+extern "C" void FickleApAsm(uint32_t *ring, int32_t ring_bytes, uint32_t ri, uint32_t wi, int32_t *vl, int32_t *vr,
+                            int32_t g, int32_t ticks);
+inline void ApPass(State *s, int32_t off, uint32_t mask, uint32_t m, uint32_t n0, int32_t g, int32_t ticks)
+{
+    FickleApAsm(s->ap + off, static_cast<int32_t>((mask + 1) * 4), (n0 - m) & mask, n0 & mask, s->tl, s->tr, g, ticks);
+}
+#else
 inline void ApPass(State *s, int32_t off, uint32_t mask, uint32_t m, uint32_t n0, int32_t g, int32_t ticks)
 {
     uint32_t *ring = s->ap + off;
@@ -608,6 +617,7 @@ inline void ApPass(State *s, int32_t off, uint32_t mask, uint32_t m, uint32_t n0
         wi = (wi + run) & mask;
     }
 }
+#endif
 
 /* Two taps of the line at once, summed into al, ar (set on the first pair, added after). */
 inline void TapPair(const uint32_t *wet, uint32_t ia, uint32_t ib, int32_t gal, int32_t gar, int32_t gbl, int32_t gbr,

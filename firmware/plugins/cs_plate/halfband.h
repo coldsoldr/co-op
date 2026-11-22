@@ -11,7 +11,7 @@
 // with the soft limit from a Q15 table, at unity gain.
 //
 // Each kernel has a C reference (host only) and a Blackfin version
-// (halfband_bfin.S, bit-exact, te-op1-cfw ports/clouds/tests/test_kernels.cc).
+// (../shared/halfband_bfin.S, bit-exact: tests/host/halfband).
 
 #ifndef CS_PLATE_HALFBAND_H_
 #define CS_PLATE_HALFBAND_H_
@@ -25,7 +25,7 @@ const int16_t kHalfbandTaps[5] = { 10019, -2397, 710, -151, 11 };
 const int32_t kHalfbandMaxIn = 64;   // input samples per call
 
 // 2 x Clouds' SoftLimit over [0, 4] as int16 output samples, clipped (257
-// points), then the steps between them (256). halfband_bfin.S reads it at
+// points), then the steps between them (256). ../shared/halfband_bfin.S reads it at
 // these offsets.
 struct SoftLimitTable {
   int16_t value[257];
@@ -89,7 +89,7 @@ class HalfbandDecimator {
 
  private:
   static const int32_t kHistory = 18;
-  int16_t x_[kHistory + kHalfbandMaxIn];
+  alignas(4) int16_t x_[kHistory + kHalfbandMaxIn];   // the kernels read words (../shared/halfband_bfin.S)
 };
 
 class HalfbandInterpolator {
@@ -107,7 +107,7 @@ class HalfbandInterpolator {
 
  private:
   static const int32_t kHistory = 9;
-  int16_t x_[kHistory + kHalfbandMaxIn / 2];
+  alignas(4) int16_t x_[kHistory + kHalfbandMaxIn / 2];
 };
 
 }  // namespace csplate

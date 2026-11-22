@@ -13,7 +13,7 @@
     4000
   ],
   "author": "coldsoldr",
-  "version": "0.2",
+  "version": "0.3",
   "description": "The reference coop synth engine (docs/engines.md): two detuned oscillators, a sub square and a low-pass, with its own screen. Blue brightness, green detune, white sub, orange drift; fn + blue the shape, shift + fn + orange the sub's octave.",
   "screen": {
     "svg": "saw.svg",

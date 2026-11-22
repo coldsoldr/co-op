@@ -18,15 +18,15 @@ ID_cs_plate := 3
 ID_fickle := 4
 ID_petri := 5
 SRC_tape_echo := tape_echo.cc tape_echo_screen.cc src/tape_echo_core.cc src/halfband.cc
-ASM_tape_echo := src/tape_echo_bfin.S src/halfband_bfin.S
+ASM_tape_echo := src/tape_echo_bfin.S ../shared/halfband_bfin.S
 SRC_cs_hall := cs_hall.cc cs_hall_screen.cc hall.cc halfband.cc
-ASM_cs_hall := hall_bfin.S halfband_bfin.S
+ASM_cs_hall := hall_bfin.S ../shared/halfband_bfin.S
 SRC_cs_plate := cs_plate.cc cs_plate_screen.cc plate.cc halfband.cc
-ASM_cs_plate := plate_bfin.S halfband_bfin.S
+ASM_cs_plate := plate_bfin.S ../shared/halfband_bfin.S
 SRC_fickle := fickle.cc fickle_screen.cc
-ASM_fickle :=
+ASM_fickle := fickle_bfin.S
 SRC_petri := petri.cc petri_screen.cc src/petri_engine.cc src/halfband.cc
-ASM_petri := src/halfband_bfin.S src/voice_bfin.S src/space_bfin.S
+ASM_petri := ../shared/halfband_bfin.S src/voice_bfin.S src/space_bfin.S
 # the simulator builds: the plugins' own clocks stepped by the test where they have the switch
 SIMDEF_tape_echo := -DCOOP_TAPE_ECHO_HOST_CLOCK
 SIMDEF_petri := -DCOOP_PETRI_HOST_CLOCK
@@ -52,7 +52,7 @@ $$(BUILD)/idle_$(1): fx_idle_test.cc $$(wildcard $$(P)/$(1)/*.cc $$(P)/$(1)/*.h 
 run-$(1): $$(BUILD)/idle_$(1)
 	$$(BUILD)/idle_$(1) $$(BLOCKS)
 
-$$(BUILD)/idle_$(1).elf: fx_idle_test.cc $$(wildcard $$(P)/$(1)/*.cc $$(P)/$(1)/*.h $$(P)/$(1)/*.S $$(P)/$(1)/src/*) $$(COMMON)
+$$(BUILD)/idle_$(1).elf: fx_idle_test.cc $$(wildcard $$(P)/$(1)/*.cc $$(P)/$(1)/*.h $$(P)/$(1)/*.S $$(P)/$(1)/src/*) $$(P)/shared/halfband_bfin.S $$(COMMON)
 	@mkdir -p $$(BUILD)
 	$$(BFIN)/bfin-elf-g++ $$(SIMFLAGS) $$(call DEFS,$(1)) $$(SIMDEF_$(1)) $$(call INC,$(1)) fx_idle_test.cc \
 	  $$(addprefix $$(P)/$(1)/,$$(SRC_$(1)) $$(ASM_$(1))) $$(COMMON) -o $$@

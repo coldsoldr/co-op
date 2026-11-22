@@ -26,7 +26,7 @@ REF_SRC := $(TE)/fx/src/tape_echo/tape_echo.cc $(TE)/clouds/src/core/halfband.cc
 # calls as stubs); the test compares audio only
 COOP_SRC := $(COOP)/tape_echo.cc $(COOP)/tape_echo_screen.cc $(COOP)/src/tape_echo_core.cc $(COOP)/src/halfband.cc \
             ../fx_scratch_host.cc ../screen_host.cc ../tempo_host.cc
-COOP_DEPS := $(wildcard $(COOP)/*.cc $(COOP)/*.h $(COOP)/src/*) ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h \
+COOP_DEPS := $(wildcard $(COOP)/*.cc $(COOP)/*.h $(COOP)/src/*) $(COOP)/../shared/halfband_bfin.S ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h \
              ../../../sdk/coop_plugin.h ../../../core/include/coop_tempo.h ../tempo_host.cc
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
@@ -70,7 +70,7 @@ $(BUILD)/tape_echo_ref.elf: tape_echo_compare.cc
 $(BUILD)/tape_echo_coop.elf: tape_echo_compare.cc $(COOP_DEPS)
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DCOOP_TAPE_ECHO_HOST_CLOCK -I$(COOP) -I../../../sdk -I../../../core/include tape_echo_compare.cc $(COOP_SRC) \
-	  $(COOP)/src/tape_echo_bfin.S $(COOP)/src/halfband_bfin.S -o $@
+	  $(COOP)/src/tape_echo_bfin.S $(COOP)/../shared/halfband_bfin.S -o $@
 
 sim: $(BUILD)/tape_echo_ref.elf $(BUILD)/tape_echo_coop.elf
 	$(BFIN)/bfin-elf-run $(BUILD)/tape_echo_ref.elf $(BUILD)/ref_sim.raw $(SIM_BLOCKS) $(SIM_TEMPO)

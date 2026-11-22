@@ -6,7 +6,7 @@
 // What changed for coop: one stereo instance; the soft-limit table is a const table (src/tape_echo_tables.h, the
 // numbers InitSoftLimitTable built) rather than built in the audio thread; the crossfade tables are copied in; the
 // pause-restart takes the clock from the caller (Begin(now), End(now)). Each kernel has a C reference (halfband.cc,
-// host builds) and a Blackfin version (halfband_bfin.S, bit-exact).
+// host builds) and a Blackfin version (../shared/halfband_bfin.S, bit-exact).
 //
 // Mix: Clouds' crossfade tables are 0.707 at their ends, so x sqrt 2: mix 0 is the dry signal, mix 1 the wet.
 // MixSoftLimit counts the half-scale wet twice, so its side x sqrt 2 / 2. Q15.
@@ -123,7 +123,7 @@ class HalfbandDecimator {
 
  private:
   static const int32_t kHistory = 18;
-  int16_t x_[kHistory + kHalfbandMaxIn];
+  alignas(4) int16_t x_[kHistory + kHalfbandMaxIn];   // the kernels read words (../shared/halfband_bfin.S)
 };
 
 class HalfbandInterpolator {
@@ -140,7 +140,7 @@ class HalfbandInterpolator {
 
  private:
   static const int32_t kHistory = 9;
-  int16_t x_[kHistory + kHalfbandMaxIn / 2];
+  alignas(4) int16_t x_[kHistory + kHalfbandMaxIn / 2];
 };
 
 // The stereo half-rate path: Begin, then the input in in_full(c), Decimate, the core reads in(c) and writes wet(c),
@@ -213,9 +213,9 @@ class HalfRate {
 
   HalfbandDecimator decimator_[2];
   HalfbandInterpolator interpolator_[2];
-  int16_t half_[2][kHalfN];
+  alignas(4) int16_t half_[2][kHalfN];   // the kernels write words
   int16_t wet_half_[2][kHalfN];
-  int16_t wet_full_[2][kFxBlockSize];
+  alignas(4) int16_t wet_full_[2][kFxBlockSize];
   bool running_;
   uint32_t last_end_;
   int32_t mix_;   // Q16

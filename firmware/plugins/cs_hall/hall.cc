@@ -833,7 +833,7 @@ void HallReverb::Process(const int16_t* in_l, const int16_t* in_r, int16_t* wet_
       int16_t* const r = wet_r ? wet_r + done : nullptr;
 #if defined(__bfin__)
       // coop: stereo out at every position (the glue always passes wet_r;
-      // the mono kernels are not built, hall_bfin.S HALL_MONO_KERNELS).
+      // the mono kernels have no caller: pack.py's section GC leaves them out).
       if (alias) {
         HallRunAsm(&k_, x_ + done, l, r, p, m, alias_bytes);
       } else {

@@ -43,10 +43,10 @@ $(BUILD)/hall_coop: cs_hall_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h) $(SDK
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -I$(COOP) -I../../../sdk cs_hall_compare.cc $(COOP_SRC) -o $@
 
-$(BUILD)/hall_coop.elf: cs_hall_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h $(COOP)/*.S) $(SDK_H)
+$(BUILD)/hall_coop.elf: cs_hall_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h $(COOP)/*.S) $(COOP)/../shared/halfband_bfin.S $(SDK_H)
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -I$(COOP) -I../../../sdk cs_hall_compare.cc $(COOP_SRC) \
-	  $(COOP)/hall_bfin.S $(COOP)/halfband_bfin.S -o $@
+	  $(COOP)/hall_bfin.S $(COOP)/../shared/halfband_bfin.S -o $@
 
 clean:
 	rm -rf $(BUILD)

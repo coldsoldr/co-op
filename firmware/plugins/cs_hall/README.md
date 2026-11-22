@@ -21,9 +21,9 @@ matrix), and the dry stays the full stereo input, so a voice's placement survive
 |---|---|---|
 | `cs_hall.cc` | `ports/knl/cs_hall/hall_knl.cc`, `ports/fx/op1/half_rate.h` | the coop glue (below) |
 | `hall.cc`, `hall.h`, `hall_layout.h` | `ports/fx/src/hall/` | compile-time `double` maths replaced by the integer literals it evaluated to (printed by the upstream build); C run kernels host only; `InitKeepBuffers` / `ClearBase` / `ClearWords` |
-| `hall_bfin.S` | `ports/fx/src/hall/hall_bfin.S` | include path; kennel's mono kernels not built (`HALL_MONO_KERNELS`) |
+| `hall_bfin.S` | `ports/fx/src/hall/hall_bfin.S` | include path; a section per kernel (0.4), so the packer drops kennel's mono kernels (no caller) |
 | `halfband.h`, `halfband.cc` | `ports/clouds/src/core/halfband.{h,cc}`, `dsp_fixed.h`, `rings/src/fixed.h` | only what the hall uses; the soft-limit and crossfade tables as constant data (upstream built the soft-limit table at run time) |
-| `halfband_bfin.S` | `ports/clouds/src/core/halfband_bfin.S` | none |
+| `../shared/halfband_bfin.S` | `ports/clouds/src/core/halfband_bfin.S` | 0.4: the five half-band plugins' one kernel file, the decimator and interpolator rewritten (two outputs a pass, dual MAC); bit-exact |
 
 Forbidden constructs found and fixed (guidelines §2.1, §2.3, §7.1): `constexpr double` table generation in `hall.cc`
 (Exp, Cos, SizeScale: 6 tables, 16 size rows) → integer literals; kennel's `knl::Fine` (reads the shift byte at
@@ -152,6 +152,7 @@ text calls; the core's popup shows the one being turned); freeze is shown by the
 not by the envelope "held flat".
 
 ## Memory, L1, cost
+- **0.4 (2026-11-22, `docs/efficiency-audit.md` findings 14 and 15):** the half-band decimator and interpolator are the five half-band plugins' one kernel file, `../shared/halfband_bfin.S`, rewritten (two outputs a pass, one in each MAC, the taps from a circular stream, the loads in the parallel slots): 926 -> 313 cycles a call in the simulator (`make -C tests/host/halfband`, bit for bit against the C over random and edge input), four calls a block; and the packer drops what nothing reaches (`tools/plugin/pack.py` section GC, audit finding 14): kennel's two mono kernels (1.75 KB, no caller) and three unused functions leave the file. Simulator, the test's scenarios (0.3 in brackets): 15,374 (17,768), 16,622 (19,081), 17,415 (19,874), 19,095 (21,554), 15,905 (18,364), 15,864 (18,233), 16,100 (18,559), 19,326 (21,785), 15,620 (18,079): about 2,450 less a block; max 24,149 (26,608). Bit-identical to te-op1-cfw, host and simulator, as before. File 22,364 bytes (0.3: 23,936), `.text` 11,088 (12,796), `.rodata` 5,368 (5,280), `.bss` 277 (280).
 - **0.3 (2026-11-20, no divide in a steady block; `docs/efficiency-audit.md` finding 8):** the four turns' Q15 values
   are kept per slot (`.bss`, 28 bytes a slot, cleared by `init`) and redone only for a word that moved: four
   `___divsi3` calls a block before (~190 cycles each), none now while the turns are still. Simulator, the test's
@@ -175,7 +176,9 @@ not by the envelope "held flat".
   simulator.
 - Cost, upstream: the hall alone in `bfin-elf-run`, per 32-sample call (one per coop block): 8,845 avg / 9,315 peak
   stereo, 16,731 while a size change crossfades (8 blocks); kennel declared no `cost` and never ran it on a device.
-- Cost, this port, the whole render in `bfin-elf-run` (`make -C tests/host/cs_hall sim`): 18.2-22.0 k avg, 26.2 k max
+- Cost, this port, the whole render in `bfin-elf-run` (`make -C tests/host/cs_hall sim`): 0.4 15.4-19.3 k avg, 24.1 k
+  max (the shared half-band kernel; 0.2 below)
+- Cost, 0.2, the whole render in `bfin-elf-run` (`make -C tests/host/cs_hall sim`): 18.2-22.0 k avg, 26.2 k max
   a block (the max is a size crossfade); the glue (decimate, interpolate and mix both sides, the conversions,
   control) is about half. The simulator models no cache or SDRAM stalls: expect the device 10-35 % above op1emu
   (coop's figure) and up to 1.5-4× the simulator from cold caches (upstream's warning for the plate and hall) [I].

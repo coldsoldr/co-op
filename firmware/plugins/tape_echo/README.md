@@ -148,6 +148,7 @@ positions and the head fills against the SVG are the gate's to confirm.
   pairs, every head read serving both channels, so stereo costs about 1.56x the mono path rather than 2x (te-op1-cfw
   simulator: 9.2 MHz stereo, 5.9 MHz mono, whole effect). coop runs it at every position (synth, drum, master and both
   FX 2 slots): the instrument positions now hear the echo in stereo, and each position is a full stereo instance.
+- **0.6 (2026-11-22, `docs/efficiency-audit.md` findings 14 and 15):** the half-band decimator and interpolator are the five half-band plugins' one kernel file, `../shared/halfband_bfin.S`, rewritten (two outputs a pass, one in each MAC, the taps from a circular stream, the loads in the parallel slots): 926 -> 313 cycles a call in the simulator (`make -C tests/host/halfband`, bit for bit against the C over random and edge input), four calls a block. Simulator **12,802 avg / 14,160 max** over the scenario's 3,000 blocks at 133.5 BPM (0.5: 15,259 / 16,650): 2,457 less a block. Bit for bit 0.5's output (`make -C tests/host/tape_echo` and `sim`, te-op1-cfw's DSP; `../idle`). And the packer drops what nothing reaches (`tools/plugin/pack.py` section GC, audit finding 14). File 25,636 bytes (0.5: 25,444; the kernel's code and its 92 bytes of tap pairs over the old copy's, less the dead `TapeEchoSaturate`), `.text` 10,240 (10,164), `.rodata` 3,668 (3,576), `.bss` 441 (444).
 - **0.4 (2026-11-20, no divide in a steady block; `docs/efficiency-audit.md` finding 8):** the four turns, the gain
   and the sync division's time word are kept per slot and redone only for a word (or a tempo) that moved. Before, a
   block made six `___divsi3` calls for them (seven and a table walk with sync on, ~190 cycles each); a steady block
@@ -178,6 +179,7 @@ positions and the head fills against the SVG are the gate's to confirm.
   |---|---|
   | kennel stereo, te-op1-cfw simulator (9.2 MHz / 689 blocks a second) | 13,350 |
   | coop, GNU simulator, `make -C tests/host/tape_echo sim` (compute only, the scenario's 3,000 blocks) | 16,049 avg / 16,804 max (e9; e8 15,987 / 16,746 on the same build, so the display words cost ~60 a block) |
+  | **0.6**, GNU simulator, the same (133.5 BPM; 0.5 on it: 15,259 / 16,650) | **12,802 avg / 14,160 max** (the shared half-band kernel) |
   | coop, op1emu (`fx1_plugin=`, `s2_instr=`, `s2_master=`) | 0.3 at synth FX 1, sync 1/4 at 95 and 145 BPM: `fx1_plugin=17197/19074` (`docs/device-tests.md` "tape_echo 0.3"; 0.1: 16,778-16,821 avg) |
   | **coop, device** | **pending** |
 

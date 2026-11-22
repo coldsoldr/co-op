@@ -37,6 +37,10 @@ SDK = KENNEL / 'sdk'                    # coop-fw: the public ABI headers
 CORE_INC = KENNEL / 'core' / 'include'  # coop-fw: the DSP headers a plugin may share with the core
 MERGE_LD = Path(__file__).resolve().parent / 'merge.ld'
 CFLAGS = ['-O2', '-mcpu=bf524', '-ffreestanding', '-fno-builtin', '-nostdlib', '-fno-common', '-Wall']
+# coop-fw (2026-11-22, efficiency audit finding 14): every function and object in its own section, so the link can drop
+# what nothing reaches (link_relocatable). The code GCC emits for a function is the same with or without them; only
+# calls between functions of one file now go through a relocation pack() resolves (tools/plugin/same_code.py checks).
+GC_CFLAGS = ['-ffunction-sections', '-fdata-sections']
 
 
 def diag_build():
@@ -149,7 +153,7 @@ def compile_plugin(plugin_dir, outdir, toolchain=None):
         cxx = str(path).endswith(('.cc', '.cpp'))        # coop-fw: C++ sources through bfin-elf-g++
         cc = str(gcc)[:-3] + 'g++' if cxx else gcc
         extra = ['-std=c++17', '-fno-exceptions', '-fno-rtti', '-fno-threadsafe-statics'] if cxx else []
-        run([cc, *CFLAGS, *extra, *diag_cflags(), *defs, *flags, *meta.get('source_cflags', {}).get(src, []), *includes, f'-I{SDK}', f'-I{CORE_INC}', '-c', str(Path(plugin_dir) / src), '-o', str(o)])
+        run([cc, *CFLAGS, *GC_CFLAGS, *extra, *diag_cflags(), *defs, *flags, *meta.get('source_cflags', {}).get(src, []), *includes, f'-I{SDK}', f'-I{CORE_INC}', '-c', str(Path(plugin_dir) / src), '-o', str(o)])
         objs.append(str(o))
     return objs
 
@@ -181,14 +185,31 @@ def libgcc(toolchain=None):
     return run([gcc, '-mcpu=bf524', '-print-libgcc-file-name']).strip()
 
 
-def link_relocatable(objs, out, toolchain=None):
-    """bfin-elf-ld -r: plugin objects + the libgcc members they need -> one object with four sections."""
+def gc_roots(meta):
+    """The symbols the loader reaches a plugin through (pack() looks each up): the entry object, the screen and the
+    bigbuf. The entry object points at the callbacks, so everything they reach is kept with it."""
+    roots = [meta['symbol']]
+    if meta.get('screen'):
+        roots.append(meta['screen']['symbol'])
+    if isinstance(meta.get('bigbuf'), str):
+        roots.append(meta['bigbuf'])
+    return roots
+
+
+def link_relocatable(objs, out, toolchain=None, roots=None):
+    """bfin-elf-ld -r: plugin objects + the libgcc members they need -> one object with four sections. roots (symbol
+    names without the leading _): drop every section none of them reaches."""
     _, ld = find_toolchain(toolchain)
     # coop-fw (2026-11-10, the rings port): --force-group-allocation, as te-op1-cfw's knl_pack.py links. C++ inline
     # variables, out-of-line inline functions and template instances sit in COMDAT groups, which a relocatable link
     # otherwise keeps as their own sections (pack() refuses those); the flag places them as a final link would, so
     # merge.ld's four sections are all there is. A plugin without COMDAT groups packs byte-identical with or without it.
-    run([ld, '-r', '--force-group-allocation', '-T', str(MERGE_LD), *objs, libgcc(toolchain), '-o', str(out)])
+    # coop-fw (2026-11-22, audit finding 14): --gc-sections on the relocatable link. ld collects input sections before
+    # merge.ld merges them, from the roots given with -u (a partial link has no entry point; without a root ld keeps
+    # everything). The output is the same four sections and relocation types: only unreached input sections are gone.
+    # An assembly file is one section unless it names a section per function (.section .text.<name>).
+    gc = ['--gc-sections', *('-u_' + r for r in roots)] if roots else []
+    run([ld, '-r', '--force-group-allocation', *gc, '-T', str(MERGE_LD), *objs, libgcc(toolchain), '-o', str(out)])
     return out
 
 
@@ -685,7 +706,7 @@ def pack_dir(plugin_dir, out, toolchain=None, keep=None):
         work = Path(keep or tmp)
         work.mkdir(parents=True, exist_ok=True)
         objs = compile_plugin(plugin_dir, work, toolchain)
-        ro = link_relocatable(objs, work / (meta['name'] + '.ro'), toolchain)
+        ro = link_relocatable(objs, work / (meta['name'] + '.ro'), toolchain, gc_roots(meta))
         data, info = pack(meta, Path(ro).read_bytes(), plugin_dir)
     Path(out).write_bytes(data)
     return data, info

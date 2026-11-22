@@ -1,4 +1,4 @@
-// C references of the half-rate kernels (src/halfband.h), for host builds: the device runs halfband_bfin.S.
+// C references of the half-rate kernels (src/halfband.h), for host builds: the device runs ../shared/halfband_bfin.S.
 // coop copy of te-op1-cfw ports/clouds/src/core/halfband.cc (InitSoftLimitTable is gen_tables.py's now).
 
 #include "src/halfband.h"

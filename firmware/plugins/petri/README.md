@@ -180,7 +180,8 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
   MAC allpasses with rounded, saturated extraction, the two tank halves packed). The space's extraction rounds as the
   Blackfin does by default (ASTAT RND_MOD 0, ties to even): a core that set RND_MOD would differ from the C reference
   by an LSB on exact ties, inaudibly. The voice kernel's interpolation uses (T) truncation and does not depend on it.
-  The halfband kernels are tape_echo's (`src/halfband_bfin.S`, unchanged). The space's buffer is read through a
+  The halfband kernels are the five half-band plugins' shared `../shared/halfband_bfin.S` (0.4; tape_echo's copy
+  before). The space's buffer is read through a
   pointer stepping down with constant offsets (no masking); every 64 calls (93 ms; 0.1: every 256) its live 7.9 KB
   window is copied up once (1,984 word copies in that call, about 2.4 k cycles: inside the max below).
 - **Cost** (GNU simulator, compute only: no cache misses or SDRAM waits; `make -C tests/host/petri sim`, 1,500 blocks
@@ -201,6 +202,8 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
 | pattern | 23,814 | 30,144 |
 | warp | 29,697 | 36,152 |
 | all | 21,111 | 36,152 |
+
+  **0.4 (2026-11-22, `docs/efficiency-audit.md` findings 14 and 15):** the half-band decimator and interpolator are the five half-band plugins' one kernel file, `../shared/halfband_bfin.S`, rewritten (two outputs a pass, one in each MAC, the taps from a circular stream, the loads in the parallel slots): 926 -> 313 cycles a call in the simulator (`make -C tests/host/halfband`, bit for bit against the C over random and edge input), four calls a block. Every row about 2,480 lower: mosaic 16,960 / 22,544, seq 15,257 / 19,198, glide 17,512 / 25,105, haze 19,656 / 26,480, tunnel 19,396 / 24,639, strum 18,342 / 25,586, blocks 15,294 / 20,317, cut 14,186 / 19,183, arp 15,282 / 22,829, pattern 20,756 / 27,090, warp 26,747 / 33,190, all **18,126 / 33,190** (0.3 on the same build of the test: 20,611 / 35,675): pattern is back under the 30 k SHOULD, warp's max still over it. The digests are 0.3's (`0178aade26c9622a` host, `474736ab08745fff` sim). And the packer drops what nothing reaches (`tools/plugin/pack.py` section GC, audit finding 14). File 37,932 bytes (0.3: 37,792: the kernel and its tap pairs are larger than the copy they replace), `.text` 23,696 (23,652), `.rodata` 4,260 (4,164), `.bss` 501 (504).
 
   **0.3 (2026-11-20, `docs/efficiency-audit.md` finding 8):** the four turns' values are kept per slot (`.bss`, 28
   bytes a slot, cleared by `init`) and divided only for a word that moved (four `___divsi3` calls a block before):

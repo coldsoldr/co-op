@@ -80,6 +80,7 @@ The page became a held layer (guidelines §4). The mix was already on orange (§
 
 ## Stereo and cost
 
+- **0.7 (2026-11-22, `docs/efficiency-audit.md` finding 14):** the same code, repacked: `tools/plugin/pack.py` now compiles every function into its own section and drops what nothing reaches (op1/support.cc's unused `memcpy`, `memmove`, `memset`, the C `TapeLaneRunC` the Blackfin never calls and `TapeSat::CopyLeftToRight`). File 22,660 -> 22,228 bytes, `.text` 11,228 -> 10,796; `.rodata` 1,616, imports and the audio unchanged (`tools/plugin/same_code.py`: every function and object that is left is the same bytes with the same targets). The cost figures below stand.
 - **Stereo path.** The render calls upstream's `TapeSat::Process(l, r)` at every position:
   - one shared wobble delay (a ring of L | R pairs);
   - per channel, a lane: 2x halfband up, quintic soft clip, halfband down, head bump, HF loss, mix.

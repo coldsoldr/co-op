@@ -24,7 +24,7 @@ SIM_FLAGS := -DCOOP_FX_NO_IDLE -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17
              -DOP1_HOST_SIM -DOP1FX_NO_ASM -DOP1CLOUDS_NO_ASM
 COOP_SRC := $(COOP)/cs_plate.cc $(COOP)/cs_plate_screen.cc $(COOP)/plate.cc $(COOP)/halfband.cc ../fx_scratch_host.cc \
             ../screen_host.cc
-COOP_ASM := $(COOP)/plate_bfin.S $(COOP)/halfband_bfin.S
+COOP_ASM := $(COOP)/plate_bfin.S $(COOP)/../shared/halfband_bfin.S
 REF_SRC := $(TE)/fx/src/plate/plate.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clouds/src/core/clouds_tables.cc \
            $(TE)/rings/src/fixed_tables.cc
 
