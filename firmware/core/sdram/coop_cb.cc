@@ -63,7 +63,7 @@ extern "C" int CoopAudioCb(int r0, int r1)
     uint32_t dt = cycles() - t0;
 #ifdef COOP_COMBINED
     coop_mark(0x03);
-    if (dt > g_coop_slow_th) coop_slow_keep(dt);
+    if (dt > g_coop_slow_th && g_coop_prof) coop_slow_keep(dt);
     if (g_coop_gap_prof) coop_gap_block();
 #endif
     g_last = dt;

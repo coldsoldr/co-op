@@ -126,9 +126,9 @@ class HalfRate {
 
   HalfbandDecimator decimator_[2];
   HalfbandInterpolator interpolator_[2];
-  int16_t half_[2][kHalfN];
+  alignas(4) int16_t half_[2][kHalfN];   // the kernels write words
   int16_t wet_half_[2][kHalfN];
-  int16_t wet_full_[2][kFxBlockSize];
+  alignas(4) int16_t wet_full_[2][kFxBlockSize];
   bool running_;
   uint32_t last_end_;
   int32_t mix_;   // Q16

@@ -97,15 +97,32 @@ struct Crush {
     return dry32 + static_cast<int32_t>(static_cast<uint32_t>(((wet - dry) * mix) >> 15) << 16);
   }
 
-  // In place, both channels, n samples.
-  void Process(int32_t* l, int32_t* r, int32_t n, const Params& p) {
+  // What rate and bits give the loop: a divide and three 64-bit operations, so the glue keeps them per slot and
+  // redoes them only when one of the two words moved (0.3; bitcrusher.cc ReadParams).
+  struct Steps {
+    uint32_t inc;        // the phase increment
+    int32_t mask, half;  // the bit depth's mask and rounding
+  };
+  static inline Steps StepsOf(int32_t rate, int32_t bits_knob) {
+    Steps s;
     // 6.462 octaves (log2(44100 / 500)) in Q16 over the knob: 423 501 / 32767.
-    const int32_t octaves_q16 = static_cast<int32_t>((static_cast<int64_t>(p.rate) * 423501) >> 15);
-    const uint32_t inc = Exp2NegQ16(octaves_q16);
-    const int32_t bits = 16 - (p.bits * 14 + 16383) / 32767;   // 16..2
+    const int32_t octaves_q16 = static_cast<int32_t>((static_cast<int64_t>(rate) * 423501) >> 15);
+    s.inc = Exp2NegQ16(octaves_q16);
+    const int32_t bits = 16 - (bits_knob * 14 + 16383) / 32767;   // 16..2
     const int32_t drop = 16 - bits;
-    const int32_t mask = drop ? ~((1 << drop) - 1) : ~0;
-    const int32_t half = drop ? 1 << (drop - 1) : 0;
+    s.mask = drop ? ~((1 << drop) - 1) : ~0;
+    s.half = drop ? 1 << (drop - 1) : 0;
+    return s;
+  }
+
+  // In place, both channels, n samples.
+  void Process(int32_t* l, int32_t* r, int32_t n, const Params& p) { Process(l, r, n, p, StepsOf(p.rate, p.bits)); }
+
+  // The same with rate's and bits' steps already made (p.rate and p.bits are not read).
+  void Process(int32_t* l, int32_t* r, int32_t n, const Params& p, const Steps& s) {
+    const uint32_t inc = s.inc;
+    const int32_t mask = s.mask;
+    const int32_t half = s.half;
     const uint32_t jitter = static_cast<uint32_t>(p.jitter) << 1;   // Q16
     const int32_t mix = p.mix >= 32767 ? 32768 : p.mix;             // Q15, the top exactly wet
     const int32_t g = p.gain_q14;

@@ -52,6 +52,7 @@ class ExcitationFilter {
   // Adds a unit impulse of amplitude x0 (given as g, h-scaled terms) at the
   // next sample: see op1_voice.cc.
   void AddImpulse(int32_t first_output, int32_t s1, int32_t s2);
+  void Rest() { s1_ = s2_ = 0; pending_ = false; }   // coop 0.13 (RingsVoice::Rest): the state only, the cutoff stays
   void Process(int32_t* out, size_t size);   // zero input, Q27 output
 
   int32_t g() const { return g_; }
@@ -93,6 +94,15 @@ struct LimiterGains {
 void MonoLimiterLoopC(int32_t* x, int32_t size, int32_t* peak, int32_t gain, int32_t pre_gain);
 extern "C" void MonoLimiterAsm(int32_t* x, int32_t size, int32_t* peak, int32_t gain,
                                int32_t pre_gain);
+// coop 0.14 (src/limiter_bfin.S): max(peak_in, |x|), then x += wet (when wet), then MonoLimiterAsm's loop; returns
+// the peak. RenderMono's sub-block tail in one call.
+extern "C" int32_t MonoLimiterPeakAsm(int32_t* x, int32_t size, int32_t* peak, int32_t gain, int32_t pre_gain,
+                                      const int32_t* wet, int32_t peak_in);
+#if defined(__bfin__) && !defined(OP1RINGS_NO_ASM) && !defined(COOP_EARLY_PROBE)
+#define OP1RINGS_LIMIT_PEAK_ASM 1   // (the early cut's test probe reads the own output between the steps)
+#else
+#define OP1RINGS_LIMIT_PEAK_ASM 0
+#endif
 
 // Mono limiter for the OP-1 build (the voice's two outputs are summed): same
 // peak follower as Rings' limiter, with the gain (1 / peak) updated once per
@@ -101,8 +111,17 @@ class MonoLimiter {
  public:
   void Init();
   void Process(int32_t* x, size_t size, const LimiterGains& gains);
+#if OP1RINGS_LIMIT_PEAK_ASM
+  // coop 0.14: the voice's own peak (from peak_in, before the share), x += wet when wet, then Process; returns the peak.
+  int32_t ProcessPeak(int32_t* x, size_t size, const LimiterGains& gains, const int32_t* wet, int32_t peak_in);
+#endif
+  // coop 0.11: the peak follower has come all the way down (silence in then changes nothing in here).
+  bool at_rest() const { return peak_ == 0; }
 
  private:
+  void UpdateGain(const LimiterGains& gains) { gain_ = peak_ <= (1 << 27) ? gains.out_q30 : LoudGain(gains, peak_); }
+  static int32_t LoudGain(const LimiterGains& gains, int32_t peak);
+
   int32_t peak_;   // Q27
   int32_t gain_;   // pre-gain * 0.8 / max(peak, 1), Q30
 };
@@ -117,6 +136,7 @@ class SharedReverb {
  public:
   void Init();
   void Clear() { reverb_.Clear(); }
+  void Resume(uint32_t samples) { reverb_.Resume(samples); }   // coop 0.11: after an idle time (reverb_fixed.h)
   // in_out: kControlBlockSize Q27 samples, the voices' summed dry signal;
   // replaced by amount * wet (the voices' limiters come after).
   void Process(const VoicePatch& patch, int32_t* in_out);
@@ -130,7 +150,7 @@ class SharedReverb {
 class RingsVoice {
  public:
   void Init(int32_t resolution);
-  void NoteOn() { strum_ = true; silent_blocks_ = 0; }
+  void NoteOn() { strum_ = true; silent_blocks_ = 0; quiet_renders_ = 0; early_quiet_ = 0; early_gain_ = kEarlyFull; }
 
   // Any model (RenderMono only; Render is modal).
   void set_model(ResonatorModel model) { model_ = model; }
@@ -144,9 +164,69 @@ class RingsVoice {
   // RenderMono's voice has been below kSleepLevel long enough to stop
   // computing until its next note (it renders silence, or only its share
   // of the shared reverb).
+  // coop 0.12: or it has stayed below kQuietLevel for kQuietRendersToSleep. A tail does not always end at zero: the
+  // strings and the modes can settle in a small cycle that never decays (the arithmetic's rounding), and the FM
+  // voice's envelope stops falling at a floor set by the damping; from about three quarters of the damping's range
+  // these sit between half an LSB and a few LSB of the 16-bit output for as long as the key is held, and the voice
+  // computed at full cost for nothing anyone hears. A tail that is still falling passes from kQuietLevel to
+  // kSleepLevel (18 dB) well inside the time unless the whole decay takes about a minute or more.
+  // coop 0.13, the early cut (the owner's decision, 2026-11-21: a chord at a long damping cost its full voices for
+  // minutes after it could no longer be heard). A voice whose level has stayed under kEarlyLevel for
+  // kEarlyHoldRenders is faded out over kEarlyFadeRenders and is then asleep, key held or not, in every model. The
+  // level is the render's own peak (the one the two rules above use), taken to the scale of the voice's 16-bit output
+  // by the model's limiter gain; in string + reverb it is the voice's dry part, the string x (1 - the reverb's
+  // amount), which is what the voice itself plays (the reverb's part of it is the reverb's to end, as it does in
+  // 0.11: fed nothing more, it runs its tail out and idles). Any render at or above the level starts the hold
+  // again, and during the fade it brings the voice back up (kEarlyFadeInSpeed times faster than it went down).
+  // The fade is a gain on the voice's own output, before the reverb's send and the limiter; the model computes on
+  // under it untouched, so a strike during the fade (the gain back to 1 at once) plays what it would have played
+  // without the rule. A voice that was faded out all the way is put to rest when it is next struck (Rest: a decayed
+  // string is at rest; OP1RINGS_EARLY_FREEZE=1 keeps it as it stood instead, as the two rules above do).
+  // Every constant of the rule is here; -DOP1RINGS_NO_EARLY_SLEEP compiles the rule out (0.12's samples: `make sleep`).
+#ifndef OP1RINGS_EARLY_LEVEL
+#define OP1RINGS_EARLY_LEVEL 67268   // Q27, 2^27 x 10^(-66 / 20): -66 dBFS, a peak of 16.4 LSB of the 16-bit output
+#endif                               // (the -60 dBFS build: 134218, 32.8 LSB)
+#ifndef OP1RINGS_EARLY_FREEZE
+#define OP1RINGS_EARLY_FREEZE 0
+#endif
+  static const int32_t kEarlyLevel = OP1RINGS_EARLY_LEVEL;
+  static const int32_t kEarlyHoldRenders = 3445;   // RenderMono calls under the level before the fade: 5 s
+  static const int32_t kEarlyFadeRenders = 689;    // the fade, linear: 1 s
+  static const int32_t kEarlyFadeInSpeed = 32;     // back up (the level rose with no strike: a control moved): 31 ms
+  static const int32_t kEarlyFull = 1 << 30;       // the fade's gain, Q30
+  // A sample's step down: the gain is 0 on the last sample of render kEarlyFadeRenders.
+  static const int32_t kEarlyFadeStep =
+      kEarlyFull / (kEarlyFadeRenders * static_cast<int32_t>(kControlBlockSize)) + 1;
+#if defined(OP1RINGS_NO_SLEEP) || defined(OP1RINGS_NO_QUIET_SLEEP) || defined(OP1RINGS_NO_EARLY_SLEEP)
+#define OP1RINGS_EARLY 0
+  bool early_asleep() const { return false; }
+#else
+#define OP1RINGS_EARLY 1
+  // Faded out all the way, and not struck since.
+  bool early_asleep() const { return early_gain_ == 0; }
+#endif
+#if defined(OP1RINGS_NO_SLEEP)       // a host test's twin (tests/host/rings rings_sleep.cc): the voice never sleeps
+  bool asleep() const { return false; }
+#elif defined(OP1RINGS_NO_QUIET_SLEEP)   // the same test's other twin: 0.11's rule alone
   bool asleep() const { return !strum_ && silent_blocks_ >= kSilentBlocksToSleep; }
+#else
+  bool asleep() const {
+    return !strum_ && (silent_blocks_ >= kSilentBlocksToSleep || quiet_renders_ >= kQuietRendersToSleep ||
+                       early_asleep());
+  }
+#endif
+  // coop 0.13: what rings in the voice back to rest (the modes and their exciter, the strings), for a strike into a
+  // voice the early cut faded out. The FM voice is left as it is: an oscillator has no rest, its envelope fell and
+  // the strike raises it again with the phase unbroken. So is the limiter: in string + reverb the reverb's share is
+  // passing it.
+  void Rest();
+  // coop 0.11: asleep, and the limiter the reverb's share passes has nothing left either: rendering this voice with
+  // a silent share gives zeros and changes nothing in it.
+  bool at_rest() const { return asleep() && mono_limiter_.at_rest(); }
   static const int32_t kSleepLevel = 1 << 11;      // Q27 peak: ~ -96 dBFS (Test 29: -72 cut tails short)
   static const int32_t kSilentBlocksToSleep = 8;   // RenderMono calls (~12 ms)
+  static const int32_t kQuietLevel = 1 << 14;      // Q27 peak: 4 LSB of the 16-bit output, -78 dBFS
+  static const int32_t kQuietRendersToSleep = 6890;   // RenderMono calls: 10 s
   // Modal model: keep the resonator's coefficients this render even if the
   // parameters move (a strike always updates them); see
   // op1/coefficient_budget.h.
@@ -174,6 +254,11 @@ class RingsVoice {
   // up to ~70 KB.
   void CopyFrom(const RingsVoice& other);
 
+  // coop 0.14: the string models' strings come from a pool (src/string_voice.h StringPool); a silent voice gives
+  // them back (rings.cc ReclaimStrings).
+  void ReleaseStrings() { string_voice_.ReleaseStrings(); }
+  bool holds(const StringVoice* strings) const { return strings == &string_voice_; }
+
   // phase_increment: size values (f / fs * 2^32); out, aux: size Q27 samples
   // (after the limiter, ~[-1, 1]). size must be a multiple of
   // kControlBlockSize.
@@ -200,6 +285,7 @@ class RingsVoice {
   // A whole control block (string models run at the control rate).
   void RenderStringBlock(uint32_t phase_increment, const VoicePatch& patch,
                          int32_t* out, int32_t* send);
+  void EarlyFade(const int32_t* x, int32_t* to, size_t n);   // coop 0.13: the early cut's fade (op1_voice.cc)
 
   ResonatorModel model_;
   int32_t polyphony_;
@@ -213,6 +299,10 @@ class RingsVoice {
   int32_t cutoff_brightness_;
   FFloat cutoff_fc_;
   int32_t silent_blocks_;               // consecutive renders below the sleep level
+  int32_t quiet_renders_;               // consecutive renders below the quiet level, up to kQuietRendersToSleep
+  int32_t early_quiet_;                 // consecutive renders below the early level, up to kEarlyHoldRenders
+  int32_t early_gain_;                  // the early cut's fade, Q30: kEarlyFull (no fade) down to 0 (asleep)
+  bool early_fading_;                   // this render fades (RenderMono's, for RenderStringBlock)
   ModalResonator resonator_;
   FmVoiceFixed fm_voice_;
   ExcitationFilter excitation_filter_;

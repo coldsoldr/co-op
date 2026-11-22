@@ -182,6 +182,30 @@ void Play(Source s, int blocks, bool knobs_move) {
   }
 }
 
+// Every turn and word moving a little every block (0.3: the plugin keeps each turn's value until its word moves).
+void PlayMoving(Source s, int blocks) {
+  int16_t l[kBlock], r[kBlock];
+  for (int b = 0; b < blocks; ++b) {
+    for (int k = 0; k < 8; ++k) {
+      if (k == 4) continue;
+      const int32_t lo = k < 4 ? kLo[k] : 0, hi = k < 4 ? kHi[k] : 32767;
+      int32_t v = params[k] + RandRange(3, 120) * ((Rand() & 1) ? 1 : -1);
+      if (v < lo) v = lo + 150;
+      if (v > hi) v = hi - 150;
+      params[k] = static_cast<int16_t>(v);
+    }
+    if ((Rand() % 61) == 0) params[RandRange(0, 3)] = static_cast<int16_t>(RandRange(-32768, 32767));   // a jump, anywhere
+    MakeInput(s, l, r, b);
+    Clock() += 30000;
+    FxRender(l, r, params);
+#if !defined(HALL_REF) && defined(__bfin__)
+    sum_cost += last_cost; ++n_cost; if (last_cost > max_cost) max_cost = last_cost;
+#endif
+    std::fwrite(l, sizeof l, 1, out);
+    std::fwrite(r, sizeof r, 1, out);
+  }
+}
+
 void Scenario(const char* name) {
 #if !defined(HALL_REF) && defined(__bfin__)
   if (n_cost) std::printf("  cycles a block avg %u max %u over %u blocks\n", static_cast<unsigned>(sum_cost / n_cost),
@@ -237,6 +261,11 @@ int main(int argc, char** argv) {
   }
   Scenario("mono noise (L == R), all knobs moving");
   Play(MONO_NOISE, 800, true);
+  Scenario("noise, then a saw: every turn and word moving every block, jumps between");
+  PlayMoving(NOISE, 400);
+  PlayMoving(SAW, 400);
+  Scenario("the same turns held (the steady block)");
+  Play(SAW, 300, false);
   Scenario("end");
   std::fclose(out);
 #ifndef HALL_REF

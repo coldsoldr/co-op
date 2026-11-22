@@ -186,6 +186,10 @@ class HallReverb {
   // left side, cheaper). Wet at the input's scale, saturated.
   void Process(const int16_t* in_l, const int16_t* in_r, int16_t* wet_l, int16_t* wet_r,
                int32_t n, const HallParams& p);
+  // coop 0.3, the idle path (cs_hall.cc): a call's control alone. The smoothers, the size crossfade's count and the
+  // two LFOs move as in Process (the modulation keeps its phase); the tank, the pre-delay ring, their pointers and
+  // the dither's generator stay as they are.
+  void Idle(const HallParams& p, int32_t n) { control_.Update(p, n, &coefs_); }
 
   // Tests.
   void set_use_asm(bool use_asm) { use_asm_ = use_asm; }

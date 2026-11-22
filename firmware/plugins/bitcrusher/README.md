@@ -105,6 +105,7 @@ The render's only addition is the meter (a peak over the block's 128 samples bef
 block [I]); the audio is bit-identical (host test below).
 
 ## Memory, L1, cost
+- **0.4 (2026-11-22, `docs/efficiency-audit.md` finding 14):** the same code, repacked: `tools/plugin/pack.py` now compiles every function into its own section and drops what nothing reaches (op1/support.cc's unused `memcpy`, `memmove`, `memset`). File 13,076 -> 12,796 bytes, `.text` 3,224 -> 2,944; `.rodata` 744, imports and the audio unchanged (`tools/plugin/same_code.py`: every function and object that is left is the same bytes with the same targets). The cost figures below stand.
 - **e9 (2026-11-11, 0.2, the screen):** file 12,292 bytes (SVG 6,995), `.text` 2,728, `.rodata` 744, `.bss` 168 (the
   screen's node tables); load 3,640 bytes once (+2,164 over e8); the state 20 bytes (the crusher's 16 and the level
   word: `"scratch": 32` unchanged). The SVG parses to 15,744 bytes of the stock TE heap (op1emu `fscr_te`), not heap 0.
@@ -125,6 +126,12 @@ block [I]); the audio is bit-identical (host test below).
     below): **5,259 cycles a block on average, 6,733 at most** [C simulator]. The four range divisions, the gain's two
     and one 64-bit multiply run once a block; the loop is a hardware loop (LSETUP) with no calls, the hold (rare at
     low rates) out of line.
+  - **0.3 (2026-11-20, `docs/efficiency-audit.md` finding 8):** what the control words give the loop is kept per
+    slot (`.bss`, 44 bytes a slot, cleared by `init`) and redone only for a word that moved: the four turns, the
+    gain's two divides, and the steps rate and bits give (`Crush::StepsOf`: a divide and the 64-bit multiply and
+    shifts). Seven divides a block before, none in a steady block. The test moves each word in about three blocks of
+    ten, so its figure is between the two: **5,426 avg, 8,020 max** over the same 4,000 blocks (0.2: 6,507 / 8,182).
+    Bit-identical to te-op1-cfw (both runs below). File 13,076 bytes, `.text` 3,224, `.bss` 388; imports unchanged.
   - Optimisation: none needed at this cost. If the device says otherwise: run the hold's gain as a 16 x 16 multiply,
     replace the per-block divisions by reciprocal multiplies, and fuse the two channels' mix in the dual MAC
     (rule 7). A mono path for L == R is not worth its code at ~2.6 k a channel.

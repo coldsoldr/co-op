@@ -13,7 +13,7 @@ in the list: it is not rings'. NM: bfin-elf-nm. Stdlib only, Python 3.8.
 """
 import bisect, collections, re, subprocess, sys
 
-DRIVER = re.compile(r'^_(main|_malloc_r|_free_r|memchr|strlen|_fflush_r|_?_?sfvwrite|_?_?swrite|RingsBlockMarker|_?coop_l1|_?Z.*Drive(NoteOn|Render)|.*printf|.*fwrite|.*fopen|.*fclose|.*snprintf|.*atoi|.*getenv|.*exit|_?_?start)')
+DRIVER = re.compile(r'^_(main|memmove|_?_write|_?_write_r|_malloc_r|_free_r|memchr|strlen|_fflush_r|_?_?sfvwrite|_?_?swrite|RingsBlockMarker|_?coop_l1|_?Z.*Drive(NoteOn|Render)|.*printf|.*fwrite|.*fopen|.*fclose|.*snprintf|.*atoi|.*getenv|.*exit|_?_?start)')
 
 
 def symbols(nm, elf):
@@ -56,10 +56,36 @@ def main():
     note_blocks = 0                              # blocks with a note on (NoteOn ran)
     quiet = []                                   # per_block of the blocks without one
     cache = {}
+    # rings 0.14: each render on its own, from the engine's render entry to the next render, note on or block: the
+    # renders that run the voice (40 lines or more) and the rest (silent, asleep)
+    render_entry = set(s[0] for s in syms if '::Render(int, void*, short*' in s[2])
+    noteon_entry = set(s[0] for s in syms if '::NoteOn(int, void*, long, short const*' in s[2])
+    starts_r = render_entry | noteon_entry
+    rlines = None
+    rfunc = collections.defaultdict(set)
+    full, light, rfunc_sum = [], [], collections.Counter()
+    full_union = set()
+
+    def end_render(rlines, rfunc):
+        if rlines is None:
+            return
+        if len(rlines) >= 40:
+            full.append(len(rlines))
+            full_union.update(rlines)
+            for n, ls in rfunc.items():
+                rfunc_sum[n] += len(ls)
+        else:
+            light.append(len(rlines))
+
     for text in sys.stdin:
         if not text.startswith('insn:'):
             continue
         pc = int(text.split()[1], 16)
+        if pc == marker or pc in starts_r:
+            if first <= block < last:
+                end_render(rlines, rfunc)
+            rlines = set() if pc in render_entry and first <= block < last else None
+            rfunc = collections.defaultdict(set)
         if pc == marker:
             if first <= block < last:
                 per_block.append(len(lines))
@@ -84,6 +110,9 @@ def main():
         if not name:
             continue
         ln = pc >> 5
+        if rlines is not None:
+            rlines.add(ln)
+            rfunc[name].add(ln)
         lines.add(ln)
         union.add(ln)
         func_lines[name].add(ln)
@@ -99,6 +128,14 @@ def main():
     if quiet:
         print('blocks without a note on: %d of %d, rings code a block %.0f lines (%.1f KB) avg'
               % (len(quiet), len(per_block), sum(quiet) / len(quiet), 32 * sum(quiet) / len(quiet) / 1024))
+    if full:
+        print('renders that run the voice: %d, rings code a render %.0f lines (%.1f KB) avg, %d max, union %.1f KB;'
+              ' the others: %d, %.0f lines avg'
+              % (len(full), sum(full) / len(full), 32 * sum(full) / len(full) / 1024, max(full),
+                 32 * len(full_union) / 1024, len(light), sum(light) / len(light) if light else 0))
+        print('  B/render  function (renders that run the voice)')
+        for name, c in rfunc_sum.most_common(30):
+            print('  %8.0f  %s' % (32 * c / len(full), name[:100]))
     print('  union B  B/block  function')
     n = len(per_block)
     for name, ls in sorted(func_lines.items(), key=lambda kv: -func_sum[kv[0]])[:25]:

@@ -159,11 +159,32 @@ export interface PluginBuild extends Omit<PluginBuildManifest, 'savedName'> {
   /** Author and version from a .knl or .coop extension table, when it has them. */
   headerAuthor?: string;
   headerVersion?: string;
+  /** A .coop file's share of the coop firmware's plugin memory, from its header (web/src/core/plugins/memory.ts). */
+  memory?: CoopMemory;
+}
+
+/**
+ * The facts of a .coop file that decide what it takes of the coop firmware's plugin memory at boot
+ * (firmware/core/sdram/plugin_host.cc). The cores count them by two rules (heap blocks on e7..e11, arena blocks from
+ * e12), so the index carries the facts and web/src/core/plugins/memory.ts does the sums.
+ */
+export interface CoopMemory {
+  kind: 'fx' | 'synth';
+  /** The image as loaded, before any rounding: bss_offset + bss_size + 3 + 12 bytes for each import. */
+  cap: number;
+  /** A scratch effect's position buffer, rounded up to 32 bytes; 0 for an engine or an old-model effect (which is relocated five times). */
+  scratch: number;
+  /** An engine's state for one voice, rounded up to 32 bytes; 0 for an effect. */
+  voice: number;
+  /** The file ships a screen the core builds a screen object for. */
+  screen: boolean;
+  /** The file declares controls (a non-empty extension 6); e12 counts their table. */
+  controls: boolean;
 }
 
 /** The index entry fields that belong to one build. */
 const BUILD_KEYS = [
-  'firmware', 'file', 'link', 'fileUrl', 'version', 'requires', 'source', 'savedName', 'sizeBytes', 'sha256', 'headerAuthor', 'headerVersion',
+  'firmware', 'file', 'link', 'fileUrl', 'version', 'requires', 'source', 'savedName', 'sizeBytes', 'sha256', 'headerAuthor', 'headerVersion', 'memory',
 ] as const satisfies readonly (keyof PluginBuild)[];
 
 export interface PluginIndexEntry
@@ -982,7 +1003,7 @@ export async function validatePluginFiles(
  */
 export function pluginIndexEntry(
   manifest: PluginManifest,
-  file: { sizeBytes: number; sha256: string } | null,
+  file: { sizeBytes: number; sha256: string; memory?: CoopMemory } | null,
   info: PluginFileInfo,
 ): PluginIndexEntry {
   const { format: _format, savedName: ownSavedName, builds: _builds, ...fields } = manifest;
@@ -1005,6 +1026,7 @@ export function pluginIndexEntry(
     ...(savedName === undefined ? {} : { savedName }),
     ...(info.author === undefined ? {} : { headerAuthor: info.author }),
     ...(info.version === undefined ? {} : { headerVersion: info.version }),
+    ...(file?.memory === undefined ? {} : { memory: file.memory }),
   };
 }
 
@@ -1015,7 +1037,7 @@ export function pluginIndexEntry(
  */
 export function pluginIndexEntryOfBuilds(
   manifest: PluginManifest,
-  files: readonly ({ sizeBytes: number; sha256: string; info: PluginFileInfo } | null)[],
+  files: readonly ({ sizeBytes: number; sha256: string; info: PluginFileInfo; memory?: CoopMemory } | null)[],
 ): PluginIndexEntry {
   const entries = manifestBuilds(manifest).map((build, i) => {
     const file = files[i];

@@ -22,6 +22,8 @@ const inventoryOf = (...records: string[]): string => [HEADER, ...records].join(
 const WRITES = [2, 3, 4, 5, 6, 9, 10, 11];
 const writesOf = (page: Page): Promise<number[]> =>
   page.evaluate((writes) => window.op1Stub.commands.filter((c) => writes.includes(c)), WRITES);
+/** The OP-1's ports the page holds open now. */
+const openPorts = (page: Page): Promise<string[]> => page.evaluate(() => window.op1Stub.openPorts);
 
 async function openInstall(page: Page) {
   await page.goto('./');
@@ -85,9 +87,13 @@ test('installs a seed plugin over USB: confirm, progress, T1, restart and the ch
   await page.evaluate(() => window.op1Stub.release());
 
   await expect(dialog.getByRole('status')).toContainText('Press T1 on the OP-1 to install and restart, or T2 to cancel.');
+  // The install holds both ports while it runs.
+  expect((await openPorts(page)).sort()).toEqual(['in', 'out']);
   await page.evaluate(() => window.op1Stub.press('T1'));
 
   await expect(dialog.locator('[data-state="loaded"]')).toHaveText('ensemble is installed and loaded.');
+  // And none once it is done, so other programs can use the OP-1.
+  expect(await openPorts(page)).toEqual([]);
   const installed = await page.evaluate(() => window.op1Stub.installed);
   expect(installed.map((f) => f.path)).toEqual(['plugins/ensemble.knl']);
   expect(Buffer.from(installed[0]?.bytes ?? []).equals(ensemble)).toBe(true);
@@ -120,6 +126,7 @@ test('reports T2 on the OP-1 as cancelled', async ({ page }) => {
   await page.evaluate(() => window.op1Stub.press('T2'));
   await expect(dialog.getByRole('status')).toHaveText('Cancelled on the OP-1 (T2). Nothing was installed.');
   expect(await page.evaluate(() => window.op1Stub.installed)).toEqual([]);
+  expect(await openPorts(page)).toEqual([]);
 });
 
 test('stays open while the OP-1 shows its prompt: the answer is T1 or T2 there', async ({ page }) => {

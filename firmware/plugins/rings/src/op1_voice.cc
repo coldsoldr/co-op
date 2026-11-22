@@ -87,6 +87,18 @@ constexpr LimiterGains kFmGains = { 187904819, 601295421, FFloat::Raw(1202590842
 constexpr LimiterGains kStringGains = kModalGains;
 constexpr LimiterGains kSympatheticGains = { 268435456, 858993459, FFloat::Raw(1717986918, -31) /* FFloat(0.8) */ };
 
+#if OP1RINGS_EARLY
+// coop 0.13, the early cut (src/op1_voice.h): kEarlyLevel as the voice's own peak, before the limiter's gain
+// (level / the model's gain below the limiter's threshold).
+constexpr int32_t EarlyOwnLevel(int32_t out_q30) {
+  return static_cast<int32_t>((static_cast<int64_t>(RingsVoice::kEarlyLevel) << 30) / out_q30);
+}
+constexpr int32_t kEarlyOwnModal = EarlyOwnLevel(1202590843);         // modal and the string: / 1.12
+constexpr int32_t kEarlyOwnFm = EarlyOwnLevel(601295421);             // / 0.56
+constexpr int32_t kEarlyOwnSympathetic = EarlyOwnLevel(858993459);    // / 0.8
+
+#endif
+
 const LimiterGains& ModelGains(ResonatorModel model) {
   switch (model) {
     case MODEL_FM_VOICE: return kFmGains;
@@ -246,14 +258,22 @@ void MonoLimiter::Process(int32_t* x, size_t size, const LimiterGains& gains) {
 #else
   MonoLimiterLoopC(x, static_cast<int32_t>(size), &peak_, gain_, gains.pre_q28);
 #endif
-  const int32_t peak = peak_;
-  // Gain for the next sub-block: pre-gain * 0.8 / max(peak, 1). Once per
-  // sub-block, so FFloat's self-seeding reciprocal is affordable.
-  if (peak <= (1 << 27)) {
-    gain_ = gains.out_q30;
-  } else {
-    gain_ = (gains.out * FFloat::Reciprocal(FFloat::FromQ(peak, 27))).ToQ(30);
-  }
+  UpdateGain(gains);
+}
+
+#if OP1RINGS_LIMIT_PEAK_ASM
+int32_t MonoLimiter::ProcessPeak(int32_t* x, size_t size, const LimiterGains& gains, const int32_t* wet,
+                                 int32_t peak_in) {
+  const int32_t peak = MonoLimiterPeakAsm(x, static_cast<int32_t>(size), &peak_, gain_, gains.pre_q28, wet, peak_in);
+  UpdateGain(gains);
+  return peak;
+}
+#endif
+
+// Gain for the next sub-block: pre-gain * 0.8 / max(peak, 1). Once per sub-block, so FFloat's self-seeding reciprocal
+// is affordable; 0.14: out of line, as a voice only above full scale needs it (the code a render runs, smaller).
+__attribute__((noinline)) int32_t MonoLimiter::LoudGain(const LimiterGains& gains, int32_t peak) {
+  return (gains.out * FFloat::Reciprocal(FFloat::FromQ(peak, 27))).ToQ(30);
 }
 
 // --- SharedReverb ---------------------------------------------------------
@@ -290,6 +310,10 @@ void RingsVoice::Init(int32_t resolution) {
   coefficient_hold_ = false;
   cutoff_valid_ = false;
   silent_blocks_ = 0;
+  quiet_renders_ = 0;
+  early_quiet_ = 0;
+  early_gain_ = kEarlyFull;
+  early_fading_ = false;
   resonator_.Init();
   resonator_.set_resolution(resolution);
   fm_voice_.Init();
@@ -299,11 +323,42 @@ void RingsVoice::Init(int32_t resolution) {
   string_voice_.Init();
 }
 
+void RingsVoice::Rest() {
+  resonator_.Rest();
+  excitation_filter_.Rest();
+  string_voice_.Init();   // the strings are cleared by the next Configure, as after a reset (src/string_voice.h)
+  early_quiet_ = 0;
+  early_gain_ = kEarlyFull;
+}
+
+#if OP1RINGS_EARLY
+// The early cut's fade over n samples of x, from the gain the voice has: it moves by a step a sample, down to 0 while
+// the hold is over, else back up to full. to == x: the voice's own output, faded in place, and the voice's gain moves
+// on; else x's faded samples are added to `to` (the send to the reverb) and the gain stays, for the dry part's turn.
+// Out of line: a render that does not fade (nearly all of them) pays one test for it.
+__attribute__((noinline)) void RingsVoice::EarlyFade(const int32_t* x, int32_t* to, size_t n) {
+  const int32_t step = early_quiet_ >= kEarlyHoldRenders ? -kEarlyFadeStep : kEarlyFadeStep * kEarlyFadeInSpeed;
+  int32_t gain = early_gain_;
+  const bool in_place = to == x;
+  for (size_t i = 0; i < n; ++i) {
+    gain += step;
+    if (gain < 0) gain = 0;
+    if (gain > kEarlyFull) gain = kEarlyFull;
+    const int32_t y = MulQ31Fast(x[i], gain) << 1;
+    to[i] = in_place ? y : to[i] + y;
+  }
+  if (in_place) early_gain_ = gain;
+}
+#endif
+
 void RingsVoice::CopyFrom(const RingsVoice& other) {
   model_ = other.model_;
   polyphony_ = other.polyphony_;
   strum_ = other.strum_;
   silent_blocks_ = other.silent_blocks_;
+  quiet_renders_ = other.quiet_renders_;
+  early_quiet_ = other.early_quiet_;
+  early_gain_ = other.early_gain_;
   cutoff_valid_ = other.cutoff_valid_;
   cutoff_f0_ = other.cutoff_f0_;
   cutoff_brightness_ = other.cutoff_brightness_;
@@ -453,6 +508,12 @@ void RingsVoice::RenderStringBlock(uint32_t phase_increment,
   if (model_ == MODEL_STRING_AND_REVERB) {
     // The dry part of upstream's mix, dry (1 - amount); the shared reverb
     // plays the rest.
+#if OP1RINGS_EARLY
+    if (send && early_fading_) {
+      // 0.13: the early cut's fade, on what the string sends to the reverb (RenderMono fades the dry part alike).
+      EarlyFade(out, send, kControlBlockSize);
+    } else
+#endif
     if (send) {
       for (size_t i = 0; i < kControlBlockSize; ++i) send[i] += out[i];
     }
@@ -460,6 +521,14 @@ void RingsVoice::RenderStringBlock(uint32_t phase_increment,
     for (size_t i = 0; i < kControlBlockSize; ++i) out[i] -= MulQ31Fast(out[i], amount);
   }
 }
+
+#ifdef COOP_IDLE_PROBE
+extern "C" { extern int32_t g_coop_voice_peak; }   // tests/host/rings rings_sleep.cc: the last render's own peak, Q27
+#endif
+#ifdef COOP_EARLY_PROBE
+extern "C" { extern int32_t g_coop_voice_gain; }   // rings_early.cc: after the render, the early cut's gain (Q30); 0 asleep
+extern "C" { extern int32_t g_coop_voice_own[]; }  // the render's own output (Q27, the Rings rate), before fade, share, limiter
+#endif
 
 void RingsVoice::RenderMono(const uint32_t* phase_increment,
                             const VoicePatch& patch, int32_t* out, size_t size, int32_t* send,
@@ -470,6 +539,9 @@ void RingsVoice::RenderMono(const uint32_t* phase_increment,
   const bool asleep = this->asleep();
   if (asleep && !wet) {
     for (size_t i = 0; i < size; ++i) out[i] = 0;
+#ifdef COOP_EARLY_PROBE
+    g_coop_voice_gain = 0;
+#endif
     return;
   }
   const LimiterGains& gains = ModelGains(model_);
@@ -477,6 +549,11 @@ void RingsVoice::RenderMono(const uint32_t* phase_increment,
                        model_ == MODEL_SYMPATHETIC_STRING_QUANTIZED ||
                        model_ == MODEL_STRING_AND_REVERB;
   int32_t peak = 0;
+#if OP1RINGS_EARLY
+  // 0.13, the early cut: the gain goes down while the hold is over, else back up to full; at full with the hold not
+  // over (every render but a fade's) nothing more is done for it in the loop below.
+  early_fading_ = !asleep && (early_quiet_ >= kEarlyHoldRenders || early_gain_ != kEarlyFull);
+#endif
   for (size_t i = 0; i < size; i += kControlBlockSize) {
     if (asleep) {
       for (size_t k = 0; k < kControlBlockSize; ++k) out[i + k] = 0;
@@ -496,9 +573,28 @@ void RingsVoice::RenderMono(const uint32_t* phase_increment,
         // Both outputs summed by the mode bank itself (out == aux).
         RenderSubblock(phase_increment[i], patch, o, o);
       }
+#if OP1RINGS_LIMIT_PEAK_ASM
+      // 0.14: the peak, the reverb's share and the limiter in one call (src/limiter_bfin.S MonoLimiterPeakAsm), the
+      // same samples as the steps below, which a fading render (the early cut's) still takes.
+#if OP1RINGS_EARLY
+      if (!early_fading_)
+#endif
+      {
+        PROF_START(t_lim);
+        peak = mono_limiter_.ProcessPeak(o, kSubblockSize, gains, wet ? wet + i + j : nullptr, peak);
+        PROF_ADD(PROF_LIMITER, t_lim);
+        continue;
+      }
+#endif
       PROF_START(t_peak);
       peak = PeakOf(o, kSubblockSize, peak);
       PROF_ADD(PROF_PEAK, t_peak);
+#ifdef COOP_EARLY_PROBE
+      for (size_t k = 0; k < kSubblockSize; ++k) g_coop_voice_own[i + j + k] = o[k];
+#endif
+#if OP1RINGS_EARLY
+      if (early_fading_) EarlyFade(o, o, kSubblockSize);   // after the peak: the level is the model's
+#endif
       // The voice's silence is its own: the shared reverb's share comes
       // after the peak.
       if (wet) {
@@ -510,6 +606,32 @@ void RingsVoice::RenderMono(const uint32_t* phase_increment,
     }
   }
   silent_blocks_ = peak < kSleepLevel ? silent_blocks_ + 1 : 0;
+  if (peak >= kQuietLevel) {
+    quiet_renders_ = 0;
+  } else if (quiet_renders_ < kQuietRendersToSleep) {
+    ++quiet_renders_;
+  }
+#if OP1RINGS_EARLY
+  if (!asleep) {
+    int32_t level = kEarlyOwnModal;
+    if (model_ == MODEL_FM_VOICE) {
+      level = kEarlyOwnFm;
+    } else if (model_ == MODEL_SYMPATHETIC_STRING || model_ == MODEL_SYMPATHETIC_STRING_QUANTIZED) {
+      level = kEarlyOwnSympathetic;
+    }
+    if (peak >= level) {
+      early_quiet_ = 0;
+    } else if (early_quiet_ < kEarlyHoldRenders) {
+      ++early_quiet_;
+    }
+  }
+#endif
+#ifdef COOP_IDLE_PROBE
+  g_coop_voice_peak = peak;
+#endif
+#ifdef COOP_EARLY_PROBE
+  g_coop_voice_gain = this->asleep() ? 0 : early_gain_;
+#endif
 }
 
 }  // namespace op1rings

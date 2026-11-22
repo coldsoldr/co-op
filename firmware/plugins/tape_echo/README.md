@@ -148,6 +148,16 @@ positions and the head fills against the SVG are the gate's to confirm.
   pairs, every head read serving both channels, so stereo costs about 1.56x the mono path rather than 2x (te-op1-cfw
   simulator: 9.2 MHz stereo, 5.9 MHz mono, whole effect). coop runs it at every position (synth, drum, master and both
   FX 2 slots): the instrument positions now hear the echo in stereo, and each position is a full stereo instance.
+- **0.6 (2026-11-22, `docs/efficiency-audit.md` findings 14 and 15):** the half-band decimator and interpolator are the five half-band plugins' one kernel file, `../shared/halfband_bfin.S`, rewritten (two outputs a pass, one in each MAC, the taps from a circular stream, the loads in the parallel slots): 926 -> 313 cycles a call in the simulator (`make -C tests/host/halfband`, bit for bit against the C over random and edge input), four calls a block. Simulator **12,802 avg / 14,160 max** over the scenario's 3,000 blocks at 133.5 BPM (0.5: 15,259 / 16,650): 2,457 less a block. Bit for bit 0.5's output (`make -C tests/host/tape_echo` and `sim`, te-op1-cfw's DSP; `../idle`). And the packer drops what nothing reaches (`tools/plugin/pack.py` section GC, audit finding 14). File 25,636 bytes (0.5: 25,444; the kernel's code and its 92 bytes of tap pairs over the old copy's, less the dead `TapeEchoSaturate`), `.text` 10,240 (10,164), `.rodata` 3,668 (3,576), `.bss` 441 (444).
+- **0.4 (2026-11-20, no divide in a steady block; `docs/efficiency-audit.md` finding 8):** the four turns, the gain
+  and the sync division's time word are kept per slot and redone only for a word (or a tempo) that moved. Before, a
+  block made six `___divsi3` calls for them (seven and a table walk with sync on, ~190 cycles each); a steady block
+  now makes none. Simulator **15,039 avg / 16,018 max** over the same 3,000 blocks at 133.5 BPM (0.3 on that
+  scenario: 16,079 / 16,833): 1,040 less a block. The same values reach the DSP, so the output is bit for bit 0.3's:
+  `make -C tests/host/tape_echo` (te-op1-cfw's DSP, five tempo runs of 20,000 blocks, now with stretches where every
+  turn and the gain move every block) and `sim`. With this change alone: file 24,508 bytes, `.text` 9,348, `.rodata`
+  3,576, `.bss` 404 (+220: 44 bytes a slot, cleared by `init`). 0.4 also has the idle path ("Idle" below, with the
+  file as it ships and its figures).
 - **0.3 (2026-11-11, the tempo export):** file 23,892 bytes, `.text` 9,060, `.rodata` 3,560, `.bss` 184 (8 more: the
   tempo the render last saw and its 96th, so the 16-step division runs only when the tempo moves); one import more,
   `_coop_tempo_bpm_q16`. Simulator 16,090 avg / 16,844 max at 120 BPM (+41 over e9's 16,049: the export call and the
@@ -169,6 +179,7 @@ positions and the head fills against the SVG are the gate's to confirm.
   |---|---|
   | kennel stereo, te-op1-cfw simulator (9.2 MHz / 689 blocks a second) | 13,350 |
   | coop, GNU simulator, `make -C tests/host/tape_echo sim` (compute only, the scenario's 3,000 blocks) | 16,049 avg / 16,804 max (e9; e8 15,987 / 16,746 on the same build, so the display words cost ~60 a block) |
+  | **0.6**, GNU simulator, the same (133.5 BPM; 0.5 on it: 15,259 / 16,650) | **12,802 avg / 14,160 max** (the shared half-band kernel) |
   | coop, op1emu (`fx1_plugin=`, `s2_instr=`, `s2_master=`) | 0.3 at synth FX 1, sync 1/4 at 95 and 145 BPM: `fx1_plugin=17197/19074` (`docs/device-tests.md` "tape_echo 0.3"; 0.1: 16,778-16,821 avg) |
   | **coop, device** | **pending** |
 
@@ -182,6 +193,101 @@ positions and the head fills against the SVG are the gate's to confirm.
   `[P5 + ...]` some 20 times a sample); fuse the int16 -> Q31 output into the mix kernel; an L1 home for the kernel
   block and the soft-limit table once effects get a lease. The mono kernel for L == R is not an option: it records
   only the left half of the tape, and the right half would be stale when width returns.
+
+## The tail settles (0.5)
+
+**What changed in the sound.** Until 0.4 an echo with the feedback up never quite ended: its last, very quiet
+repeats went round for ever (the owner's decision, 2026-11-21: cut them). In 0.5 every echo below the self-oscillation
+region fades fully out, to digital silence. The repeats one hears are the same; only the last of the tail, from about
+50 dB under full scale down, is shorter.
+
+- **Why it was there.** The loop rounds to the nearest LSB at each of its stages (the heads' interpolation, their
+  sum, the loss filter's step). With feedback g, a repeat under about 1 / (2 (1 - g)) LSB a stage comes back
+  unchanged: 0.4 held 4 LSB of the 16-bit output at feedback 0.6 on a new tape, 11 at 0.87, 27 at 0.95, 41-47 at 0.97,
+  for good (less or nothing on a worn tape, whose loss filter eats it). It also kept such an echo from ever idling.
+- **The fix** (`src/tape_echo_core.cc` `SettleTail`, called from the render after the echo on every block whose
+  input is exact silence): a block of tape written wholly within 127 (-48 dBFS on the tape) is taken one LSB towards
+  zero, sample by sample. Louder blocks are written as they were, and nothing at all changes while anything is
+  coming in. Tried and not kept: a step on every silent block whatever its level (it shortened high-feedback tails
+  from -30 dBFS down) and a level of 31 (feedback 0.97 on a new tape still held).
+- **Against 0.4** (`make -C tests/host/tape_echo tail`: the plugin at two positions in lockstep, one with 0.4's tail
+  kept, 600 s of silence after two notes, full wet; 53 settings: feedback 0.6 / 0.87 / 0.95 / 0.97 x age 0 / 8,000 /
+  32,767 x four times, the defaults, sync 1/16T, 1/4 and 1/2). No difference while the input plays. Then:
+
+| Setting | largest difference in the first 3 s | largest in the whole tail (0.4's level there) | RMS of the difference over the tail | 0.5 exact zero / idle after the input | what 0.4 still gave after 10 minutes |
+|---|---|---|---|---|---|
+| defaults | 4 LSB | 4 LSB (32) | 0.04 LSB | 2.6 s / 3.9 s | 0 |
+| longest time, feedback 0.6, age 0 | 2 | 8 (281) | 1.0 | 25.2 s / 25.2 s | 4 LSB |
+| longest time, feedback 0.6, age 8,000 | 4 | 6 (63) | 0.3 | 19.4 s / 20.3 s | 0 |
+| longest time, feedback 0.87, age 0 | 4 | 19 (29) | 4.4 | 59.3 s / 59.3 s | 11 LSB |
+| longest time, feedback 0.87, age 8,000 | 0 | 14 (23) | 0.9 | 45.3 s / 45.8 s | 0 |
+| longest time, feedback 0.95, age 0 | 0 | 52 (65) | 10.7 | 106.7 s / 107.3 s | 27 LSB |
+| longest time, feedback 0.95, age 8,000 | 0 | 21 (21) | 1.7 | 81.8 s / 83.3 s | 0 |
+| longest time, feedback 0.97, age 0 | 0 | 75 (75) | 11.9 | 165.8 s / 165.8 s | 41 LSB |
+| longest time, feedback 0.97, age 8,000 | 4 | 35 (39) | 3.3 | 238.2 s / 238.2 s | 0 (19 LSB at 5 minutes) |
+| shortest time, feedback 0.97, age 0 | 81 | 81 (83) | 27.6 | 2.9 s / 4.4 s | 47 LSB |
+| sync 1/4, feedback 0.95, age 8,000 | 0 | 23 (23) | 1.4 | 37.7 s / 39.0 s | 0 |
+| sync 1/16T, feedback 0.87, age 0 | 22 | 22 (29) | 5.6 | 2.4 s / 3.9 s | 9 LSB |
+| sync 1/2, feedback 0.87, age 0 | 0 | 23 (23) | 4.5 | 33.3 s / 33.8 s | 11 LSB |
+
+  (16-bit output LSB.) The largest differences sit where 0.4's echo is itself under about 100 LSB (-50 dBFS): that is
+  the ghost going, and the difference can be as large as the ghost was. At the short times a tail has many repeats
+  in three seconds, so its end comes inside them. Every one of the 53 settings reaches exact zero and the idle state;
+  feedback 1.0 does not (three minutes: still 5,233 LSB, no idle block).
+- **Cost.** A silent block whose echo has not died yet costs 15,328 cycles on average, 16,140 at most (simulator;
+  0.4: 14,774): the tape's new pairs are read, and written back when the block is a quiet one. A playing block is
+  unchanged (14,371), idle 1,382.
+- `tests/host/tape_echo` (the comparison with te-op1-cfw's echo) builds the plugin with `-DCOOP_TAPE_ECHO_GHOST`,
+  which is 0.4's echo sample for sample: bit-identical as before, five tempo runs on the host and the simulator.
+  `tests/host/idle` runs 0.5 as it ships: its former ghost settings now idle (26.3 s and 77.6 s after the input in
+  that test), and the idle state is still exact (0 LSB before, while idle, on the wake and after).
+- File 25,444 bytes, `.text` 10,164, `.bss` 444; imports unchanged (it loads on core e10 as 0.3 does).
+
+## Idle (0.4)
+
+An echo left on a position used to compute its whole block on silence. 0.4 stops when there is nothing left to
+compute (`docs/efficiency-audit.md` finding 6; the code is in `tape_echo.cc`, "The idle path"). **0.5:** the ghost
+this section speaks of is gone ("The tail settles" above), so every echo under the feedback bound now gets here; the
+figures below are 0.4's.
+
+- **When.** The input block is exact silence (every sample's top 16 bits 0), hold is off, the feedback turn is under
+  0.97 (29,000 of 32,767; 1.0 is 29,789), and for 1,047 blocks in a row (1.52 s: the tape once round, 1,038 blocks,
+  and a margin) every pair the echo wrote to the tape was zero. The whole tape is then zeros: whatever the time, the
+  heads or the age are set to next, the echo plays zeros.
+- **Idle.** The render leaves the silent input as it came and runs only the control: the time's glide, the
+  smoothers, the wow and flutter (in phase), the heads' ramps, the mix's smoothing, the screen's words.
+- **Waking.** The check is at the top of the render, before any DSP: the first block with a non-zero sample, hold,
+  or the feedback at 0.97 or over is rendered in full. Nothing is faded and no sample is skipped.
+- **Never idle:** hold; feedback from 0.97 up (self-oscillation); any input; and a tail the loop's own rounding keeps
+  alive. At high feedback on a new tape the echo holds a faint ghost of its last repeats for ever (measured: longest
+  time, feedback 0.87, age 0: 9 LSB of the 16-bit output after three minutes; feedback 0.6, age 8,000: 2 LSB). That
+  is this echo's sound, with or without the idle path: the check never passes on it and such an echo stays awake,
+  at its full cost. Cutting a ghost under some level would be a change to the sound: not done (the owner's call).
+- **What it gives while idle is what the echo would have given: zeros from a tape of zeros.** In the lockstep test
+  the two never differ, awake or idle or after waking (0 LSB in every case below).
+
+| Simulator, cycles a block (`make -C tests/host/idle sim FX=tape_echo`) | 0.4 without the idle path (its divides already out) | 0.4 |
+|---|---|---|
+| playing | 14,305 | 14,371 (the six-sample silence test and the idle state's flags) |
+| silent, not yet idle | 14,295 | 14,774 (the input read through, the tape's new pairs read back) |
+| idle | | **1,382** |
+| the block that wakes | | 14,381 |
+
+`make -C tests/host/idle FX=tape_echo` (the effect at two positions, one with the idle path switched off, every
+sample compared; `tests/host/idle/fx_idle_test.cc`):
+- 20,000 blocks that never go silent (controls walking and jumping, the latches, re-inits) and 20,000 of notes with
+  150 ms gaps: identical, 0 idle blocks.
+- A note, silence, a soft note (40 LSB), a loud one, at four settings: idle 3.9 s after the input at the defaults
+  (the last echo falls under 1 LSB at 2.6 s), 2.0 s (short, worn tape, three heads), 39.4 s (sync 1/4, feedback 0.95),
+  68.3 s (0.6 s, feedback 0.6). Difference before, while idle, on the wake's first block and through both notes: 0 LSB.
+- Hold, feedback at 1.0 and at 1.1: a minute of silence, 0 idle blocks, 0 LSB; engaged while idle: awake on that
+  block, 0 idle blocks after.
+- The ghosts above: three minutes, 0 idle blocks, 0 LSB.
+- Every turn walking and jumping through 1,500 idle blocks, then a note: 0 LSB.
+
+`tests/host/tape_echo` builds the plugin with `-DCOOP_FX_NO_IDLE` (its scenario has silences longer than the hold, and
+it compares with te-op1-cfw's echo sample for sample): bit-identical as before, host and simulator.
+File 25,188 bytes, `.text` 9,908, `.bss` 444; imports unchanged (it loads on core e10 as 0.3 does).
 
 ## Tests
 

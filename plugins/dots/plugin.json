@@ -23,12 +23,12 @@
     {
       "firmware": "op1/op1r",
       "link": "https://pcppcp.github.io/op1r/web/",
-      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/dots.op1p",
-      "sha256": "f18d7c93654da083e53647fea7587d5c683cc85b8b406f5cd2b89eff5328b190",
-      "sizeBytes": 30772,
-      "version": "72",
-      "requires": "op1r 72",
-      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/dots",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/bef688f7c5082a9514077422280657f0e08145aa/data/plugins/dots.op1p",
+      "sha256": "5d729f0123166888185f26bf2bdc4406c811e80017a8d17381b11c13108cb9bc",
+      "sizeBytes": 31656,
+      "version": "73",
+      "requires": "op1r 73",
+      "source": "https://github.com/pcppcp/op1r-src/tree/f73bc17f98ebbcc559741accec9c068a2440be7e/synth_sdk/plugins/dots",
       "savedName": "dots"
     }
   ]

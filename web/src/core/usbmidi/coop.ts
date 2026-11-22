@@ -2,11 +2,14 @@
  * The coop firmware's USB channel (firmware/docs/sysex.md): the same SysEx header and 7-bit framing as kennel's, its
  * own command numbers. Files go straight to the OP-1's internal disk; there is no commit and no restart command, so
  * every change to the plugins takes effect at the next power cycle. Built on the kennel session (one message in
- * flight, replies matched by command and seq, resends), so only the payloads differ.
+ * flight, replies matched by command and seq, resends), so only the payloads differ. The one exception is a file's
+ * PUT_DATA, which goes with a few chunks in flight (COOP_WINDOW).
  */
 import { crc32, readU32le, u32le } from './framing';
 import type { Inventory, InventoryKind, InventoryRecord, InventoryState } from './inventory';
+import type { Reply } from './framing';
 import type { Session } from './session';
+import { parsePlacement, reportFromStats, type DeviceMemoryReport } from '../plugins/memory';
 
 /** coop's status codes (firmware/docs/sysex.md). */
 const COOP_STATUS: Record<number, string> = {
@@ -48,9 +51,20 @@ export const CoopCaps = { FILE_READ: 1, FILE_WRITE: 2, SLOT2: 4, RUN: 8, INVENTO
 export const COOP_PLUGIN_DIR = '/yaffs2/plugins/';
 /** The bytes of one PUT_DATA; the firmware takes up to 72, the host keeps every message under 96 bytes. */
 export const COOP_CHUNK = 64;
+/**
+ * How many messages the core queues between two passes of its main loop (`QN`, firmware/core/sdram/coop_sysex.cc);
+ * one more is dropped without a reply. Every core that writes files (P1b to e11) has this queue.
+ */
+export const COOP_QUEUE = 4;
+/**
+ * The PUT_DATA chunks in flight at once. One under the queue: the slot of the chunk being answered is free only
+ * after its reply has left, so the chunk that reply releases can arrive while that slot still counts.
+ */
+export const COOP_WINDOW = 3;
 
 const STATUS_OK = 0;
 const STATUS_OFFSET = 5;
+const STATUS_IO = 7;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -88,17 +102,48 @@ const BOOT_STATES: Record<string, InventoryState> = { loaded: 'loaded', failed: 
 
 /**
  * The text INVENTORY serves, as an Inventory (inventory.ts): a header `coop-inventory 1<TAB>build ...`, then one line
- * per file: file, kind, name, boot, next, version, author, size, reason. `name` is the plugin id (the file without
- * `.coop`), as kennel's records name plugins.
+ * per file: file, kind, name, boot, next, version, author, size, reason, from e12 need and scratch, from e13 heap.
+ * `name` is the plugin id (the file without `.coop`), as kennel's records name plugins. An e12 header also gives the
+ * plugin memory's budget and what is in use (`memory`), an e13 header both memories' and the placement policy.
  */
 export function parseCoopInventory(text: string): Inventory & { build: string | null } {
   const lines = text.split('\n').filter((l) => l.length > 0);
   const header = lines.shift() ?? '';
   if (!header.startsWith('coop-inventory 1')) throw new Error('not a coop inventory');
-  const build = header.split('\t').find((f) => f.startsWith('build '))?.slice(6) ?? null;
+  // Header fields are found by name; e12 appended budget, used, fxbuf, fxbufs and clip (firmware/docs/sysex.md).
+  const field = (name: string): string | null => header.split('\t').find((f) => f.startsWith(`${name} `))?.slice(name.length + 1) ?? null;
+  const count = (name: string): number | null => (/^\d+$/.test(field(name) ?? '') ? Number(field(name)) : null);
+  const build = field('build');
+  const budget = count('budget');
+  const used = count('used');
+  // e13 added the two budgets and the placement policy; without all four figures there is one budget, as on e12.
+  const [heapBudget, heapUsed, arenaBudget, arenaUsed] = [count('heap_budget'), count('heap_used'), count('arena_budget'), count('arena_used')];
+  const pools =
+    heapBudget !== null && heapUsed !== null && arenaBudget !== null && arenaUsed !== null && arenaBudget > 0
+      ? { heap: { budget: heapBudget, used: heapUsed }, arena: { budget: arenaBudget, used: arenaUsed } }
+      : null;
+  const place = parsePlacement(field('place'));
+  const placeSrc = field('place_src');
+  const memory =
+    budget !== null && budget > 0 && used !== null
+      ? {
+          budget,
+          used,
+          fxbuf: count('fxbuf') ?? 0,
+          fxbufs: count('fxbufs') ?? 0,
+          clip: count('clip'),
+          ...(pools ? { pools } : {}),
+          ...(place ? { place } : {}),
+          ...(placeSrc ? { placeSrc } : {}),
+        }
+      : null;
   const records = lines.map((line): InventoryRecord => {
-    const [file = '', kind = '', , boot = '', next = '', version = '', author = '', size = '', reason = ''] = line.split('\t');
+    // e12 appended need and scratch after the reason, e13 heap after those; before them a row ends at the reason.
+    const [file = '', kind = '', , boot = '', next = '', version = '', author = '', size = '', reason = '', need = '', scratch = '', heap = ''] =
+      line.split('\t');
     return {
+      ...(/^\d+$/.test(need) ? { need: Number(need), scratch: /^\d+$/.test(scratch) ? Number(scratch) : 0 } : {}),
+      ...(/^\d+$/.test(need) && /^\d+$/.test(heap) ? { heap: Number(heap) } : {}),
       kind: KINDS[kind] ?? null,
       name: file.replace(/\.coop$/, ''),
       source: 'coop',
@@ -113,7 +158,7 @@ export function parseCoopInventory(text: string): Inventory & { build: string | 
       enabled: next !== 'off',
     };
   });
-  return { core: null, presets: null, records, build };
+  return { core: null, presets: null, records, build, ...(memory ? { memory } : {}) };
 }
 
 /** Reads the inventory page by page (64 bytes a reply). */
@@ -139,35 +184,154 @@ export async function readCoopInventory(session: Session): Promise<Inventory & {
   return parseCoopInventory(decoder.decode(all));
 }
 
+/** The core's statistics file: rewritten every few seconds, with the `plugmem` line (firmware/docs/plugins.md "e7"). */
+export const COOP_STATS_PATH = '/yaffs2/user/coop_stats.txt';
+/** The most of the statistics file one pass reads (the core writes at most 16 KiB). */
+const STATS_MAX = 32 * 1024;
+/** Where the plugmem line was last found, so the next look starts there instead of at the top of the file. */
+let plugmemHint: number | null = null;
+
+/** What starts at "plugmem " in `text`: the line and its plugfile lines, once the text holds them whole. */
+function plugmemBlock(text: string, atEnd: boolean): { at: number; block: string } | null {
+  const at = text.indexOf('\nplugmem ');
+  if (at < 0) return null;
+  const lines = text.slice(at + 1).split('\n');
+  lines.pop(); // what follows the last newline: an unfinished line, or nothing
+  const stop = lines.findIndex((line, i) => i > 0 && !line.startsWith('plugfile'));
+  if (stop >= 0) return { at: at + 1, block: lines.slice(0, stop).join('\n') };
+  // Every whole line so far belongs to the block, so only the end of the file closes it.
+  return atEnd && lines.length > 0 ? { at: at + 1, block: lines.join('\n') } : null;
+}
+
+/** Reads the statistics file from `from` in 64-byte steps until the plugmem block is whole, or the file ends. */
+async function scanForPlugmem(session: Session, from: number): Promise<{ at: number; report: DeviceMemoryReport } | null> {
+  const path = encoder.encode(COOP_STATS_PATH);
+  let text = '';
+  for (let offset = from; offset - from < STATS_MAX; ) {
+    const payload = new Uint8Array(4 + path.length);
+    payload.set(u32le(offset), 0);
+    payload.set(path, 4);
+    const reply = await session.ask(CoopCommand.FILE_GET, payload);
+    if (reply.status !== STATUS_OK) return null;
+    const total = readU32le(reply.payload);
+    const piece = reply.payload.subarray(4);
+    text += decoder.decode(piece);
+    offset += piece.length;
+    const atEnd = piece.length === 0 || offset >= total;
+    const found = plugmemBlock(text, atEnd);
+    if (found) {
+      const report = reportFromStats(found.block);
+      return report ? { at: from + found.at, report } : null;
+    }
+    if (atEnd) return null;
+  }
+  return null;
+}
+
+/**
+ * The OP-1's own account of its plugin memory: the budget, the bytes the loaded plugins hold and what each refused
+ * file needs, from the `plugmem` line of the statistics file. Null when the core has no such file or line (before
+ * e7) or the device does not serve files.
+ *
+ * The core rewrites the file every few seconds and a read goes 64 bytes a message, so one pass can mix two versions
+ * of the file. The line is therefore read twice, the second time straight from where it was found, and only a
+ * figure both passes agree on is returned.
+ */
+export async function readCoopMemoryReport(session: Session): Promise<DeviceMemoryReport | null> {
+  const near = (at: number): number => Math.max(0, at - 128);
+  let first = plugmemHint === null ? null : await scanForPlugmem(session, near(plugmemHint));
+  first ??= await scanForPlugmem(session, 0);
+  for (let tries = 0; first && tries < 2; tries++) {
+    const again = await scanForPlugmem(session, near(first.at));
+    if (again && JSON.stringify(again.report) === JSON.stringify(first.report)) {
+      plugmemHint = again.at;
+      return again.report;
+    }
+    first = again;
+  }
+  return null;
+}
+
 export interface PutOptions {
-  /** Called after every chunk with the bytes written so far. */
+  /** Called with the bytes the OP-1 has confirmed so far, each time that count grows. */
   onProgress?: (written: number, total: number) => void;
+  /** The chunks in flight at once: COOP_WINDOW unless given, never more than COOP_QUEUE - 1; 1 sends one at a time. */
+  window?: number;
+}
+
+/** One PUT_DATA: the offset, then up to COOP_CHUNK bytes from it. */
+function dataPayload(bytes: Uint8Array, offset: number): Uint8Array {
+  const chunk = bytes.subarray(offset, offset + COOP_CHUNK);
+  const payload = new Uint8Array(4 + chunk.length);
+  payload.set(u32le(offset), 0);
+  payload.set(chunk, 4);
+  return payload;
+}
+
+/** The offset a PUT_DATA reply names: the next byte the OP-1 expects. */
+const nextOffset = (reply: Reply): number => (reply.payload.length >= 4 ? readU32le(reply.payload) : -1);
+
+/**
+ * Sends chunks with up to `window` unanswered and returns the count the OP-1 confirmed when the run ended: all of
+ * the file, or less after anything but a plain ok (a reply that did not come in time, a chunk the OP-1 did not take),
+ * which the caller then sends one at a time. The OP-1 writes a chunk only at the offset it expects, so an ok that
+ * names the end of a chunk confirms every byte before it, also those whose own reply was lost. A write error closes
+ * the file on the OP-1 and is thrown here, where its status is known.
+ */
+async function putWindowed(
+  session: Session,
+  file: string,
+  bytes: Uint8Array,
+  window: number,
+  progress: (written: number) => void,
+): Promise<number> {
+  let acked = 0;
+  await session.pipeline(async (send) => {
+    let flights: { end: number; reply: Promise<Reply | null> }[] = [];
+    let sent = 0;
+    for (;;) {
+      while (flights.length < window && sent < bytes.length) {
+        const end = Math.min(sent + COOP_CHUNK, bytes.length);
+        flights.push({ end, reply: send(CoopCommand.PUT_DATA, dataPayload(bytes, sent)) });
+        sent = end;
+      }
+      if (flights.length === 0) return;
+      const { flight, reply } = await Promise.race(flights.map((f) => f.reply.then((r) => ({ flight: f, reply: r }))));
+      if (!reply) return;
+      if (reply.status === STATUS_IO) throw new CoopRefusedError(reply.cmd, reply.status, `writing ${file} near byte ${acked}`);
+      if (reply.status !== STATUS_OK || nextOffset(reply) !== flight.end) return;
+      acked = flight.end;
+      flights = flights.filter((f) => f.end > acked);
+      progress(acked);
+    }
+  });
+  return acked;
 }
 
 /**
  * Writes a plugin file to /yaffs2/plugins: PUT_BEGIN (create, truncate), PUT_DATA in order, PUT_END with the size and
- * the zlib CRC-32, which the firmware checks. A resent chunk the OP-1 had already written comes back as an offset
- * mismatch that names the next offset; that counts as written.
+ * the zlib CRC-32, which the firmware checks.
+ *
+ * The chunks go COOP_WINDOW at a time (the core queues COOP_QUEUE messages and answers each in turn). When that run
+ * stops short, the rest of the file goes as before, one chunk in flight with resends, from the last confirmed byte.
+ * There a reply that names an offset further on, with ok or as an offset mismatch, means the OP-1 had already
+ * written up to it (chunks whose replies were lost): that counts as written.
  */
 export async function coopPutPlugin(session: Session, file: string, bytes: Uint8Array, options: PutOptions = {}): Promise<void> {
   checkFile(file);
+  const window = Math.max(1, Math.min(Math.floor(options.window ?? COOP_WINDOW), COOP_QUEUE - 1));
   const begin = await session.ask(CoopCommand.PUT_BEGIN, encoder.encode(COOP_PLUGIN_DIR + file));
   if (begin.status !== STATUS_OK) throw new CoopRefusedError(begin.cmd, begin.status, `writing ${file}`);
-  let offset = 0;
+  const progress = (written: number): void => options.onProgress?.(written, bytes.length);
+  let offset = window > 1 ? await putWindowed(session, file, bytes, window, progress) : 0;
   while (offset < bytes.length) {
-    const chunk = bytes.subarray(offset, offset + COOP_CHUNK);
-    const payload = new Uint8Array(4 + chunk.length);
-    payload.set(u32le(offset), 0);
-    payload.set(chunk, 4);
-    const reply = await session.ask(CoopCommand.PUT_DATA, payload);
-    const next = reply.payload.length >= 4 ? readU32le(reply.payload) : -1;
-    const done = offset + chunk.length;
-    if (reply.status === STATUS_OK || (reply.status === STATUS_OFFSET && next === done)) {
-      offset = done;
-      options.onProgress?.(offset, bytes.length);
-      continue;
-    }
-    throw new CoopRefusedError(reply.cmd, reply.status, `writing ${file} at byte ${offset}`);
+    const reply = await session.ask(CoopCommand.PUT_DATA, dataPayload(bytes, offset));
+    const next = nextOffset(reply);
+    // Only bytes of this file, in order, are ever on the OP-1, so its count is taken as it is; PUT_END checks them.
+    const written = (reply.status === STATUS_OK || reply.status === STATUS_OFFSET) && next > offset && next <= bytes.length;
+    if (!written) throw new CoopRefusedError(reply.cmd, reply.status, `writing ${file} at byte ${offset}`);
+    offset = next;
+    progress(offset);
   }
   const end = new Uint8Array(8);
   end.set(u32le(bytes.length), 0);

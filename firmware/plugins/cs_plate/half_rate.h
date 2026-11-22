@@ -106,6 +106,12 @@ class HalfRate {
     MixSoftLimit(r, wet_full_[1], kFxBlockSize, fade_out, fade_in, &kSoftLimit);
   }
 
+  // coop 0.3, the idle path: Mix's smoothing of the mix alone (no wet, a silent dry: nothing to compute).
+  void IdleMix(int32_t mix) {
+    const int32_t target = (mix << 1) + (mix >> 14);   // Q16
+    mix_ += (target - mix_) >> 2;
+  }
+
  private:
   static int16_t FadeOut(int32_t mix_q16) {
     const int32_t f = InterpolateQ16(kXfadeOutQ31, mix_q16, 4) >> 16;
@@ -120,9 +126,9 @@ class HalfRate {
 
   HalfbandDecimator decimator_[2];
   HalfbandInterpolator interpolator_[2];
-  int16_t half_[2][kHalfN];
+  alignas(4) int16_t half_[2][kHalfN];   // the kernels write words
   int16_t wet_half_[2][kHalfN];
-  int16_t wet_full_[2][kFxBlockSize];
+  alignas(4) int16_t wet_full_[2][kFxBlockSize];
   int32_t mix_;   // Q16
 };
 

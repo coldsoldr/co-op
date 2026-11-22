@@ -50,6 +50,9 @@ test('lists the plugins of a hundekraft OP-1 and remembers the profile for the n
   await expect(dialog.locator('tr[data-plugin="tape_echo"]')).toContainText('off (switched off)');
   await expect(dialog.locator('tr[data-plugin="delay"]')).toContainText('built-in');
   await expect(dialog).toContainText('Switched off: tape_echo');
+  // The check is over, and no port stays open while the panel shows its result.
+  expect(await page.evaluate(() => window.op1Stub.openPorts)).toEqual([]);
+  expect(await page.evaluate(() => window.op1Stub.opens)).toBe(2);
 
   await dialog.getByRole('button', { name: 'Use OP-1 (hundekraft)' }).click();
   await expect(dialog).toContainText('The next drive you open starts on OP-1 (hundekraft).');

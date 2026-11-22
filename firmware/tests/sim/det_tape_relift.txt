@@ -1,0 +1,95 @@
+# e12 (docs/plugins.md "e12", the clipboard): a track's old clip is given back when the track is lifted again, and the
+# slots above it move down in the right-channel pool. Two stereo takes at the same place: a C chord on track 1, then
+# (tape page, T2, back to the synth) a D minor chord on track 2. Tape page (T2 still selected), PLAY 1.3 s, STOP:
+#   LIFT (track 2's clip: slot 2 at the pool's base), T1, LIFT (track 1's clip: slot 1 above it),
+#   T2, DROP (a clip lands on track 2 at 1.3 s), STOP x2, PLAY 2 s (inside it), STOP,
+#   LIFT (track 2 again: its old samples are released, slot 1's move down), T1, DROP, STOP x2, PLAY.
+# Expected: no fault; stats `edits lifts 3 drops 2 errors 0 mono_fallbacks 0 pool_moves 1`, `pool_used` two clips'
+# worth (three before e12, which never gave a clip back); the last playback in stereo (wav: side / mid).
+# The move itself is proven on the host: tests/host/clip_pool.
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap synth 300
+at 32000
+press rec
+at 32200
+tap play 300
+at 32600
+release rec
+at 33000
+press c4
+press e4
+press g4
+at 34000
+release c4
+release e4
+release g4
+at 36000
+tap stop 300
+at 37000
+tap stop 300
+at 38000
+tap tape 300
+at 38700
+tap t2 300
+at 39500
+tap synth 300
+at 40500
+press rec
+at 40700
+tap play 300
+at 41100
+release rec
+at 41500
+press d4
+press f4
+press a4
+at 42500
+release d4
+release f4
+release a4
+at 44500
+tap stop 300
+at 45500
+tap stop 300
+at 46500
+tap tape 300
+at 47500
+tap play 300
+at 48800
+tap stop 300
+at 49500
+tap lift 300
+at 50500
+tap t1 300
+at 51500
+tap lift 300
+at 52500
+tap t2 300
+at 53500
+tap drop 300
+at 55000
+tap stop 300
+at 55500
+tap stop 300
+at 56500
+tap play 300
+at 58500
+tap stop 300
+at 59500
+tap lift 300
+at 60500
+tap t1 300
+at 61500
+tap drop 300
+at 63000
+tap stop 300
+at 63500
+tap stop 300
+at 64500
+tap play 300
+at 72000
+tap stop 300
+wait 100000
+quit

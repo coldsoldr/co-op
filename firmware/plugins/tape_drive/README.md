@@ -80,6 +80,7 @@ The page became a held layer (guidelines §4). The mix was already on orange (§
 
 ## Stereo and cost
 
+- **0.7 (2026-11-22, `docs/efficiency-audit.md` finding 14):** the same code, repacked: `tools/plugin/pack.py` now compiles every function into its own section and drops what nothing reaches (op1/support.cc's unused `memcpy`, `memmove`, `memset`, the C `TapeLaneRunC` the Blackfin never calls and `TapeSat::CopyLeftToRight`). File 22,660 -> 22,228 bytes, `.text` 11,228 -> 10,796; `.rodata` 1,616, imports and the audio unchanged (`tools/plugin/same_code.py`: every function and object that is left is the same bytes with the same targets). The cost figures below stand.
 - **Stereo path.** The render calls upstream's `TapeSat::Process(l, r)` at every position:
   - one shared wobble delay (a ring of L | R pairs);
   - per channel, a lane: 2x halfband up, quintic soft clip, halfband down, head bump, HF loss, mix.
@@ -93,9 +94,15 @@ The page became a held layer (guidelines §4). The mix was already on orange (§
   - stereo 7,026 cycles, mono 4,128;
   - the stereo delay kernel 744, each lane 2,836, control about 200-400.
 - **coop, simulator** (`tests/host/tape_drive`, bfin-elf-run, no cache or SDRAM model): **avg 9,061, peak 9,286 a
-  block**, the glue included.
+  block**, the glue included (0.4).
   - The glue is the int32 / int16 conversion (2 x 64 samples each way) and four divisions for the knob mapping
     (`__divsi3`).
+  - **0.6 (2026-11-20, `docs/efficiency-audit.md` finding 8):** the four turns' values are kept per slot (`.bss`, 28
+    bytes a slot, cleared by `init`) and divided only for a word that moved: **avg 8,689, peak 9,597** over the
+    test's 20,000 blocks (0.5 on the same script: 9,197 / 9,414). 508 less on average; the peak is a block in which
+    all four words move (the divides as before plus the compares and stores, ~180). Bit-identical to te-op1-cfw, host
+    and simulator, with stretches where every turn moves every block. File 22,660 bytes, `.text` 11,228, `.bss` 316;
+    imports unchanged.
   - So stereo at the synth and drum positions costs about 2.2x what the mono kennel render did there, and about 1.3x
     at the master.
   - Five instances (every position) would be about 46 k together.
@@ -105,8 +112,7 @@ The page became a held layer (guidelines §4). The mix was already on orange (§
   - No optimisation pass is needed to ship. If the device figure comes in high, in this order:
     1. Fold the int16 conversion into the kernels: the delay kernel reads the high halves in place with a 4-byte
        stride, and the mix writes back the same way. That saves about 1 k.
-    2. Replace the four divisions with exact reciprocal multiplies (keeping kennel's rounding). That saves about
-       0.4 k.
+    2. (Done another way in 0.6: the four divisions run only when a word moves.)
     3. Run the mono half once when L == R. Not taken now: when the lanes' states differ, the output would differ from
        upstream for the length of a tail.
 - **Memory.**

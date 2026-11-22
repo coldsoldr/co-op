@@ -15,7 +15,10 @@ TEMPOS ?= 1200 900 1335 1740 0
 SIM_TEMPO ?= 1335
 # e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
 SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
-CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-function
+# 0.4: the echo is compared sample for sample, so its idle path is off here (COOP_FX_NO_IDLE; the scenario has silent
+# stretches longer than the hold): ../idle tests that path against this build. 0.5: and its tail is kept as 0.4 and
+# te-op1-cfw have it (COOP_TAPE_ECHO_GHOST); `make tail` tests the tail that settles against this build's echo.
+CXXFLAGS := -DCOOP_FX_NO_IDLE -DCOOP_TAPE_ECHO_GHOST -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-function
 REF_INC := -I$(TE)/fx -I$(TE) -I$(TE)/rings -I$(TE)/clouds
 REF_SRC := $(TE)/fx/src/tape_echo/tape_echo.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clouds/src/core/clouds_tables.cc \
            $(TE)/rings/src/fixed_tables.cc
@@ -23,13 +26,24 @@ REF_SRC := $(TE)/fx/src/tape_echo/tape_echo.cc $(TE)/clouds/src/core/halfband.cc
 # calls as stubs); the test compares audio only
 COOP_SRC := $(COOP)/tape_echo.cc $(COOP)/tape_echo_screen.cc $(COOP)/src/tape_echo_core.cc $(COOP)/src/halfband.cc \
             ../fx_scratch_host.cc ../screen_host.cc ../tempo_host.cc
-COOP_DEPS := $(wildcard $(COOP)/*.cc $(COOP)/*.h $(COOP)/src/*) ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h \
+COOP_DEPS := $(wildcard $(COOP)/*.cc $(COOP)/*.h $(COOP)/src/*) $(COOP)/../shared/halfband_bfin.S ../../../sdk/coop_fx_screen.h ../../../sdk/coop_screen.h \
              ../../../sdk/coop_plugin.h ../../../core/include/coop_tempo.h ../tempo_host.cc
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
-SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns
+SIMFLAGS := -DCOOP_FX_NO_IDLE -DCOOP_TAPE_ECHO_GHOST -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns
 
-.PHONY: all sim tables clean
+.PHONY: all sim tables clean tail
+
+# 0.5: the tail that settles (tape_echo_tail.cc): the plugin at two positions, one with 0.4's tail kept, in lockstep
+# over feedback x age x time and sync. TAIL_SECONDS of silence a setting (600: about 4 minutes of host time).
+TAIL_SECONDS ?= 600
+$(BUILD)/tape_echo_tail: tape_echo_tail.cc $(COOP_DEPS)
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) -DCOOP_IDLE_PROBE -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-function 	  -I$(COOP) -I../../../sdk -I../../../core/include tape_echo_tail.cc $(COOP_SRC) -o $@
+
+tail: $(BUILD)/tape_echo_tail
+	$(BUILD)/tape_echo_tail $(TAIL_SECONDS)
+
 all: $(BUILD)/tape_echo_ref $(BUILD)/tape_echo_coop
 	@set -e; for t in $(TEMPOS); do \
 	  echo "== tempo $$t (tenths of a BPM; 0 = the walk)"; \
@@ -56,7 +70,7 @@ $(BUILD)/tape_echo_ref.elf: tape_echo_compare.cc
 $(BUILD)/tape_echo_coop.elf: tape_echo_compare.cc $(COOP_DEPS)
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -DCOOP_TAPE_ECHO_HOST_CLOCK -I$(COOP) -I../../../sdk -I../../../core/include tape_echo_compare.cc $(COOP_SRC) \
-	  $(COOP)/src/tape_echo_bfin.S $(COOP)/src/halfband_bfin.S -o $@
+	  $(COOP)/src/tape_echo_bfin.S $(COOP)/../shared/halfband_bfin.S -o $@
 
 sim: $(BUILD)/tape_echo_ref.elf $(BUILD)/tape_echo_coop.elf
 	$(BFIN)/bfin-elf-run $(BUILD)/tape_echo_ref.elf $(BUILD)/ref_sim.raw $(SIM_BLOCKS) $(SIM_TEMPO)

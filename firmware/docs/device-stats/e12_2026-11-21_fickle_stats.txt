@@ -1,0 +1,27 @@
+coop_stats 3 build e12
+cb blocks 9980 max 525738 last 231303 cycles 3550726911
+stages rec_max 28728 mix_max 11780 hook_max 7527 stage_max 20792 stage_calls 9980 lfo2_max 0 master_max 0 hooks 30445 side_blocks 9980
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12993/20792/9980/6092/1145 fx1_plugin=43188/295224/9960/22398/7742
+engines avg/max/n synth=45172/71332/5639/2405/4123 synth_first=9332/23076/5639/2315/848 synth_rest=8149/24798/24800/20/744 sampler=8368/24798/30439/445/763
+icache_l0 c1 29821 p1 25964 c2 2058 p2 0 c3 27286 p3 26287
+icache_l1 c1 2058 p1 0 c2 2057 p2 0 c3 27636 p3 0
+pfsweep_code 80s0/0 80o0/0 81s0/0 81o0/0 82s0/0 82o0/0 83s0/0 83o0/0 84s0/0 84o0/0 85s0/0 85o0/0 86s0/0 86o0/0 87s0/0 87o0/0 88s0/0 88o0/0 89s0/0 89o0/0 8as0/0 8ao0/0 8bs0/0 8bo0/0 8cs0/0 8co0/0 8ds0/0 8do0/0 8es0/0 8eo0/0 8fs0/0 8fo0/0
+pfsweep_data 90s0/0 90o0/0 91s0/0 91o0/0 92s0/0 92o0/0 93s0/0 93o0/0 94s0/0 94o0/0 95s0/0 95o0/0 96s0/0 96o0/0 97s0/0 97o0/0 98s0/0 98o0/0 99s0/0 99o0/0 9as0/0 9ao0/0 9bs0/0 9bo0/0 9cs0/0 9co0/0 9ds0/0 9do0/0 9es0/0 9eo0/0 9fs0/0 9fo0/0
+l1 state 1 used 3200 refused 0 stereo 1 tape 1 sine 1 lander_swallowed 0 leased 3488 leases 4 lease_refused 0 free 1728
+switches dsynth 1 stage 1 cwo 1 punch 1 phone 1 nitro 1 grid 1 spring 1 delay 1 voltage 1 phase 1
+cplb dmem 0000101b imem 00000007
+dcplb ff800000/0003401f 00000000/0003109f 00400000/0003109f 00800000/0003109f 00c00000/0003109f 03c00000/0003109d 01000000/0003109d 01400000/0003109d 01800000/0003109d 01c00000/0003109d 02000000/0003501d 02400000/0003109d 02c00000/0003109d 03000000/0003501d 03400000/0003109d 03800000/0003109d
+icplb ffa00000/00020003 ef000000/00021005 00400000/00031005 00800000/00031005 00c00000/00031005 01000000/00031005 01400000/00031005 01800000/00031005 01c00000/00031005 02000000/00031005 02400000/00031005 02800000/00031005 02c00000/00031005 03000000/00031005 03400000/00031005 03800000/00031005
+buffers line1 00086c00 tank_spring1 0007884a st_obj1 00d45818 text 02c176e0
+slow count 0 threshold 1000000 gap_prof 0 gap_full 0
+plugins seen 13 loaded 13 failed 0 disabled 0 skipped 0 over_budget 0 mono_calls 9961 st_calls 0 plugin_blocks 9961 stock_st_blocks 0 stock_st_made 2 s2_instr 0 s2_master 0 s2_changes 2 tanks 0 tank_short 0 ui_opens 0 ui_applies 0 ui_toggles 0 ui_knobs2 0 ui_col2_sets 0 rnd 0 rnd_back 0 rnd_refused 0 rnd_slot2 0 solo 0 markers 0 jumps 0 help_taps 0 mode_taps 0 mode_holds 0 keeps 209 kept 2 sound_writes 0 bend 0 bend_knobs 0 bend_ramps 0 overwrites 0 over_armed 0 saves 0 renames 0 rename_starts 0 rename_refused 0 drumpan 0 rename_pushes 0 fx2view 0 fx2view_disp 0 fx2view_pops 0 fx2view_empty 0 fx2view_size 0 fx2view_ids 0 lfo2view 0 lfo2view_pops 0 fx2view_on 0 lfo2view_on 0 fx2view_post 0 fx2view_cur 0 set_opens 0 set_plugin_pushes 0 set_plugin_bounces 0 set_plugin_turns 0 set_listed 0 set_dropped 0 fn_shift_kept 0 set_saves 0 st0_builds 1 st0_dry 0 engines 2 eng_renders 0 eng_noteons 0 eng_iter 0 eng_44k 0 heap_largest 2859492 heap_free 2859964 heap_top 2859492 code_syncs 13 rows_dropped 0 ctl_turns 0 ctl_clicks 0 ctl_ignored 0 ctl_cancelled 0 ctl_engines 2 ctl_popup_frames 0 eng_switches 0 eng_foreign 0 eng_max 0 scr_built 2 scr_failed 0 scr_swaps 0 scr_resets 0 scr_updates 0 fscr_built 11 fscr_failed 0 fscr_skipped 0 fscr_swaps 1 fscr_updates 0 fscr_te 159312 te_used 4809136 te_max 4809472 te_sig 710539865
+plugmem budget 5898240 used 980992 over_budget 0 heap_short 0 skipped 0 badname 0 tape_node 524288 heap_free_boot 16051172 scratch_files 11 fxbuf 134784 fxbuf_mem 539136 fxbuf_short 0 fxbufs 4 fxbuf_refused 0 arena 1385344 arena_a 1385344 arena_b 0 clip 4194304
+fxctl fx 11 turns 0 fine 0 clicks 0 latches 0 ignored 0 cancelled 0 popup_frames 0 from_params 0 master_saves 0 random 0 tempo_q16 8192000 tempo_inc 207768640 p0=9961i2:1/0/0/0 p1=0i0:0/0/0/0 p2=0i0:0/0/0/0 p3=0i1:0/0/0/0 p4=0i0:0/0/0/0
+tape rec_calls 9981 rec_side_blocks 9981 mismatch 0 mismatch2 0 mismatch_word 0 seam_fills 0
+io loads 6 flushes 0 held 0 guarded 0 errors 0 step_max 5246446 gap_max 6647784 load_max 3447979 flush_max 0
+edits lifts 0 drops 0 erases 0 errors 0 mono_fallbacks 0 pool 2097152 pool_used 0 pool_moves 0
+stats writes 2 errors 0 tail_writes 2 tail_errors 0 windows 2 ticks 1085
+top seq 0 blocks 6532 cb_max 525738 cb_sum 1350295329 cb_over 473 rec_max 28728 rec_sum 66523875 mix_max 11780 mix_sum 43291444 hook_max 7342 hook_sum 28497009 hooks 9757 side 6532 recs 6532 io_steps 625 io_step_max 4295236 io_gap_max 6412654 io_load_max 3447979 io_flush_max 0 loads 6 flushes 0 recording 0
+top seq 1 blocks 3448 cb_max 380391 cb_sum 904582785 cb_over 971 rec_max 15841 rec_sum 28849693 mix_max 7349 mix_sum 18120914 hook_max 7527 hook_sum 58468502 hooks 20688 side 3448 recs 3448 io_steps 459 io_step_max 5246446 io_gap_max 6647784 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0
+win seq 0 blocks 6532 cb_max 525738 cb_sum 1350295329 cb_over 473 rec_max 28728 rec_sum 66523875 mix_max 11780 mix_sum 43291444 hook_max 7342 hook_sum 28497009 hooks 9757 side 6532 recs 6532 io_steps 625 io_step_max 4295236 io_gap_max 6412654 io_load_max 3447979 io_flush_max 0 loads 6 flushes 0 recording 0
+win seq 1 blocks 3448 cb_max 380391 cb_sum 904582785 cb_over 971 rec_max 15841 rec_sum 28849693 mix_max 7349 mix_sum 18120914 hook_max 7527 hook_sum 58468502 hooks 20688 side 3448 recs 3448 io_steps 459 io_step_max 5246446 io_gap_max 6647784 io_load_max 0 io_flush_max 0 loads 0 flushes 0 recording 0

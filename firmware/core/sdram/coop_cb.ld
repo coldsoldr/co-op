@@ -12,5 +12,7 @@ SECTIONS {
   .data   : { *(.data .data.*) } > injected
   .bss (NOLOAD) : ALIGN(32) { __bss_start = .; *(.bss .bss.* COMMON) . = ALIGN(4); __bss_end = .; } > injected
   ___image_end = .;
+  /* e12: the plugin arena starts at COOP_ARENA_A_LO (core/include/coop_arena.h); the image must end below it */
+  ASSERT(___image_end <= 0x02CE0000, "the core image runs into the plugin arena (COOP_ARENA_A_LO)")
   /DISCARD/ : { *(.init_array*) *(.ctors*) *(.comment) *(.eh_frame*) *(.fini_array*) *(.dtors*) }
 }

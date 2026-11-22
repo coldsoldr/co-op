@@ -9,7 +9,9 @@ COOP := ../../../plugins/cs_hall
 BUILD ?= ../../../build/host/cs_hall
 # e8: the position buffers (../fx_scratch_host.cc), sized from plugin.json "scratch"
 SCRATCH := $(shell python3 -c "import json; print(json.load(open('$(COOP)/plugin.json'))['scratch'])")
-CXXFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-variable -Wno-unused-function
+# 0.3: the hall is compared sample for sample, so its idle path is off here (COOP_FX_NO_IDLE: the script has silences
+# longer than the hold); ../idle tests that path against this build
+CXXFLAGS := -DCOOP_FX_NO_IDLE -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -Wall -Wno-unused-variable -Wno-unused-function
 COOP_SRC := $(COOP)/cs_hall.cc $(COOP)/cs_hall_screen.cc $(COOP)/hall.cc $(COOP)/halfband.cc ../fx_scratch_host.cc \
             ../screen_host.cc
 # e9: the screen (cs_hall_screen.cc) and the stand-in for the core's screen calls (../screen_host.cc)
@@ -20,7 +22,7 @@ REF_SRC := $(TE)/fx/src/hall/hall.cc $(TE)/clouds/src/core/halfband.cc $(TE)/clo
 REF_INC := -I$(TE)/knl -I$(TE) -I$(TE)/fx -I$(TE)/rings -I$(TE)/clouds
 
 BFIN ?= $(HOME)/op1-toolchain/bfin/bin
-SIMFLAGS := -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns -Wall
+SIMFLAGS := -DCOOP_FX_NO_IDLE -DCOOP_FX_SCRATCH_BYTES=$(SCRATCH) -O2 -std=c++17 -mcpu=bf524 -msim -fno-exceptions -fno-rtti -fno-tree-loop-distribute-patterns -Wall
 
 .PHONY: all sim clean
 all: $(BUILD)/hall_ref $(BUILD)/hall_coop
@@ -41,10 +43,10 @@ $(BUILD)/hall_coop: cs_hall_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h) $(SDK
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) $(CXXFLAGS) -I$(COOP) -I../../../sdk cs_hall_compare.cc $(COOP_SRC) -o $@
 
-$(BUILD)/hall_coop.elf: cs_hall_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h $(COOP)/*.S) $(SDK_H)
+$(BUILD)/hall_coop.elf: cs_hall_compare.cc $(COOP_SRC) $(wildcard $(COOP)/*.h $(COOP)/*.S) $(COOP)/../shared/halfband_bfin.S $(SDK_H)
 	@mkdir -p $(BUILD)
 	$(BFIN)/bfin-elf-g++ $(SIMFLAGS) -I$(COOP) -I../../../sdk cs_hall_compare.cc $(COOP_SRC) \
-	  $(COOP)/hall_bfin.S $(COOP)/halfband_bfin.S -o $@
+	  $(COOP)/hall_bfin.S $(COOP)/../shared/halfband_bfin.S -o $@
 
 clean:
 	rm -rf $(BUILD)

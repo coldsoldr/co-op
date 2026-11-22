@@ -100,10 +100,10 @@ Licence: coldsoldr's GPL-3.0-or-later with the OP-1 firmware permission. The plu
   | 12 | `str rev` | grains read backwards, the scan at x0.5 |
 
 - **loop** (white click, latch bit 1 of `params[8]`).
-  - Off is *listening*: the looper records input + wet at -3 dB round its 24,576-sample buffer (1.02 s at 24 kHz,
-    12.3 s at 2 kHz).
-  - On is *capture and play*: the last loop's worth becomes the loop. That is at most 24,064 clock samples, the buffer
-    less the seam's pre-roll.
+  - Off is *listening*: the looper records input + wet at -3 dB round its 15,288-sample buffer (0.64 s at 24 kHz,
+    7.6 s at 2 kHz; 0.1 had 24,576 samples, 1.02 s and 12.3 s).
+  - On is *capture and play*: the last loop's worth becomes the loop. That is at most 14,776 clock samples (0.62 s at
+    24 kHz, 0.46 s at 32 kHz, 7.4 s at 2 kHz), the buffer less the seam's pre-roll.
     - The loop's end crossfades into the 256 samples before its start (baked over two blocks), so it wraps without a
       click in either direction.
     - Playback fades in over 128 clock samples.
@@ -211,11 +211,13 @@ the clearing blocks included. The screen reads them through `Published<>` while 
   - Every buffer holds L | R int16 pairs, so one 32-bit load reads both channels.
   - The reverb's feedback crosses over, and its taps have different signs on L and R, so a mono input comes out wide.
   - It runs in stereo at every position.
-- **Memory (e8)**: `"scratch": 171936` (the state is 171,920 bytes; static_assert):
+- **Memory (e8)**: `"scratch": 134784` (the state is 134,768 bytes; static_assert). **0.2**: the same declaration
+  as tape_echo's, so fickle no longer grows the five position buffers (0.1 declared 171,936 with a 24,576-pair loop
+  buffer):
 
   | Part | Bytes |
   |---|---|
-  | the loop buffer (24,576 pairs) | 98,304 |
+  | the loop buffer (15,288 pairs) | 61,152 |
   | the wet line (16,384 pairs) | 65,536 |
   | the four diffusers | 4,608 |
   | this block's clock-sample buffers | 3,148 |
@@ -227,11 +229,11 @@ the clearing blocks included. The screen reads them through `Published<>` while 
     passing.
   - `init` only resets the small fields and binds the buffer. The `.bss` holds the five pointers; the screen's node
     tables take the rest of its 276 bytes.
-  - File 35,616 bytes: `.text` 22,036 (render 14.4 KB with everything inlined, screen 5 KB), `.rodata` 1,686,
+  - File 35,596 bytes: `.text` 22,016 (render 14.4 KB with everything inlined, screen 5 KB), `.rodata` 1,686,
     `.data` 4, `.bss` 276.
-  - **The position buffers grow** to this declaration if fickle is the largest installed scratch effect: 5 x 171,936
-    against tape_echo's 5 x 134,784, i.e. **+185,760 bytes of heap 0**. That is under `COOP_FX_SCRATCH_MAX`, but it
-    counts against the e7 budget (see "For the owner").
+  - **The position buffers do not grow** with fickle installed beside tape_echo (both declare 134,784): fickle then
+    costs the e7 budget only its image block and screen object, about 26 KB. Without tape_echo it is the largest
+    declaration and sets the buffers' size itself (5 x 134,784 = 673,920 bytes).
 - **L1**: none (effects have no lease yet).
 - **Cost** (GNU simulator, compute only, `make -C tests/host/fickle sim`, cycles a block of 64):
 
@@ -253,8 +255,33 @@ the clearing blocks included. The screen reads them through `Published<>` while 
   - **Over the 30 k SHOULD:** the loop playing with the dub on and the clock above about 26 kHz (to ~35 k at 32 kHz
     with env or stretch). The reason: two full processors at once, at up to 32 kHz each. Listening, freezing, or the
     default clock stay under 30 k. Every scene stays under the 60 k line.
-  - The device is typically 10-35 % above the simulator, more with SDRAM misses. The heads walk the 160 KB of
+  - The device is typically 10-35 % above the simulator, more with SDRAM misses. The heads walk the 131 KB of
     buffers sequentially, so a cache line serves 8 clock samples.
+  - 0.2 (the shorter loop buffer) reruns within 1 % of this table.
+  - **0.3 (2026-11-20, `docs/efficiency-audit.md` finding 8):** the divides out of the steady block. The four turns'
+    values and the reverb's decay (`ReverbDecay`: two more divides, every block in the reverb mode) are kept per slot
+    (`.bss`, 40 bytes a slot, cleared by `init`) and redone only when a word, the size or the time moves; the
+    display's loop position while listening (a divide by the buffer's length every block) is a multiply and a
+    correction, checked for every position. About 0.8-1.2 k less a block than the table. Default clock, avg / max:
+    reverb listening 19,275 / 19,789, frozen 13,879 / 14,554; delay 12,195 / 14,237; slip 13,626 / 15,981; reverb +
+    loop tape_1 + dub 24,621 / 36,950. Top clock: reverb listening 22,837 / 23,617, delay 13,587 / 16,142, slip
+    15,351 / 18,577, reverb + loop tape_1 + dub 29,330 / 42,593. Still dividing: the loop's position and envelope bin
+    while a loop plays (by its length), slip's head display (by its refresh).
+    The output and the display words are 0.2's bit for bit: the test's digest (below) over the whole stress run and
+    in the simulator, 0.2's sources against 0.3's. With this change alone: file 36,124 bytes, `.text` 22,312, `.bss`
+    476. 0.3 also has the idle path ("Idle" below, with the file as it ships and its figures).
+  - **0.4 (2026-11-22, `docs/efficiency-audit.md` findings 14 and 15): the reverb's four diffusers in assembly**
+    (`fickle_bfin.S`, `FickleApAsm`: both sides in one pass, 7 packets a clock sample, the ring wrapped by the
+    hardware, so no run splits; `ApPass` in C stays the reference and the host build). One diffuser of 48 clock
+    samples: 454 cycles against the C's 1,804 (`make -C tests/host/fickle ap`, bit for bit over random and edge
+    blocks, every gain, ring and head position). The reverb while listening, avg / max: 16,153 / 16,611 at 24 kHz
+    (0.3 on the same build of the test: 19,420 / 19,928), 18,607 / 19,157 at 32 kHz (22,994 / 23,768); reverb +
+    loop + dub about 3.3 k (24 kHz) and 4.4 k (32 kHz) less, e.g. tape_1 21,466 / 32,674 and 25,077 / 37,399;
+    env hard 23,852 / 39,078 and 29,804 / 45,703; the other wet modes and the freeze as before (no diffusers).
+    With the clock at 24 kHz every scene but the env modes' and stretch's capture block is now under the 30 k
+    SHOULD. The output is 0.3's bit for bit: `make -C tests/host/fickle sim` prints 0.3's digest
+    `3959750b0ea1de10`, the host build (the C) `efcf17611b46da51`. File 37,572 bytes (0.3: 38,164), `.text`
+    23,640 (24,232), `.bss` 513 (516); the packer's section GC found nothing else to drop.
   - **Device figures: pending.**
 - **How it got there** (`make -C tests/host/fickle prof`: each pass's cycles):
   - Every product in a per-sample loop is a single 16 x 16 multiply. GCC drops `int16` casts once it can prove the
@@ -268,8 +295,57 @@ the clearing blocks included. The screen reads them through `Published<>` while 
   - The soft knee's common case falls through.
   - Steady states skip their ramps: the loop at full level, the dub at full level, the routing settled.
   - From the first version (reverb + loop + dub 55-63 k at 32 kHz) to this: about -45 %.
-- No assembly files (nothing for `tools/asm_lint.py`). The two inline instructions are single packets with no parallel
-  slots.
+- One assembly file, `fickle_bfin.S` (0.4; `tools/asm_lint.py`: 0 packets flagged). The two inline instructions are
+  single packets with no parallel slots.
+
+## Idle (0.3)
+
+fickle left on a position used to compute its whole block on silence. 0.3 stops when there is nothing left to
+compute, and its arithmetic makes that exact: the feedback paths round towards zero, so a silent input dies to true
+zeros (`docs/efficiency-audit.md` finding 6; the code is in `fickle.cc`, "the idle path").
+
+- **When.** The input block is exact silence (every sample's top 16 bits 0); freeze and loop are off (the looper
+  listening); the wet mode and the loop mode are the words' and nothing is fading; in the delay mode modify is under
+  31,000 (it holds from 31,775); and for 16,448 clock samples in a row (the wet line once round and a margin: 0.69 s
+  at 24 kHz, 0.51 s at 32 kHz, 8.2 s at 2 kHz) the wet channel took in, gave out and wrote to its line only zeros,
+  with every small state at rest (the pre-filter, the two output poles, the feedback, the routing).
+- **Idle.** A block is the clock (its phase and its count of clock samples), the wet mode's bookkeeping (the reverb's
+  size easing, the delay's time and its crossfade count, slip's heads and refresh), zeros into the looper's buffer
+  (it keeps listening: a capture after a silence holds that silence, as before), the mix's easing and the display.
+- **Waking.** The check is at the top of the render, before any DSP: the first block with a non-zero sample, a
+  latch, a mode change or the delay's modify in its hold region is rendered in full. No sample is skipped.
+- **Never idle:** freeze (any wet mode); a loop playing, fading out or being dubbed; the delay holding (modify from
+  31,000 up); any input; a tail that still sounds.
+- **Exact.** Everything skipped would have computed zeros from zeros, so the output and the state after any number of
+  idle blocks are the never-idle effect's, bit for bit. `make -C tests/host/fickle` runs with the idle path on and
+  still prints 0.2's digest (60,000 blocks; the simulator build too).
+
+`make -C tests/host/idle FX=fickle` (the effect at two positions, one with the idle path switched off, every sample
+compared): 20,000 blocks that never go silent and 20,000 of notes with 150 ms gaps: identical, 0 idle blocks. A note,
+silence, a soft note, a loud one: idle 1.4 s after the input (reverb, defaults), 1.5 s (delay), 0.8 s (slip), 1.6 s
+(long reverb at 32 kHz), 16.6 s (delay at a 6 kHz clock: its tail lasts 13.6 s); 0 LSB before, while idle, on the
+wake and after it, in every case. Freeze in each wet mode, a loop playing, a loop with dub, the delay holding: a
+minute of silence, 0 idle blocks, 0 LSB; engaged while idle: awake on that block. Every turn walking and jumping
+through 1,500 idle blocks, then a note: 0 LSB.
+
+| Simulator, cycles a block (`make -C tests/host/idle sim FX=fickle`) | 0.3 without the idle path | 0.3 playing | silent, not yet idle | idle |
+|---|---|---|---|---|
+| reverb, defaults (24 kHz) | 19,041 | 19,190 | 19,919 | **1,887** |
+| delay | 11,966 | 12,128 | 12,855 | **1,927** |
+| slip | 13,447 | 13,171 | 13,838 | **2,889** (the heads' bookkeeping) |
+| reverb, long, 32 kHz | 22,637 | 22,798 | 23,639 | **2,130** |
+| delay, 6 kHz | 8,475 | 8,610 | 9,066 | **1,363** |
+
+- A playing block pays 45-180 cycles for the idle path (the silence test, the conditions, one call: the block's
+  passes are now their own function, `RenderBlock`). With that path's code inside the one render the compiler laid
+  the passes' loops out worse, 350-1,000 cycles a block; in its own function they are as they were.
+- slip is 220-420 cycles cheaper than before: its loop sat at the edge of what the compiler turns into a hardware
+  loop and is now out of line (`Slip`), where it gets one whatever is around it.
+- `make -C tests/host/fickle sim` with the idle path in (600 blocks, top clock / default clock): reverb listening
+  22,994 / 19,420, frozen 15,923 / 13,922; delay 13,761 / 12,359; slip 14,935 / 13,347; reverb + loop tape_1 + dub
+  29,472 / 24,741.
+
+File 38,164 bytes, `.text` 24,232, `.bss` 516 (+40: 8 bytes a slot); imports unchanged.
 
 ## Tests
 
@@ -297,12 +373,17 @@ the clearing blocks included. The screen reads them through `Published<>` while 
   - `wet_<mode>.wav` (10 s): notes, a clock sweep 24 -> 2 -> 32 kHz, then freeze over silence.
   - `loop_<mode>.wav` (11 s): notes while listening, then the loop on over silence (noise hits for the env modes), a
     clock sweep while it plays, a dub with new notes, then the loop off.
+- **The digest (0.3):** every rendered block's output and display words are folded into one number, printed last
+  (`output digest ...`). Two builds of the plugin that print the same digest for the same `BLOCKS` and `SEED` gave the
+  same samples in every check: `make -C tests/host/fickle COOP=<the older sources' folder> BUILD=<another>` builds an
+  older version under the same test. 0.2, 0.3 and 0.4: `efcf17611b46da51` (host, 60,000 blocks, seed 1) and
+  `3959750b0ea1de10` (`sim`). In the stress run the turns walk every block in half the segments and jump in the rest.
 - `make -C tests/host/fickle sim` gives the cycles above in `bfin-elf-run`. `prof` gives the same per pass.
 - `make -C tests/host/fickle screens` writes the screen PNGs (above).
 - `python3 gen_fickle_tables.py fickle_tables.h` regenerates the tables. `python3 gen_fickle_svg.py fickle.svg`
   regenerates the SVG.
 
-**op1emu gate (not run: gate runs go one at a time):**
+**op1emu gate** (0.2 on e10 and e11, 2026-11-20: `docs/device-tests.md` "fickle 0.2 / petri 0.2"):
 1. fickle at each position, with a chord through it.
 2. The latches: loop on and off, dub, freeze.
 3. The fn layers.
@@ -311,10 +392,14 @@ the clearing blocks included. The screen reads them through `Published<>` while 
 
 ## For the owner
 
-- **The heap budget:** fickle's 171,936-byte position buffers would be the largest declaration and grow all five by
-  185,760 bytes.
-  - A smaller loop would bring it to tape_echo's 134,784 or under: 16,384 pairs is 0.68 s at 24 kHz and saves 32 KiB.
-    One constant, `kLoopPairs`.
+- **The heap budget (0.2, 2026-11-20):** with all 13 catalogue plugins on core e10, fickle 0.1 was refused at boot
+  ("over the plugin memory budget"): its 171,936-byte declaration grew all five position buffers by 185,760 bytes.
+  - 0.2 cuts the loop buffer from 24,576 to 15,288 pairs (`kLoopPairs`), which makes the state exactly tape_echo's
+    134,784 bytes. 16,384 pairs, the round figure, would have left it 4,368 bytes over.
+  - **What you hear:** the longest loop is 0.62 s at 24 kHz (was 1.00 s), 0.46 s at 32 kHz (0.75 s) and 7.4 s at
+    2 kHz (12.0 s). Nothing else changed: the wet channel, the loop modes and the clock are as 0.1.
+  - To get a 1 s loop back, turn the clock down: 14.8 kHz gives it (darker, as any lower clock).
+  - The kennel build (`fickle.knl`) keeps the 24,576-pair buffer: kennel's arena is 6 MiB.
 - **The 30 k line:** see Cost. It is crossed only with the loop playing and dubbing above ~26 kHz.
   - A lower top clock (for example 28 kHz) would bring every scene under it.
   - So would dropping the reverb to three diffusers.

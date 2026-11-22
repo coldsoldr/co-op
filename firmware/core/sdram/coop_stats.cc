@@ -32,16 +32,29 @@ extern "C" uint32_t coop_tempo_bpm_q16(void);                         /* plugin_
 
 extern volatile uint32_t g_last, g_max, g_blocks, g_max_win, g_blocks_win, g_cb_sum_win, g_cb_over_win;   /* coop_cb.cc */
 extern volatile uint32_t g_stereo_hooks, g_stereo_hook_cycles_max, g_stereo_mix_cycles_max, g_stereo_mix_cycles_win, g_stereo_side_blocks;
+extern volatile uint32_t g_wrap_where, g_wrap_nested, g_wrap_checked, g_wrap_bad;   /* plugin_host.cc (e15) */
 extern volatile uint32_t g_stereo_hook_cycles_win, g_stereo_hook_cycles_sum_win, g_stereo_mix_cycles_sum_win, g_stereo_l1;
 extern volatile uint32_t g_stereo_stage_cycles_max, g_stereo_stage_calls;   /* stereo_bus.cc, S3 */
 extern volatile uint32_t g_lfo2_cycles_max;
 extern volatile uint32_t g_tape_rec_calls, g_tape_rec_cycles_max, g_tape_rec_cycles_win, g_tape_rec_cycles_sum_win, g_tape_rec_side_blocks, g_tape_l1;
 extern volatile uint32_t g_tape_state_mismatch, g_tape_state_mismatch2, g_tape_mismatch_word, g_tape_seam_fills;
+extern volatile uint32_t g_tape_idle_blocks, g_tape_idle_checked, g_tape_idle_bad;   /* tape_stereo.cc (e14) */
+extern "C" volatile uint32_t g_coop_tape_idle;
+extern "C" volatile uint32_t g_coop_idle_skip;                         /* stereo_bus.cc (e14) */
+extern volatile uint32_t g_stage_skips, g_mix_skips, g_skip_checked, g_skip_bad;
+extern "C" volatile uint32_t g_coop_voice_skip;
+extern volatile uint32_t g_voice_skips, g_voice_skip_checked, g_voice_skip_bad;
+extern volatile uint32_t g_voice_env_skips;                             /* stereo_bus.cc */
+extern "C" void coop_voice_diag_window(void);
+extern "C" void coop_voice_diag(uint32_t out3[3]);
 extern volatile uint32_t g_tape_io_loads, g_tape_io_flushes, g_tape_io_held, g_tape_io_guarded, g_tape_io_errors;
 extern volatile uint32_t g_tape_io_step_cycles_max, g_tape_io_load_cycles_max, g_tape_io_flush_cycles_max, g_tape_io_gap_cycles_max;
 extern volatile uint32_t g_tape_io_step_cycles_win, g_tape_io_load_cycles_win, g_tape_io_flush_cycles_win, g_tape_io_gap_cycles_win;
 extern volatile uint32_t g_tape_io_steps_win;
 extern volatile uint32_t g_edit_lifts, g_edit_drops, g_edit_erases, g_edit_errors, g_edit_mono_fallbacks;
+extern volatile uint32_t g_edit_pool_used, g_edit_pool_moves;          /* tape_edit.cc (e12) */
+extern volatile uint32_t g_sysex_polls, g_sysex_rx, g_sysex_drop, g_sysex_replies, g_sysex_errors;   /* coop_sysex.cc (e13: the sysex line) */
+extern "C" uint32_t coop_clip_pool_bytes(void);                         /* coop_arena.cc (e12) */
 extern volatile uint32_t g_master_cycles;
 extern volatile uint32_t g_l1_state, g_l1_used, g_l1_refused, g_l1_sine_copied;
 extern volatile uint32_t g_l1_leased, g_l1_leases, g_l1_lease_refused;   /* l1_pool.cc (e4) */
@@ -76,6 +89,9 @@ volatile uint32_t g_stats_writes, g_stats_errors, g_stats_windows, g_stats_ticks
 struct window {
     uint32_t seq, blocks, cb_max, cb_sum, cb_over, rec_max, rec_sum, mix_max, mix_sum, hook_max, hook_sum, hooks, side, recs;
     uint32_t io_steps, io_step_max, io_gap_max, io_load_max, io_flush_max, loads, flushes;
+    uint32_t eng, peng, fx, s2;                                  /* e13: cycles in the window: every synth and drum voice render;
+                                                                    the plugin engines' own renders; a plugin at FX 1; both FX 2
+                                                                    slots (stock types included) */
     uint8_t recording;
 };
 static struct window g_ring[WINDOWS], g_top[TOP];
@@ -107,10 +123,15 @@ static void put_window(const char *tag, const struct window *w)
     kv("hook_max", w->hook_max); kv("hook_sum", w->hook_sum); kv("hooks", w->hooks); kv("side", w->side); kv("recs", w->recs);
     kv("io_steps", w->io_steps); kv("io_step_max", w->io_step_max); kv("io_gap_max", w->io_gap_max);
     kv("io_load_max", w->io_load_max); kv("io_flush_max", w->io_flush_max); kv("loads", w->loads); kv("flushes", w->flushes);
-    kv("recording", w->recording); put("\n");
+    kv("recording", w->recording);
+    kv("eng", w->eng); kv("peng", w->peng); kv("fx", w->fx); kv("s2", w->s2);   /* e13, appended */
+    put("\n");
 }
 
 #include "coop_cost.h"
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_prof = 1; }   /* e14: coop_cost.h */
+extern "C" volatile uint32_t g_coop_statsfile;                    /* e14: below (the text in RAM) */
+extern volatile uint32_t g_stats_ram_reads, g_stats_ram_texts;
 struct coop_cost g_coop_cost[COOP_COST_N];
 uint32_t g_coop_eng_fn[COOP_ENG_N];
 static uint32_t g_eng_blk[2];                                     /* this block's synth / drum render cycles */
@@ -123,6 +144,7 @@ static uint32_t g_eng_last;                                       /* the entry t
 extern "C" COOP_HOT_VOICE void coop_eng_pf_start(void) { coop_pf_now(g_eng_pf0); }
 static inline __attribute__((always_inline)) void cost_add_d(int i, uint32_t dt, uint32_t d0, uint32_t d1)
 {
+    if (!g_coop_prof) return;
     struct coop_cost *c = &g_coop_cost[i];
     c->sum += dt; c->n++;
     if (dt > c->max) c->max = dt;
@@ -196,6 +218,7 @@ extern "C" COOP_HOT_VOICE void coop_eng_cost(uint32_t fn, uint32_t dt, int drum)
 extern "C" void coop_engine_block_end(void);                              /* engine_host.cc (e4): per-engine block totals */
 extern "C" void coop_eng_block_end(void)
 {
+    if (!g_coop_prof) { g_vrec_n = 0; return; }                    /* e14: nothing was recorded, nothing to fold */
     eng_fold();
     coop_engine_block_end();
     for (int k = 0; k < 2; k++) {
@@ -223,6 +246,7 @@ static void slow_copy(struct slow *d, uint32_t dt)
 /* From CoopAudioCb (the audio interrupt) when a block ran over the threshold. */
 extern "C" void coop_slow_keep(uint32_t dt)
 {
+    if (!g_coop_prof) return;                                      /* e14: there are no marks to keep */
     slow_copy(&g_slow[g_slow_next % SLOW_KEEP], dt);
     g_slow_next++; g_slow_count++;
     if (dt > g_slow[SLOW_KEEP].dt) slow_copy(&g_slow[SLOW_KEEP], dt);
@@ -361,6 +385,7 @@ extern "C" void coop_pf_set_mode(uint32_t m)
  * traffic in a 16 KB 4-way cache (it should: LRU keeps the most recent 16 KB, so no). The stats print the three
  * (cycles, p0) pairs on the `icache` line; the voice question is answered by comparing pass 1's per-line cost with
  * the 12 k per DSynth render. */
+#if COOP_DIAG                                                    /* e15: dev / gate builds only (coop_build.h) */
 __attribute__((noinline, aligned(32))) static void probe_4k(void)  { __asm__ __volatile__(".rept 2048\n nop;\n .endr" ::: "memory"); }
 __attribute__((noinline, aligned(32))) static void probe_24k(void) { __asm__ __volatile__(".rept 12288\n nop;\n .endr" ::: "memory"); }
 static uint32_t g_icp[2][3][2];                                  /* per layout, per pass: (cycles, p0) */
@@ -395,6 +420,11 @@ extern "C" void coop_icache_probe(void)                          /* main thread,
     pf_program((int)(want & 1));
     g_coop_pf_layout_used = want;
 }
+#else
+static uint32_t g_icp[2][3][2];                                  /* release: no probe; the icache lines read 0 and the counters
+                                                                    keep coop_pf_boot's layout (0, the one p6g proved) */
+extern "C" void coop_icache_probe(void) { }
+#endif
 
 /* p6h: the event sweep. p6g on the device: kennel's field positions are the working ones (Linux's count nothing),
  * but event 0x82 counts instruction fetches (~1 per 8 bytes), not fill stalls. So, once at boot, every code event
@@ -405,10 +435,12 @@ extern "C" void coop_icache_probe(void)                          /* main thread,
  * ~25 k stall cycles and whose warm count is ~0 is the stall event, the one with ~128 cold / 0 warm the miss count.
  * ~40 ms of boot, main thread, before the live programming. */
 static uint32_t g_sweep[2][16][2][2];                            /* [side][event][cnt][cold, warm] */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_pf_sweep = 0; }   /* p6i: the sweep only on request (--set-word): ~40 ms of boot */
+#if COOP_DIAG
 static volatile uint32_t g_probe_data[2048] __attribute__((aligned(32)));   /* 8 KB: 256 data lines */
 static volatile uint32_t g_evict_data[8192] __attribute__((aligned(32)));   /* 32 KB: walks the 16 KB data cache out */
+#define COOP_PROBE_ARRAYS 1
 static uint32_t data_walk(volatile uint32_t *a, uint32_t n) { uint32_t s = 0; for (uint32_t i = 0; i < n; i += 8) s += a[i]; return s; }
-extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_pf_sweep = 0; }   /* p6i: the sweep only on request (--set-word): ~40 ms of boot */
 extern "C" void coop_pf_sweep(void)
 {
     if (!g_coop_pf_live || !g_coop_pf_sweep) return;
@@ -432,6 +464,9 @@ extern "C" void coop_pf_sweep(void)
         }
     pf_program((int)(g_coop_pf_layout_used & 1));                /* back to the live programming */
 }
+#else
+extern "C" void coop_pf_sweep(void) { }                          /* release: no sweep (the word stays, the lines stay 0) */
+#endif
 
 static const struct coop_cost *g_cost_src = g_coop_cost;          /* the live table, or a run section's copy */
 static void put_cost(const char *name, int i)               /* name avg/max/n[/p0/p1]: cycles per call, the counters' averages */
@@ -466,6 +501,13 @@ static const char *eng_name(uint32_t fn)
 
 static void put_cost_lines(void)                             /* the "cost" and "engines" lines from g_cost_src */
 {
+    put("mode"); kv("prof", g_coop_prof); kv("statsfile", g_coop_statsfile); kv("ram_reads", g_stats_ram_reads); kv("idle_skip", g_coop_idle_skip); kv("stage_skips", g_stage_skips);   /* e14 */
+    kv("mix_skips", g_mix_skips); kv("skip_checked", g_skip_checked); kv("skip_bad", g_skip_bad);
+    kv("voice_skip", g_coop_voice_skip); kv("voice_skips", g_voice_skips); kv("voice_checked", g_voice_skip_checked); kv("voice_bad", g_voice_skip_bad);
+    kv("env_skips", g_voice_env_skips);
+    { uint32_t vd[3]; coop_voice_diag(vd); kv("env_peak", vd[0]); kv("vgain", vd[1]); kv("ramp", vd[2]); }
+    put("\n");            /* e14: 0 = the cost table, the engines line, the marks and the
+                                                                    windows' eng / peng / fx / s2 sums are off (empty / 0) */
     put("cost avg/max/n/p0/p1"); put(" pf_mode "); putn(g_coop_pf_mode); put(" pf_live "); putn(g_coop_pf_live); put(" pf_layout "); putn(g_coop_pf_layout_used);   /* per call; slot 1's stock effect by type (stereo class); p0 / p1 the monitor's averages (coop_pf_boot) */
     put_cost("stage=", COOP_COST_STAGE); put_cost("s2_instr=", COOP_COST_S2I); put_cost("s2_master=", COOP_COST_S2M);
     put_cost("master=", COOP_COST_MASTER); put_cost("fx1_plugin=", COOP_COST_PLUG);
@@ -527,10 +569,93 @@ static void put_slow(const char *tag, const struct slow *w)        /* marks in t
  * the big buffers sit (slot 1's delay / cwo line and spring tank: plugin_host.cc). */
 extern "C" uint32_t coop_fx_buffers(uint32_t *out4);               /* plugin_host.cc */
 static void puthex8(uint32_t v) { char b[9]; for (int d = 0; d < 8; d++) b[d] = "0123456789abcdef"[(v >> (28 - 4 * d)) & 15]; b[8] = 0; put(b); }
+/* e13: do the CPLB tables change while the OP-1 runs? The stock has 17 data pages and 18 instruction pages for 16
+ * entries each, so its miss handler swaps entries; a swap on every block would be very expensive. Every stats window
+ * the 32 address words are compared with the last window's: `dcplb_changes` / `icplb_changes` count the entries that
+ * differ (a table that is being rotated shows it; one that is stable counts nothing after the boot). */
+static uint32_t g_cplb_prev[2][16], g_cplb_changes[2], g_cplb_seen;
+static void cplb_watch(void)
+{
+    for (int t = 0; t < 2; t++)
+        for (int i = 0; i < 16; i++) {
+            uint32_t a = ((volatile uint32_t *)(t ? 0xFFE01100u : 0xFFE00100u))[i];
+            if (g_cplb_seen && a != g_cplb_prev[t][i]) g_cplb_changes[t]++;
+            g_cplb_prev[t][i] = a;
+        }
+    g_cplb_seen = 1;
+}
+
+/* e13: the live fill probe (the policy file's `probe=1`, coop_place.cc). e12 on the device: the plugins' code stalls
+ * about doubled when their code moved from heap 0 to region A, and the boot probe above says a cold line of region-A
+ * code costs ~200 cycles, the figure kennel measured for heap 0 (354 for 0x02xxxxxx). The boot probe runs before the
+ * GUI and the audio exist. This one runs from the main loop at every stats window, while the OP-1 plays: the same
+ * 4 KB of NOPs (128 code lines) cold in region A (probe_4k) and cold from a copy in heap 0, and 8 KB of data (256
+ * lines, one word a line) cold in region A (g_probe_data) and in heap 0, each after a walk that empties the cache
+ * (probe_24k; g_evict_data), and the region-A passes once more warm. Five tries a window, the smallest kept (a try
+ * the audio interrupt cut into is longer); the stats give the smallest and the average of the windows' figures:
+ *   fill n N state S code_a_min C code_a_avg C code_heap_min C code_heap_avg C data_a_min C data_a_avg C data_heap_min C
+ *        data_heap_avg C code_warm W data_warm W
+ * (cycles a pass; a cold line = (cold - warm) / 128 or / 256). Off by default: 12.3 KB of heap 0, ~3 M cycles a window. */
+#include "coop_place.h"
+#if COOP_DIAG                                                    /* e15: release builds have no fill probe (`probe=1` reads
+                                                                    the MMRs only, plugin_host.cc; no `fill` line) */
+#define MALLOC ((void *(*)(uint32_t))0x01A9F348u)                 /* heap 0 (plugin_host.cc) */
+extern "C" void coop_code_sync(uint32_t lo, uint32_t hi);         /* plugin_host.cc */
+static void (*g_heap_code)(void);
+static volatile uint32_t *g_heap_data;
+static uint32_t g_fill_n, g_fill_min[4], g_fill_warm[2], g_fill_state;   /* state: 0 not set up, 1 ready, 2 no memory */
+static uint64_t g_fill_sum[4];
+static void fill_probe(void)
+{
+    if (!g_coop_place.probe || g_fill_state == 2) return;
+    if (!g_fill_state) {
+        uint8_t *c = (uint8_t *)MALLOC(4096u + 2u + 64u), *d = (uint8_t *)MALLOC(8192u + 32u);
+        if (!c || !d) { g_fill_state = 2; return; }
+        uint16_t *code = (uint16_t *)(uintptr_t)(((uint32_t)(uintptr_t)c + 31u) & ~31u);
+        for (int i = 0; i < 2048; i++) ((volatile uint16_t *)code)[i] = 0x0000;   /* NOP */
+        ((volatile uint16_t *)code)[2048] = 0x0010;                               /* RTS */
+        coop_code_sync((uint32_t)(uintptr_t)code, (uint32_t)(uintptr_t)code + 4098u);
+        g_heap_code = (void (*)(void))(uintptr_t)code;
+        g_heap_data = (volatile uint32_t *)(uintptr_t)(((uint32_t)(uintptr_t)d + 31u) & ~31u);
+        for (int i = 0; i < 2048; i++) g_heap_data[i] = 0;
+        for (int k = 0; k < 4; k++) g_fill_min[k] = 0xFFFFFFFFu;
+        g_fill_state = 1;
+    }
+    uint32_t best[4] = { 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu }, warm[2] = { 0xFFFFFFFFu, 0xFFFFFFFFu };
+    for (int t = 0; t < 5; t++) {
+        uint32_t c0, c1, v[4], w[2];
+        probe_24k(); c0 = coop_cost_now(); probe_4k(); c1 = coop_cost_now(); v[0] = c1 - c0;
+        c0 = coop_cost_now(); probe_4k(); c1 = coop_cost_now(); w[0] = c1 - c0;
+        probe_24k(); c0 = coop_cost_now(); g_heap_code(); c1 = coop_cost_now(); v[1] = c1 - c0;
+        (void)data_walk(g_evict_data, 8192); c0 = coop_cost_now(); (void)data_walk(g_probe_data, 2048); c1 = coop_cost_now(); v[2] = c1 - c0;
+        c0 = coop_cost_now(); (void)data_walk(g_probe_data, 2048); c1 = coop_cost_now(); w[1] = c1 - c0;
+        (void)data_walk(g_evict_data, 8192); c0 = coop_cost_now(); (void)data_walk(g_heap_data, 2048); c1 = coop_cost_now(); v[3] = c1 - c0;
+        for (int k = 0; k < 4; k++) if (v[k] < best[k]) best[k] = v[k];
+        for (int k = 0; k < 2; k++) if (w[k] < warm[k]) warm[k] = w[k];
+    }
+    for (int k = 0; k < 4; k++) { if (best[k] < g_fill_min[k]) g_fill_min[k] = best[k]; g_fill_sum[k] += best[k]; }
+    g_fill_warm[0] = warm[0]; g_fill_warm[1] = warm[1];
+    g_fill_n++;
+}
+static void put_fill(void)
+{
+    static const char *const kmin[4] = { "code_a_min", "code_heap_min", "data_a_min", "data_heap_min" };
+    static const char *const kavg[4] = { "code_a_avg", "code_heap_avg", "data_a_avg", "data_heap_avg" };
+    if (!g_coop_place.probe) return;
+    put("fill"); kv("n", g_fill_n); kv("state", g_fill_state);
+    for (int k = 0; k < 4 && g_fill_n; k++) { kv(kmin[k], g_fill_min[k]); kv(kavg[k], (uint32_t)(g_fill_sum[k] / g_fill_n)); }
+    kv("code_warm", g_fill_warm[0]); kv("data_warm", g_fill_warm[1]); put("\n");
+}
+#else
+static void fill_probe(void) { }
+static void put_fill(void) { }
+#endif
+
 static void put_cplb(void)
 {
     volatile uint32_t *const dmem = (volatile uint32_t *)0xFFE00004u, *const imem = (volatile uint32_t *)0xFFE01004u;
-    put("cplb dmem "); puthex8(*dmem); put(" imem "); puthex8(*imem); put("\n");
+    put("cplb dmem "); puthex8(*dmem); put(" imem "); puthex8(*imem);
+    kv("dcplb_changes", g_cplb_changes[0]); kv("icplb_changes", g_cplb_changes[1]); put("\n");   /* e13, appended */
     put("dcplb");
     for (int i = 0; i < 16; i++) { put(" "); puthex8(((volatile uint32_t *)0xFFE00100u)[i]); put("/"); puthex8(((volatile uint32_t *)0xFFE00200u)[i]); }
     put("\nicplb");
@@ -589,7 +714,38 @@ extern "C" int coop_stats_run_section(char *out, int cap, const char *name, cons
     return n;
 }
 
-static void write_file(void)
+/* e14 (efficiency-audit finding 4): the text is made in RAM and served from there. Until e13 every 5 s window ended
+ * with ~15 KB written to /yaffs2/user/coop_stats.txt and 8 KiB into the tape image's tail (13.7 MB of NAND an hour,
+ * a main-loop stall each time). Now:
+ * - the windows tick as before (coop_stats_tick: the ring, the heaviest windows, the fill probe), without a write;
+ * - a host's FILE_GET of the stats path is answered from RAM (coop_sysex.cc -> coop_stats_ram): the text is made
+ *   afresh when the read starts (offset 0, or the first request after ~2 s without one) and the following pieces come
+ *   from that same text, so a paged read is consistent. tools/coop_usb.py `stats` and the site read that path;
+ * - the file and the tape tail are written only when g_coop_statsfile is set: 1 in the ELF (the op1emu gate reads the
+ *   file out of the NAND after a run), 0 in the device packages (--set-word g_coop_statsfile=0), the policy token
+ *   `statsfile=0|1` either way; and after a runner script (coop_stats_write_now), which is a test tool's own request. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_statsfile = 1; }
+volatile uint32_t g_stats_ram_reads, g_stats_ram_texts;
+static void format_text(void);
+static void store_text(void);
+static void write_file(void) { format_text(); store_text(); }
+static uint32_t g_ram_tick;                                        /* g_stats_ticks at the last RAM request */
+extern "C" int coop_stats_is_path(const char *path)
+{
+    const char *s = STATS_PATH;
+    while (*s && *s == *path) { s++; path++; }
+    return *s == 0 && *path == 0;
+}
+/* Main loop (the SysEx service): the text for a read at offset `off`; returns its length. */
+extern "C" int coop_stats_ram(uint32_t off, const char **text)
+{
+    if (off == 0 || !g_stats_ram_texts || g_stats_ticks - g_ram_tick > 240u) { format_text(); g_stats_ram_texts++; }
+    g_ram_tick = g_stats_ticks;
+    g_stats_ram_reads++;
+    *text = g_text;
+    return g_len;
+}
+static void format_text(void)
 {
     g_out = g_text; g_cap = (int)sizeof g_text; g_len = 0; g_cost_src = g_coop_cost;
     put("coop_stats 3 build " STATS_BUILD "\n");
@@ -601,7 +757,9 @@ static void write_file(void)
     for (int l = 0; l < 2; l++) {                                /* p6f / p6g: the 4 KB probe under each PFCTL layout, three passes (cycles, p0) */
         put(l ? "icache_l1" : "icache_l0"); kv("c1", g_icp[l][0][0]); kv("p1", g_icp[l][0][1]); kv("c2", g_icp[l][1][0]); kv("p2", g_icp[l][1][1]); kv("c3", g_icp[l][2][0]); kv("p3", g_icp[l][2][1]); put("\n");
     }
-    for (int side = 0; side < 2; side++) {                       /* p6h: the event sweep, "ev s cold/warm" (cycles) and "ev o cold/warm" (occurrences) */
+    put_fill();                                                  /* e13: the live fill probe, when the policy file asks */
+    for (int side = 0; side < 2 && g_coop_pf_sweep; side++) {    /* p6h: the event sweep, "ev s cold/warm" (cycles) and "ev o cold/warm"
+                                                                    (occurrences); e13: only when the sweep ran (two lines of zeros before) */
         put(side ? "pfsweep_data" : "pfsweep_code");
         for (int ev = 0; ev < 16; ev++)
             for (int cnt = 0; cnt < 2; cnt++) {
@@ -610,7 +768,8 @@ static void write_file(void)
             }
         put("\n");
     }
-    put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); kv("leased", g_l1_leased); kv("leases", g_l1_leases); kv("lease_refused", g_l1_lease_refused); kv("free", coop_l1_free()); put("\n");
+    put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); kv("leased", g_l1_leased); kv("leases", g_l1_leases); kv("lease_refused", g_l1_lease_refused); kv("free", coop_l1_free());
+    kv("wrap", g_wrap_where); kv("wrap_nested", g_wrap_nested); kv("wrap_checked", g_wrap_checked); kv("wrap_bad", g_wrap_bad); put("\n");   /* e15: the effect wrap's work block (0 not yet, 1 L1, 2 SDRAM) */
     put_switches();
     put_cplb();
     put("slow"); kv("count", g_slow_count); kv("threshold", g_coop_slow_th); kv("gap_prof", g_coop_gap_prof); kv("gap_full", g_gap_full); put("\n");
@@ -650,24 +809,41 @@ static void write_file(void)
     put("\n");
     put("tape"); kv("rec_calls", g_tape_rec_calls); kv("rec_side_blocks", g_tape_rec_side_blocks);
     kv("mismatch", g_tape_state_mismatch); kv("mismatch2", g_tape_state_mismatch2); kv("mismatch_word", g_tape_mismatch_word);
-    kv("seam_fills", g_tape_seam_fills); put("\n");
+    kv("seam_fills", g_tape_seam_fills);
+    kv("idle_mode", g_coop_tape_idle); kv("idle_blocks", g_tape_idle_blocks); kv("idle_checked", g_tape_idle_checked); kv("idle_bad", g_tape_idle_bad);   /* e14 */
+    put("\n");
     put("io"); kv("loads", g_tape_io_loads); kv("flushes", g_tape_io_flushes); kv("held", g_tape_io_held); kv("guarded", g_tape_io_guarded); kv("errors", g_tape_io_errors);
     kv("step_max", g_tape_io_step_cycles_max); kv("gap_max", g_tape_io_gap_cycles_max);
     kv("load_max", g_tape_io_load_cycles_max); kv("flush_max", g_tape_io_flush_cycles_max); put("\n");
     put("edits"); kv("lifts", g_edit_lifts); kv("drops", g_edit_drops); kv("erases", g_edit_erases); kv("errors", g_edit_errors);
-    kv("mono_fallbacks", g_edit_mono_fallbacks); put("\n");
+    kv("mono_fallbacks", g_edit_mono_fallbacks);
+    kv("pool", coop_clip_pool_bytes() >> 1); kv("pool_used", g_edit_pool_used); kv("pool_moves", g_edit_pool_moves); put("\n");   /* e12: samples */
+    put("sysex"); kv("polls", g_sysex_polls); kv("rx", g_sysex_rx); kv("drop", g_sysex_drop); kv("replies", g_sysex_replies);   /* e13 */
+    kv("errors", g_sysex_errors); put("\n");
     put("stats"); kv("writes", g_stats_writes); kv("errors", g_stats_errors); kv("tail_writes", g_stats_tail_writes);
     kv("tail_errors", g_stats_tail_errors); kv("windows", g_stats_windows); kv("ticks", g_stats_ticks); put("\n");
     for (uint32_t i = 0; i < TOP; i++) {                               /* the heaviest windows, any order */
         if (!g_top[i].blocks) continue;
         put_window("top", &g_top[i]);
     }
-    for (uint32_t i = 0; i < WINDOWS; i++) {                           /* oldest first */
+    /* e13: the text is 16 KiB and a window line can reach ~370 bytes with the appended sums: when the windows left
+     * to print cannot all fit, the oldest go, so the text never ends in half a line and always has the newest */
+    uint32_t first = 0, live = 0;
+    for (uint32_t i = 0; i < WINDOWS; i++) { const struct window *w = &g_ring[(g_ring_next + i) % WINDOWS]; if (w->blocks || w->io_steps) live++; }
+    while (live && live * 370u + 2u > (uint32_t)(g_cap - g_len)) {
+        const struct window *w = &g_ring[(g_ring_next + first) % WINDOWS];
+        if (w->blocks || w->io_steps) live--;
+        first++;
+    }
+    for (uint32_t i = first; i < WINDOWS; i++) {                       /* oldest first */
         const struct window *w = &g_ring[(g_ring_next + i) % WINDOWS];
         if (!w->blocks && !w->io_steps) continue;
         put_window("win", w);
     }
     g_text[g_len] = 0;
+}
+static void store_text(void)
+{
     if (coop_tape_write_tail(g_text, g_len + 1) == 0) g_stats_tail_writes++; else g_stats_tail_errors++;   /* the channel disk mode copies */
     int fd = Y_OPEN(STATS_PATH, 0x242, 0x180);                        /* O_RDWR | O_CREAT | O_TRUNC, as the tape marker (not visible in disk mode) */
     if (fd < 0) { g_stats_errors++; return; }
@@ -677,6 +853,20 @@ static void write_file(void)
 }
 
 extern "C" void coop_stats_write_now(void) { write_file(); }    /* coop_runner.cc: after a run (main loop) */
+
+/* e13: what a cost entry has summed since the last window (the audio interrupt adds to the 64-bit sums: read masked) */
+static uint64_t g_cost_prev[COOP_COST_N];
+static uint32_t cost_delta(int i)
+{
+    uint32_t m; __asm__ __volatile__("cli %0;" : "=d"(m) : : "memory");
+    uint64_t now = g_coop_cost[i].sum;
+    __asm__ __volatile__("sti %0;" : : "d"(m) : "memory");
+    uint32_t d = (uint32_t)(now - g_cost_prev[i]);
+    g_cost_prev[i] = now;
+    return d;
+}
+static void cplb_watch(void);                                    /* below */
+static void fill_probe(void);
 
 static void keep_if_heavy(const struct window *w)
 {
@@ -692,7 +882,7 @@ extern "C" void coop_stats_tick(int recording)
     if (!g_started) { g_started = 1; g_window_start = now; }
     g_stats_ticks++;
     if (recording) g_win_recording = 1;
-    if (g_stats_ticks == FIRST_WRITE_PASSES && !recording) write_file();
+    if (g_stats_ticks == FIRST_WRITE_PASSES && !recording && g_coop_statsfile) write_file();
     if (now - g_window_start < WINDOW_CYCLES) return;
     g_window_start = now;
     struct window *w = &g_ring[g_ring_next];
@@ -719,7 +909,14 @@ extern "C" void coop_stats_tick(int recording)
     w->loads = g_tape_io_loads - g_prev_loads;             g_prev_loads = g_tape_io_loads;
     w->flushes = g_tape_io_flushes - g_prev_flushes;       g_prev_flushes = g_tape_io_flushes;
     w->recording = g_win_recording;      g_win_recording = 0;
+    w->eng = cost_delta(COOP_COST_SYNTH) + cost_delta(COOP_COST_DRUM);   /* e13 */
+    w->peng = cost_delta(COOP_COST_PENG_B);
+    w->fx = cost_delta(COOP_COST_PLUG);
+    w->s2 = cost_delta(COOP_COST_S2I) + cost_delta(COOP_COST_S2M);
+    cplb_watch();
+    fill_probe();
+    coop_voice_diag_window();                                      /* e14: the envelope peak of the window just closed */
     g_stats_windows++;
     keep_if_heavy(w);
-    if (!recording) write_file();
+    if (!recording && g_coop_statsfile) write_file();              /* e14: the text is served from RAM without it */
 }

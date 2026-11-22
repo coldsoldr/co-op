@@ -23,12 +23,12 @@
     {
       "firmware": "op1/op1r",
       "link": "https://pcppcp.github.io/op1r/web/",
-      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/fadc36ed6727d5f95b9ad4e5ee76e9d034f90ac3/data/plugins/euclid.op1p",
-      "sha256": "27eda3b9e284a7cc09d1a690fcb6b05c71b1e92354c4e5feb70da8622db57ed2",
-      "sizeBytes": 24311,
-      "version": "72",
-      "requires": "op1r 72",
-      "source": "https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/euclid",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/bef688f7c5082a9514077422280657f0e08145aa/data/plugins/euclid.op1p",
+      "sha256": "bf659fc47359352c6e0143663188798d84761dafe7228880c4cdd6572ea2b2ed",
+      "sizeBytes": 25403,
+      "version": "73",
+      "requires": "op1r 73",
+      "source": "https://github.com/pcppcp/op1r-src/tree/f73bc17f98ebbcc559741accec9c068a2440be7e/synth_sdk/plugins/euclid",
       "savedName": "euclid"
     }
   ]

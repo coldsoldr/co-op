@@ -6,7 +6,7 @@ Crush reduces the signal's bit depth and sample rate, then adds drive. Low bit d
 
 ## Who made it
 
-Reconstructs Maiko Pruett's #250 algorithm and artwork, used with permission.
+Maiko Pruett's #250 algorithm and artwork, reconstructed in kennel by Hundekraft with Maiko's permission.
 
 ## Get it
 

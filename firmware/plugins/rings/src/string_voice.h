@@ -42,10 +42,44 @@ const int32_t kMaxStrings = 8;               // upstream kNumStrings
 #endif
 const size_t kStringMaxBlockSize = OP1RINGS_CONTROL_BLOCK_SIZE;
 
+// coop 0.14 (docs/efficiency-audit.md finding 11): the strings themselves (8.3 KB each, nearly all of it the delay
+// line) are not in the voice states any more but in a pool the voices take them from as they are configured, and
+// give back when they are reset. Six voice states held eight each (48, 400 KB), while the voices that can still
+// sound hold at most 16: a polyphony of p keeps p voices in its list and at most p fading after steals, each with
+// 8 / p strings (the string models one), and "all" six voices of two. A string's samples from before its Init are
+// never read (0.8's clean_, string_fixed.h), so which string of the pool a voice gets changes nothing it plays.
+// When the pool is empty the engine (rings.cc ReclaimStrings) takes back the strings of voices that can no longer
+// sound: silent ones (reset before they are struck again), and fading ones whose fade would have ended had they
+// been rendered (the core stopped rendering them; it renders them again only after a strike, which overwrites
+// their state).
+class StringVoice;
+class StringPool {
+ public:
+#ifndef OP1RINGS_POOL_STRINGS
+#define OP1RINGS_POOL_STRINGS 16   // tests/host/rings builds smaller pools to see the reclaim work
+#endif
+  static const int32_t kStrings = OP1RINGS_POOL_STRINGS;
+  static void Bind(StringFixed* strings);   // kStrings of them, from the engine's init
+  // A string (as it was left: Init it), or nullptr when even the engine's reclaim left none.
+  static StringFixed* Acquire(const StringVoice* requester);
+  static void Release(StringFixed* string);
+  static int32_t free_count();
+
+ private:
+  static StringFixed* strings_;
+  static uint32_t free_;   // bit i: strings_[i] is free
+};
+// The engine's (rings.cc): makes strings free (above), never those of `requester`.
+void ReclaimStrings(const StringVoice* requester);
+
 class StringVoice {
  public:
-  // Cheap: the strings are cleared by the next Configure.
+  // Cheap: the strings are cleared by the next Configure. coop 0.14: gives the voice's strings back to the pool.
   void Init();
+  // coop 0.14: the strings back to the pool (the voice is silent, and reset before it sounds again); the next
+  // Configure takes new ones.
+  void ReleaseStrings();
+  int32_t strings_held() const { return held_; }
 
   // A string model and Rings' polyphony (1, 2 or 4). A change re-initialises
   // the strings it uses, as upstream's ConfigureResonators does.
@@ -104,9 +138,13 @@ class StringVoice {
     DcBlockerFixed dc_blocker;
   };
 
+  // coop 0.14: strings 0 .. held_ - 1 from the pool (StringPool); Configure and CopyFrom take num_strings.
+  void HoldStrings(int32_t n);
+
   State state_;
   StretchLine stretch_;
-  StringFixed strings_[kMaxStrings];
+  int32_t held_;
+  StringFixed* strings_[kMaxStrings];
 
 };
 

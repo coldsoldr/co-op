@@ -142,6 +142,13 @@ int main(int argc, char** argv) {
       FX_tape_drive.init(2);
 #endif
     }
+    if ((b % 3000) >= 1500 && (b % 3000) < 1800) {   // stretches with every turn moving every block (0.6: the plugin
+      for (int k = 0; k < 4; ++k) {                  // keeps each turn's value until its word moves)
+        words[k] += Range(3, 120) * ((Next() & 1) ? 1 : -1);
+        if (words[k] < kLo[k] - 200) words[k] = kLo[k] + 200;
+        if (words[k] > kHi[k] + 200) words[k] = kHi[k] - 200;
+      }
+    }
     if ((b % 3000) >= 2800) words[3] = kLo[3] - Range(0, 50);   // mix 0 (and below: clamped) for 200 blocks
     for (int k = 0; k < 4; ++k) params[k] = Sat16(words[k]);
     params[4] = 0x5300;

@@ -1,0 +1,81 @@
+coop_run 1 build e13 script dev_release_long
+run events 42 blocks 82343 state 3 lost_sections 0
+switches dsynth 1 stage 1 cwo 1 punch 1 phone 1 nitro 1 grid 1 spring 1 delay 1 voltage 1 phase 1
+section lead-in blocks 2412 cb_avg 90698 cb_max 193158
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10948/23422/2412/3621/1469 s2_master=1671/1671/1/1180/108 master=4679/4679/1/2798/108
+engines avg/max/n eng_rings=23883/98966/379314 eng_rings_block=143302/329395/63219
+section rest blocks 2067 cb_avg 90126 cb_max 197741
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10843/25050/2067/3509/1458
+engines avg/max/n eng_rings=23884/98966/379328 eng_rings_block=143302/329395/63222
+section - blocks 344 cb_avg 353352 cb_max 451335
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12244/17427/344/4861/1361
+engines avg/max/n synth=169731/213308/343/58941/13885 synth_first=13395/72175/343/8734/2270 synth_rest=31340/86904/1711/10064/2328 plugin_own=27453/85664/2054/9073/2298 plugin_own_block=164399/206435/343/54337/13762 plugin_engine=28343/86904/2054/9842/2318 eng_rings=23903/98966/381380 eng_rings_block=143416/329395/63564
+section hold blocks 6891 cb_avg 352387 cb_max 446495
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=11984/18057/6891/4619/1291
+engines avg/max/n synth=167982/198173/6891/58237/14589 synth_first=13036/20366/6891/8536/2314 synth_rest=30989/85235/34455/9940/2455 plugin_own=27103/84632/41346/8931/2408 plugin_own_block=162618/191329/6891/53589/14453 plugin_engine=27997/85235/41346/9706/2431 eng_rings=24216/98966/422756 eng_rings_block=145296/329395/70460
+section - blocks 345 cb_avg 367333 cb_max 498280
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12365/17427/345/5009/1358
+engines avg/max/n synth=167563/192785/345/58475/13419 synth_first=13288/36916/345/8729/2183 synth_rest=30855/69174/1725/9949/2247 plugin_own=27034/68567/2070/8971/2214 plugin_own_block=162204/188639/345/53827/13287 plugin_engine=27927/69174/2070/9745/2236 eng_rings=24229/98966/424790 eng_rings_block=145377/329395/70799
+section r000 blocks 3445 cb_avg 360682 cb_max 493575
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=11998/17952/3445/4524/1445
+engines avg/max/n synth=166672/192945/3445/57599/13409 synth_first=12798/31211/3445/8373/2095 synth_rest=30774/83699/17225/9845/2262 plugin_own=26894/82851/20670/8835/2212 plugin_own_block=161365/186903/3445/53015/13275 plugin_engine=27778/83699/20670/9599/2234 eng_rings=24353/98966/445484 eng_rings_block=146119/329395/74248
+section r005 blocks 3445 cb_avg 352180 cb_max 517305
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12004/17637/3445/4513/1465
+engines avg/max/n synth=159740/190062/3445/55582/12918 synth_first=12530/20781/3445/8322/1942 synth_rest=29442/87988/17225/9452/2195 plugin_own=25769/87392/20670/8529/2130 plugin_own_block=154615/183690/3445/51179/12783 plugin_engine=26623/87988/20670/9263/2153 eng_rings=24416/98966/466154 eng_rings_block=146494/329395/77693
+section r010 blocks 3446 cb_avg 330204 cb_max 416830
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12032/18372/3446/4512/1520
+engines avg/max/n synth=141070/167682/3446/50072/10982 synth_first=11862/27199/3446/8241/1518 synth_rest=25841/83963/17230/8366/1892 plugin_own=22742/82329/20676/7691/1807 plugin_own_block=136454/161113/3446/46150/10845 plugin_engine=23511/83963/20676/8345/1830 eng_rings=24344/98966/486824 eng_rings_block=146068/329395/81138
+section r015 blocks 3445 cb_avg 330328 cb_max 449860
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12025/17742/3445/4512/1524
+engines avg/max/n synth=141082/166798/3445/50084/10983 synth_first=11867/19926/3445/8235/1524 synth_rest=25842/84894/17225/8369/1891 plugin_own=22743/83946/20670/7694/1807 plugin_own_block=136462/163002/3445/46166/10847 plugin_engine=23513/84894/20670/8347/1830 eng_rings=24279/98966/507494 eng_rings_block=145677/329395/84583
+section r020 blocks 3445 cb_avg 330279 cb_max 453066
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12031/17942/3445/4515/1520
+engines avg/max/n synth=141198/171305/3445/50100/11131 synth_first=11857/26726/3445/8229/1525 synth_rest=25868/87338/17225/8374/1921 plugin_own=22764/86321/20670/7697/1832 plugin_own_block=136588/165087/3445/46185/10993 plugin_engine=23533/87338/20670/8350/1855 eng_rings=24220/98966/528158 eng_rings_block=145321/329395/88027
+section r025 blocks 3445 cb_avg 330057 cb_max 426400
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12037/29607/3445/4513/1527
+engines avg/max/n synth=141050/168516/3445/50073/10967 synth_first=11855/26009/3445/8227/1517 synth_rest=25839/85088/17225/8369/1889 plugin_own=22741/84185/20670/7693/1805 plugin_own_block=136448/163896/3445/46161/10832 plugin_engine=23508/85088/20670/8345/1827 eng_rings=24164/98966/548834 eng_rings_block=144987/329395/91473
+section r030 blocks 3446 cb_avg 127185 cb_max 420295
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=11092/24707/3446/3742/1469
+engines avg/max/n synth=142115/166563/517/50503/11873 synth_first=12023/17571/517/8335/1592 synth_rest=26028/86097/2584/8436/2057 plugin_own=22914/85514/3101/7758/1954 plugin_own_block=137440/163182/517/46538/11723 plugin_engine=23693/86097/3101/8420/1979 eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r035 blocks 3445 cb_avg 91034 cb_max 180217
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10890/23267/3445/3580/1444
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r040 blocks 3445 cb_avg 90975 cb_max 213494
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10907/25732/3445/3579/1458
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r045 blocks 3446 cb_avg 90976 cb_max 184641
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10909/21917/3446/3584/1462
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r050 blocks 3445 cb_avg 90649 cb_max 185169
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10894/25807/3445/3564/1459
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r055 blocks 3445 cb_avg 90865 cb_max 173003
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10903/22619/3445/3586/1456
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r060 blocks 3446 cb_avg 90924 cb_max 177139
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10922/24432/3446/3591/1470
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r065 blocks 3445 cb_avg 90741 cb_max 178144
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10915/26882/3445/3586/1463
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r070 blocks 3445 cb_avg 90739 cb_max 189941
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10922/24177/3445/3598/1457
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r075 blocks 3446 cb_avg 90626 cb_max 242849
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10892/24102/3446/3562/1459
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r080 blocks 3445 cb_avg 90837 cb_max 190441
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10926/24127/3445/3595/1464
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r085 blocks 3445 cb_avg 90727 cb_max 169664
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10910/21112/3445/3576/1464
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r090 blocks 3446 cb_avg 90764 cb_max 214989
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10707/24567/3446/3448/1327
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section r095 blocks 3445 cb_avg 90702 cb_max 180428
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10684/24782/3445/3436/1322
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986
+section - blocks 1378 cb_avg 90688 cb_max 179819
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=10688/21602/1378/3441/1327
+engines avg/max/n eng_rings=24157/98966/551911 eng_rings_block=144945/329395/91986

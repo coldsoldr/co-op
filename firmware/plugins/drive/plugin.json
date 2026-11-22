@@ -19,6 +19,6 @@
      "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}
   ],
   "author": "coldsoldr",
-  "version": "0.2",
+  "version": "0.3",
   "description": "An oversampled soft-clip overdrive, true stereo: drive (0..+36 dB), tone (a tilt about 1 kHz, centre flat), bias (odd to even harmonics), mix; fn + blue input gain (-6..+6 dB, shift + fn + blue fine). Port of coldsoldr's te-op1-cfw drive (kennel plugin ports/knl/drive 0.2), GPL-3.0-or-later; the halfband's coefficients are Mutable Instruments Clouds' (Emilie Gillet, MIT, LICENSE-MIT)."
 }

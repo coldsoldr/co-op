@@ -32,6 +32,9 @@ export interface Op1Stub {
   installed: { path: string; bytes: number[] }[];
   /** The COMMIT prompt is up. */
   prompting: boolean;
+  /** The OP-1's ports the page has open now ('in', 'out'), and how many times it opened one. */
+  openPorts: string[];
+  opens: number;
 }
 
 declare global {
@@ -95,6 +98,8 @@ export async function stubOp1(page: Page, options: StubOptions): Promise<void> {
         removed: [],
         installed: [],
         prompting: false,
+        openPorts: [],
+        opens: 0,
         press(key) {
           // After T1 the prompt takes no more keys.
           if (!stub.prompting || confirmed) return;
@@ -114,7 +119,19 @@ export async function stubOp1(page: Page, options: StubOptions): Promise<void> {
       window.op1Stub = stub;
 
       const access = new EventTarget() as EventTarget & { inputs: Map<string, unknown>; outputs: Map<string, unknown> };
-      const input = { name: 'OP-1 Midi Device', state: 'connected', onmidimessage: null as null | ((e: unknown) => void), open: () => Promise.resolve(), close: () => Promise.resolve() };
+      /** open() and close() of one port, kept in stub.openPorts. */
+      const portState = (id: string) => ({
+        open: (): Promise<void> => {
+          stub.opens++;
+          if (!stub.openPorts.includes(id)) stub.openPorts.push(id);
+          return Promise.resolve();
+        },
+        close: (): Promise<void> => {
+          stub.openPorts = stub.openPorts.filter((p) => p !== id);
+          return Promise.resolve();
+        },
+      });
+      const input = { name: 'OP-1 Midi Device', state: 'connected', onmidimessage: null as null | ((e: unknown) => void), ...portState('in') };
       const setState = (state: string): void => {
         input.state = state;
         output.state = state;
@@ -199,8 +216,7 @@ export async function stubOp1(page: Page, options: StubOptions): Promise<void> {
       const output = {
         name: 'OP-1 Midi Device',
         state: 'connected',
-        open: () => Promise.resolve(),
-        close: () => Promise.resolve(),
+        ...portState('out'),
         send(data: Uint8Array) {
           const bytes = [...data];
           if (bytes.length > 96) throw new Error('a SysEx over 96 bytes stops the OP-1’s MIDI input');

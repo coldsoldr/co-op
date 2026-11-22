@@ -5,7 +5,7 @@
 
 ## Who made it
 
-Rebuilt by hundekraft from how Maiko Pruett's #249 and #250 work; none of Maiko's code is used.
+Maiko Pruett's #249 and #250 feature, rebuilt in kennel by Hundekraft from how it works; none of Maiko's code is used.
 
 ## Get it
 

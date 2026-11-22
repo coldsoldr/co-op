@@ -15,4 +15,4 @@ Line clock is part of hundekraft 3.3.1, a custom firmware for the original OP-1.
 ## Links
 
 - [Line clock in the hundekraft manual](https://hundekraft.github.io/op1-workshop/manual.html#lineclock): every control and page
-- [Source](https://github.com/Hundekraft/op1-workshop)
+- [Source](https://github.com/VolkerJunginger/OP-1/tree/main/Pulse-Sync/Source)

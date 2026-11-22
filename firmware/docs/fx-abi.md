@@ -87,7 +87,7 @@ pointers (or tiny per-slot values indexed by `slot`).
   when a scratch file loaded, each as large as the largest declaration among the loaded scratch files (32-byte
   rounded). The nine ports: tape_echo's 134,784 bytes, so 5 x 134,784 = 673,920 bytes.
 
-**The budget (e7).** 1,536 KiB of heap 0 for all plugin files together (`docs/plugins.md` "e7"). A scratch effect counts
+**The budget (e7).** 1,536 KiB of heap 0 for all plugin files together, 1,728 KiB from core e11 (`docs/plugins.md` "e7", "e11"). A scratch effect counts
 its image once plus what it grows the five buffers by (the buffers are counted once in all); an old-model effect (no
 `"scratch"`: state in `.bss`, five relocations, as before e8) counts five times its load size; an engine once plus
 its per-voice state. A file that would take the total over the budget is refused at boot, named in the stats

@@ -2554,3 +2554,1157 @@ boot value (120.0f in the image bytes; every run here set the tempo first).
 COM at power-on and flash the previous coop image (or stock).
 
 Result: (pending)
+
+## fickle 0.2 / petri 0.2: both in tape_echo's buffer size, the 13-file set fits e10 — device test (pending, 2026-11-20)
+
+What changed (`plugins/fickle/README.md`, `plugins/petri/README.md` "For the owner" / "Open points"): with all 13
+catalogue plugins on e10, fickle 0.1 was refused at boot (`over the plugin memory budget`): fickle and petri declared
+position buffers larger than tape_echo's and so grew all five. 0.2 of each declares no more than tape_echo's 134,784
+bytes. **fickle**: the loop buffer is 15,288 clock samples (was 24,576): the longest loop 0.62 s at 24 kHz (was 1.00 s),
+7.4 s at 2 kHz (12.0 s). **petri**: the record is 1.36 s (was 1.49 s), pattern's longest bar 1.27 s (1.39 s); the
+space's sound is unchanged. They need core e10, as 0.1 did; the kennel builds are not touched.
+
+- `plugins/fickle/fickle.coop` 0.2 (35,596 bytes, sha256
+  `269cb27c08011cae00462824e7ee6a45f808915d9194d515c3aafa25441ad22c`), `plugins/petri/petri.coop` 0.2 (36,104 bytes,
+  sha256 `33d7bdf063d31dc98c31b5d2d5c13256fe1621d8eae4e1698b8909ffe8c980c6`); copies in Downloads.
+- [C host, GNU simulator] `make -C tests/host/fickle` (stress 60,000 blocks, holds, the e8 check: passed; `sim` within
+  1 % of 0.1's table). `make -C tests/host/petri`: passed; built with the old record length through the new mapping,
+  the 31 listening takes are byte-identical to 0.1's; `sim`: both kernels 0 differ, all effects 21,111 avg / 36,152
+  max (0.1: 20,936 / 33,416: the space's copy comes four times as often).
+
+**Gate notes (op1emu, 2026-11-20, one run at a time, fresh NAND each; the e10 image is HEAD's core before e11, its
+device LDR byte-identical to the one in `op1_246_coop_e10.op1`; gate images `--tape-stereo --set-word
+g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`)** [C op1emu]:
+
+| Run | Result |
+|---|---|
+| **the 13 catalogue files on e10** (the nine ports, rings, saw, fickle 0.2, petri 0.2), `det_fx_select.txt` | boots and plays, no fault: `plugins seen 13 loaded 13 failed 0 ... over_budget 0`, `fscr_built 11`; `plugmem budget 1572864 used 1502128 over_budget 0 heap_short 0 ... heap_free_boot 14222524 scratch_files 11 fxbuf 134784 fxbuf_mem 673960 fxbuf_short 0`; the chord through wavefolder `fx1_plugin=11295/24189`; end `heap_largest 1111444 heap_free 1205596` |
+| the same NAND, second boot | 13 loaded, the same `plugmem` (`heap_free_boot 14552700`); end `heap_largest 1444172 heap_free 1535772` |
+| **fickle alone on e10**, `det_fx_fickle.txt` (every position, a chord, loop / dub / freeze, the fn layers) | no fault, 125.9 s of audio; `plugmem ... used 698344 ... scratch_files 1 fxbuf 134784`; `fxctl fx 1 turns 6 ... latches 10 ... p0=41009i2:1/2/4/0 p1=18275i2:0/1/0/0 p2=35612i2:0/1/0/0 p3=46528i1:0/1/0/0 p4=29301i1:0/1/0/0` (all five positions rendered it; wet mode delay, routing loop, loop mode rev 1 at p0); `fx1_plugin=18102/32204 s2_instr=20630/31083 s2_master=20624/22237`; `fscr_built 1` |
+| **petri alone on e10**, `det_fx_petri.txt` (every position, a chord, reverse / hold, the fn layers) | no fault, 113.5 s; `plugmem ... used 701112 ... scratch_files 1 fxbuf 134752 fxbuf_mem 673800`; `fxctl fx 1 turns 18 ... latches 8 ... p0=40444i2:10/28688/9312/0 p1=8052i2:0/30000/8000/0 p2=25390i2:0/30000/8000/0 p3=36526i1:0/30000/8000/0 p4=19298i1:0/30000/8000/0` (effect warp, filter and space moved at p0); `fx1_plugin=25913/35414 s2_instr=18815/24417 s2_master=18869/24440`; `fscr_built 1` |
+| the same two on e11 | as on e10: fickle `p0=41010i2:1/2/4/0`, `fx1_plugin=17870/32298`; petri `p0=40445i2:10/28688/9312/0`, `fx1_plugin=25915/35414`; no fault |
+
+Not shown in op1emu [I]: how the shorter loop and record sound (a listening test), the screens' look, the device's
+`cost` figures (expect 10-35 % over these; petri's warp and fickle's loop + dub at a high clock are the heavy cases).
+
+**What to do** (the OP-1 on e10 as it is today):
+1. Install `fickle.coop` 0.2 and `petri.coop` 0.2 with the librarian over the 0.1 files, with the other eleven
+   catalogue plugins present. Power-cycle. It must boot to the tape.
+2. The librarian's plugin list: all 13 loaded, none failed. Or read `coop_stats.txt` over USB MIDI (`python firmware	ools\coop_usb.py stats -o stats.txt`, the OP-1 plugged in normally, **not** disk mode, the librarian's browser tab closed; the agent can run it: yaffs files are not visible in disk mode): `plugins seen 13
+   loaded 13 failed 0`, `plugmem budget 1572864 used` about `1502128`, `fxbuf 134784`, no `plugfile` line.
+3. **fickle** at synth FX 1: play, white click (loop): the last 0.6 s comes back as a loop; green click (dub) and
+   play over it; white click again (off). Turn the clock (white) down: the loop gets longer and darker (1 s at about
+   15 kHz). Orange click: freeze. fn + blue / green / white: the wet mode, the routing, the loop mode.
+4. **petri** at synth FX 1: each of the eleven effects (fn + blue) with a few notes; pattern with time at the top (the
+   bar is now 1.27 s); orange click (hold), blue click (reverse); fn + white filter, fn + orange space. Listen for
+   clicks or crackle when a long loop wraps: there should be none.
+5. Both at FX 2 and on the master once. Then read the stats again (`coop_usb.py stats`) after a few minutes: the `plugins` line's
+   `heap_free` / `heap_largest` and the `cost` line (`fx1_plugin`, `s2_instr`, `s2_master`).
+
+**If something is wrong:** remove the file with the librarian (or put 0.1 back: then one of the 13 is refused at boot,
+as before). Nothing here touches the firmware.
+
+Result: (pending: the listening steps 3-5.) Steps 1-2 on **e11** instead of e10 (2026-11-20, the e11 entry below)
+[C device]: the 13 files with fickle 0.2 and petri 0.2 installed, all 13 loaded, `plugmem ... used 1502128 ... fxbuf
+134784`, no `plugfile` line: the figure e10 would charge too (1,502,128 of its 1,572,864).
+
+## e11: the plugin memory budget 1,728 KiB — device test (partly confirmed 2026-11-20: flashed, boots, 13 loaded; steps 4-5 pending)
+
+What changed (`docs/plugins.md` "e11"): all plugins together may take 1,728 KiB of heap 0 (1,769,472 bytes), was
+1,536 KiB. Nothing else in the core; build tag `e11`, the boot picture's line `coop e11 - 246`. Why that figure, in
+short: a first boot without plugins ends with 2,729,484 bytes of heap 0 free; after the boot coop takes at most
+742,024 more (the two FX 2 slots' delay / cwo lines, spring tanks and the master's grid tank, each of which may fail
+harmlessly) and the stock took nothing more in the gate's runs, so a full budget leaves ~0.2 MB on a first boot and
+~0.5 MB on any later one for what the stock was not seen to take.
+
+- `build/pkg/op1_246_coop_e11.op1` sha256 `34c78ca1e4297d46f25b5e9f86da49273660cf0540933e296e3e843bcbc37739`, copy in
+  Downloads. Release image as e10 (`tools/build_device_package.sh ... --tape-stereo --set-word g_coop_spread=32767`):
+  `verify_bootloader.py` PASS (no te-boot.ldr), `pkg_check` = only `OP1_vdk.ldr` differs. The ELF holds the tag `e11`
+  (and no `e10`), the package's LDR the line `coop e11 - 246`. Against the e10 core: six immediates (the budget's five
+  loads and the inventory text's 1536 -> 1728) and the tag, by disassembly.
+- The site does not offer e11 yet (no web delta made): it follows the owner's device result.
+
+**Gate notes (op1emu, 2026-11-20, one run at a time, fresh NAND each; images `--tape-stereo --set-word
+g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`; e10 = the core before this change)** [C op1emu]:
+
+| Run | Result |
+|---|---|
+| (a) **the 13 catalogue files on e11**, `det_fx_select.txt` | boots and plays, no fault: `plugins seen 13 loaded 13 failed 0 ... over_budget 0`, `fscr_built 11`; `plugmem budget 1769472 used 1502128 over_budget 0 heap_short 0 skipped 0 badname 0 tape_node 524288 heap_free_boot 14222524 scratch_files 11 fxbuf 134784 fxbuf_mem 673960 fxbuf_short 0`; `fx1_plugin=11296/24189`; end `heap_largest 1111444 heap_free 1205596` |
+| (a) the same NAND, second boot | 13 loaded, the same `plugmem` (`heap_free_boot 14552700`); end `heap_largest 1444172 heap_free 1535772` |
+| (b) the 13 files on e10 | the entry above: `used 1502128` of 1,572,864, the heap figures equal to e11's to the byte |
+| (c) fickle alone, petri alone on e11 (`det_fx_fickle.txt`, `det_fx_petri.txt`) | the entry above: every position, latches and fn layers, no fault |
+| (d) pristine `det_chord.txt`, e11 vs e10 | **identical over 2,263,660 frames** (from 5 s; rms 151.7 / 116.7, width 0.2327), first run of each; `plugmem budget 1769472 used 0`, end `heap_free 2729484` on both |
+| late use, pristine, `det_heap_late.txt` (every FX 2 type at both slots; sounds, kits, a tape recording, lift and drops) | no fault, 234 s; `s2_changes 42 tanks 118 tank_short 0`; end `heap_largest 1987028 heap_free 1987460`: 742,024 bytes below (d), all of it coop's own late allocations; the same figure on e10 with a shorter version of the run |
+| (e) **the budget full**: the 13 files + two test engines (204,804 and 57,348 bytes of `.bss`), fresh NAND, `det_heap_late.txt` | **boots** (the tape's cache got its 24 nodes: no halt) and plays 210 s, no fault: `plugins seen 15 loaded 15 failed 0`, `plugmem budget 1769472 used 1764688 over_budget 0 heap_short 0 ... heap_free_boot 13959964`; every late allocation given (`tanks 118 tank_short 0`); end **`heap_largest 167220 heap_free 201012`** |
+| (e) the same NAND, second boot, `det_chord.txt` | 15 loaded; `heap_free_boot 14290140`; end `heap_largest 1181468 heap_free 1272180` |
+| over the budget: the same and a third test engine (16,388 bytes), SysEx self-test image | boots, no fault: `plugins seen 16 loaded 15 failed 1 ... over_budget 1`, `plugmem budget 1769472 used 1756848`, `plugfile fickle.coop failed needs 24384: over the plugin memory budget`; inventory: `fickle.coop fx fickle failed on 0.2 coldsoldr 35596 over the plugin memory budget (needs 24 KB, 12 KB of 1728 KB left)` |
+
+The stock's USB disk heap (96 KiB, e7 kept room for it) is taken during the boot: its base word `0x018C1EA8` held
+`0x00104030` at the end of a pristine `det_chord.txt` run [C op1emu]. Not shown in op1emu [I]: the device's own heap
+figures (they decide whether the margin is what the emulator says); the sampler's recording, the album, the radio and
+USB disk mode with a full budget; whether the tape lift really landed in the synth and drum samplers in
+`det_heap_late.txt` (no screenshot was taken).
+
+**What to do:**
+1. Flash `op1_246_coop_e11.op1` (keep your plugins). The boot picture's line reads `coop e11 - 246`. It boots to
+   the tape as e10.
+2. With the 13 catalogue plugins (fickle 0.2 and petri 0.2 among them): read `coop_stats.txt` over USB MIDI (`python firmware	ools\coop_usb.py stats -o stats.txt`, the OP-1 plugged in normally, **not** disk mode, the librarian's browser tab closed; the agent can run it: yaffs files are not visible in disk mode). Expected:
+   `coop_stats 3 build e11`, `plugins seen 13 loaded 13 failed 0`, `plugmem budget 1769472 used` about `1502128`, no
+   `plugfile` line. Note the `plugins` line's `heap_free` and `heap_largest`: the emulator said 1,535,772 / 1,444,172
+   on a normal boot. **These two numbers from your device are the main result.**
+3. The librarian's plugin list: all loaded; its memory bar may still show 1,536 KB until the site knows e11.
+4. Put a delay or cwo at instrument FX 2 and at master FX 2, a spring at each, a grid on the master FX 2, play a few
+   minutes; sample something into the synth and the drum, record on the tape, open USB disk mode (Shift + COM) and
+   leave it. Back out of disk mode, read the stats again (`coop_usb.py stats`): `heap_free` / `heap_largest` once more
+   and `tank_short` (expected 0).
+5. If you have more plugins than the 13, add them until the bar is nearly full, power-cycle and repeat 2 and 4: a file
+   past the budget is named in the stats and the list (`... KB of 1728 KB left`), the OP-1 must always boot.
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e10.op1` (or stock). The
+13 files fit e10 too (the entry above); a set over 1,536 KiB has a file refused there, named in the stats.
+
+Result (2026-11-20, the owner's OP-1; read by the agent over USB MIDI, nothing copied in disk mode) [C device]:
+- **Steps 1-3: confirmed.** `op1_246_coop_e11.op1` flashed through the te-boot menu; it boots. `coop_usb.py` over the
+  winmm transport (its first use on the real device, and it works: `docs/test-loop.md`): HELLO `coop` build `e11`
+  caps 63 (`0x3f`); INVENTORY: 13 rows, all loaded, fickle 0.2 and petri 0.2 among them; FILE_GET of
+  `/yaffs2/user/coop_stats.txt`, 11,197 bytes: `plugins seen 13 loaded 13 failed 0 ... over_budget 0`, `plugmem budget
+  1769472 used 1502128 over_budget 0 heap_short 0 ... heap_free_boot 14534692 scratch_files 11 fxbuf 134784 fxbuf_mem
+  673960 fxbuf_short 0`. `used`, `fxbuf` and `fxbuf_mem` are op1emu's figures to the byte (gate row (a)); the
+  device's `heap_free_boot` lies between the emulator's first-boot and second-boot values (14,222,524 / 14,552,700).
+- **The librarian's windowed install** (web commit `ca8cfe9`: three PUT_DATA in flight, `docs/sysex.md`) on this
+  image: `rings.coop` installed in under 20 s (about 76 s with one chunk in flight). `g_sysex_drop` is not in the
+  stats file, so whether any chunk was dropped and resent could not be read.
+- **Not done yet:** the rest of the checklist: step 4 (FX 2 lines and tanks at both slots, the samplers, a tape
+  recording, the lift, the album, the radio, USB disk mode, then `heap_free` / `heap_largest` / `tank_short` again)
+  and step 5 (a set past the budget). The `plugins` line's `heap_free` / `heap_largest` of this read were not noted
+  down here: read them with step 4.
+
+## e12: plugin memory in coop's own SDRAM (5,760 KiB), four position buffers, the clipboard shares region B — device test (2026-11-21: memory confirmed, CPU regression with rings: not acceptable; superseded by e13)
+
+What changed (`docs/plugins.md` "e12"): no plugin byte comes from the stock heap 0 any more. The plugin images, the
+engines' voice state, the screen objects, the control tables and the effect position buffers come from one arena in
+coop's own SDRAM: region A above the core (`0x02CE0000..0x03000000`, 3,276,800 bytes), then the upper 2.5 MiB of
+region B (`0x02980000..0x02C00000`, filled downwards). **The budget is the arena: 5,898,240 bytes (5,760 KiB), was
+1,728 KiB.** The synth and drum positions share one position buffer (four buffers, not five), the budget charges one
+of them and up to three more are carved from what is left. The stereo clipboard keeps a floor of 1.5 MiB of region B
+(17.8 s of right channel, all four slots together) and whatever the plugins do not take: all 4 MiB (47.5 s) while
+the plugins fit region A. A track's old clip is now given back when the track is lifted again. The files load in
+name order. Build tag `e12`, the boot picture's line `coop e12 - 246`. Existing `.coop` files load unchanged.
+
+- `build/pkg/op1_246_coop_e12.op1` sha256 `d89b3e1838960f322be52ccda301006024d4a6ace0a7f6b42e5aab63febb9cae`, copy in Downloads. Release image as e11
+  (`tools/build_device_package.sh ... --tape-stereo --set-word g_coop_spread=32767`): `verify_bootloader.py` PASS (no
+  te-boot.ldr), `pkg_check` = only `OP1_vdk.ldr` differs. The ELF holds the tag `e12` (and no `e11` / `e10`), the
+  package's LDR the line `coop e12 - 246`.
+- The site does not offer e12 yet (no web delta made), and its memory bar still computes e11's rule: it follows the
+  owner's device result. The rule to port is in `docs/plugins.md` "e12".
+
+**Gate notes (op1emu, 2026-11-20, one run at a time, a fresh NAND each; images `--tape-stereo --set-word
+g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`; scripts and outputs in `I:\op1emu-tmp\e12gate\`)** [C
+op1emu]:
+
+| Run | Result |
+|---|---|
+| **the stock image**, `--watch-writes 0x027ffb04-0x02ffffff`, pristine first boot, `det_heap_late.txt` (sounds, kits, tape record and play, lift, drops into the samplers and the tape) | **0 writer PCs, 0 stores**: the stock does not write regions A or B |
+| (a) no plugins: pristine `det_chord.txt`, e12 vs e11 (`emu_gate.py`) | **identical over 2,281,355 frames** (max diff 0, the second try of both runs; the first tries' onsets differed by a block, as known); `plugmem budget 5898240 used 0 ... clip 4194304`, end `heap_free 2729484` as e11 |
+| (b) **the 13 catalogue files**, first boot | 13 loaded, `fscr_built 11 scr_built 2`, no fault: `plugmem budget 5898240 used 980992 over_budget 0 heap_short 0 ... heap_free_boot 15739524 scratch_files 11 fxbuf 134784 fxbuf_mem 539136 fxbuf_short 0 fxbufs 4 fxbuf_refused 0 arena 1385344 arena_a 1385344 arena_b 0 clip 4194304`; end **`heap_largest 2722396 heap_free 2725820`** (e11: 1111444 / 1205596; a boot without plugins: 2729052 / 2729484) |
+| (b) the same NAND, second boot, `det_chord.txt` | 13 loaded, the same `plugmem` (`heap_free_boot 16069700`); end `heap_largest 3055244 heap_free 3055996` |
+| (b) an effect of the 13 selected and played (`det_fx_select.txt`) | the last row of the stock FX list picked at synth FX 1, a chord through it: `fxctl p0=8231i6`, `plugin_blocks 8231`, `fx1_plugin=11294/24221` (e11: 11296/24189), no fault |
+| (c) **the arena filled**: the 13 + 13 test engines (12 of 400,000 bytes of `.bss`, one of 80,000) + one more of 64,000, `det_heap_late.txt` | **boots** (the tape's cache got its 24 nodes) and plays 214 s, no fault: `plugins seen 27 loaded 26 failed 1`, `plugmem budget 5898240 used 5863488 over_budget 1 ... fxbufs 1 fxbuf_refused 11 arena 5863488 arena_a 3247360 arena_b 2616128 clip 1578176` (99.4 % of the budget; 5,312 bytes of region B and 29,440 of region A unused), `plugfile zzover.coop failed needs 64192: over the plugin memory budget`; inventory `... (needs 63 KB, 33 KB of 5760 KB left)`. One position buffer: instrument FX 2 took it (`p3` 12 inits, every effect in turn), master FX 2 got none: eleven `plugfx <name> no memory for this position: slots 4` lines, the slot stayed off, no fault. A lift and a drop at the floor: `edits lifts 1 drops 1 errors 0 mono_fallbacks 0 pool 789088`. End `heap_largest 1982436 heap_free 1983796`: e11's late-use figure (1,987,460 after every FX 2 tank and line) less 3,664 |
+| (c) the same NAND, second boot | the same 26 loaded and the same file refused (name order), `used 5863488`, end `heap_free 3054444` |
+| (d) one scratch effect at three positions (`det_fx_two_pos.txt`, tape_echo) | `fxbufs 4`, `fxctl p0=21646i1 p3=35129i1`, `plugin_blocks 21646 s2_instr 35129`, no fault |
+| (d) switching effects at a position (`det_fx_switch.txt`, cs_hall + tape_echo) | `p0=71372i3 p3=47199i3`: one init per selection, no fault |
+| (d) every position, synth / drum / synth / drum (`det_fx_fickle.txt`, `det_fx_petri.txt`) | fickle: `p0=41010i2 p1=14809i2 p2=32147i2 p3=43063i1 p4=25835i1` (the latch and fn words as e11: `1/2/4/0`), the block and init counts **equal to e11's gate to the block**; petri: `p0=40445i2 p1=4595i2 p2=21933i2 p3=33068i1 p4=15841i1`. Synth and drum each re-initialised at every change (two inits each across synth, drum, synth, drum) with the two positions on one buffer; no fault |
+| (d) **one buffer only** (`g_coop_fxbuf_max=1`), `det_fx_two_pos.txt` | `fxbufs 1 fxbuf_refused 1`, `plugfx tape echo no memory for this position: slots 3`; `p0=21645i1` plays, `p3=0i0`, `s2_instr 0`; inventory row `tape_echo.coop ... loaded ... no memory for this position`; no fault |
+| (d) one buffer only, `det_fx_fickle.txt` | `fxbufs 1 fxbuf_refused 3`, `plugfx fickle no memory for this position: slots 2 3 4`; **the synth and drum positions both play from the one buffer** (`p0=41009i2 p1=11370i2`), the master and both FX 2 positions stay off (`p2=0i0 p3=0i0 p4=0i0`, `s2_instr 0 s2_master 0`), 118 s of audio, no fault |
+| (e) clipboard, no plugins (the whole region), `det_tape_liftdrop.txt` | `edits lifts 1 drops 1 errors 0 mono_fallbacks 0 pool 2097152 pool_used 167648`; the dropped chord plays back as wide as it was recorded (side / mid 0.26 against 0.26) |
+| (e) **a lift past the pool** (`g_coop_clip_max=65536`: 32,768 samples, the clip 167,648) | `mono_fallbacks 1 pool 32768 pool_used 0 errors 0`; the drop plays back **mono** (side / mid 0.000, the level kept), nothing else differs |
+| (e) the pool at its floor (the arena full: the 13 + the 13 test engines), the same lift and drop | `clip 1578176`, `pool 789088 pool_used 167648 mono_fallbacks 0`; plays back at side / mid 0.26 |
+| (e) lifting a track again (`det_tape_relift.txt`: two takes on two tracks, shift + lift, shift + drop, twice) | `edits lifts 3 drops 2 errors 0 mono_fallbacks 0 pool_used 335296 pool_moves 1`: two clips' worth in the pool after three lifts (e11 kept all three), one slot moved down; the last playback at side / mid 0.25-0.26, no fault. The move itself on the host: `tests/host/clip_pool_test.cc`, 1,800 random lifts on three pool sizes, 1,205 moves, 557 that did not fit, every slot intact [C host] |
+| (e) `det_tape_liftdrop3.txt` | as e11's: 1 lift, 1 drop, no fallback, stereo |
+| (f) **who writes the two regions** with the 13 files and an effect played, and on pristine with a lift and drop (`--watch-writes 0x02800000-0x02bfffff 0x02cc1280-0x02ffffff`) | region A above the image: `coop_arena_take` (the zeroing, 346,336 stores), the loader (`relocate`, 398,947; the control tables' parser), the plugins' own code running in the arena (11.2 M stores up to `0x02DCF7EC`), and at the first frame the screen objects (`build_one`, `escr_init`, `coop_screens_frame` and the stock screen constructor at `0x01A3BAC8..`, 13 stores each for 13 screens). Region B: the staging block during the scan only (2.64-2.72 s: the stock NAND layer and the stock copy loop at `0x01AA6E40`, up to `0x0281B994`), and on the pristine run `coop_lift` alone (167,648 stores, `0x02800000..0x02851DBE`). **Nothing else writes either region; nothing writes between the image's end and the arena.** Both runs complete, no fault |
+| (g) saw: a note (`det_eng_note.txt`) | `plugmem ... used 3968 ... arena 3968`, `eng_renders 11725 eng_noteons 17`, `eng_saw=7345/7440`, `scr_built 1`, no fault; end `heap_free 2729524` |
+| (g) rings: every model (`det_eng_rings.txt`) | `used 667712`, `eng_renders 118595 eng_noteons 329`, `eng_rings=9602/34129`, `eng_rings_block=54444/115235`, `scr_built 1`, 132 s, no fault |
+| (h) INVENTORY over USB/IP (`coop_usb.py --transport usbip`) | header `budget 5898240, used 980992, fxbuf 134784, fxbufs 4, clip 4194304`; every row with `need` and `scratch` (rings 667712 / 0, tape_echo 14592 / 134784, bitcrusher 5440 / 32, ...: they sum to 846,208, + 134,784 = `used`); a 428-byte file PUT after the boot: `new`, size 428 (was 0 before e12); the old parser reads the text unchanged |
+
+Not shown in op1emu [I]: anything the caches decide (the code is cache-synced after every relocation as since e4b,
+but op1emu has no caches); region A above 0.75 MiB and region B's top on real SDRAM; the cycle cost of plugin code and
+state in this SDRAM bank instead of heap 0's (kennel measured a slower cold line fill there: `docs/plugins.md` "e12");
+the stock's sampler recording, album, radio and disk mode against the two regions (they were not run under the write
+watch); a NAND read landing in region B on the device (the staging block; in op1emu the NAND layer writes it).
+
+**What to do:**
+1. Flash `op1_246_coop_e12.op1` (keep your plugins). The boot picture's line reads `coop e12 - 246`. It must boot
+   to the tape as e11, with all your plugins. **If it hangs or crashes at boot with plugins, that is the cache or
+   SDRAM question: note it and go back to e11.**
+2. With the 13 catalogue plugins: read `coop_stats.txt` over USB MIDI (`python firmware	ools\coop_usb.py stats -o stats.txt`, the OP-1 plugged in normally, **not** disk mode, the librarian's browser tab closed; the agent can run it: yaffs files are not visible in disk mode). Expected: `coop_stats 3 build e12`,
+   `plugins seen 13 loaded 13 failed 0`, **`plugmem budget 5898240 used 980992 ... fxbufs 4 fxbuf_refused 0 arena
+   1385344 arena_a 1385344 arena_b 0 clip 4194304`**, no `plugfile` or `plugfx` line. On the `plugins` line note
+   `heap_free` and `heap_largest`: the emulator says about 3.05 MB on a normal boot (e11: 1.5 MB), i.e. what the
+   OP-1 has without any plugin.
+3. Play each kind: a scratch effect at synth FX 1 (tape echo), the same or another at instrument FX 2 and at the
+   master (two different effects at two positions at once), switch effects at one position a few times, go synth ->
+   drum -> synth with a plugin effect on both: each restarts cleanly, no crackle, no stuck sound. Play saw and rings
+   (every rings model). **Listen for anything e11 did not do**: glitches, a slower UI, notes cutting out.
+4. Read the stats again (`coop_usb.py stats`) after a few minutes of that and compare the `cost` line's `fx1_plugin`, `s2_instr`,
+   `s2_master` and the `engines` line (rings, saw: avg / max per block) with an e11 stats file of the same playing.
+   **These figures are the main result**: the plugins now run from another SDRAM bank than heap 0, and only the
+   device can say whether that costs cycles.
+5. The clipboard, on the tape: record about 8 bars in stereo (something wide: a synth with spread, or two tracks
+   panned), lift it, drop it elsewhere, play it: still stereo. Lift and drop a few more times (before e12 the
+   stereo clipboard ran out after 47.5 s of lifts in a session; now each new lift of a track gives its old clip
+   back). Then lift one clip **longer than 48 s** (the whole pool with your 13 plugins) and drop it: it must drop
+   and play, in mono, nothing else wrong; the stats `edits` line then shows `mono_fallbacks 1`. Read the stats
+   (`coop_usb.py stats`) for the `edits` line (`pool 2097152` expected: samples).
+6. The librarian: the plugin list shows all loaded; its memory bar still uses e11's sums until the site knows e12.
+7. If you have more plugins than the 13: add them, power-cycle, repeat 2. Nothing should be refused until the bar
+   is far beyond what e11 allowed; a refused file is named in the stats and the list (`... KB of 5760 KB left`), and
+   the OP-1 must always boot.
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e11.op1` (or stock).
+Your plugin files are untouched by either; e11 loads the same files under its 1,728 KiB budget.
+
+**Result (the owner's OP-1, 2026-11-21; e12 and e11 flashed back to back, the stats read over USB MIDI with
+`tools/coop_usb.py stats`, files in `docs/device-stats/e11_2026-11-21_*`, `e12_2026-11-21_*`):**
+- **Memory: confirmed.** Boots with the 13 files, all loaded: `plugmem budget 5898240 used 989248 over_budget 0
+  heap_short 0 ... heap_free_boot 16044276 scratch_files 11 fxbuf 134784 fxbuf_mem 539136 fxbuf_short 0 fxbufs 4
+  fxbuf_refused 0 arena 1393600 arena_a 1393600 arena_b 0 clip 4194304` (the catalogue's 2026-11-21 files: rings
+  0.10 etc., hence 989,248 and not the gate's 980,992). The inventory's `budget used fxbuf fxbufs clip` and the rows'
+  `need` / `scratch` read over USB MIDI. Nothing faulted: the cache sync, region A above 0.75 MiB and the staging
+  block in region B work on the device.
+- **CPU: a regression, not acceptable for rings.** rings 0.10, six voices, the tape rolling or not: the whole
+  callback 367-403 k cycles a block per 5 s window on e11 (window maxima 450-660 k, `io_gap_max` <= 25 M) against
+  **457-520 k on e12 (maxima 600-856 k: dropouts; the owner: the UI "very laggy"; `io_gap_max` up to 204 M)**.
+  `eng_rings` per voice render 24,892 / 82,178 (avg / max) on e11, 27,529 / 213,030 on e12; its code stall cycles
+  6,060 -> 10,420, data stalls 4,423 -> 5,553. Nothing sounding: 91-92 k a block on both.
+- fickle 0.2 at synth FX 1 on a sampler: playing windows 255-257 k a block on e11, 262 k on e12 (+6 k); blocks over
+  the stats mark ~300 against 971; `fx1_plugin` 29,615 -> 43,188 cycles a block, of which code stalls 11,427 ->
+  22,398 and data stalls 4,308 -> 7,742 (the stock sampler's voices got 4.8 k a block cheaper in the same windows).
+  On the device fickle costs ~30 k a block where op1emu says 18 k.
+- The CPLB tables are the same on both cores and map region A cacheable and write-back like heap 0
+  (`docs/plugins.md` "e13"): it is not a cache-policy setting. Steps 5 (the clipboard) and 7 were not done.
+- **The owner is back on e11.** e13 (below) puts the plugins' images and voice state back in heap 0 by default and
+  makes the placement a boot policy to measure.
+
+## Plugin idle paths and the divides out of the steady block: tape_echo 0.4, cs_hall 0.3, cs_plate 0.3, fickle 0.3, petri 0.3; tape_drive 0.6, bitcrusher 0.3, rings 0.10 — device test (pending, 2026-11-20)
+
+Two changes to the plugins, `docs/efficiency-audit.md` findings 8 and 6. Core unchanged: the files load on e10, e11
+and e12 as their versions before did (no new import). **In the catalogue since 2026-11-21** (`plugins/<id>/<id>.coop`,
+the eight files of `firmware/build/plugins-next/`), after the op1emu gate on e11 and e12 below ("Gate notes"). The
+two tables that follow are host and GNU simulator.
+
+**1. No divide in a steady block (finding 8), bit-exact.** The knob scaling `(word - lo) x 32767 / (hi - lo)` and its
+kin ran as libgcc divides every block (~190 cycles each). Each plugin now keeps the values per slot and redoes one
+only when its word moves; rings FM's five divides a render are the constant's shifts.
+
+| Plugin | divides a block before | simulator, cycles a block: before -> after (the plugin's own test scenario) | proof it is the same output |
+|---|---|---|---|
+| tape_echo 0.4 | 6 (7 and a table walk with sync on) | 16,079 -> 15,039 | te-op1-cfw's echo, 5 tempo runs x 20,000 blocks host, 3,000 simulator: bit-identical |
+| cs_hall 0.3 | 4 | 17,753-21,942 -> 17,277-21,486 by scenario; the turns held 18,517 -> 18,027 | te-op1-cfw's hall, host and simulator: bit-identical |
+| cs_plate 0.3 | 4 | 17,873 -> 17,379; still knobs 17,419 -> 16,788 | te-op1-cfw's plate, 52,309 blocks host, 10,835 simulator: bit-identical |
+| tape_drive 0.6 | 4 | 9,197 -> 8,689 | te-op1-cfw's tape, 20,000 blocks host and simulator: bit-identical |
+| bitcrusher 0.3 | 7 and a 64-bit multiply | 6,507 -> 5,426 (the test moves each word in 3 blocks of 10) | te-op1-cfw's crusher, 2 x 40,000 blocks: 0 mismatching samples |
+| fickle 0.3 | 4, + 2 in the reverb mode, + 1 for the display while listening | reverb 20,299 -> 19,275, delay 13,304 -> 12,195, slip 14,590 -> 13,626 (default clock) | the test's digest of every output and display word, 0.2's sources against 0.3's: equal, host (60,000 blocks) and simulator |
+| petri 0.3 | 4 | all effects 21,111 -> 20,488 | the digest, as fickle: equal, host and simulator |
+| rings 0.10 | 5 a voice render in FM | the FM render 15,726 -> 14,810 (the fm stage 8,548 -> 7,637) | 0.9's output byte for byte: the 90 s scenario on the host, 6,000 FM blocks in the simulator |
+
+In every one of these tests the controls also move every block for stretches and jump at arbitrary blocks, and the
+effect is re-initialised mid-run. A block in which all four turns move at once costs 150-340 cycles more than before
+(the compares and stores beside the same divides).
+
+**2. Idle paths (finding 6).** An effect that is on, with exact silence at its input and nothing left to play,
+stops computing: tape_echo, cs_hall, cs_plate, fickle, petri. (When an effect is off or not selected its render is
+not called at all; that was already so.) The check is at the top of the render: the first block with any input is
+rendered in full. Each README has an "Idle" section with the conditions and the test figures.
+
+| Effect | idle when (input exact silence, and) | hold | never idle | while idle against the same effect without the path | after waking | simulator: playing -> idle, cycles a block |
+|---|---|---|---|---|---|---|
+| tape_echo | every pair written to the tape is zero | 1.52 s (the tape once round) | hold; feedback 0.97 and up; a ghost the loop's rounding keeps (high feedback, new tape) | identical | identical (0 LSB in every test) | 14,371 -> 1,382 |
+| cs_hall | its wet output is exact zeros | 1.06 s | freeze; infinite decay | identical | 0 on the first block, then 4-10 LSB under a loud tail: the hall's own rounding noise, the same as between two halls that never idle | 17,720 -> 1,084 |
+| cs_plate | its wet output is exact zeros | 0.93 s | freeze | identical | 0 on the first block, then 4 LSB (defaults) to 29 LSB (longest decay, full wet): the same as between two plates that never idle | 16,869 -> 1,113 |
+| fickle | the wet channel took in, gave and wrote only zeros, every small state at rest, the looper listening | 16,448 clock samples (0.69 s at 24 kHz, 8.2 s at 2 kHz) | freeze; a loop playing or dubbing; the delay's modify from 31,000 up | identical | identical (bit-exact: its digest test runs with the path on) | 19,190 -> 1,887 (reverb), 12,128 -> 1,927 (delay), 13,171 -> 2,889 (slip) |
+| petri | only zeros written to the record and given as wet | 1.37 s (the record once round) | hold; warp with a bus not at rest | identical | 0 on the first block, then 0-3 LSB (defaults), up to 9 LSB (repeats and space at the top): the same as between two that never idle; the grains are the same grains | 16,565-29,359 -> 2,043-3,316 |
+
+A playing block costs 50-180 cycles more than before for the path (a six-sample silence test and the state's flags);
+a silent block that is not idle yet 400-900 more (the input read through, the check). fickle's slip is 280 cheaper.
+Thresholds: none. Every level in the conditions is zero, which each effect does reach (the hall's dithered rounding,
+the plate's tap gain, fickle's and petri's rounding towards zero, the echo's tape); where one does not (the echo's
+ghost) the effect stays awake.
+
+**rings' reverb model is not idled**, and it shows something to hear for: with a key of string + reverb held, the
+voice that carries the reverb gives a steady -52 LSB (2 LSB of ripple) for as long as the key is down [C host, the
+build as it ships: `plugins/rings/README.md` "0.10"]. It was always so (the reverb's rounding); it is why its tail
+never gets under any idle level.
+
+**Gate notes (op1emu, 2026-11-21, `tools/emu_gate.py`, one run at a time, a fresh NAND each; the images of the e11
+and e12 gates: `~/op1emu-work/e11/e11g.ldr`, `~/op1emu-work/e12/e12g.ldr`, `--tape-stereo --set-word
+g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`; scenarios, scripts and stats in `I:\op1emu-tmp\idlegate\`;
+"0.x" below is the catalogue file before the swap)** [C op1emu]. No fault in any run on either core.
+
+| Run | e11 | e12 |
+|---|---|---|
+| (a) **the 13 files** (the eight new, and drive, ensemble, freq_shift, saw, wavefolder as they were), first boot, `det_fx_select.txt` (its wall wait lengthened: the 13-file first boot is slow) | `plugins seen 13 loaded 13 failed 0 ... over_budget 0`, `fscr_built 11 scr_built 2`; `plugmem budget 1769472 used 1510352 over_budget 0 heap_short 0 skipped 0 badname 0 tape_node 524288 heap_free_boot 14214300 scratch_files 11 fxbuf 134784 fxbuf_mem 673960 fxbuf_short 0`; the chord through wavefolder `p0=25458i6`, `fx1_plugin=10502/23949`; end `heap_largest 1104252 heap_free 1197372` | 13 loaded; `plugmem budget 5898240 used 989248 over_budget 0 ... heap_free_boot 15739524 scratch_files 11 fxbuf 134784 fxbuf_mem 539136 fxbuf_short 0 fxbufs 4 fxbuf_refused 0 arena 1393600 arena_a 1393600 arena_b 0 clip 4194304`; `p0=25470i6`, `fx1_plugin=10500/23947`; end `heap_largest 2722396 heap_free 2725820` |
+| (a) the same NAND, second boot, `det_chord.txt` | 13 loaded, the same `plugmem` (`heap_free_boot 14544476`); end `heap_largest 1434892 heap_free 1527548` | 13 loaded, the same `plugmem` (`heap_free_boot 16069700`); end `heap_largest 3055244 heap_free 3055996` |
+| (b) tape_echo 0.4: `det_fx_tape_echo_tempo.txt` | `tempo_q16 9502720 tempo_inc 241011616 p0=59874i1:16384/8/0/0`, `fx1_plugin=7902/18468` (0.3: 17197/19074: the silences now idle); the repeats 0.63 s apart at 95 BPM and 0.414 s at 145, the same intervals as 0.3 in a run beside it | `p0=59869i1:16384/8/0/0`, `fx1_plugin=7897/18457` |
+| (b) tape_echo: `det_fx_two_pos.txt`; `det_fx_tape_echo.txt` (every position, its controls) | `p0=21646i1 p3=38591i1`, `s2_instr=5456/16174`; controls `p0=36117i2:11197/0/1/0 p1=49410i2:17749/0/1/0 p2=68153i1:15019/0/0/1 p3=77871i1:19114/0/1/0 p4=59609i1:16384/3/2/0` (the words the scenario expects), `fx1_plugin=9067/17532 s2_instr=3928/15693 s2_master=4149/15703` | `p0=21645i1 p3=38587i1`, `fxbufs 4`; the same control words, `fx1_plugin=9062/17467 s2_instr=3934/15690 s2_master=4146/15700` |
+| (b) cs_hall 0.3: `det_fx_cs_hall.txt` | `p0=36861i2:1985/16384/32419/0 p1=53599i2:3605/16712/32767/0 p2=71240i1:2949/16384/32767/1 p3=81316i1:3933/16384/32767/0 p4=63054i1:3277/16384/32111/0` (as expected), `fx1_plugin=9823/22234 s2_instr=4064/20972 s2_master=4404/21019` | the same words, `fx1_plugin=9820/22232 s2_instr=4063/20972 s2_master=4404/21019` |
+| (b) cs_hall + tape_echo: `det_fx_switch.txt` | 2 loaded, `p0=61033i3 p3=36861i3`: one init per selection | `p0=64479i3 p3=40305i3` |
+| (b) cs_plate 0.3: `det_fx_cs_plate.txt` | `p0=53030i1:3/23594/10178/0` (the 2026-11-11 gate's words), `fx1_plugin=9674/21028` | `p0=49595i1:3/23594/10178/0`, `fx1_plugin=10116/21026` |
+| (b) fickle 0.3: `det_fx_fickle.txt` | `p0=41010i2:1/2/4/0 p1=14819i2:0/1/0/0 p2=32157i2:0/1/0/0 p3=43072i1:0/1/0/0 p4=25844i1:0/1/0/0` (0.2's words and inits), `fx1_plugin=9302/30206` (0.2: 17870/32298) `s2_instr=6781/28991 s2_master=6872/22082` | `p0=41009i2:1/2/4/0 p1=14809i2 p2=32147i2 p3=43063i1 p4=25835i1` (0.2's e12 line to the block), `fx1_plugin=9282/30110` |
+| (b) petri 0.3: `det_fx_petri.txt` | `p0=40444i2:10/28688/9312/0 p1=4605i2:0/30000/8000/0 p2=21943i2 p3=33079i1 p4=15851i1`, `fx1_plugin=16844/35343` (0.2: 25915/35414) `s2_instr=9398/24278 s2_master=10576/23833` | `p0=40445i2:10/28688/9312/0 p1=21830i2 p2=39168i2 p3=50304i1 p4=33076i1` (a longer run: the first try ended on its wall-timed `quit` before the last events and was repeated with a longer wait), `fx1_plugin=13982/35341` |
+| (b) tape_drive 0.6: `det_fx_controls.txt` | `p0=36117i2:11197/0/0/0 p1=42512i2:17749/0/0/0 p2=61256i1:15019/0/0/0 p3=70972i1:19114/0/0/0 p4=52710i1:16384/0/0/0`, `fx1_plugin=10418/12153 s2_instr=9157/10190 s2_master=9203/10237`; a held chord: 10,419 avg against 0.5's 11,076 | the same words, `fx1_plugin=10417/12189 s2_instr=9157/10194 s2_master=9203/10237` |
+| (b) bitcrusher 0.3: `det_fx_controls.txt` with the first row picked | `p0=36862i2:11197/0/0/0 p1=57038i2:17749/0/0/0 p2=74679i1:15019/0/0/0 p3=84754i1:19114/0/0/0 p4=66493i1:16384/0/0/0` (0.1's words), `fx1_plugin=6374/8255 s2_instr=4474/6909 s2_master=5021/6476` | the same words, `fx1_plugin=6085/7808 s2_instr=4485/5889 s2_master=5021/6476`; a chord alone: 6,236 avg against 0.2's 7,704 |
+| (b) rings 0.10: `det_eng_rings.txt` (every model, FM among them, the polyphony steps, the fast notes) | `plugmem ... used 667120`, `eng_renders 118600 eng_noteons 329`, `eng_rings=9513/34173 eng_rings_block=53934/115493`, `scr_built 1` | `used 668512` (0.5: 667712), `eng_renders 118595 eng_noteons 329` (0.5's counts), `eng_rings=9515/34170 eng_rings_block=53950/115475` (0.5: 9602/34129, 54444/115235) |
+
+**The 13-file set and e10.** e10 charges what e11 charges (the e11 entry: "the heap figures equal to e11's to the
+byte"): `used 1510352` of e10's 1,572,864, 62,512 bytes to spare (the set before: 1,502,128; the eight files are
+8,224 bytes of heap larger together, 8,256 of e12's arena). On e11: 259,120 to spare. The site's memory sums give both
+cores' figures to the byte (`web/src/core/plugins/memory.test.ts`).
+
+**(c) The idle path in the signal path.** One effect alone on the NAND, switched on at synth FX 1; a chord at 39-40 s,
+nothing until 80 s, the chord again, to the end (`idlegate/scen/idle_*.txt`). The measure is the stats' 5-second
+windows (`win ... blocks cb_sum`: the whole audio callback's cycles a block); a window with no effect on is 45,675.
+"Silent" is the windows 20-40 s after the first chord, the same to within 5 cycles in every such window and after
+the second chord again.
+
+| Effect | 0.x, silent | new, silent (idle) | the position costs: 0.x -> new, cycles a block | `fx1_plugin=` avg over the run, 0.x -> new | e12, new, silent |
+|---|---|---|---|---|---|
+| cs_hall 0.2 -> 0.3 | 66,223 | 49,441 | 20,548 -> 3,766 | 19,993 -> 7,033 | 49,437 |
+| cs_plate 0.2 -> 0.3 | 65,381 | 49,472 | 19,706 -> 3,797 | 19,164 -> 8,109 | 49,468 |
+| tape_echo 0.3 -> 0.4 | 63,251 | 49,643 | 17,576 -> 3,968 | 17,029 -> 5,452 | 49,635 |
+| fickle 0.2 -> 0.3 | 68,056 | 49,918 | 22,381 -> 4,243 | 21,842 -> 4,894 | 49,914 |
+| petri 0.2 -> 0.3 | 66,296 | 50,376 | 20,621 -> 4,701 | 20,077 -> 6,638 | 50,372 |
+| cs_hall at **master FX 1** | 64,893 | 48,111 | 19,218 -> 2,436 | (no cost slot) | - |
+
+- **Every one of the five goes idle in the real signal path and wakes**: the window with the second chord costs what
+  the first did (cs_hall 98,111, the 0.2 file 101,716), and the windows after it fall back to the idle figure. What
+  is left while idle, 3.8-4.7 k at the synth position (2.4 k on the master), is the idle plugin's 1-3 k and the
+  wrap's conversions (audit finding 9).
+- **Does a silent position give the effect exact zeros? Yes, in op1emu, at every position tried**: synth FX 1 and
+  master FX 1 (the table), and instrument FX 2 and master FX 2 by the played runs above (cs_hall's `s2_instr=4064` avg
+  against a 20,972 max over 81,316 blocks, `s2_master=4404/21019`; tape_echo's 3,928 and 4,149: both idle most of
+  those runs). The conditions are exact (the top 16 bits of every input sample zero for a whole block, then the
+  effect's own state): had any stage ahead left +-1 LSB, none would have passed. The 63 / 64 LSB with a flicker
+  that the dumped output carries in silence comes after the effects (it is there with no effect on).
+  [I] On the device the instrument positions take the same stock buffers; a tape track or the line / mic / radio
+  input into the master is silence only if it is digitally so: the master's idle is the device's to show (checklist
+  step 10 at master FX).
+- **The audio against the 0.x file, same scenario** (the dumped output, 16-bit; "matched" = the two runs are
+  sample-identical up to the first chord, see below):
+
+| Effect | pair | first chord and its tail | the silence (idle against not idle) | the chord after 40 s idle, and its tail |
+|---|---|---|---|---|
+| cs_hall | matched | identical | identical | 2 LSB at the most under the chord, then the 1 LSB flicker (predicted: 4-10 LSB of the hall's own rounding, at the plugin's full scale) |
+| cs_plate | matched | identical | identical | 2 LSB, then the flicker (predicted: 4 LSB at the defaults) |
+| tape_echo | matched (the second 0.4 run; the first was not: 54) | identical | identical | **identical** (predicted: 0) |
+| cs_hall at master FX 1 | not matched | 2 LSB | the flicker | 2 LSB |
+| fickle | never matched (three 0.3 runs against two 0.2 runs) | 2 LSB in the best pair, up to 203 in the others | the flicker only | 70 in the best pair, up to 176 |
+| petri | never matched (three and two) | up to 2,009 | the flicker only | up to 2,053 |
+
+  **Why fickle and petri could not be compared sample for sample here.** Which block a key event lands in depends
+  on the boot's timing, and that follows the plugin file on the NAND: a file of another size starts the effect a
+  block or more apart, and the dumped output's 1 LSB flicker is then out of step from before the effect is even
+  picked. Two runs of one file are identical more often than not (petri 0.2 twice and fickle 0.2 twice: 0 over
+  114 s and 126 s), but not always, and an effect with free-running parts (fickle's clock and smear, petri's grains
+  and random draws) then gives another take: **two runs of the same fickle 0.3 file on e11 differ by 196 under the
+  first chord and 168 under the second, two of the same petri 0.3 file by 1,856 and 1,680, and by nothing in the
+  silences**: the size of the 0.2 / 0.3 differences in the table. So those two rows show no difference that is the
+  plugin's, and no proof either: fickle's and petri's sample-exactness rests on their host digests and the lockstep
+  test (`tests/host/idle`). In every pair, matched or not, the silent stretches differ by the flicker alone.
+- **(d) A scenario that is never silent, new file against the 0.x file** (a chord held 21-23 s, the effect at synth
+  FX 1): **cs_hall identical** over 2,436,659 frames (e11); **tape_drive identical** over 65 s (e11, and the 0.6 run
+  on e12 against 0.5 on e11; a second pair on e11 was not matched and differed by up to 106 from the FX list's blip
+  on); **bitcrusher identical** over 1,441,325 frames (e12); **tape_echo identical** through the whole chord (e12;
+  68 frames of up to 4 LSB before it, in the blip while the stock effects are scrolled past in the FX list, where
+  unmatched runs always differ).
+
+Not shown in op1emu [I]: the device's cycle figures (no cache model: the idle saving in cycles should carry, the
+playing cost is 10-35 % higher there); the moment of going idle and of waking by ear; idle with a real tape or input
+on the master; the longer-decay cases of the listening checklist; rings between the two cores sample for sample (the
+fast-note section lands differently run to run); rings 0.6-0.9 had no op1emu gate of their own: 0.10 carries them.
+
+**What to do** (headphones, the volume well up; each effect once at an instrument's FX and once at master FX):
+
+1. Install the eight files with the librarian (the catalogue has them). The librarian shows
+   tape_echo 0.4, cs_hall 0.3, cs_plate 0.3, fickle 0.3, petri 0.3, tape_drive 0.6, bitcrusher 0.3, rings 0.10.
+   Rings goes from 0.5 to 0.10 on the OP-1: besides FM's divides that brings 0.6-0.8 (`plugins/rings/README.md`): a
+   model or polyphony change cuts the notes still ringing, a chord's steals go silent at once, a string's line is
+   cleared as it is reached.
+2. **The tails into silence.** For each of the five: one loud note or chord, then hands off. Listen to the tail to its
+   very end and a few seconds past it. Expected: the tail ends as it always did, and nothing happens when the effect
+   goes idle (tape_echo about 4 s after the note at its defaults, cs_hall 7 s, cs_plate 11 s, fickle 1.5 s, petri 4 s):
+   no tick, no step, no change in the hiss. If you hear anything at that moment, that is a fault: note the effect,
+   the position and the settings.
+   - cs_hall: also with decay near the top and the mix full wet (idle about 40 s after the note).
+   - cs_plate: also with decay at the top, size 8, full wet (a tail of a minute and a half).
+   - tape_echo: also with feedback at about 3 o'clock on a worn tape (age up).
+3. **The wake on a soft note.** After at least ten seconds of silence, play one note as softly as the engine allows
+   (low velocity, a soft sound), then a normal one. Expected: the first note has its effect from its first instant,
+   the echo's first repeat, the reverb's onset, petri's first grain, at the usual level; no click at the note's start
+   and no dip. Try it a few times with different waits (10 s, a minute).
+4. **The turns while silent.** In silence (idle), turn each knob through its range and the fn layers, then play.
+   Expected: as if the effect had been running: tape_echo's time glides to where the knob is, the hall's size change
+   has happened, fickle's clock is where you left it. No burst of old sound from any turn.
+5. **The states that hold a sound, left for a minute.** Each must still be sounding, unchanged, after a minute with
+   no input:
+   - tape_echo: hold (green click) on a phrase; feedback at the top (it howls on).
+   - cs_hall: freeze (orange click) on a chord; decay at the top (infinite).
+   - cs_plate: freeze.
+   - fickle: freeze in reverb, in delay and in slip; a loop playing (white click), in a tape mode and in stretch; a
+     loop with dub on; the delay with modify at the top.
+   - petri: hold (green click) in mosaic, tunnel, pattern and warp.
+   Then release each: the sound decays as before and the effect goes quiet.
+6. **fickle's looper after a silence.** Play, wait ten seconds in silence, press loop. Expected: the loop holds that
+   silence (the looper kept listening), as in 0.2; play again with loop off, press loop: the last phrase, as ever.
+7. **petri, warp and back.** In warp while it sounds, switch to another effect, wait in silence, switch back to warp.
+   Expected: as in 0.2 (whatever it did there).
+8. **tape_echo's ghost.** Longest time, feedback at about 2-3 o'clock, age at minimum: one note, then wait two
+   minutes with the volume up. You may hear a very faint repeat going on and on (it was there in 0.3 too). It is why
+   this echo never goes idle at those settings; say whether you would rather have it cut.
+9. **rings.** FM: play as usual; nothing should have changed. String + reverb: hold a chord for half a minute; nothing
+   has changed there either (the reverb is as it was).
+10. **The cost.** With one of the five at instrument FX 1 and nothing playing for ten seconds, read
+   `coop_stats.txt` over USB MIDI twice, ten seconds apart, then once more after ten seconds of playing (`python
+   firmware	ools\coop_usb.py stats -o stats.txt`, the OP-1 plugged in normally, **not** disk mode, the librarian's
+   tab closed; the agent can run it). The `cost` line is cumulative since the boot (`fx1_plugin=avg/max/n`), so the
+   figure for a stretch is `(avg2 x n2 - avg1 x n1) / (n2 - n1)` of two reads; the `win` lines' `cb_sum / blocks`
+   give the whole callback per 5-second window without the sum. Expected: `fx1_plugin=` (or `s2_instr=` /
+   `s2_master=` at FX 2) falls from its playing figure to about 3-6 k in the silent stretch (the plugin's 1-3 k and
+   the wrap's conversions, which still run around an idle plugin: audit finding 9; op1emu: 3.8-4.7 k). These two
+   figures per effect are the result that matters most.
+11. tape_drive, bitcrusher: play them; they must sound as before. Their `fx1_plugin=` figure should be about 0.5 k
+   and 1 k lower than their last recorded one.
+
+**If something is wrong:** reinstall the plugin's previous file from the catalogue (the versions before these); note
+which effect, where, and what you did just before.
+
+Result: (pending)
+
+## rings 0.11 and tape_echo 0.5: tails that end, so both can idle — device test (pending, 2026-11-21)
+
+The two decisions left open by the entry above (2026-11-21: do both). Core unchanged; the two files load on e10, e11
+and e12 as before (the same imports). They are in `firmware/build/plugins-next2/` (`rings.coop` 114,948 bytes,
+`tape_echo.coop` 25,444 bytes), **in the catalogue since 2026-11-21, after the op1emu gate on e11 and e12** ("Gate
+notes" below); the table is host and GNU simulator. Both change the sound a little, on purpose.
+
+| | what changed | what was shown |
+|---|---|---|
+| rings 0.11 | The shared reverb of string + reverb writes to its buffer truncated towards zero (as upstream Rings; 0.10 floored). The steady offset a held key rested on is gone (0.10: -52 LSB with the default patch, -127 with damping 29,000) and the reverb's tail ends in exact zeros. With the tail gone, nothing sent and the voice's limiter at rest, the reverb is not run and a held, sleeping voice renders as silence. | The idle build against its twin that never idles: the same sample for sample, before, in and after the idle state (chords held 24 s and 100 s). Against 0.10: the offset (40-53 LSB mean) and 5-15 LSB RMS besides; the decay the same within the test's 0.25 s window. The reverb alone reaches exact zero 5.5 s (time 0.81) and 21.5 s (0.98) after a noise burst; 0.10 never. The other five models: 0.10's bytes. Simulator: four held voices 15,510 cycles a block before, 2,518 idle; playing +1.4 k a block. |
+| tape_echo 0.5 | While the input is silent, a block of tape written wholly within 127 (-48 dBFS) is taken one LSB towards zero. The faint endless repeat at high feedback is gone (0.4 held 4 to 47 LSB of output for good) and every echo under feedback 0.97 fades to exact zero and idles. | In lockstep with 0.4's echo over 53 settings (feedback 0.6 to 0.97, new to worn tape, four times, sync): no difference while the input plays; at the defaults 4 LSB at most; the largest differences (up to 81 LSB) where 0.4's own echo is under about 100 LSB. All 53 reach exact zero and the idle state (longest time: 25 s at feedback 0.6, 59 s at 0.87, 107 s at 0.95, 166-238 s at 0.97). The build with `-DCOOP_TAPE_ECHO_GHOST` is still bit-identical to te-op1-cfw's echo. |
+
+Details and tables: `plugins/rings/README.md` "0.11", `plugins/tape_echo/README.md` "The tail settles (0.5)".
+
+**Gate notes (op1emu, 2026-11-21, `tools/emu_gate.py`, one run at a time, a fresh NAND each; the e11 and e12 gate
+images as in the entry above; scenarios, scripts and stats in `I:\op1emu-tmp\gate2\`)** [C op1emu]. No fault in any
+run on either core. **Both files are in the catalogue since this gate** (`plugins/rings/rings.coop` 0.11,
+`plugins/tape_echo/tape_echo.coop` 0.5).
+
+| Run | e11 | e12 |
+|---|---|---|
+| (a) **the 13 catalogue files with these two**, first boot, `det_fx_select.txt` (the longer wall wait) | `plugins seen 13 loaded 13 failed 0 ... over_budget 0`, `fscr_built 11 scr_built 2`; `plugmem budget 1769472 used 1511704 over_budget 0 heap_short 0 skipped 0 badname 0 tape_node 524288 heap_free_boot 14212948 scratch_files 11 fxbuf 134784 fxbuf_mem 673960 fxbuf_short 0`; end `heap_largest 1102900 heap_free 1196020` | 13 loaded; `plugmem budget 5898240 used 990592 over_budget 0 ... heap_free_boot 15739524 scratch_files 11 fxbuf 134784 fxbuf_mem 539136 fxbuf_short 0 fxbufs 4 fxbuf_refused 0 arena 1394944 arena_a 1394944 arena_b 0 clip 4194304` |
+| (a) the same NAND, second boot, `det_chord.txt` | 13 loaded, the same `plugmem` (`heap_free_boot 14543124`); end `heap_largest 1433540 heap_free 1526196` | 13 loaded, the same `plugmem` (`heap_free_boot 16069700`) |
+| (b) rings 0.11: `det_eng_rings.txt` (every model, FM and string + reverb among them) | `plugmem ... used 668216`, `eng_renders 118594 eng_noteons 329`, `eng_rings=9603/34183 eng_rings_block=54452/117934` (0.10: 9513/34173, 53934/115493), `scr_built 1` | `used 669600` (0.10: 668512), `eng_renders 118594 eng_noteons 329`, `eng_rings=9601/34187 eng_rings_block=54437/115613` |
+| (c) tape_echo 0.5: `det_fx_tape_echo_tempo.txt` | `tempo_q16 9502720 tempo_inc 241011616 p0=59873i1:16384/8/0/0`, `fx1_plugin=8030/19140` (0.4: 7902/18468) | `p0=59869i1:16384/8/0/0`, `fx1_plugin=7976/18590` |
+| (c) tape_echo: `det_fx_two_pos.txt`; `det_fx_tape_echo.txt` | `p0=21646i1 p3=38591i1`; the control walk `p0=36117i2:11197/0/1/0 p1=49410i2:17749/0/1/0 p2=68153i1:15019/0/0/1 p3=77871i1:19114/0/1/0 p4=59610i1:16384/3/2/0` (0.4's words), `fx1_plugin=9085/17920 s2_instr=3931/16328 s2_master=4161/16116` | `p0=21645i1 p3=35152i1`, `fxbufs 4`; the same control words, `fx1_plugin=9318/17914 s2_instr=4009/16273 s2_master=4264/16108` |
+
+**The 13-file set and e10.** `used 1511704` of e10's 1,572,864 (e10 charges what e11 charges): 61,160 bytes to spare;
+257,768 on e11. The two files are 1,352 bytes of heap larger together (1,344 of e12's arena). The site's memory sums
+give both cores' figures to the byte (`web/src/core/plugins/memory.test.ts`).
+
+**rings: the held reverb voice idles** (`gate2/scen/rings_hold3b.txt`: the second boot of the NAND `det_eng_rings.txt`
+leaves, so the sound is rings on string + reverb and no sequencer key was pressed; damping turned down, two keys held
+from 32 s to 92 s, a third key at 82 s). The stats' 5-second windows, the whole callback's cycles a block; no key
+down is 45,670.
+
+| | 0.10 | 0.11 |
+|---|---|---|
+| the chord just struck (first 10 s) | 91,508 / 90,132 | 92,687 / 91,304 (the rounding's and the idle state's ~1.2 k) |
+| the keys still down, 13 s after the strike and on (seven windows, all the same) | **72,430** | **57,030** |
+| the same, over no key down | 26,760 | 11,360 (two held voices through the stock's voice path, rings idle in each) |
+| the third key struck into the held chord | 86,773 | 88,003 |
+| `eng_rings_block=` avg / max over the 42,270 blocks of the hold | 22,295 / 47,021 | 12,892 / 48,482 (e12: 12,886 / 48,476) |
+
+- The cost falls by 15,400 cycles a block once the strings are asleep and the reverb has run out, stays there for as
+  long as the keys are down, and comes back in full with the new note. 0.10 pays for the reverb the whole minute.
+  (The host's figure was 15,510 -> 2,518 for four voices; here two voices, measured with the stock's voice path
+  around them.)
+- In the dumped output both versions end on the same silence (0.10's -52 LSB offset is not in the output: the DC is
+  taken out after the engine [I]).
+- **A scenario trap found on the way:** after `tap seq` (how `det_eng_rings.txt` and the FX scenarios close a list) a
+  held key is retriggered by the stock sequencer for as long as it is down (`eng_noteons 980` for four keys in a
+  minute). A "held chord" in those scenarios never goes quiet; the hold was therefore run as a second boot.
+- **The other five models against 0.10, sample for sample: the emulator does not allow it.** rings' output depends
+  on where in its own run a strike falls: the same 0.11 file on e11 and on e12 differs by thousands of LSB in every
+  section (4,545 to 7,193). In the one pair whose timing matched up to the first note (0.11 and 0.10 on e11), FM,
+  the model without a noise burst, is within 2 LSB of 0.10 (the output's flicker), the others differ like any two
+  runs. So nothing here contradicts "the same bytes as 0.10", and the proof stays the host's (`make models`).
+
+**tape_echo: idle at the defaults and with the feedback up** (alone at synth FX 1; windows as above, no effect on is
+45,675):
+
+| Scenario | 0.4 | 0.5 |
+|---|---|---|
+| the defaults: a chord, 40 s nothing, a chord (`idle_tape_echo.txt`) | idle: 49,643 (the entry above) | **idle: 49,642** (e12: 49,636), the second chord's window 95,505, idle again; `fx1_plugin=5637/18175` |
+| **a new tape (white at the bottom), the shortest time, feedback up** (green 22 detents: `te_hf_short.txt`): a short note, 45 s nothing, a note | **never idle**: 62,570 in every silent window to the end, `fx1_plugin=15241/18012`; the output rests on 62 / 64 LSB (a 1 LSB ghost) | **idle within the note's own 5-second window**: 49,643 in every window after it, and after the second note again; `fx1_plugin=4708/18169` (e12: 49,636, 4706/18105); the output rests on 63 / 64 as with no effect |
+| the same, feedback higher (green 32 detents: `te_hf64_short.txt`) | never idle: 62,570, `fx1_plugin=15243/17705` | idle a few seconds later (the next window 52,502, then 49,643), `fx1_plugin=5532/18339` |
+| **a new tape, the longest time (1.5 s a repeat), feedback up** (22 detents, each repeat 0.73 of the one before: `te_hf_long.txt`): a note, 106 s nothing, a note | **never idle**: 62,598 in every window of the last two minutes, `fx1_plugin=15833/17686`; a 1-2 LSB ghost | the last sample over the flicker 42 s after the note; **idle before the second note** (49,648), awake for it (67,880, then 63,100 for eight windows), **idle again about 46 s after it**; `fx1_plugin=10401/18575` (e12 the same: 49,640, 10394/18594) |
+| the same, feedback higher (32 detents, each repeat 0.86 of the one before) | - | **not idle within the 106 s** (63,023 throughout; the tail still 24 LSB and falling 96 s after the note): the host's time to zero at feedback 0.95 is 107 s. A run with a longer silence was queued behind another gate and not made. |
+
+- The feedback's value is not in the stats; "0.73" and "0.86" are the repeats' measured ratios (the tape's loss is in
+  them, so the knob is higher: [I] about 0.8 and 0.93).
+- **With the input playing, against 0.4** (`held_tape_echo.txt`: a chord retriggered for 23 s, then released): the
+  timing-matched pair on e11 is **identical** from the boot through the whole chord; in the 3 s after the release
+  6,892 frames differ by 1 LSB (the tail on a silent input, where 0.5 nudges: by design), then identical again.
+  Cost while playing: `fx1_plugin=12610/17859` against 0.4's 12573/17937.
+- The defaults' idle scenario and the tempo scenario against 0.4 gave no matched pair (the note landed a block
+  apart); the tempo run's repeats are the same intervals as before (`tempo_q16` and the sync word as 0.4).
+
+Not shown in op1emu [I]: the device's cycle figures; the sound of the shorter last tail and of the reverb's end by
+ear (the checklist below); rings' reverb with damping near the top (the string itself rings for minutes); idle at
+feedback 0.95 and over at the long times beyond what the last row shows.
+
+**What to do** (headphones, the volume well up):
+
+1. Install the two files with the librarian (the catalogue has them). The librarian shows
+   rings 0.11 and tape_echo 0.5.
+2. **rings, a long reverb tail into silence.** String + reverb, damping at about 2 o'clock, one loud chord, the keys
+   held down. Listen to the tail to its very end and ten seconds past it. Expected: the string dies, then the reverb,
+   smoothly into nothing; no tick or step at the end (the reverb stops being computed about a third of a second
+   after its last sample), and no faint rumble or pressure left under the silence.
+3. **rings, the held chord against before.** The same with rings 0.10 if you still have it: with the keys held after
+   the sound has gone, 0.10 sat on a small constant offset (inaudible as a tone; you may hear a soft thump when
+   the keys come up after a long hold). 0.11: nothing when the keys come up. If you can't hear either, that is the
+   expected result too: say so.
+4. **rings, a note into the held chord.** Keys still held from step 2, in silence: play one soft note, then a loud
+   one. Expected: the reverb is there from the first instant of each, as ever; no click at the note.
+5. **rings, the reverb's sound.** Play string + reverb as usual for a minute, damping low and high. Expected: the
+   reverb as you know it (level, length, the slow shimmer). The other five models are untouched: play one or two.
+6. **tape_echo, high feedback, new tape.** Age at minimum, feedback at about 2 o'clock, then 3 o'clock (under the
+   howl), the time long: one note, hands off. Expected: the repeats fade as before for as long as you could hear
+   them before, and then they are gone: no faint repeat left going round after a minute or two (0.4 kept one for
+   good). Listen for the end of the tail: it should thin out, not stop short.
+7. **tape_echo, the same on an aged tape** (age at about 2 o'clock and at maximum), and once with sync on (1/4).
+   Expected: the same: a full fade to nothing, the audible part as in 0.4.
+8. **tape_echo, short time.** Time at minimum, feedback at 3 o'clock: the metallic ring after a note fades out
+   completely in a few seconds. This is the setting where 0.5 differs most from 0.4 (the last of the ring is
+   shorter); say if the ring now ends too soon for your taste.
+9. **tape_echo, what must not change:** feedback at the top still howls on for a minute; hold still holds for a
+   minute; a normal echo at the defaults sounds as it did.
+10. **The cost.** rings: with a string + reverb chord held in silence for 30 s, read `coop_stats.txt` over USB MIDI
+   (`python firmware	ools\coop_usb.py stats -o stats.txt`, not disk mode, the librarian's tab closed) twice ten
+   seconds apart (the figures are cumulative: take the difference of the two reads): the `engines` line's rings figure per render should drop to a few hundred cycles once
+   the tail has gone (it stayed near 4 k a held voice in 0.10). tape_echo at an instrument's FX with feedback at
+   3 o'clock: `fx1_plugin=` falls to about 3-4 k a minute or two after the last note (it never fell in 0.4).
+
+**If something is wrong:** reinstall the plugin's previous file (rings 0.10, tape_echo 0.4: `build/plugins-next/` or
+the catalogue); note which, the settings, and what you did just before.
+
+Result: (pending)
+
+## e13: where plugin memory goes is a boot policy; images and voice state back in heap 0 by default — device test (2026-11-21: the default policy confirmed; the A/B steps B-H not yet run)
+
+What changed (`docs/plugins.md` "e13"): e12's arena made the plugins' code stalls about double on the device (the e12
+result above), so e13 places each class of plugin memory in heap 0 (as e11) or in the arena (as e12) by a policy read
+at boot: `eng` / `fx` (an engine's / an effect's image), `voice` (the engines' voice state), `buf` (the effect
+position buffers). **Built-in default: `eng=heap fx=heap voice=heap buf=arena`** (code and the state inside the
+images where e11 had them; the buffers, screen objects and control tables in the arena). Two budgets: the heap's
+1,769,472 bytes (e11's, with e11's tape guard), the arena's 5,898,240. The policy file `/yaffs2/user/coop_place.txt`
+is written over USB MIDI and applied at the next boot, with a boot marker that makes a policy that hangs the boot
+cost one power cycle. New measurements: per-window `eng` / `peng` / `fx` / `s2` sums on the `win` lines, a `sysex`
+line, CPLB change counters, and (policy token `probe=1`) a live fill probe and the SDRAM controller's registers.
+Build tag `e13`, the boot picture's line `coop e13 - 246`. Existing `.coop` files load unchanged.
+
+- `build/pkg/op1_246_coop_e13.op1` sha256 `efc40e65014b40b90bfed3ecb7ef2a0a5978aceae9fab6d4cfb35fbeb69e66d7`, copy in Downloads. Release image as e12
+  (`tools/build_device_package.sh ... --tape-stereo --set-word g_coop_spread=32767`): `verify_bootloader.py` PASS (no
+  te-boot.ldr), `pkg_check` = only `OP1_vdk.ldr` differs. The ELF holds the tag `e13` (and no `e12` / `e11`).
+- No web delta made; the site still computes e12's rule (it overestimates on e13's default: it warns early, never
+  late). The rule to port: `docs/plugins.md` "e13".
+
+**Gate notes (op1emu, 2026-11-21, one run at a time under the shared lock, a fresh NAND each; images `--tape-stereo
+--set-word g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`; scripts and outputs in
+`I:\op1emu-tmp\e13gate\`)** [C op1emu]. **op1emu has no caches and no SDRAM timing: it cannot show the speed
+difference between the policies.** That is the device's part, below.
+
+| Run | Result |
+|---|---|
+| pristine `det_chord.txt`, e13 vs e12 (`emu_gate.py`) | **identical over 2,381,872 frames** (max diff 0, first try) |
+| pristine `det_chord.txt`, e13 vs e11 | aligned on the onset, max diff 2 over 2,577,006 frames (the two runs' onsets one block apart, the known spread; e12 vs e11 was identical on its second try) |
+| **default (no policy file), the 13 catalogue files** (rings 0.10 ...), first boot, an effect picked and played (`det_fx_select.txt`) | 13 loaded, `fscr_built 11 scr_built 2`, no fault: `plugmem budget 1769472 used 833168 over_budget 0 heap_short 0 ... heap_free_boot 14906356 ... fxbufs 4 ... arena 560768 arena_a 560768 arena_b 0 clip 4194304 heap_budget 1769472 heap_used 833168 arena_budget 5898240 arena_used 156416 place_eng 1 place_fx 1 place_voice 1 place_buf 0 place_src 0`, `place eng=heap,fx=heap,voice=heap,buf=arena src=default marker_writes 0`; `fxctl p0=8231i6`; end `heap_largest 1891052 heap_free 1892644`; no marker written |
+| the same NAND, second boot | the same `plugmem`; end `heap_free 2222820` |
+| **`all=arena`** (e12's placement), two boots | 13 loaded: `budget 5898240 used 989248 ... heap_used 0 arena_used 989248 ... place_src 1`, `place eng=arena,fx=arena,voice=arena,buf=arena src=file marker_writes 1 marker_clears 1 marker_errors 0`; end `heap_free 2725820` / `3055996`: e12's figures to the byte; the marker gone from the NAND after each boot |
+| **`all=heap`** (e11's placement, four buffers), two boots | 13 loaded: `budget 1769472 used 1372344 ... heap_used 1372344 arena_used 21632`, `fxbufs 4`; end `heap_free 1353468` / `1683644`; an effect played (`plugin_blocks 8231`) |
+| `eng=heap fx=arena voice=heap buf=arena` | `heap_used 669192 arena_used 320096`, 13 loaded, the effect played |
+| `img=arena voice=arena buf=heap` | `heap_used 539176 arena_used 854464` (the four buffers alone in heap 0), 13 loaded, the effect played from a heap buffer |
+| a malformed file (`eng=heap fx=arena bogus=1`) | ignored whole: `place_src 2`, `src=malformed`, the default's figures (not `fx=arena`), no marker, boots |
+| a file of 270 bytes of valid tokens | `place_src 2`, the default, boots |
+| an empty file | a valid file: `src=file`, the default's figures, marker written and cleared |
+| **the marker present** with `all=arena`, two boots | `place_src 3`, `src=marker marker_writes 0`, the default's figures both boots (the policy ignored), the marker still on the NAND; inventory `place_src marker` |
+| `pf=1 probe=1` | `pf_mode 1`; `fill n 6 state 1 code_a_min 2051 code_heap_min 2051 data_a_min 518 data_heap_min 517 code_warm 2054 data_warm 518` (op1emu has no cache: cold = warm; the probe ran from region A and from its heap copy without a fault); no `sdram` line (skipped in op1emu) |
+| **the heap budget full**: default policy, the 13 + five test engines (400,000 + 400,000 + 80,000 + 50,000 + 4,000 bytes of `.bss`), `det_heap_late.txt` | **boots** (the tape's cache got its 24 nodes) and plays, no fault: 18 loaded, `heap_used 1768160` of 1,769,472 (99.9 %), `heap_short 0`, `fxbufs 4`; every late allocation given (`tank_short 0`); end **`heap_largest 214036 heap_free 215628`** (e11 at its full budget: 167220 / 201012). Second boot: end `heap_free 1286804` |
+| the same and one engine more | `over_budget 1`, `plugfile zzover.coop failed needs 64208: over the plugin memory budget`; inventory `... (needs 63 KB, 1 KB of 1728 KB left)`, the row's `need 64208 heap 64208` |
+| **the arena full**: `all=arena`, the 13 + 13 test engines + one more, `det_heap_late.txt`, two boots | as e12's gate: 26 loaded, `arena_used 5871744` (99.6 %), `zzover.coop ... over the plugin memory budget`, `fxbufs 1 fxbuf_refused 11` with eleven `plugfx ... no memory for this position: slots 4` lines, `clip 1578176`, a lift and a drop at the floor (`mono_fallbacks 0`), no fault; end `heap_free 1983796` |
+| **the heap guard alone**: `all=heap`, the heap budget set to 16 MiB (`g_coop_heap_budget`), the 13 + 13 test engines | boots, no fault: 16 loaded, ten refused `not enough memory left for the tape` (`heap_short 10`, the guard stopping at `heap_used 2572968`); end `heap_free 152844` |
+| fickle alone at every position (`det_fx_fickle.txt`), default | `heap_used 26608 arena_used 136448`; `p0=41009i2 p1=18251i2 p2=35589i2 p3=46505i1 p4=29277i1`, the words as e11 / e12; a playing window `fx 12747076 s2 16977671` |
+| the same with `all=heap` (the buffers in heap 0) | `heap_used 565784`; `p0=41010i2 p1=18256i2 p2=35593i2 p3=46509i1 p4=29281i1`, the same window sums |
+| `det_fx_two_pos.txt` (tape_echo), `det_fx_switch.txt` (cs_hall + tape_echo), default | `p0=21645i1 p3=45478i1`; `p0=81711i3 p3=57538i3`: as e12 |
+| rings, every model (`det_eng_rings.txt`), default: its image in heap 0 | `heap_used 666872`, `eng_renders 118600 eng_noteons 329`, 141 s, no fault; the windows' sums, e.g. `blocks 3446 cb_sum 365115789 ... eng 128074187 peng 126783355 fx 0 s2 0` (rings 36.8 k of the callback's 106 k a block in that window, op1emu cycles) |
+| saw (`det_eng_note.txt`), default | `heap_used 2320`, `eng_renders 11725 eng_noteons 17` |
+| the clipboard (`det_tape_relift.txt`) | `edits lifts 3 drops 2 errors 0 mono_fallbacks 0 pool 2097152 pool_used 335296 pool_moves 1`: as e12 |
+| INVENTORY over USB/IP (`coop_usb.py --transport usbip`) | header `budget 1769472, used 833168, fxbuf 134784, fxbufs 4, clip 4194304, heap_budget 1769472, heap_used 833168, arena_budget 5898240, arena_used 156416, place eng=heap,fx=heap,voice=heap,buf=arena, place_src default`; rows with `need` / `scratch` / `heap` (rings 668536 / 0 / 666872, tape_echo 15760 / 134784 / 14096); `sysex polls 28169 rx 20 drop 0 replies 20 errors 0` after the read |
+| the stats' new fields | `emu_gate.parse_stats` reads `plugmem.heap_used`, `plugmem.place_buf`, `sysex.drop`, `cplb.dcplb_changes` (0 in every run), `win[].peng`; the longest stats text of the gate 15,082 bytes |
+| host tests | `tests/host/place_test.cc`: 25 policy texts, every byte value, every prefix of a valid text: valid texts taken whole, the others refused whole |
+
+Not shown in op1emu [I]: every cycle figure; the `sdram` line and the PFCTL test that guards it (skipped in op1emu,
+read under the boot marker on the device); the fill probe's real figures (op1emu: cold = warm); whether heap 0 on the
+device has what op1emu's has (e11's question, answered once: the owner's e11 ran the 13 files at 1,510,352 of the
+same budget).
+
+**What to do: an A/B on the device, no flash between the steps.** The owner only plays; the coordinator writes the
+policy file and reads the stats **over USB MIDI** (`python firmware/tools/coop_usb.py stats -o FILE`; the OP-1's
+disk mode does not show `/yaffs2`, so there is nothing to copy by hand).
+
+0. Flash `op1_246_coop_e13.op1` (keep the plugins). The boot line reads `coop e13 - 246`. `coop_usb.py hello`,
+   `inventory`: `build e13`, 13 loaded, header `budget 1769472 used 833168 ... heap_used 833168 arena_used 156416 place
+   eng=heap,fx=heap,voice=heap,buf=arena place_src default`.
+1. For each policy below, in this order: the coordinator writes the file (`coop_usb.py --write put place.txt --to
+   /yaffs2/user/coop_place.txt`; for A, `--write delete /yaffs2/user/coop_place.txt`), **the owner power-cycles**,
+   the coordinator checks `stats` shows `place ... src=file` (`src=default` for A) and the expected `plugmem` figures,
+   then **the owner plays, each for a full minute**: (i) rings, six-note chords held and re-struck, the tape
+   stopped; (ii) a sampler sound with fickle at synth FX 1, the same kind of playing. The coordinator reads the stats
+   after (i) and after (ii) (each read takes ~10 s; the `win` lines hold the last two minutes).
+
+   | Step | `coop_place.txt` | What it is | `plugmem` expected (13 files) |
+   |---|---|---|---|
+   | A | (no file) | e13's default | `heap_used 833168 arena_used 156416` |
+   | B | `all=heap` | e11's placement (four buffers in heap 0) | `heap_used 1372344 arena_used 21632` |
+   | C | `all=arena` | e12's placement | `heap_used 0 arena_used 989248` |
+   | D | `eng=arena fx=heap voice=heap buf=arena` | only the engines' images in the arena (rings) | `heap_used 163976 arena_used 825568` |
+   | E | `eng=heap fx=arena voice=heap buf=arena` | only the effects' images in the arena (fickle's code) | `heap_used 669192 arena_used 320096` |
+   | F | `probe=1` | the default, with the live fill probe and the `sdram` line | as A; a `fill` and an `sdram` line |
+   | G | `all=arena probe=1 pf=1` | e12's placement, line fills counted instead of stall cycles | as C; `pf_mode 1` |
+   | H | `pf=1` | the default, line fills counted | as A; `pf_mode 1` |
+
+   Then delete the policy file (back to the default) and power-cycle once more.
+2. What to read, per step and per kind of playing:
+   - the playing windows' `cb_sum / blocks` (the whole callback a block), `cb_max`, `peng / blocks` (rings' own
+     renders a block), `fx / blocks` (fickle a block), `eng / blocks`; `io_gap_max` (the main loop: the UI's lag);
+   - `engines ... eng_rings=avg/max/n/p0/p1` and `cost ... fx1_plugin=avg/max/n/p0/p1` (pf mode 0: p0 code stall
+     cycles, p1 data stall cycles; mode 1: fills);
+   - `cplb ... dcplb_changes icplb_changes` (expected 0 after the first windows: the tables are not being swapped);
+   - F: `fill` (`code_a` against `code_heap`, `data_a` against `data_heap`: is a cold line dearer in region A while
+     the OP-1 plays?) and `sdram`;
+   - `sysex ... drop` (expected 0).
+3. The questions the table answers: A against B: do the buffers in the arena cost anything (fickle)? A against C:
+   is the default as good as e11 for rings? D and E against A: is it the engine's image, the effects' code, or both?
+   F, G, H: is a fill dearer in region A, or are there more of them?
+4. If a step's stats say `place ... src=marker` or `place_src 3`: the boot before did not finish with that policy.
+   The OP-1 is on the default; note it, then `coop_usb.py --write delete /yaffs2/user/coop_place.try` and go on with
+   the next step. If the OP-1 does not answer on USB MIDI after a power cycle: power-cycle once more (the marker then
+   makes it boot on the default).
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e11.op1` (or stock).
+The plugin files are untouched by either. A policy file left on the OP-1 is ignored by e11 and e12.
+
+**Result (the owner's OP-1, 2026-11-21, the default policy, read over USB MIDI): the default restores e11's speed.**
+- Step 0 / A: `build e13`; `plugmem ... heap_used 834520 arena_used 156416 ... place_src 0` (the catalogue's rings
+  0.11 and tape_echo 0.5, hence 834,520 and not the gate's 833,168); `sysex ... drop 0`; `dcplb_changes 0
+  icplb_changes 0`: **the CPLB tables are not being swapped** while the OP-1 plays.
+- rings 0.11: `eng_rings=27475/106262` (avg / max per voice render), `eng_rings_block=162542/228613`: e11's figures
+  (27,222-28,058 avg, 104-117 k max; e12: 27,529 avg but 213,030 max). A held six-key chord: `peng` 158-160 k a
+  block, flat; the whole callback 334-356 k, worst block 453 k (e12: 457-520 k, worst 600-856 k).
+- The effects' idle paths work on the device: nothing sounding with tape_echo 0.5 idle at synth FX 1, `fx` 13.1 k a
+  block in every window (44-46 k active on e11), the whole callback ~116 k against ~91 k with no effect on: an idle
+  effect still costs ~13 k in `fx` and ~25 k of the callback (its render, the wrap's conversions, the stage and the
+  mix after it: e14's rest paths and audit item 9).
+- **Not yet run: the A/B steps B-H** (the other policies, the fill probe, `pf=1`), so why the arena is slower and
+  what the buffers cost there are still open.
+
+## rings 0.12: a tail that stalls under 4 LSB sleeps; the held chord that cost the same for 75 s — device test (pending, 2026-11-21)
+
+**The finding this answers** [C device, rings 0.11 on e13, 2026-11-21]: string + reverb, a chord held about 75 s, no
+effects: rings' own cost (`peng`) 151,700 cycles a block in the strike window, then 158,278-159,812 in every
+5-second window to the end; "it sounded like it had died down". The damping was not noted.
+
+**What the host and the simulator say** [C host, simulator; `plugins/rings/README.md` "0.12"]. With the default patch
+six held keys are asleep 17.4 s after the strike (the last non-zero 16-bit sample at 17.1 s), host and simulator the
+same samples; the cost falls from 10 s on. Nothing in the core strikes a held string again (`note_on` once, then
+`render` with pitch and controls). A flat cost for 75 s needs strings that ring that long: with the other controls at
+their defaults, damping from about 29,800 up (30,000: asleep at 91 s, the sum at 18 LSB, -65 dBFS, by 75 s; 31,000:
+176 s). So the likely cause is a long tail at a high damping, quiet to the ear and not to the arithmetic [I]: 0.12
+does not shorten that, on purpose (those strings still sound in 16 bits). What 0.12 does remove is a voice that
+stalls for good between half an LSB and 4 LSB (FM and the strings at some structure settings from damping 26,000 up)
+and computed at full cost for as long as its key was down: such a voice sleeps after 10 s under 4 LSB.
+
+File: `firmware/build/plugins-next3/rings.coop`, 0.12, 115,036 bytes, sha256
+`d39db785bb8541723694c39a545cd6e740658241745550b30853a144aef64963`. The same imports as 0.11 (loads on e10 and
+later). **Not in the catalogue: it needs the op1emu gate first** (13 files load, `det_eng_rings.txt`, the held-chord
+scenario of the 0.11 gate).
+
+**Owner's checklist** (the stats are read over USB MIDI with `coop_usb.py stats`; I read `peng` per 5-second window):
+
+1. Copy `rings.coop` 0.12 to the OP-1, restart, select rings. No effects, no sequencer.
+2. **The default patch first** (this tells a long tail from a fault): string + reverb, polyphony "all", the four
+   controls where a fresh rings patch has them (damping about 70 %). Strike a chord of four to six keys and hold it
+   60 s. Expected: `peng` starts to fall about 10 s after the strike and is at its floor (a few thousand cycles a
+   block, the six render calls) from about 20 s. If it stays flat here, the cause is not the tail's length: say so,
+   that is a fault to find.
+3. **The setting of the first test**: turn the damping to where it was (if it was high, near the top), hold the
+   same chord 60 s, and write down where the damping stood (the kennel page's number). Expected at a high damping:
+   flat for the whole 60 s, as before; that is the string still ringing under what the ear picks out. Say whether
+   anything is still audible with the volume up near the end.
+4. **A stalled tail** (what 0.12 changes): the FM model, structure fully down, damping at about 80 %; hold six keys
+   45 s. Expected: silence to the ear after about 12 s, and `peng` at its floor from about 22 s after the strike
+   (0.11: at full cost for as long as the keys are down).
+5. Strike keys again after each of these: every note sounds at once, at its usual level, with no click.
+6. By ear, any model: tails end as they did in 0.11; nothing is cut that could be heard.
+
+## rings 0.13: the early cut, a voice under -66 dBFS for 5 s is faded out over 1 s and sleeps; a -60 dBFS file to compare — device test (pending, 2026-11-21)
+
+**What it is** [C host, simulator; `plugins/rings/README.md` "0.13"]. The owner's decision after the 0.11 device run
+(a chord at a long damping: `peng` about 162 k cycles a block for minutes, "sounded like it had died down" well
+before 60-75 s): a voice whose own level has stayed under a threshold for 5 s is faded out over 1 s and then sleeps,
+key held or not, in every model. The threshold is -66 dBFS per voice (16 LSB peak of the 16-bit output) in 0.13 and
+-60 dBFS (33 LSB) in a second file built for this test. Above the threshold every sample is 0.12's (host proof); a
+note struck during the hold or the fade plays as in 0.12; a voice that was faded out is struck from rest. The
+reverb is not cut: fed nothing more, it runs its tail out and idles as since 0.11.
+
+**What the host says the test will show, before it is run** [C host]:
+
+- **At the very top of the damping, nothing changes, and the chord is loud.** Six keys, the default patch otherwise:
+  the summed output peaks at -12 dBFS 60 s after the strike and -13 dBFS at 75 s in string + reverb, -8.5 and -10
+  dBFS in the string model, and the strings ring for more than five minutes; with other settings of the structure
+  and the brightness between -3 and -27 dBFS at 75 s (only the structure at the top ends inside a minute). No
+  threshold near -60 dBFS reaches that, and 0.13 costs there what 0.12 costs. So if the chord of the 0.11 run could
+  not be heard after a minute with the damping at the top, what made it quiet came after rings (the OP-1's
+  envelope, the levels, the listening volume) [I]: step 1 below is there to settle that.
+- **Where the cut works is the top tenth below the very top.** Seconds after the strike until every voice sleeps,
+  six keys held (`peng` falls a step each time a voice sleeps, and is at its floor from the last time on):
+
+| six keys, damping (of 32,767) | 0.12 | 0.13 (-66) | the -60 file |
+|---|---|---|---|
+| string + reverb, 28,000 (85 %) | 39.0 s | 30.7 s | 27.5 s |
+| string + reverb, 30,000 (92 %): the four strings | 34.5, 61.0, 69.5, 90.2 s | 29.5, 51.1, 54.4, 72.3 s | 25.9, 45.4, 47.8, 63.7 s |
+| string + reverb, 31,000 (95 %): the four strings | 56.3, 108.6, 122.8, 171.7 s | 44.9, 88.3, 99.6, 144.3 s | 39.2, 78.0, 87.3, 126.7 s |
+| string + reverb, 32,767 (the top) | 97.8, 214.9, 255.4, 322.0 s | 77.0, 199.3, 255.4, 322.0 s | 67.0, 176.3, 254.5, 322.0 s |
+| modal, 28,000: the six together | 62.8 s | 46.7 s | 40.6 s |
+| modal, 30,000: the six together | 104.6 s | 77.5 s | 66.9 s |
+| string, 30,000 | 20.4 s | 19.0 s | 17.5 s |
+| one key (C3), string + reverb, 30,000 | 107.6 s | 84.7 s | 74.4 s |
+
+  The summed output when the last fade starts: about -67 dBFS (0.13) and -57 dBFS (the -60 file) in string +
+  reverb at 30,000; in the modal model the six voices fade together, with the sum at -57 dBFS (0.13) and -50 dBFS
+  (the -60 file). The modal chord is the case most likely to be heard.
+
+**Files** (both named `rings.coop`: the second replaces the first; side by side as `rings60` they would not cost the
+same, the second copy gets no L1 lease):
+
+| file | version | bytes | sha256 |
+|---|---|---|---|
+| `firmware/build/plugins-next4/rings.coop` | 0.13 (-66 dBFS) | 115,788 | `269258f483ef82fff0924a32dcafdba8931196cb3a4fda0b49a3294397ef7074` |
+| `firmware/build/plugins-next4/alt60/rings.coop` | 0.13-60 (-60 dBFS) | 115,796 | `94c3422ca9cfab098ca0f3a07ca2a65eed8ac6ed07e9ecca301e6bc4313b24a1` |
+| `firmware/build/plugins-next3/rings.coop` | 0.12 (the reference) | 115,036 | `d39db785bb8541723694c39a545cd6e740658241745550b30853a144aef64963` |
+
+The same imports as 0.12 (they load on e10 and later). **0.13 is in the catalogue since the op1emu gate of
+2026-11-22** (the gate notes after the checklist); the -60 file is not (copy it by hand for step 7).
+`coop_usb.py inventory` shows which version is loaded.
+
+**Owner's checklist.** Headphones; no effects, no sequencer; rings' other controls where a fresh patch has them
+unless a step says otherwise. Do each timed step once per file, in the order 0.12, 0.13, the -60 file (copy the
+file to the OP-1 as for 0.12, restart, select rings). The stats are not something to copy: they are read over USB
+MIDI by the agent with `python firmware\tools\coop_usb.py stats`, and they keep only the last two minutes in
+5-second windows, so say "done" right after each step and leave the OP-1 connected; `peng` per window should fall
+at the times in the table.
+
+1. **The longest damping** (the setting of the first run): damping fully up, string + reverb, polyphony "all",
+   a six-key chord held 90 s. At a normal listening level, then again at a high one: can you still hear the chord
+   at 60 s and at 90 s? The host says it is loud (-12 dBFS). If you cannot hear it, write down the synth's envelope
+   settings and the volume: the quiet then comes after rings, `peng` will be flat in all three files, and the cut
+   cannot help there. Expected in all three files: `peng` flat for the 90 s (0.13 and the -60 file lose the top
+   string at 77 s and 67 s).
+2. **The tail's end, string + reverb:** damping at about 92 % (write down the number the page shows), a six-key
+   chord held 100 s. Listen for how the tail ends at a normal level and at a high one. 0.12 ends by itself near
+   90 s; 0.13 fades the last string at 71-72 s, the -60 file at 63-64 s. Does either end sound cut, or shorter
+   than 0.12's? `peng` should step down at about 30, 51, 54 and 72 s (0.13); 26, 45, 48 and 64 s (-60); 35, 61, 70
+   and 90 s (0.12).
+3. **The tail's end, modal** (the most exposed case: the six voices fade in the same second): the modal model,
+   damping at about 85 %, a six-key chord held 70 s. 0.12 ends near 63 s, 0.13 fades at 45-47 s, the -60 file at
+   39-41 s. Is the fade heard as an early end at a normal level? At a high level?
+4. **A single quiet note:** string + reverb, damping about 92 %, one key (a low C) held. 0.12 rings to 108 s, 0.13
+   fades at 84-85 s, the -60 file at 73-74 s. Listen at a high level for the last ten seconds before those times:
+   is anything missed?
+5. **A note struck during the fade:** repeat step 3 with 0.13 and strike one of the held keys again at about 46 s
+   (during the fade), then repeat and strike at about 50 s (after it). Each time the note sounds at once, at its
+   usual level, with no click and nothing odd in the first moment; the other voices stay silent.
+6. **Nothing else changed:** play normally in a few models for a minute with 0.13: no note cut while it is still
+   heard, no click when a tail ends.
+7. Say which of -66 and -60 is acceptable by ear, or whether the level should move (up: the cut comes sooner;
+   down: later). It is one constant (`OP1RINGS_EARLY_LEVEL`).
+
+**Gate notes (op1emu, 2026-11-22, `tools/emu_gate.py` through a wrapper that also reads `op1.db` out of the NAND, one
+run at a time under the shared lock, a fresh NAND per chain; images `~/op1emu-work/e13/e13g.ldr` and
+`~/op1emu-work/e14/f.ldr` (e14's gate image: `prof=1 statsfile=1`); scripts, scenarios and outputs in
+`I:\op1emu-tmp\r13gate\`)** [C op1emu]. No fault in any run, on either core, with either file. **0.13 is in the
+catalogue since this gate** (`plugins/rings/rings.coop`, `op1/coop` build 0.13); the -60 file is not.
+
+How it was run:
+- **Holds on a second boot.** `det_eng_rings.txt` first (it selects rings and closes the list with `tap seq`, after
+  which the stock sequencer retriggers held keys), then each hold scenario as the next boot of the same NAND, no seq
+  tap. That NAND leaves rings on verb with polyphony index 1 ("2"; the earlier gates' held chords therefore ran at
+  polyphony 2); each hold sets polyphony "all" with fn + green.
+- **The damping set with the white encoder** (`turn enc3`), measured in `op1.db` after the run: a detent (two Gray
+  steps) is 328 of the word, a fine detent (Shift held) 20; 22,937 + 21 detents + 9 fine = **30,005**; + 15 detents
+  + 7 fine = **27,997**. Every hold's `op1.db` holds the intended words (model, polyphony 3, damping).
+- Six keys **F3 G3 C4 E4 G4 C5** pressed 2 ms apart at 36 s guest (op1emu has no C3 key without an octave change;
+  string + reverb keeps the last four strikes, C4 E4 G4 C5, as the host's chord does), held 100 s (default damping
+  40 s, modal 70 s). `volume 255` (op1emu's volume knob; the default 128 leaves the tails at 1-2 LSB in the dump).
+- **The stats keep 24 windows**; a poller copied `coop_stats.txt` out of the live scratch NAND every 12 s and the
+  windows were merged by sequence number. Below, t is seconds after the strike at the window's start (window n:
+  t = 5n - 34).
+- Clicks: the dump's largest sample step per 50 ms block, at each fade against the 4.5 s before and the 4.5 s after,
+  and every block whose step is over 3 times the median of the 2 s around it. The audio dumps were deleted once
+  read, and every scratch NAND by the gate; none is left.
+
+| Run | e13 | e14 |
+|---|---|---|
+| (a) **the 13 catalogue files with rings 0.13**, first boot, `det_fx_select` (slow waits) | 13 loaded, failed 0, over_budget 0; `plugmem budget 1769472 used 835408 over_budget 0 heap_short 0 ... scratch_files 11 fxbuf 134784 fxbuf_mem 539136 fxbufs 4 ... heap_budget 1769472 heap_used 835408 arena_budget 5898240 arena_used 156416 place_src 0`; end `heap_largest 1888812 heap_free 1890404` | the same figures to the byte |
+| (a) the same NAND, second boot, `det_chord` | 13 loaded, the same `plugmem`; end `heap_free 2220580` | the same |
+| (b) `det_eng_rings` (every model, FM among them), rings alone | `heap_used 668856`, `eng_renders`/n 118,600, `eng_rings=9649/34247` | `eng_rings=9648/34240`, `eng_rings_block=54706/118329` (on e14 the same scenario with 0.12: 9616/34199, with 0.11: 9603/34183; 0.11 on e11: 9,603/34,183) |
+
+**Memory.** 835,408 is 0.11's 834,520 and 888 bytes (rings alone 668,856). e11 charges an engine's image as e13 does
+in heap 0, so the e11 sum is 1,511,704 + 888 = **1,512,592** of e10's 1,572,864 (60,272 to spare) and e11's 1,769,472
+(256,880); e12's rule 991,488. The site's sums give these to the byte (`web/src/core/plugins/memory.test.ts`,
+`memory-e13.test.ts`, the vectors moved to the new file).
+
+**(c) The held chords: rings' own cost (`peng`, cycles a block) per 5 s window, e14** (e13 the same to within 0.5 %;
+its whole callback stays higher with every voice asleep, 77.6 k for e14's 55.1 k, as e13 has no voice skip):
+
+| string + reverb, damping 30,005, t | 0.13 | 0.12 | 0.11 |
+|---|---|---|---|
+| 1-26 (four strings and the reverb) | 65,135-65,347 | 65,058-65,131 | 64,980-65,053 |
+| 31-36 | **56,373** | 65,125 | 65,041 |
+| 41 | 54,230 | 59,668 | 65,000 |
+| 46-56 | **47,404** | 56,197 | 65,032 |
+| 61 | 43,403 | 56,208 | 65,038 |
+| 66-76 | **38,432** | 47,271 | 65,020 |
+| 81 | 26,313 | 43,666 | 61,422 |
+| 86-96 (keys still down) | **4,917** (every voice asleep) | 38,372 (one string awake at the release) | 56,106 |
+
+- 0.13's steps fall at about 31, 45, 64 and 84 s (the last with the reverb's own tail), 0.12's at about 42, 49, 66 and
+  83 s with the last string still awake when the keys come up at 100 s, 0.11's (no quiet sleep) at 81 s and never.
+  The host predicted 29.5 / 51.1 / 54.4 / 72.3 s (0.13) and 34.5 / 61.0 / 69.5 / 90.2 s (0.12); op1emu's chord is
+  not the host's (F3 and G3 struck first and stolen, real pitch words, hand-made strike order) and runs about 10 s
+  longer in both builds, so the comparison is between the builds: **0.13 is at its floor 16 s or more before 0.12**,
+  as the host says (18 s).
+- The output (dump, peak per second): last second above -60 / -70 / -80 dBFS 51 / 63 / 81 s (0.13), 51 / 63 / 82 s
+  (0.12), 51 / 62 / 99 s (0.11): to -80 dBFS the three builds play the same tail.
+- **No click**: at the four fades the largest step is 11, 6, 6, 5 LSB against 15, 7, 6, 5 in the 4.5 s before and
+  8, 6, 6, 3 after (the tail falling smoothly); no block flagged after the strike.
+- Awake, 0.13 costs 216 cycles a block more than 0.12 (65,344 for 65,128: +0.3 %; the host's simulator: +0.7-1 %).
+
+| the other holds, e14 | 0.13 | 0.12 | 0.11 |
+|---|---|---|---|
+| string + reverb, default damping (22,937), t 1 / 6 / 11 / 16 / 21 / 26 | 65,340 / 61,367 / 48,659 / 22,694 / **4,917** / 4,917 | 65,123 / 61,177 / 56,207 / 49,143 / 24,371 / **4,921** | 65,045 / 61,099 / 56,131 / 52,272 / 47,229 / 47,246 (one string stalled for the rest of the hold: 0.12's case) |
+| the same, output: last second above -60 / -70 / -80 dBFS | 7 / 9 / 14 s | 7 / 9 / 13 s | 7 / 9 / 13 s |
+| **modal, damping 27,997**, six keys: t 1-41 / 46 / 51-66 | 123,843 / **16,418** / 2,765 (the six asleep at about 46.6 s) | 123,534 / 123,535 / 123,536 to t 56, 114,629 at 61, 44,700 at 66, then released (asleep about 67 s) | - |
+| the same, output | -80 dBFS last at 46 s, the floor from 47 s | -80 dBFS last at 65 s | - |
+| one key held (the C4 key after `tap left`), string + reverb, 30,005 | 22,697-22,731 flat to t 91; asleep at about 98 s (the window t 96-101 is 10,597, from the asleep render's 1,200 and the playing 22.7 k), 2 s before the release; the output at its floor from about 98 s; the host's C3: 84.7 s | - | - |
+
+- At the default damping 0.13 is at its floor about 3 s before 0.12 here (the host: 0.2 s), with the same audible
+  tail to -80 dBFS; 0.11 never sleeps one string. Not an equality, as the brief expected, but not a difference in the
+  sound.
+- The modal chord, the most exposed case: the six fade together at about 45.5-46.5 s (host 46.7 s), the output
+  falling from 8-10 LSB peak to the 1 LSB floor over that second; largest step 5 / 4 LSB in the fade against 6 before
+  and 2-4 after: **no click**.
+- The single note: whether `tap left` moved the octave is not shown (the dump's zero crossings, about 550 Hz, say
+  little about a string's pitch), so the note may be C4; the fade at about 98 s: largest step 4 LSB against 4 before
+  and 2 after, no click. Not run with 0.12 (its time, beyond the 100 s hold, would not show).
+
+**(d) Restrikes, modal at 27,997** (`rs_m28.txt`, both cores, the same in both): C5 released at 81.3 s and struck at
+81.5 s, inside the six fades (45.0-46.0 s after the strike in the hold), E4 released and struck at 86.2 s (every voice
+faded), a seventh key A4 at 90 s (a steal of a faded voice). No fault; each note starts at once at its level (peaks
+4,000 / 5,500 / 5,800 LSB in its first 50 ms, the step 0.4-0.55 of the peak as in a fresh strike's first blocks, and
+the blocks before it 2-4 LSB / 70-85 LSB); `peng` 38.9 k, 51.4 k, 63.4 k in the windows after, 0 after the release.
+
+**(e) The -60 file** (0.13-60, sha256 `94c3422ca9cfab098ca0f3a07ca2a65eed8ac6ed07e9ecca301e6bc4313b24a1`), both cores, the same runs as (a) and (c):
+- (a) 13 loaded, failed 0, first and second boot on e13 and e14: `plugmem budget 1769472 used 835416 ...
+  heap_used 835416 arena_used 156416` (8 bytes more than 0.13); e11 by the same sum 1,512,600 (60,264 under e10's
+  budget).
+- (c), e14 (e13 the same `peng` to within 0.3 %), `peng` per window:
+
+| hold | -60 | 0.13 |
+|---|---|---|
+| string + reverb, 30,005: the steps | at about 26, 36, 51 and 71 s; **4,917 from t 76** | 31, 45, 64, 84 s; 4,917 from t 86 |
+| the same, output: last second above -60 / -70 / -80 dBFS | 51 / 63 / **70** s | 51 / 63 / 81 s |
+| default damping | 4,917 from t 21 (t 11: 44,194, t 16: 13,328) | from t 21 (48,659, 22,694) |
+| modal, 27,997 | the six asleep at about 40 s (host 40.6 s), 2,765 from t 41 | about 46.6 s |
+| the same, output: -70 / -80 dBFS last | 39 / 40 s | 42 / 46 s |
+| one key, 30,005 | asleep at about 88 s | about 98 s |
+
+- No click at any -60 fade: largest step 15, 8, 6, 5 LSB at the four string + reverb fades against 18, 10, 6, 6 before;
+  modal 4-5 against 5 before and 2-4 after; the single note 4 against 4.
+- No fault in any run. `eng_rings=9649/34241` in `det_eng_rings` (0.13: 9648/34240).
+
+Not shown in op1emu [I]: every device cycle figure (op1emu has no caches and no SDRAM timing);
+how the fades sound (the owner's checklist above, unchanged); the host's exact times (op1emu's chord and pitch words
+are not the host's: the times run about 10 s longer in every build at 30,005, the modal times match the host's to
+0.5 s; the -60 file 0.6 s).
+
+## rings at the top of the damping: the chord that fades in 4 s and costs the same for 75 s — the measurement that tells why (pending, 2026-11-21)
+
+**The device** [C device, the owner, rings 0.11 on e13]: string + reverb, the damping at its longest end, the
+envelope's sustain at the top, six keys held: the chord fades in about 4 seconds; `peng` 158-163 k cycles a block
+for 75 s, `eng_noteons 6`.
+
+**The host and the simulator** [C; `plugins/rings/README.md` "0.13", "What the tail at the top of the damping is"]:
+the same chord at damping 32,767 (which is what the knob's top sends: the stock iter range is 0 to 32,767 and
+rings takes the word as it is) is the chord itself for minutes: the strings' fundamentals at -8 dBFS RMS in
+200 Hz - 2 kHz at 5 s, -22 dBFS at 60 s, -26 dBFS at 75 s; no DC (under 50 LSB), nothing under 20 Hz or near
+Nyquist, no stuck state; each voice a clean sine. A listener would hear it at 60 s. The simulator with the assembly
+kernels gives the host's samples. No damping value from 0 to the top, and no structure or brightness at the top,
+gives "gone in 4 s and never asleep" on the host. So either something after the engine closes the sound while rings
+plays on, or rings on the device does not do what it does on the host. No rule in rings can be chosen before that
+is known, and no rings 0.14 was built.
+
+**Two observations, the first without any tool** (0.13 or 0.12 in place; e14 with the profile on, `prof=1`, for the
+second; no effects, no sequencer, sustain at the top, the damping at its longest end, string + reverb, six keys held
+60 s):
+
+1. **Look at rings' own screen while the chord is held.** Its voice levels are drawn from the engine's 16-bit
+   output before the OP-1's envelope. Do they stay up after the sound has gone (at 10 s, 30 s, 60 s), or do they
+   fall with the sound in the first seconds?
+2. Say "done" and leave the OP-1 connected: the agent reads `python firmware\tools\coop_usb.py stats` within two
+   minutes: `peng` per 5-second window, and on the mode line `env_peak`, `vgain`, `ramp` (e14: the largest
+   envelope value in the window, the voice sum gain, the decimator's ramp), with `env_skips`.
+3. Write down the other three rings controls and the polyphony as the patch has them, the octave played, and whether
+   the synth's LFO or the element is assigned to anything.
+
+| what is seen | what it means | what follows |
+|---|---|---|
+| the screen's levels stay up, `env_peak` (or `vgain`, `ramp`) falls within seconds | rings plays the chord; the stock closes it afterwards | the cost can only be saved in the core (it knows the envelope); rings' early cut never sees it |
+| the levels stay up, `env_peak`, `vgain` and `ramp` stay up too | the chord is in the output; the fade is in the listening (level, speaker) or the report | repeat on headphones at a fixed volume |
+| the levels fall within seconds, `peng` stays flat | rings on the device decays where the host rings on, and its voices do not sleep | record the device's output (or dump a voice's `out` on the device) with this patch and compare with the host run of the same control words |
+
+## e14: the core's stages at rest, the measuring code behind a switch, the stats text in RAM — device test (pending, 2026-11-21)
+
+What changed (`docs/performance.md` "e14"): e13 with the efficiency audit's core fixes, each its own commit and
+switch: (1) the tape record tap makes one stock call while nothing records; (2) the measuring code (cost table,
+marks, per-voice records, block-start folds) is behind `g_coop_prof` / the policy token `prof=0|1`; (3) the S3 stage
+and the mix loops are skipped on a silent instrument; (4) a voice that rendered silence is not placed or summed
+(rings 0.11's idle voices); (5) the stats text is made in RAM and served over SysEx, and `coop_stats.txt` and the
+tape tail are no longer written every 5 s. e13's placement policy, default and budgets are unchanged. Build tag
+`e14`, the boot picture's line `coop e14 - 246`. Existing `.coop` files load and behave unchanged.
+
+Two packages from one ELF (sha256 of each below), both in Downloads:
+- **`op1_246_coop_e14.op1`, the release flavour**: the measuring code off (`g_coop_prof=0`), no periodic stats
+  file. sha256 `93d0c275041b45b55a96dd1b3a75ef858106d66c8e4f14742fb55b6189abbcc7`.
+- **`op1_246_coop_e14_dev.op1`, the dev flavour**: the measuring code on, no periodic stats file. sha256 `c5725f1cd9bc67e842767a23d0a4087d68cd44bcf6fbe23e35841b620946b7d9`.
+Both: `tools/build_device_package.sh ... --tape-stereo --set-word g_coop_spread=32767 --set-word g_coop_statsfile=0`
+(release adds `--set-word g_coop_prof=0`); `verify_bootloader.py` PASS (no te-boot.ldr), `pkg_check` = only
+`OP1_vdk.ldr` differs; the ELF holds the tag `e14` (and no `e13` / `e12`). Either flavour becomes the other at the
+next boot with a policy file: `prof=1` or `prof=0` in `/yaffs2/user/coop_place.txt` (e13's file; its other tokens
+as before; `statsfile=1` brings the 5 s file writes back).
+- No web delta made. The site needs no change for the stats path (it is answered from RAM under the same name). On
+  a release image the `cost` / `engines` lines are empty and the windows' `eng` / `peng` / `fx` / `s2` are 0; a
+  reader that shows them should say "profiling off" when the stats' `mode` line has `prof 0`.
+
+**Gate notes (op1emu, 2026-11-21, one run at a time, fresh NANDs; images `--tape-stereo --set-word
+g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`; the 13 catalogue plugins of that day, rings 0.11 and
+tape_echo 0.5 among them; scripts and outputs in `I:\op1emu-tmp\e14gate\`)** [C op1emu]. A scenario with several
+key events is not sample-identical run to run on one image (e13 against itself on `det_tape_relift.txt`: max diff
+4,124): audio identity is shown on the scenarios with one event time, with retries, and the multi-event scenarios
+are covered by the check images, which compare every fast-path block with the real code in place.
+
+| Run | Result |
+|---|---|
+| The check image (all three fast paths in check mode), pristine NAND, six scenarios | pass; `idle_bad 0` (31,624-146,170 blocks a scenario), `skip_bad 0` (81,569-441,453) |
+| The check image, the 13 catalogue plugins, `det_fx_select` (waits x3) | pass; `skip_checked 335673 skip_bad 0`, `idle_checked 114330 idle_bad 0` |
+| The check image, cs_hall + tape_echo, `det_fx_switch` | pass; `skip_checked 164624 skip_bad 0` |
+| The check image, fickle, `det_fx_fickle` | `skip_checked 158845 skip_bad 0`; the run ended 1.9 s before its last event (the host was loaded: `ran_to_end` failed, nothing else) |
+| The check image, rings 0.11, `det_eng_rings` | pass; `skip_bad 0`, `voice_checked 41610 voice_bad 0` |
+| e14 against e13, pristine | `det_drum` and `det_tape_play` identical; `det_chord` max diff 2; `det_tape_rec`: aligned, max diff 2 over 3,707,181 frames (a scenario with several key events: another run of the same pair differed by 4,108, as e13 does against itself) |
+| e14 with `g_coop_prof=0` against e13, pristine | `det_drum` identical, `det_chord` max diff 2 |
+| e14 against e13, the 13 catalogue plugins, `det_fx_select` | differs (max diff 5,312): a scenario with many key events, not identical run to run on one image either; covered by the check image |
+| Six rings 0.12 voices held 68 s (`rings_held6` after `det_eng_rings`) | cycles a block held and asleep: e13 76,405; e14 53,978; profile off 50,712; `voice_skips 273999` |
+| A plain test engine, the stock envelope (one note; six keys held with the sustain down; the decay down too) | the stock stops rendering a voice when its envelope ends, key held or not; `env_skips 0` |
+| The release image over USB/IP | `mode prof 0 statsfile 0`; two reads 8 s apart over SysEx, 10,361 and 12,171 bytes, 13 and 19 windows (the second made afresh: `ram_reads 162`), `sysex drop 0 errors 0`, `stats writes 0 tail_writes 0`, no `coop_stats.txt` on the NAND afterwards; with `prof=1 statsfile=1` in the policy file the same image reports `mode prof 1 statsfile 1`, `writes 7 tail_writes 7` and the file is on the NAND; the dev image `prof 1 statsfile 0`, `writes 0`. `tools/emu_gate.py` read its stats from the NAND in every other run here (gate images keep `statsfile=1`) |
+
+Not shown in op1emu [I]: every device cycle figure (op1emu has no cache and no stall); the main loop's stall that
+the stats write caused; the stats read over the real USB MIDI port from RAM (the path is the same code as in the
+USB/IP gate).
+
+**What to do** (the owner plays; the coordinator reads the stats **over USB MIDI**, `python
+firmware/tools/coop_usb.py stats -o FILE`; nothing is copied in disk mode, and on e14 the stats file is not on the
+OP-1's flash at all unless `statsfile=1`):
+1. Flash **`op1_246_coop_e14_dev.op1`** first (keep the plugins and any policy file). Boot line `coop e14 - 246`.
+   `coop_usb.py hello` -> `build e14`; `stats` -> `mode prof 1 statsfile 0 ... idle_skip 1 ... voice_skip 1`, and on
+   the `tape` line `idle_mode 1`. The stats must read at once after boot and again any time later (they come from RAM).
+2. **At rest** (nothing sounding, the tape stopped, a minute): read the stats. On the `win` lines `cb_sum / blocks`
+   was 91-92 k on e11; expected clearly lower. `rec_sum / blocks` (the record tap; ~7.2 k before), `mix_sum /
+   blocks`; `mode ... stage_skips` and `mix_skips` counting up; `tape ... idle_blocks` counting, `mismatch 0`.
+3. **rings**, six-note chords held and re-struck for a minute, then **let a held chord ring out and keep the keys
+   down** (rings 0.11 idles its voices): read the stats. `cb_sum / blocks` and `cb_max` in the playing windows
+   (e11: 367-403 k, peaks to 660 k), `peng / blocks` (rings' own renders), `engines eng_rings` and
+   `eng_rings_block`; `mode ... voice_skips` counting while the held chord is silent, and those windows' `cb_sum /
+   blocks` falling towards the at-rest figure.
+   **And the chord that "died down"**: rings at the longest damping, six keys held until it sounds dead, then read
+   the stats while still holding: `mode ... env_skips N env_peak N vgain N ramp N` beside `peng`. `env_peak` near 0
+   = the stock envelope closed the voices (then `env_skips` counting = the stock still renders under it, which
+   op1emu says it does not); `env_peak` high with `vgain 24576 ramp 32767` = every gain between rings and the mix is
+   open and the silence is in rings' own output or after the mix. Then release the keys and read again after the
+   envelope's release time: `peng` must be 0 (the stock stops rendering a released voice when its envelope ends).
+4. **A sampler sound with fickle at synth FX 1**, a minute: `cb_sum / blocks`, `fx / blocks`, `cost fx1_plugin`.
+5. **Recording**: record a take on the tape while playing, play it back, lift and drop it: `rec_sum / blocks` while
+   recording (unchanged from e13: ~20 k under a chord), `tape ... mismatch 0 mismatch2 0`, the take plays back in
+   stereo as before; no click at the start or the end of the take.
+6. Listen through all of it for anything e13 / e11 did not do: a first note after silence must start exactly as
+   before (no lost or soft first block), effect tails must ring out to the end, the tape must loop seamlessly.
+7. Then the release flavour **without a flash**: `coop_usb.py --write put place.txt --to
+   /yaffs2/user/coop_place.txt` with `prof=0` in the file (plus whatever placement tokens are in use), power-cycle,
+   repeat 2 and 3: `mode prof 0`, the `cost` / `engines` lines empty, `cb_sum / blocks` lower again by what the
+   measuring cost (the audit: 5-6 k a block playing, more with the per-voice calls; 2-4 k at rest). Delete the token
+   (or the file) to go back.
+8. The figures the coordinator records, each for e14 dev and e14 with `prof=0`, beside e11's: at rest; rings chord
+   (and rings held and silent); sampler + fickle; recording.
+
+**If something is wrong:** the switches are image words, so a fault can be bisected with test packages; on the
+device, power off; recovery: hold COM at power-on and flash `op1_246_coop_e13.op1`, `e11` or stock. The plugin
+files and the policy file are untouched.
+
+Result: (pending)
+
+## Device loop, first runs: rings at the longest damping, held 60 s and released (2026-11-22, e13, by the agent)
+
+The first scenarios played on the owner's OP-1 with nobody at the device: `tools/devloop.py` (commit 2b89187) put the
+CRUN over SysEx, recorded the line out on UR44C inputs 5-6 through ASIO, ran the coop test runner and fetched the run
+file. The sound was the owner's rings patch (string + reverb model, damping at its longest end, sustain at maximum),
+rings 0.11, core e13 default placement. Run files: `docs/device-stats/2026-11-22-e13-devloop-*-run.txt`.
+
+`tests/sim/dev_hold_chord.txt`, six keys held 60 s, then 20 s after release (whole callback per 5 s section, cycles a
+block; line-out level RMS dBFS at the interface, whose floor at this gain is -69):
+
+| section | cb_avg | line out RMS |
+|---|---|---|
+| rest | 90,818 | -69.2 (floor) |
+| held 0-20 s | 350,468-351,323 | -40.0 to -41.8 |
+| held 20-60 s | 322,312-323,065 | -40.1 to -42.0 |
+| released 0-5 s | 331,684 | -47.0 |
+| released 5-10 s | 331,939 | -57.2 |
+| released 10-20 s | 331,694-332,014 | -66.4, -68.4 (floor) |
+
+`tests/sim/dev_release_long.txt`, six keys held 10 s, then 100 s after release: held 352,387 (-40.4 dBFS); released
+0-10 s 352-361 k while the level falls -41 -> -65; released 10-30 s 330 k with the line out at the floor; at 30-35 s
+127,185 (the renders end inside that section); from 35 s on 90.6-91.0 k, rest.
+
+[C] What this settles:
+- The held chord does not fade: the line out holds -40 to -42 dBFS for the whole 60 s, so rings at the longest damping
+  sustains, as the host said (the owner's "fades in about 4 s" was not reproduced with these settings).
+- After release the OP-1 keeps rendering the six voices for about 30 s, the length of this patch's envelope release,
+  while the line out is at the interface's floor (about 29 dB under the chord) from about 12 s: the last ~18 s of
+  every release costs 240 k cycles a block (41 % of the budget) for sound below -69 dBFS at this gain. e14's
+  `env_peak` reading would show the envelope's level through it.
+- One voice set less at 20 s while held (351 k -> 322 k) is not explained by the run file (its engine lines are
+  cumulative over the run on e13, not per section); e14's per-window `peng` will tell.
+
+## e14 on the device, by the device loop: rest, held chord, release; rings 0.11 against 0.13 (2026-11-22)
+
+The owner flashed `op1_246_coop_e14_dev.op1` (prof on). Runs by `tools/devloop.py` with the owner's rings patch
+(string + reverb, damping at the longest end, sustain at maximum, no effect), `tests/sim/dev_hold_chord.txt` and
+`dev_release_long.txt`. rings 0.11 was put back over SysEx (PUT) for one run and 0.13 restored after it. Run files:
+`docs/device-stats/2026-11-22-e14*-run.txt`. Cycles a block; rings = `plugin_own_block` / per render (six renders a block).
+
+| | e13 + rings 0.11 | e14 + rings 0.11 | e14 + rings 0.13 |
+|---|---|---|---|
+| rest | 90,818 | 62,869 | 63,744 |
+| held 0-20 s, whole block | 350,468-351,323 | 354,101-354,697 | 366,650-368,017 |
+| held 0-20 s, rings | 161,431-162,362 (27.0 k) | 168,833-168,978 (28.1 k) | 174,284-174,530 (29.1 k) |
+| held 20-60 s, whole block | 322,312-323,065 | 354,291-355,670 | 366,690-367,880 |
+| held 20-60 s, rings | 138,125-138,307 (23.0 k) | 168,782-168,995 (28.1 k) | 174,276-174,517 (29.1 k) |
+| released (envelope still running) | 331,684-332,014 | 359,123-359,877 | 369,457-370,355 |
+| line out while held, RMS dBFS | -40 to -42 | -34 to -36 | -36 to -39 |
+
+[C] What it shows:
+- e14 saves 27-28 k cycles a block at rest (91 k -> 63-64 k): the stage, mix and tap changes, on the device.
+- Sounding, e14 is about neutral against e13 for the same rings file in the first 20 s (+3 k whole block; rings +4 %,
+  28.1 k against 27.0 k a render: e14's measuring or code layout).
+- rings 0.13 costs about 3.5 % more than 0.11 while sounding on e14 (+5.6 k rings, +13 k whole block), against the
+  emulator's +0.5 %: the 0.12/0.13 additions cost more on the device (cache).
+- e13 + 0.11 dropped from 27.0 k to 23.0 k a render at about 20 s and stayed there; neither e14 run did. Not explained:
+  the line-out levels differ by up to 6 dB between the three runs, so the patch was not identical (the owner changed
+  the damping between runs and set it back); the drop may be the sound's, not the core's.
+- Released voices render for about 30 s (this patch's envelope release) on every core.
+
+## e15: the effect wrap in assembly, the diagnostic code out of the release image — device test (pending, 2026-11-22)
+
+What changed (`docs/performance.md` "e15"): e14 with (1) the plugin effect wrap (int16 carrier / l / r <-> Q31) in
+assembly (`core/sdram/wrap_fast.S`) at every plugin position (instrument FX 1, master FX 1, both slots 2), its Q31
+block one 512-byte work block in the L1 pool, bit-exact against e14's C; (2) the release package built from its own
+ELF without the diagnostic code (the cache probes and their 28.7 KB of NOP functions, the pf sweep, the fill probe,
+the SysEx self-test, the debug compare in the stage and the voice hook): 31.2 KB less text. e13's placement policy,
+default and budgets, the plugin ABI, e14's flavour words are unchanged. Build tag `e15`, the boot picture's line
+`coop e15 - 246` (commit 7d2c631). Existing `.coop` files load and behave unchanged.
+
+Two packages, both in Downloads:
+- **`op1_246_coop_e15.op1`, the release flavour** (`coop_combined_release.elf`, `COOP_DIAG=0`; `prof=0
+  statsfile=0`). sha256 `3318d582d40ebbcd5726903c18e9756abb8949b473d48cc36fa6092d7031f95c`.
+- **`op1_246_coop_e15_dev.op1`, the dev flavour** (`coop_combined.elf`, `COOP_DIAG=1`; `prof=1 statsfile=0`).
+  sha256 `31e62db3d4e813099986104167d919d5c4453f6c87f5196450908a28d4f9b678`.
+Both: `ELF=<abs> tools/build_device_package.sh OUT --tape-stereo --set-word g_coop_spread=32767 --set-word
+g_coop_statsfile=0` (release adds `--set-word g_coop_prof=0`); `verify_bootloader.py` PASS (no te-boot.ldr),
+`pkg_check` = only `OP1_vdk.ldr` differs; both ELFs hold the tag `e15` (and no `e14`). The release flavour becomes
+the measuring one with `prof=1` in the policy file as before, but it has no boot cache probe (the `icache` lines read
+0) and no fill probe; for those, flash the dev package.
+
+**Gate notes (op1emu): `docs/performance.md` "e15", "Gates".**
+
+**What to do** (the owner plays; the coordinator reads the stats **over USB MIDI**: `python firmware/tools/coop_usb.py
+stats -o FILE`, or `tools/devloop.py` with its run files; nothing is copied in disk mode):
+1. Flash **`op1_246_coop_e15_dev.op1`** (keep the plugins and any policy file). Boot line `coop e15 - 246`.
+   `coop_usb.py hello` -> `build e15`. `stats` -> the `l1` line ends `wrap 0 wrap_nested 0 wrap_checked 0 wrap_bad 0`
+   until a plugin effect has run, then `wrap 1` (the work block in L1; `wrap 2` = it fell back to SDRAM: report it)
+   and `used` 512 higher than on e14 (3,712 in op1emu).
+2. **At rest** (nothing sounding, the tape stopped, a minute; devloop's rest section): `cb_sum / blocks` against e14's
+   62.9-63.7 k on the device. Expected about the same on the dev image (nothing of e15 runs at rest).
+3. **One plugin effect, idle and playing**: cs_hall (or tape_echo) at synth FX 1, a minute of silence, then a minute
+   of chords. Read `fx / blocks` and `cost fx1_plugin` for both sections, and `cb_sum / blocks`. e13 on the device:
+   ~13 k in `fx` for an idle effect. Expected lower by the wrap's share (op1emu: the table in "Gates"; on the device
+   more, the Q31 block no longer refetched [I]).
+4. **Two positions and slot 2**: the same effect at synth FX 1 and instrument FX 2 (and a plugin at master FX 2 if
+   the page lands on it), a chord: `cost fx1_plugin`, `s2_instr`, `s2_master`. Listen: every effect as on e14.
+5. **Switching**: change the effect at synth FX 1 between two plugins and a stock type a few times while a chord
+   rings: no click beyond e14's, no fault, `wrap_nested 0`.
+6. **rings** (the owner's patch, devloop's `dev_hold_chord.txt`): whole block and `plugin_own_block` against e14's
+   354-367 k / 28.1-29.1 k a render; e15 does not touch the engine path, so a difference there is the release
+   image's code layout (step 7) or the cache.
+7. Then **`op1_246_coop_e15.op1`** (release), the same devloop scenarios with `prof=1` in the policy file so that the
+   run files carry the cost lines (`docs/device-tests.md` e14 step 7: power-cycle after the PUT), then with the file
+   removed: `cb_sum / blocks` at rest and while sounding against e14 release. This is the release image's own figure:
+   31 KB less code in region A (the probes were never on the audio path; the difference, if any, is layout [I]).
+8. Listen through all of it for anything e14 did not do.
+
+**If something is wrong:** `g_coop_fast_wrap` is an image word: a test package with `--set-word g_coop_fast_wrap=0`
+runs e14's C wrap in the same image; the release ELF can be rebuilt with `COOP_DIAG=1` (that is the dev ELF). On the
+device, power off; recovery: hold COM at power-on and flash `op1_246_coop_e14.op1`, `e13` or stock. The plugin files
+and the policy file are untouched.
+
+Result: (pending)
+
+
+## e15 dev + rings 0.14 on the device, by the device loop (2026-11-22)
+
+The owner flashed `op1_246_coop_e15_dev.op1`; rings 0.14 was put over SysEx and loaded at the next boot (`rings.coop
+0.14 loaded`, 13 loaded, `plugmem ... used 511208`, `heap_free_boot 15521956`). The owner's default synth sound set to
+rings (sustain at maximum, damping at the longest end). `tests/sim/dev_hold_chord.txt`, run file
+`docs/device-stats/2026-11-22-e15hold_r014-run.txt`. Cycles a block, against e14 + rings 0.13 the same day:
+
+| | e14 + rings 0.13 | e15 + rings 0.14 |
+|---|---|---|
+| rest | 63,744 | 62,339 |
+| held, whole block | 366,650-368,017 | 352,253-353,740 |
+| held, rings (`plugin_own_block` / per render) | 174,276-174,530 / 29.1 k | 168,661-169,024 / 28.1 k |
+| released, envelope running | 369,457-370,355 | 358,877-359,213 |
+
+[C] e15 + 0.14 is 14 k a block (4 %) lighter than e14 + 0.13 while sounding; rings 0.14 costs what 0.11 cost on e14
+(168.9 k), so 0.14 wins back 0.13's additions but its kernels and smaller footprint did not lower the device cost
+further (the device stays cache-bound). The line out was about 6 dB louder than the e14 run (a new default sound), so
+the patch was close but not identical. e15's effect wrap was not exercised (no effect on); `l1 ... wrap 0` at boot.
+One earlier attempt on e15 (rings 0.13 still loaded, a different sound) lost the OP-1's USB about 2 s into the run;
+the owner power-cycled; not reproduced, cause unknown.

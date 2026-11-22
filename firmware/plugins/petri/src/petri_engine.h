@@ -17,17 +17,28 @@ namespace petri {
 
 const int32_t kN = 32;                  // samples a call at 22.05 kHz (the 64-sample bus block, 2:1)
 const int32_t kRecBits = 15;
-const int32_t kRecFrames = 1 << kRecBits;   // 32,768 stereo frames: 1.486 s at 22.05 kHz
+const int32_t kRecFrames = 1 << kRecBits;   // the span of a position: frame numbers count modulo 32,768
 const int32_t kRecMask = kRecFrames - 1;
+// The record itself is a ring of kRecLen frames (0.2: 1.363 s at 22.05 kHz, was the whole 32,768; sized so the state
+// fits tape_echo's 134,784-byte position buffer). A frame `age` behind the write head is at (hp - age) mod kRecLen;
+// the first kRecGuard frames are mirrored after the ring's end, so a voice's 32 samples never wrap inside the kernel.
+#ifndef COOP_PETRI_REC_LEN
+#define COOP_PETRI_REC_LEN 30048            // a multiple of kN; the host test also builds the old 32,768
+#endif
+const int32_t kRecLen = COOP_PETRI_REC_LEN;
+const int32_t kRecGuard = 288;              // a multiple of kN, over a call's reach at kRateMax (8 x 32 + 2 frames)
+const int32_t kRecWords = kRecLen + kRecGuard;
 const int32_t kPosShift = 32 - kRecBits;    // a voice's position: frames in the top 15 bits, the fraction below (Q17)
 const int32_t kRateOne = 1 << kPosShift;    // a rate of 1 (Q17 frames a sample)
+const int32_t kRateMax = 8 * kRateOne;      // a voice's rate is held to this (the effects reach 4x; kRecGuard)
+const int32_t kRebase = kRecFrames / 2;     // the frame number the kernel is given: a call never wraps its 15 bits
 const int32_t kVoices = 8;
 const int32_t kBuses = 3;                   // voices may sum into a filtered bus (warp)
 // The space's lines (at 11.025 kHz) in one int16 buffer read through a pointer that steps down one a sample: every
 // access is the pointer plus a constant, no wrap. The pointer starts at kSpaceSlide; when it nears the bottom the
-// kSpaceSpan live entries are copied up by kSpaceSlide (once every 256 calls).
+// kSpaceSpan live entries are copied up by kSpaceSlide (once every 64 calls; 0.2: 1024, was 4096 every 256 calls).
 const int32_t kSpaceSpan = 3968;            // the lines' entries (petri_engine.cc checks they fit)
-const int32_t kSpaceSlide = 4096;
+const int32_t kSpaceSlide = 1024;           // a multiple of kN / 2
 const int32_t kSpaceSize = kSpaceSlide + kSpaceSpan + 16;
 const int32_t kForever = 0x7fffffff;        // a voice's blocks: a tap that plays until it is faded out
 const int32_t kFadeBlocks = 8;              // a voice faded out (killed) over 8 calls (11.6 ms)
@@ -91,12 +102,13 @@ struct Filter {
 };
 
 struct Engine {
-  uint32_t rec[kRecFrames + 1];   // L in the low half, R in the high half; [kRecFrames] mirrors [0] (interpolation)
+  uint32_t rec[kRecWords];        // L in the low half, R in the high half; [kRecLen + i] mirrors [i], i < kRecGuard
   Space space;
   Voice v[kVoices];
   Sched s;
   Filter filt;
-  uint32_t head;                  // the next frame written (frames, counting; the buffer index is head & kRecMask)
+  uint32_t head;                  // the next frame written (frames, counting; positions are head & kRecMask)
+  int32_t hp;                     // where it is written: head mod kRecLen
   int32_t effect;                 // the effect in force
   uint32_t rng;
   uint32_t lfo;                   // the pitch modulation's phase
@@ -119,10 +131,19 @@ struct Engine {
 // Reset everything but the two large buffers (cleared by ClearStep over the next calls).
 void Reset(Engine* e);
 // Clear the next `words` words of the record and the space from `at` (0 = start); returns the next, or kClearEnd.
-const int32_t kClearEnd = kRecFrames + 1 + kSpaceSize / 2;
+const int32_t kClearEnd = kRecWords + kSpaceSize / 2;
 int32_t ClearStep(Engine* e, int32_t at, int32_t words);
 // One call: in[2][kN] the decimated input, out[2][kN] the wet (int16).
 void Process(Engine* e, const int16_t* in_l, const int16_t* in_r, int16_t* out_l, int16_t* out_r, const Controls& c);
+// 0.3, the idle path: true when the last Process (hold off) wrote kN frames of zeros to the record.
+bool WroteSilence(const Engine* e);
+// 0.3, the idle path (../petri.cc): a call on a record of zeros, with a silent input (zero_l, zero_r: kN zeros) and
+// hold off. Everything Process does but the samples: the detector, the effect's scheduler, the voices' positions,
+// envelopes and ends, the write head, the two smoothed tone controls; the voices' kernel, the record's write, the
+// filter and the space are not run (their inputs are zeros), and there is no output (it is silence).
+void ProcessIdle(Engine* e, const int16_t* zero_l, const int16_t* zero_r, const Controls& c);
+// True when warp's three filtered buses are at rest (their states 0: a bus voice then adds nothing to a silent sum).
+bool BusAtRest(const Engine* e);
 
 // The grain envelope (exposed for the host test): shape at phase Q24 (0..1 << 24), Q15.
 int32_t Envelope(int32_t shape, uint32_t phase_q24);

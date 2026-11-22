@@ -49,6 +49,7 @@
  * M0 = its step; R4 = -g1 | g1, R5 = -g2 | g2, R6 = the low cut's state,
  * R7 = its coefficient; A0 the accumulator; R0-R3 temporaries.
  */
+	.section .text._PlateInputRunAsm, "ax", @progbits
 	.align 4
 	.global _PlateInputRunAsm
 	.type _PlateInputRunAsm, STT_FUNC
@@ -259,6 +260,7 @@ _PlateInputRunAsm:
  *                      int16_t* r, int16_t* p, int32_t n,
  *                      int32_t alias_bytes);
  */
+	.section .text._PlateTankRunAsm, "ax", @progbits
 	.align 4
 	.global _PlateTankRunAsm
 	.type _PlateTankRunAsm, STT_FUNC
@@ -293,6 +295,7 @@ _PlateTankRunAsm:
  *                          int16_t* l, int16_t* p, int32_t n,
  *                          int32_t alias_bytes);
  */
+	.section .text._PlateTankRunMonoAsm, "ax", @progbits
 	.align 4
 	.global _PlateTankRunMonoAsm
 	.type _PlateTankRunMonoAsm, STT_FUNC
@@ -384,6 +387,7 @@ _PlateTankRunMonoAsm:
 	W[P2 + 2 * (d2base)] = R2;                                         \
 	W[P3 + 2 * (d2base)] = R2;
 
+	.section .text._PlateXfadeRunAsm, "ax", @progbits
 	.align 4
 	.global _PlateXfadeRunAsm
 	.type _PlateXfadeRunAsm, STT_FUNC
@@ -440,6 +444,7 @@ _PlateXfadeRunAsm:
  * PlatePreRunC. P4 -> l, P3 -> r, P5 = ring, I0 -> x; R4 = PL_PRE_WORDS,
  * R5 = step, R6 = d, R7 = w; R0-R3, P0, P1 temporaries.
  */
+	.section .text._PlatePreRunAsm, "ax", @progbits
 	.align 4
 	.global _PlatePreRunAsm
 	.type _PlatePreRunAsm, STT_FUNC

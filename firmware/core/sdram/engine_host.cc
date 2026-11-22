@@ -10,7 +10,8 @@
  * Voices: the six iter voice objects sit at 0xFFB00000 + i * 0x24 (kennel op1_voice_index). The stock computes the
  * voice's per-sample pitch words (0xFF801950) before the render and writes its velocity (0xFF801064, vel << 8) around
  * the note on; the dispatchers hand both to the plugin, so a plugin never names a firmware address. The plugin's
- * per-voice state (coop_engine_t.voice_bytes, six voices) comes from heap 0 at load.
+ * per-voice state (coop_engine_t.voice_bytes, six voices) is taken at load from heap 0 or coop's plugin arena, as the
+ * placement policy says (e13, coop_place.cc; e12: the arena; before: heap 0).
  *
  * Threads: the dispatchers run in the audio interrupt (the voice loop); coop_engine_add runs on the main thread at
  * boot, before the engine is published (g_eng[n].e last, after an ssync).
@@ -20,12 +21,12 @@
 #include <stdint.h>
 #include "coop_plugin.h"
 #include "coop_cost.h"
+extern "C" void *coop_voice_take(uint32_t bytes);                         /* plugin_host.cc (e13): zeroed, 32-aligned, from the
+                                                                             pool the placement policy names */
 
 #define ITER_RENDER   ((void (*)(void *, int16_t *, const int16_t *))0x019B99D4u)
 #define ITER_NOTE_ON  ((void (*)(void *, const int16_t *))0x019B9B8Au)
 #define ITER_NOTE_OFF ((void (*)(void *))0x019B996Cu)
-#define MALLOC        ((void *(*)(uint32_t))0x01A9F348u)                  /* heap 0 */
-#define FREE          ((void (*)(void *))0x01AA0040u)
 #define VOICE_BASE    0xFFB00000u
 #define VOICE_SIZE    0x24u
 #define PITCH_INC     ((const int32_t *)0xFF801950u)                     /* the voice being rendered, 128 words */
@@ -44,6 +45,7 @@ extern volatile int g_l1_lease_open;                                       /* l1
 /* e4: cost per engine, per voice render and per block (all its voices in one block), for the stats `engines` line */
 struct ecost { uint64_t sum, bsum; uint32_t n, max, bn, bmax, bacc; };
 static struct ecost g_ecost[SLOTS];
+static uint32_t g_ecost_dirty;                                            /* e14: a record was folded since the last block end */
 static uint32_t g_peng_blk, g_peng_blk_pf[2];                             /* m1: this block's plugin renders and their counters */
 
 extern "C" const coop_engine_t *coop_engine_at(int n) { return (n > 0 && n < SLOTS) ? g_eng[n].e : 0; }
@@ -54,17 +56,16 @@ extern "C" const char *coop_engine_add(int n, const coop_engine_t *e)
     if (n <= 0 || n >= SLOTS || g_eng[n].e) return "engine number taken";
     if (e->voice_bytes > COOP_VOICE_BYTES_MAX) return "engine voice state too large";
     uint32_t stride = (e->voice_bytes + 31u) & ~31u;
-    uint8_t *raw = 0, *state = 0;
-    if (stride) {
-        raw = (uint8_t *)MALLOC(stride * COOP_VOICES + 32u);
-        if (!raw) return "plugin memory full";
-        state = (uint8_t *)(((uint32_t)(uintptr_t)raw + 31u) & ~31u);
-        for (uint32_t i = 0; i < stride * COOP_VOICES; i += 4) *(volatile uint32_t *)(state + i) = 0;
+    uint8_t *state = 0;
+    if (stride) {                                                         /* e13: heap 0 or the arena, as the policy says; a
+                                                                             caller that fails gives the block back */
+        state = (uint8_t *)coop_voice_take(stride * COOP_VOICES);
+        if (!state) return "plugin memory full";
     }
     g_l1_lease_open = 1;
     int bad = e->init && e->init() != 0;
     g_l1_lease_open = 0;
-    if (bad) { if (raw) FREE(raw); return "engine init failed"; }
+    if (bad) return "engine init failed";
     g_eng[n].state = state;
     g_eng[n].stride = stride;
     g_eng[n].f44k = e->flags & COOP_ENGINE_F_44K;
@@ -134,6 +135,7 @@ static __attribute__((noinline)) void prec_fold(void)
         struct ecost *c = &g_ecost[r->n];
         c->sum += dt; c->n++; if (dt > c->max) c->max = dt;
         c->bacc += dt;
+        g_ecost_dirty = 1;
     }
     g_prec_n = 0;
 }
@@ -146,6 +148,12 @@ extern "C" COOP_HOT_VOICE void coop_eng_render(void *self, int16_t *out, const i
     int n = engine_of(params);
     if (n != g_voice_eng[v]) voice_start(self, params, v, n);            /* the engine changed under a live voice */
     if (!n) { g_eng_iter_renders++; ITER_RENDER(self, out, params); return; }
+    if (!g_coop_prof) {                                                   /* e14: the render alone, nothing recorded */
+        g_eng[n].e->render(v, state_of(n, v), out, PITCH_INC, params);
+        if (g_eng[n].f44k) coop_voice_44k_to_88k(out);
+        g_eng_renders++;
+        return;
+    }
     uint32_t a0 = 0, a1 = 0, b0 = 0, b1 = 0;
     if (g_coop_pf_live) { a0 = COOP_PFCNTR0; a1 = COOP_PFCNTR1; }
     uint32_t c0 = coop_cost_now();
@@ -172,6 +180,10 @@ extern "C" void coop_engine_block_end(void)
         c->p0 += g_peng_blk_pf[0]; c->p1 += g_peng_blk_pf[1];
         g_peng_blk = 0; g_peng_blk_pf[0] = 0; g_peng_blk_pf[1] = 0;
     }
+    if (!g_ecost_dirty) return;                                           /* e14: the 63-slot walk (2.5 KB of table: on the
+                                                                             device most of the block start's 4.5 k cycles)
+                                                                             only in a block that rendered a plugin engine */
+    g_ecost_dirty = 0;
     for (int n = 1; n < SLOTS; n++) {
         struct ecost *c = &g_ecost[n];
         if (!c->bacc) continue;

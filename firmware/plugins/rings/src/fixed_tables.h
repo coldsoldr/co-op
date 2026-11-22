@@ -10,10 +10,9 @@ namespace op1rings {
 const int32_t kPfTableBits = 10;  // pf tables: 1024 + 1 entries over [0, 0.5]
 const int32_t kTableBits = 8;     // other tables: 256 + 1 entries
 
-extern const int32_t kSinPhiQ31[1025];  // sin(phi(pf)), pf = 0.5 i / 1024
-extern const int32_t kCosPhiQ31[1025];  // cos(phi(pf))
-extern const int32_t kSecPhiQ28[1025];  // 1 / cos(phi(pf)) (<= 4.4)
-extern const int32_t kTanPhiQ28[1025];  // tan(phi(pf)) = tan_fast(pf) (<= 4.3)
+// coop rings 0.14: the four pf tables interleaved, entry i at kPhiQ[4 i]: sin(phi(pf)) Q31, cos(phi(pf)) Q31,
+// 1 / cos(phi(pf)) Q28 (<= 4.4), tan(phi(pf)) = tan_fast(pf) Q28 (<= 4.3); pf = 0.5 i / 1024.
+extern const int32_t kPhiQ[1025 * 4];
 extern const int32_t kLog2MantissaQ30[257];  // log2(1 + i / 256)
 extern const int32_t kExp2NegQ31[257];  // 2^-(i / 256)
 extern const int32_t kRecip1pQ31[257];  // 1 / (1 + i / 256)

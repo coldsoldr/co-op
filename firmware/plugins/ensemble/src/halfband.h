@@ -1,7 +1,8 @@
 // 2:1 decimation and interpolation, to run the ensemble at half the OP-1's effect rate (22050 Hz), and the output mix
 // at the full rate. coop copy of te-op1-cfw ports/clouds/src/core/halfband.h, cut to what the ensemble uses: the
-// soft-limit table is a const table (src/ensemble_tables.cc) instead of one built at the first call, the kernels'
-// Blackfin symbols are prefixed Ens, and the C references are built for the host only (the device runs the assembly).
+// soft-limit table is a const table (src/ensemble_tables.cc) instead of one built at the first call, the kernels
+// are the plugins' shared ../shared/halfband_bfin.S (0.5; a copy prefixed Ens before), and the C references are built
+// for the host only (the device runs the assembly).
 //
 // The filter is a 19-tap halfband FIR (Blackman-windowed sinc, DC gain 1): only the odd taps around the centre (0.5)
 // are non-zero. int16 samples, Q15 taps: every product is one 16 x 16 multiply. The mix is Clouds' output stage
@@ -31,15 +32,15 @@ void MixSoftLimitC(int16_t* io, const int16_t* wet, int32_t n, int32_t fade_out,
                    const SoftLimitTable* t);
 #endif
 
-extern "C" void EnsHalfbandDecimateAsm(const int16_t* x, int16_t* out, int32_t n);
-extern "C" void EnsHalfbandInterpolateAsm(const int16_t* x, int16_t* out, int32_t n);
+extern "C" void HalfbandDecimateAsm(const int16_t* x, int16_t* out, int32_t n);
+extern "C" void HalfbandInterpolateAsm(const int16_t* x, int16_t* out, int32_t n);
 // gains = fade_out | wet_gain << 16.
-extern "C" void EnsMixSoftLimitAsm(int16_t* io, const int16_t* wet, int32_t n, int32_t gains,
+extern "C" void MixSoftLimitAsm(int16_t* io, const int16_t* wet, int32_t n, int32_t gains,
                                    const SoftLimitTable* t);
 
 inline void HalfbandDecimate(const int16_t* x, int16_t* out, int32_t n) {
 #if defined(__bfin__)
-  EnsHalfbandDecimateAsm(x, out, n);
+  HalfbandDecimateAsm(x, out, n);
 #else
   HalfbandDecimateC(x, out, n);
 #endif
@@ -47,7 +48,7 @@ inline void HalfbandDecimate(const int16_t* x, int16_t* out, int32_t n) {
 
 inline void HalfbandInterpolate(const int16_t* x, int16_t* out, int32_t n) {
 #if defined(__bfin__)
-  EnsHalfbandInterpolateAsm(x, out, n);
+  HalfbandInterpolateAsm(x, out, n);
 #else
   HalfbandInterpolateC(x, out, n);
 #endif
@@ -56,7 +57,7 @@ inline void HalfbandInterpolate(const int16_t* x, int16_t* out, int32_t n) {
 inline void MixSoftLimit(int16_t* io, const int16_t* wet, int32_t n, int32_t fade_out, int32_t wet_gain,
                          const SoftLimitTable* t) {
 #if defined(__bfin__)
-  EnsMixSoftLimitAsm(io, wet, n, (fade_out & 0xffff) | (wet_gain << 16), t);
+  MixSoftLimitAsm(io, wet, n, (fade_out & 0xffff) | (wet_gain << 16), t);
 #else
   MixSoftLimitC(io, wet, n, fade_out, wet_gain, t);
 #endif
@@ -89,7 +90,7 @@ class HalfbandDecimator {
 
  private:
   static const int32_t kHistory = 18;
-  int16_t x_[kHistory + kHalfbandMaxIn];
+  alignas(4) int16_t x_[kHistory + kHalfbandMaxIn];   // the kernels read words (../shared/halfband_bfin.S)
 };
 
 class HalfbandInterpolator {
@@ -107,7 +108,7 @@ class HalfbandInterpolator {
 
  private:
   static const int32_t kHistory = 9;
-  int16_t x_[kHistory + kHalfbandMaxIn / 2];
+  alignas(4) int16_t x_[kHistory + kHalfbandMaxIn / 2];
 };
 
 }  // namespace coop_ensemble

@@ -547,7 +547,7 @@ void StringFixed::ProcessInternal(const int32_t* in, int32_t* out, int32_t size,
     k.ap_gain = ap_gain;
     k.ap_gain_step = ap_gain_step;
     StringKernelStretchProcess(&k, in, out, size);
-    for (int32_t i = 0; i < size; ++i) RandomFixed::GetWord();
+    RandomFixed::Skip(size);   // 0.14: the draws the loop does not use, in one step for a block of 32
     loop_delay_ = target_loop_delay;
     comb_delay_ = target_comb_delay;
     fir_h0_ = target_fir_h0_;

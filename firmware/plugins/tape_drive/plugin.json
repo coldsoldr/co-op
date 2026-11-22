@@ -28,6 +28,6 @@
      "default": 16384, "fine": true, "step": 1365, "fine_step": 273, "random": false}
   ],
   "author": "coldsoldr",
-  "version": "0.5",
+  "version": "0.7",
   "description": "Tape saturation, wobble (wow and flutter) and age, in stereo at every position: te-op1-cfw's kennel effect tape_drive 0.3 (coldsoldr, GPL-3.0-or-later; the wobble after Mutable Instruments Beads' WowAndFlutter, MIT, rewritten in fixed point; hiir's halfband design, WTFPL). Blue saturate, green wobble, white age (clockwise = newer tape), orange mix; fn + blue the input gain into the saturation (-6..+6 dB), shift + fn + blue its fine."
 }

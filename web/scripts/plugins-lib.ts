@@ -22,6 +22,7 @@ import {
   type PluginIndexEntry,
   type PluginIssue,
 } from '@co-op/shared/plugins';
+import { coopMemoryOf } from '../src/core/plugins/memory';
 import { listFiles, stripBom, subfolders } from './packs-lib';
 
 /** The repository's plugins/ folder. It need not exist: then the index is empty. */
@@ -83,7 +84,15 @@ async function loadPlugin(pluginsDir: string, folder: string): Promise<Loaded> {
   const facts = manifestBuilds(manifest).map((build, i) => {
     if (build.file === undefined) return null;
     const bytes = read.get(build.file) as Uint8Array;
-    return { sizeBytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), info: infos[i] as PluginFileInfo };
+    const facts = { sizeBytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), info: infos[i] as PluginFileInfo };
+    // A coop file's share of the plugin memory, so the page can add up what is on an OP-1 without fetching the files.
+    if (build.firmware !== 'op1/coop') return facts;
+    try {
+      return { ...facts, memory: coopMemoryOf(bytes) };
+    } catch {
+      // A file the sum cannot read is listed without it; the page then estimates from the file size.
+      return facts;
+    }
   });
   return { issues: [], warnings: result.warnings, entry: pluginIndexEntryOfBuilds(manifest, facts) };
 }

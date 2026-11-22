@@ -166,6 +166,10 @@ class PlateReverb {
   // pre-delay, as Dattorro's plate). Wet at the input's scale, saturated.
   void Process(const int16_t* in_l, const int16_t* in_r, int16_t* wet_l, int16_t* wet_r,
                int32_t n, const PlateParams& p);
+  // coop 0.3, the idle path (cs_plate.cc): a call's control alone. The smoothers, the size change's fades and the
+  // modulation LFO move as in Process (the modulation keeps its phase); the buffers, their pointers and the two
+  // filters stay as they are.
+  void Idle(const PlateParams& p, int32_t n) { control_.Update(p, n, &coefs_); }
 
  private:
   void Pre(const int16_t* in_l, const int16_t* in_r, int32_t n);

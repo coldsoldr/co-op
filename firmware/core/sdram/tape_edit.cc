@@ -9,8 +9,14 @@
  * 0x191b67e and drop-all 0x1a54aee, erase 0x191b9f0):
  *   coop_lift   reads the frames, puts the LEFT samples in the stock slot (the clipboard service sized it for
  *               `len` samples, the UI and tape.db keep working in frames) and the RIGHT samples in a coop pool
- *               (region B, 4 MB: a clip longer than that keeps its left side only and drops as mono), zeroes the
+ *               (region B: a clip that does not fit it keeps its left side only and drops as mono), zeroes the
  *               frames, invalidates the cache range.
+ * e12 (docs/plugins.md "e12"): the pool is no longer all of region B. It starts at COOP_POOL_LO and is at least the
+ * floor (1.5 MiB = 786,432 samples = 17.8 s of right channel); the plugin arena takes region B's top only when region
+ * A is full, and the pool keeps the rest (the whole 4 MiB, 47.5 s, on a device whose plugins fit region A). Its size
+ * is fixed once the boot scan has ended (coop_clip_pool_bytes). The four slots (one per track, as the stock's) share
+ * it, and since e12 a slot's samples are given back when its track is lifted again: before, every lift took new
+ * room until the tape was erased, so 47.5 s of lifts in a session ended stereo lifts for good.
  *   coop_drop   writes the frames back from the two pools (right = left when the coop pool has no copy).
  *   coop_erase  zeroes 485 x 128 KiB per track.
  * All three run on the main loop (the clipboard service), as stock.
@@ -18,6 +24,7 @@
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
 #include <stdint.h>
+#include "coop_arena.h"
 
 #define Y_READ        ((int (*)(int, void *, int))0x01A99C90u)
 #define Y_WRITE       ((int (*)(int, const void *, int))0x01A99F84u)
@@ -31,17 +38,34 @@
 #define FRAMES_PER_CHUNK 32768
 #define CHUNKS        485
 #define TRACK_FRAMES  (CHUNKS * FRAMES_PER_CHUNK)
-#define COOP_POOL     ((int16_t *)0x02800000u)                        /* region B, free [C] */
-#define COOP_POOL_SAMPLES (4u << 20 >> 1)                             /* 2M samples */
+#define COOP_POOL     ((int16_t *)(uintptr_t)COOP_POOL_LO)             /* region B, free [C] */
+#define COOP_POOL_SAMPLES (coop_clip_pool_bytes() >> 1)               /* e12: what the arena left of region B */
 
 extern volatile int32_t g_coop_track_base[TRACKS];                   /* tape_io.cc */
 volatile uint32_t g_edit_lifts, g_edit_drops, g_edit_erases, g_edit_errors, g_edit_mono_fallbacks;
+volatile uint32_t g_edit_pool_used, g_edit_pool_moves;                /* e12 stats: samples in use, slots moved down */
 volatile uint32_t g_edit_dbg[8];                                     /* last lift: ch, start, stop, hdr slot, frames done, drop pos, last rw off, last rw result */
 
 static int16_t *g_r_slot[TRACKS];                                    /* right-channel copy per clipboard slot, 0 = none */
 static uint32_t g_r_len[TRACKS];
 static uint32_t g_pool_used;                                         /* samples of the coop pool in use */
 static uint32_t g_bounce[FRAMES_PER_CHUNK];                          /* 128 KiB: one stereo chunk */
+
+/* e12: give slot ch's right-channel samples back: everything above them in the pool moves down (the slots are packed
+ * from the pool's base, in the order they were lifted) and the slots that moved follow. Main loop, as lift and drop. */
+static void slot_release(int ch)
+{
+    int16_t *p = g_r_slot[ch];
+    uint32_t n = g_r_len[ch];
+    g_r_slot[ch] = 0; g_r_len[ch] = 0;
+    if (!p || !n) return;
+    uint32_t off = (uint32_t)(p - COOP_POOL);
+    if (off > g_pool_used || n > g_pool_used - off) { g_edit_errors++; return; }   /* cannot happen: leave the pool as it is */
+    uint32_t tail = g_pool_used - (off + n);
+    for (uint32_t i = 0; i < tail; i++) p[i] = p[n + i];
+    for (int t = 0; t < TRACKS; t++) if (g_r_slot[t] && g_r_slot[t] > p) { g_r_slot[t] -= n; g_edit_pool_moves++; }
+    g_pool_used -= n; g_edit_pool_used = g_pool_used;
+}
 
 static int rw_frames(int write, int ch, int32_t pos, int32_t n)      /* n frames of track ch at frame pos through g_bounce */
 {
@@ -63,8 +87,11 @@ extern "C" void coop_lift(int ch, int32_t start, int32_t stop, int16_t **hdr)
     uint32_t n = (uint32_t)(stop - start);
     g_edit_dbg[0] = (uint32_t)ch; g_edit_dbg[1] = (uint32_t)start; g_edit_dbg[2] = (uint32_t)stop; g_edit_dbg[3] = (uint32_t)(uintptr_t)left;
     int16_t *right = 0;
-    if (g_pool_used + n <= COOP_POOL_SAMPLES) { right = COOP_POOL + g_pool_used; g_pool_used += n; }
+    slot_release(ch);                                                 /* e12: this track's old clip goes first */
+    uint32_t pool = COOP_POOL_SAMPLES;
+    if (g_pool_used <= pool && n <= pool - g_pool_used) { right = COOP_POOL + g_pool_used; g_pool_used += n; }
     else g_edit_mono_fallbacks++;
+    g_edit_pool_used = g_pool_used;
     g_r_slot[ch] = right; g_r_len[ch] = right ? n : 0;
     for (uint32_t done = 0; done < n;) {
         uint32_t m = n - done < FRAMES_PER_CHUNK ? n - done : FRAMES_PER_CHUNK;
@@ -117,7 +144,7 @@ extern "C" void coop_erase(void)
             ERASE_PROGRESS += FRAMES_PER_CHUNK * 4;
         }
     ERASE_PROGRESS = 0;
-    g_pool_used = 0;
+    g_pool_used = 0; g_edit_pool_used = 0;
     for (int t = 0; t < TRACKS; t++) { g_r_slot[t] = 0; g_r_len[t] = 0; }
     TRACKS_REMADE(0xf);
 }

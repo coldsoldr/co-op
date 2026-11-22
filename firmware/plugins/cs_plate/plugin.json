@@ -8,7 +8,7 @@
     "plate.cc",
     "halfband.cc",
     "plate_bfin.S",
-    "halfband_bfin.S"
+    "../shared/halfband_bfin.S"
   ],
   "include_dirs": ["."],
   "cflags": ["-fno-tree-loop-distribute-patterns"],
@@ -25,6 +25,6 @@
     {"id": "freeze", "name": "freeze", "action": "click", "encoder": "orange", "kind": "latch", "bit": 0}
   ],
   "author": "coldsoldr",
-  "version": "0.2",
+  "version": "0.4",
   "description": "coldsoldr's plate reverb (Dattorro's figure-of-eight plate in fixed point, te-op1-cfw ports/fx/src/plate at 9ced415, GPL-3.0-or-later with the OP-1 firmware permission; the half-rate path from te-op1-cfw's Clouds port, MIT, Emilie Gillet) as a coop stereo effect, ported from its unreleased kennel build (ports/knl/cs_plate). Blue decay, green damp, white pre-delay, orange mix; fn + blue size (8 steps), fn + green diffusion, fn + white motion (shift + fn for fine); orange click freezes the tail."
 }

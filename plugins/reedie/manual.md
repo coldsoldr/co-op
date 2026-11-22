@@ -89,15 +89,23 @@ python3 make_plugin.py plugins/reedie          # -> build/plugins/reedie.op1p
 `reedie.wav` is the standard harness phrase at the factory settings. `REEDIE_SPEC.md` is the full
 design and decision log.
 
+## Voice rate
+
+reedie is a 44.1 kHz design (its filters, the reed's start and the 100 ms release are counted in samples at 44.1 kHz).
+R246 renders a voice as 128 samples at 88.2 kHz, 689 times a second, and `OP1_PITCH_INC` counts 88.2 kHz steps. Run
+directly, the pitch is right (the bore length comes from the increment) but every time constant is twice as fast and
+every fixed filter corner an octave up. `rd_rate.c` is the plugin's source: it includes `reedie.c` unchanged, runs the
+model once per two calls on a doubled increment and plays each block's samples upsampled 2x (`harness/reedie_rate_test.c`).
+
 ## Who made it
 
 In op1r by pcppcp.
 
 ## Get it
 
-Reedie is a plugin of op1r 72, pcppcp's custom firmware for the original OP-1 (R246): the file `reedie.op1p`. Tick it in [op1r's web patcher](https://pcppcp.github.io/op1r/web/) (Connect OP-1 installs it over USB), or download it here and send it with the patcher. co-op hosts no copy: the download comes from op1r's repo, checked against its hash.
+Reedie is a plugin of op1r 73, pcppcp's custom firmware for the original OP-1 (R246): the file `reedie.op1p`. Tick it in [op1r's web patcher](https://pcppcp.github.io/op1r/web/) (Connect OP-1 installs it over USB), or download it here and send it with the patcher. co-op hosts no copy: the download comes from op1r's repo, checked against its hash.
 
 ## Links
 
 - [op1r](https://github.com/pcppcp/op1r): every plugin and feature
-- [Source](https://github.com/pcppcp/op1r-src/tree/dc2cfec225fa312c87c01cadb149dac6987d491f/synth_sdk/plugins/reedie)
+- [Source](https://github.com/pcppcp/op1r-src/tree/f73bc17f98ebbcc559741accec9c068a2440be7e/synth_sdk/plugins/reedie)

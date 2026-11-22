@@ -24,7 +24,7 @@
     {
       "firmware": "op1/coop",
       "file": "tape_drive.coop",
-      "version": "0.5",
+      "version": "0.6",
       "requires": "coop e10",
       "source": "https://github.com/coldsoldr/co-op/tree/main/firmware/plugins/tape_drive"
     },

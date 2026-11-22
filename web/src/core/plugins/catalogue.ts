@@ -5,6 +5,7 @@ import {
   PLUGIN_FIRMWARE,
   PLUGIN_INDEX_FORMAT,
   PLUGIN_KINDS,
+  pluginBuilds,
   pluginFor,
   type HostedPluginEntry,
   type PluginFirmware,
@@ -13,6 +14,7 @@ import {
   type PluginKind,
 } from '@co-op/shared/plugins';
 import { CatalogueError, fetchOk, withSlash } from '../catalogue/catalogue';
+import type { KnownCoopFile } from './memory';
 import { sha256Hex } from '../util';
 
 /** op1r's own web patcher, which installs its .op1p plugins over USB (co-op only lists and downloads them). */
@@ -81,7 +83,15 @@ function isBuild(value: Record<string, unknown>, id: string): boolean {
   }
   const optional = ['version', 'requires', 'savedName', 'headerAuthor', 'headerVersion'];
   if (!optional.every((k) => value[k] === undefined || typeof value[k] === 'string')) return false;
+  if (value.memory !== undefined && !isMemory(value.memory)) return false;
   return value.source === undefined || (typeof value.source === 'string' && HTTPS.test(value.source));
+}
+
+/** What a coop build's file takes of the plugin memory (memory.ts): a kind, three byte counts and two flags. */
+function isMemory(value: unknown): boolean {
+  if (!isRecord(value) || (value.kind !== 'fx' && value.kind !== 'synth')) return false;
+  if (typeof value.screen !== 'boolean' || typeof value.controls !== 'boolean') return false;
+  return ['cap', 'scratch', 'voice'].every((k) => Number.isSafeInteger(value[k]) && (value[k] as number) >= 0);
 }
 
 /**
@@ -106,6 +116,17 @@ export async function fetchPluginIndex(baseUrl: string, fetchImpl: typeof fetch 
     if (!isIndexEntry(entry)) throw new CatalogueError(`plugin index entry ${i + 1} is malformed`);
   });
   return json as unknown as PluginIndex;
+}
+
+/** The coop files of the index with their share of the plugin memory, to add up what is on an OP-1 (memory.ts). */
+export function coopFilesOf(index: PluginIndex): KnownCoopFile[] {
+  return index.plugins
+    .flatMap(pluginBuilds)
+    .flatMap((b) =>
+      b.firmware === 'op1/coop' && b.file !== undefined && b.sizeBytes !== undefined && b.memory !== undefined
+        ? [{ file: b.file, sizeBytes: b.sizeBytes, memory: b.memory }]
+        : [],
+    );
 }
 
 export interface PluginFilter {

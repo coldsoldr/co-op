@@ -21,9 +21,9 @@ matrix), and the dry stays the full stereo input, so a voice's placement survive
 |---|---|---|
 | `cs_hall.cc` | `ports/knl/cs_hall/hall_knl.cc`, `ports/fx/op1/half_rate.h` | the coop glue (below) |
 | `hall.cc`, `hall.h`, `hall_layout.h` | `ports/fx/src/hall/` | compile-time `double` maths replaced by the integer literals it evaluated to (printed by the upstream build); C run kernels host only; `InitKeepBuffers` / `ClearBase` / `ClearWords` |
-| `hall_bfin.S` | `ports/fx/src/hall/hall_bfin.S` | include path; kennel's mono kernels not built (`HALL_MONO_KERNELS`) |
+| `hall_bfin.S` | `ports/fx/src/hall/hall_bfin.S` | include path; a section per kernel (0.4), so the packer drops kennel's mono kernels (no caller) |
 | `halfband.h`, `halfband.cc` | `ports/clouds/src/core/halfband.{h,cc}`, `dsp_fixed.h`, `rings/src/fixed.h` | only what the hall uses; the soft-limit and crossfade tables as constant data (upstream built the soft-limit table at run time) |
-| `halfband_bfin.S` | `ports/clouds/src/core/halfband_bfin.S` | none |
+| `../shared/halfband_bfin.S` | `ports/clouds/src/core/halfband_bfin.S` | 0.4: the five half-band plugins' one kernel file, the decimator and interpolator rewritten (two outputs a pass, dual MAC); bit-exact |
 
 Forbidden constructs found and fixed (guidelines §2.1, §2.3, §7.1): `constexpr double` table generation in `hall.cc`
 (Exp, Cos, SizeScale: 6 tables, 16 size rows) → integer literals; kennel's `knl::Fine` (reads the shift byte at
@@ -87,7 +87,8 @@ the fine step (the owner, 2026-11-11; guidelines §4, §4.1, held layers instead
 - One instance in the slot's position buffer (e8; before e8 in `.bss`, 86,740 bytes, one per relocation): each
   position has its own tail.
 - params read once a block: `params[0..3]` mapped from the filter type's range units to Q15 with kennel's formula
-  (`(v - lo) × 32767 / (hi - lo)`, four divides a block, outside the sample loops), `params[5..7]` clamped to Q15,
+  (`(v - lo) × 32767 / (hi - lo)`; 0.3 keeps the four values per slot and divides only for a word that moved, so a
+  steady block has no divide), `params[5..7]` clamped to Q15,
   freeze from `params[8]` bit 0.
 - **The tank clear (guidelines §2.3).** Kennel zeroed the instance (84 KB) in `Init` and on a restart; coop's init
   runs in the audio interrupt at the stock positions, so `init` only resets the reverb's control state and marks the
@@ -151,6 +152,17 @@ text calls; the core's popup shows the one being turned); freeze is shown by the
 not by the envelope "held flat".
 
 ## Memory, L1, cost
+- **0.4 (2026-11-22, `docs/efficiency-audit.md` findings 14 and 15):** the half-band decimator and interpolator are the five half-band plugins' one kernel file, `../shared/halfband_bfin.S`, rewritten (two outputs a pass, one in each MAC, the taps from a circular stream, the loads in the parallel slots): 926 -> 313 cycles a call in the simulator (`make -C tests/host/halfband`, bit for bit against the C over random and edge input), four calls a block; and the packer drops what nothing reaches (`tools/plugin/pack.py` section GC, audit finding 14): kennel's two mono kernels (1.75 KB, no caller) and three unused functions leave the file. Simulator, the test's scenarios (0.3 in brackets): 15,374 (17,768), 16,622 (19,081), 17,415 (19,874), 19,095 (21,554), 15,905 (18,364), 15,864 (18,233), 16,100 (18,559), 19,326 (21,785), 15,620 (18,079): about 2,450 less a block; max 24,149 (26,608). Bit-identical to te-op1-cfw, host and simulator, as before. File 22,364 bytes (0.3: 23,936), `.text` 11,088 (12,796), `.rodata` 5,368 (5,280), `.bss` 277 (280).
+- **0.3 (2026-11-20, no divide in a steady block; `docs/efficiency-audit.md` finding 8):** the four turns' Q15 values
+  are kept per slot (`.bss`, 28 bytes a slot, cleared by `init`) and redone only for a word that moved: four
+  `___divsi3` calls a block before (~190 cycles each), none now while the turns are still. Simulator, the test's
+  scenarios (0.2 on the same script in brackets): 17,277 (17,753), 19,011 (19,500), 19,821 (20,305), 21,486 (21,942),
+  18,142 (18,632), 18,169 (18,639), 18,501 (18,991); the turns held 18,027 (18,517): about 490 less a block. With
+  every turn and word moving every block 21,725 (21,383): 340 more, the compares and stores beside the four divides;
+  max 26,548 (26,206, a size crossfade in that stretch). Bit-identical to te-op1-cfw, host and simulator (the script
+  below plus 800 blocks with every turn and word moving every block and jumps between, 300 held). With this change
+  alone: file 23,492 bytes, `.text` 12,424, `.rodata` 5,280, `.bss` 240. 0.3 also has the idle path ("Idle" below,
+  with the file as it ships and its figures).
 - **e9 (2026-11-11, 0.2, the screen):** file 23,184 bytes (SVG 3,927), `.text` 12,268, `.rodata` 5,248, `.bss` 100
   (the five buffer pointers and the screen's node table and colours); load 17,616 once, +1,396 over e8 (16,220 with
   e9's new `coop_fx_t` field). The state and `"scratch"` are unchanged (nothing published). Audio bit-identical, host
@@ -164,7 +176,9 @@ not by the envelope "held flat".
   simulator.
 - Cost, upstream: the hall alone in `bfin-elf-run`, per 32-sample call (one per coop block): 8,845 avg / 9,315 peak
   stereo, 16,731 while a size change crossfades (8 blocks); kennel declared no `cost` and never ran it on a device.
-- Cost, this port, the whole render in `bfin-elf-run` (`make -C tests/host/cs_hall sim`): 18.2-22.0 k avg, 26.2 k max
+- Cost, this port, the whole render in `bfin-elf-run` (`make -C tests/host/cs_hall sim`): 0.4 15.4-19.3 k avg, 24.1 k
+  max (the shared half-band kernel; 0.2 below)
+- Cost, 0.2, the whole render in `bfin-elf-run` (`make -C tests/host/cs_hall sim`): 18.2-22.0 k avg, 26.2 k max
   a block (the max is a size crossfade); the glue (decimate, interpolate and mix both sides, the conversions,
   control) is about half. The simulator models no cache or SDRAM stalls: expect the device 10-35 % above op1emu
   (coop's figure) and up to 1.5-4× the simulator from cold caches (upstream's warning for the plate and hall) [I].
@@ -177,11 +191,56 @@ not by the envelope "held flat".
   copy and the mix's output store; 3. one `MixSoftLimit` pass for both sides (the products in the dual MAC);
   4. decimator / interpolator kernels that keep their history in place instead of copying it each block.
 
+## Idle (0.3)
+
+A hall left on a position used to compute its whole block on silence. 0.3 stops when its output has been silence for
+long enough (`docs/efficiency-audit.md` finding 6; the code is in `cs_hall.cc`, "The idle path").
+
+- **When.** The input block is exact silence (every sample's top 16 bits 0), freeze is off, the decay turn is under
+  infinite, and for 732 blocks in a row (1.06 s: the tank's ring once round and the pre-delay's) the wet signal the
+  hall made was exact zeros. The level is zero, not an LSB or two: the hall's dithered rounding lets a tail die to
+  nothing, a few seconds after it is inaudible.
+- **Idle.** The render leaves the silent input as it came and runs only the control: the smoothers, a size change's
+  count and the two modulation LFOs (in phase).
+- **Waking.** The check is at the top of the render, before any DSP: the first block with a non-zero sample, freeze
+  or infinite decay is rendered in full, on the tank as it was left. Nothing is faded and no sample is skipped.
+- **Never idle:** freeze; infinite decay (the decay turn at its top); any input; a tail that still sounds.
+- **While idle the output is the hall's own: zeros.** In the lockstep test the idle hall and the one that never idles
+  give the same samples up to the wake's first block.
+- **After waking it is not the same sample for sample**, and cannot be: the three input allpasses keep a +-1 LSB
+  pattern going round for ever (their rounding; it reaches the lines as nothing, so the output is zero). The idle
+  hall meets the next note with that pattern where it stopped, the other with the pattern where it turned to, and the
+  dithered rounding then takes different turns: the two tails differ by the hall's own rounding noise. The same
+  happens between two halls that never idle when what they played before the silence differed by 1 %: the test runs
+  that beside it (the table's last column).
+
+| A note, silence, a soft note (40 LSB), a loud one | idle after the input | difference while idle | after the wake: soft / loud / the tail | two that never idle, the earlier notes 1 % apart |
+|---|---|---|---|---|
+| defaults | 7.1 s (output zero from 6.0 s) | 0 LSB | 5 / 4 / 4 LSB | 4 / 4 / 4 LSB |
+| largest size, decay 30,000, pre-delay 200 ms, full wet | 40.2 s (39.2 s) | 0 | 6 / 8 / 10 | 6 / 8 / 10 |
+| smallest size, short, full wet | 1.1 s (0.02 s) | 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+
+(16-bit output LSB, the largest sample difference; the wake's first block is 0 in every row. `make -C
+tests/host/idle FX=cs_hall`.) The same run: 20,000 blocks that never go silent and 20,000 of notes with 150 ms gaps:
+identical, 0 idle blocks. Freeze and infinite decay: a minute of silence, 0 idle blocks, 0 LSB; engaged while idle:
+awake on that block. Every turn walking and jumping through 1,500 idle blocks: 0 LSB.
+
+| Simulator, cycles a block (`make -C tests/host/idle sim FX=cs_hall`) | 0.3 without the idle path | 0.3 |
+|---|---|---|
+| playing | 17,638 | 17,720 |
+| silent, not yet idle | 17,700 | 18,263 (the input read through, the wet block tested) |
+| idle | | **1,084** |
+| the block that wakes | | 18,113 |
+
+`tests/host/cs_hall` builds the plugin with `-DCOOP_FX_NO_IDLE` (its script has silences longer than the hold, and
+it compares with te-op1-cfw's hall sample for sample): bit-identical as before, host and simulator.
+File 23,936 bytes, `.text` 12,796, `.bss` 280; imports unchanged.
+
 ## Host test
 
 `make -C tests/host/cs_hall` (host C) and `make -C tests/host/cs_hall sim` (the Blackfin build with its assembly in
 `bfin-elf-run`): this plugin against te-op1-cfw's hall played through kennel's glue (transcribed: knob formula,
-latch, restart), 6,880 blocks of noise, saw, impulses, full-scale noise, mono input, every control moving, size
+latch, restart), 7,980 blocks (0.3: + every turn and word moving every block, then held) of noise, saw, impulses, full-scale noise, mono input, every control moving, size
 crossfades, infinite decay, freeze, a sound change (the 21-block clear) and a 5 ms pause. **Bit-identical, host and
 simulator** (2026-11-11). Mutating the reference's clear length or the motion constant breaks the match (checked).
 In a worktree pass `TE=/mnt/i/GitHub/coldsoldr/te-op1-cfw/ports`.

@@ -1,6 +1,6 @@
 // The half-rate path's tables and its kernels' C references (src/half_rate.h), from te-op1-cfw
 // ports/clouds/src/core/halfband.cc and clouds_tables.cc (5aa314b; Mutable Instruments Clouds, MIT, ../LICENSE-MIT).
-// The C references are built off the Blackfin only (the plugin runs halfband_bfin.S).
+// The C references are built off the Blackfin only (the plugin runs ../shared/halfband_bfin.S).
 //
 // Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
 

@@ -1,7 +1,7 @@
 # petri
 
 A granular micro-loop effect, inspired by the signal flow of a granular micro-loop pedal. The input is recorded all the
-time into a 1.49 s stereo buffer at 22.05 kHz; one of eleven effects plays that buffer back through up to eight voices
+time into a 1.36 s stereo buffer at 22.05 kHz (0.2; 0.1 had 1.49 s); one of eleven effects plays that buffer back through up to eight voices
 (loops, grains, slices, taps), each with its own start, rate and direction, length, envelope, gain and pan; the wet
 goes through a shared tone section (the effect's envelope on every repeat or grain, a gentle pitch drift fixed per
 effect, a resonant low-pass, a small space) and is mixed, equal power, with the untouched dry signal. **Hold** stops
@@ -88,7 +88,7 @@ it), and nothing older than the buffer holds is started.
 | blocks | block 10 .. 243 ms | glitch: 2x, 0.5x, 1.5x or reversed stutters, jumps inside the block, accelerating stutters | stutters 2..16 a burst | gate | none | 4 |
 | cut | burst 20 .. 393 ms | the intervals drawn from: +12, then -12, +7, +19, -5, +24; up to 4 stutters | how often: a burst every ~4 s .. 0.2 s (+-30 %) | gate | none | 4 |
 | arp | step 60 .. 591 ms | steps 1..8 of 0, 7, 12, 19, 24, 19, 12, 7 semitones over the last 3 onsets (or the newest audio) | note length 0.4..2.4 steps | perc | 4 ct, 5 Hz (vibrato) | 4 |
-| pattern | bar 0.1 .. 1.39 s | taps 1..6 at 16, 8, 12, 6, 14, 3 sixteenths of the bar, panned | feedback 0..0.85 (loop gain, whatever the taps) | flat (taps; gate chunks reversed or held) | 3 ct, 0.4 Hz | 6 |
+| pattern | bar 0.1 .. 1.27 s (0.1: 1.39 s) | taps 1..6 at 16, 8, 12, 6, 14, 3 sixteenths of the bar, panned | feedback 0..0.85 (loop gain, whatever the taps) | flat (taps; gate chunks reversed or held) | 3 ct, 0.4 Hz | 6 |
 | warp | longest tap 60 ms .. 1.1 s | three taps at 1/3, 2/3, 1 of it pitched by 0..+12, 0..-12, 0..+7 semitones, each low-passed (bright, dark, mid) | feedback 0..0.8 (pitched taps feed back: cascades) | hann (two grains a tap) | 10 ct, 0.25 Hz | 6 |
 
 - **Onsets** (strum, blocks, arp): a peak follower on the decimated input, once a block: an onset when a block's peak
@@ -101,8 +101,8 @@ it), and nothing older than the buffer holds is started.
 - **The makeup** (Q12, per effect) brings the wets near the dry's level at the defaults (`tests/host/petri` takes):
   mosaic 1.59, seq 1.27, glide 1.83, haze 1.76, tunnel 1.39, strum 1.15, blocks 0.66, cut 1.37, arp 1.71, pattern 1.22,
   warp 1.56.
-- **Starting**: after a (re)start the record (128 KiB) and the space (16 KiB) are cleared over the next 18 calls (26 ms,
-  the dry passing through), then the record fades in over 32 calls (46 ms) so no read across its start meets a step.
+- **Starting**: after a (re)start the record (118.5 KiB) and the space (9.8 KiB) are cleared over the next 17 calls
+  (25 ms, the dry passing through), then the record fades in over 32 calls (46 ms) so no read across its start meets a step.
 
 ## Display (e9)
 
@@ -159,12 +159,20 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
 
 ## Memory, numbers, cost
 
-- **State** (`state.h`, in the position buffer, e8): `"scratch": 150624` (`sizeof(Instance)` 150,604, 32-rounded;
-  `petri.cc` asserts both). The record: 32,769 words (32,768 stereo frames, L low / R high, plus a mirror of frame 0
-  for the interpolation) = 131,076 bytes; the space's window 8,080 int16 = 16,160 bytes; voices, schedulers, filter,
-  half-rate path, onsets and display ~3.4 KB. `.bss`: 324 bytes (the five slot pointers, the screen's node pointers and
+- **State** (`state.h`, in the position buffer, e8): `"scratch": 134752` (`sizeof(Instance)` 134,732, 32-rounded;
+  `petri.cc` asserts both). **0.2**: under tape_echo's 134,784, so petri no longer grows the five position buffers
+  (0.1 declared 150,624). The record: 30,336 words (a ring of 30,048 stereo frames, L low / R high, plus a mirror of
+  its first 288 frames after its end) = 121,344 bytes; the space's window 5,008 int16 = 10,016 bytes; voices,
+  schedulers, filter, half-rate path, onsets and display ~3.4 KB.
+  - **The ring** (`src/petri_engine.h` `kRecLen`): positions still count modulo 32,768 frames (a voice's Q17 position,
+    the onsets, the display words: nothing in the schedulers or the screen changed), but a frame is stored by its age
+    behind the write head, at `(hp - age) mod 30,048`. `RenderVoices` works that out once a voice a call and hands the
+    kernel a base pointer and a position that cannot wrap in 32 samples; the mirror covers a call's reach (a rate is
+    held to 8x: 258 frames; the effects reach 4x). The kernels (`voice_bfin.S`, `space_bfin.S`) are unchanged.
+  - Checked: built with `-DCOOP_PETRI_REC_LEN=32768` (the old length through the new mapping, and the space's new
+    slide), the 31 listening takes are byte-identical to 0.1's and the stress run changes the same 3,505,395 samples. `.bss`: 324 bytes (the five slot pointers, the screen's node pointers and
   its per-position animation).
-- **File**: 35,856 bytes packed; `.text` 22,228, `.rodata` 4,108, `.bss` 324 (load ~26.7 KB, relocated once). The SVG
+- **File**: 36,104 bytes packed; `.text` 22,476, `.rodata` 4,108, `.bss` 324 (load ~26.9 KB, relocated once). The SVG
   is in the TE heap at e9, not heap 0. Core imports: `coop_fx_scratch` and the E2 screen calls only.
 - **Numbers**: fixed point throughout. Two kernels in Blackfin assembly with bit-exact C references (single-issue
   instructions only, no parallel packets; `tools/asm_lint.py`: 0 flagged): `src/voice_bfin.S` (one voice, 32 samples,
@@ -172,32 +180,101 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
   MAC allpasses with rounded, saturated extraction, the two tank halves packed). The space's extraction rounds as the
   Blackfin does by default (ASTAT RND_MOD 0, ties to even): a core that set RND_MOD would differ from the C reference
   by an LSB on exact ties, inaudibly. The voice kernel's interpolation uses (T) truncation and does not depend on it.
-  The halfband kernels are tape_echo's (`src/halfband_bfin.S`, unchanged). The space's buffer is read through a
-  pointer stepping down with constant offsets (no masking); every 256 calls its live 7.9 KB window is copied up once
-  (1,984 word copies in that call: inside the max above).
+  The halfband kernels are the five half-band plugins' shared `../shared/halfband_bfin.S` (0.4; tape_echo's copy
+  before). The space's buffer is read through a
+  pointer stepping down with constant offsets (no masking); every 64 calls (93 ms; 0.1: every 256) its live 7.9 KB
+  window is copied up once (1,984 word copies in that call, about 2.4 k cycles: inside the max below).
 - **Cost** (GNU simulator, compute only: no cache misses or SDRAM waits; `make -C tests/host/petri sim`, 1,500 blocks
   per effect, the riff, knobs, filter and space walking, activity at the top for the second half, hold and reverse
   toggling):
 
 | Effect | avg | max |
 |---|---|---|
-| mosaic | 20,409 | 25,206 |
-| seq | 17,949 | 22,020 |
-| glide | 20,232 | 25,215 |
-| haze | 22,718 | 28,068 |
-| tunnel | 22,103 | 27,464 |
-| strum | 20,081 | 25,153 |
-| blocks | 18,095 | 22,102 |
-| cut | 17,361 | 22,021 |
-| arp | 18,288 | 23,012 |
-| pattern | 23,706 | 27,729 |
-| warp | 29,355 | 33,416 |
-| all | 20,936 | 33,416 |
+| mosaic | 19,939 | 25,514 |
+| seq | 18,224 | 22,171 |
+| glide | 20,499 | 27,959 |
+| haze | 22,628 | 29,457 |
+| tunnel | 22,418 | 27,666 |
+| strum | 21,316 | 28,562 |
+| blocks | 18,269 | 23,301 |
+| cut | 17,162 | 22,166 |
+| arp | 18,250 | 25,828 |
+| pattern | 23,814 | 30,144 |
+| warp | 29,697 | 36,152 |
+| all | 21,111 | 36,152 |
 
-  The clearing blocks after a start: 21,683 at most. Fixed per block: the half-rate path ~8 k (decimate 2.1 k, the
+  **0.4 (2026-11-22, `docs/efficiency-audit.md` findings 14 and 15):** the half-band decimator and interpolator are the five half-band plugins' one kernel file, `../shared/halfband_bfin.S`, rewritten (two outputs a pass, one in each MAC, the taps from a circular stream, the loads in the parallel slots): 926 -> 313 cycles a call in the simulator (`make -C tests/host/halfband`, bit for bit against the C over random and edge input), four calls a block. Every row about 2,480 lower: mosaic 16,960 / 22,544, seq 15,257 / 19,198, glide 17,512 / 25,105, haze 19,656 / 26,480, tunnel 19,396 / 24,639, strum 18,342 / 25,586, blocks 15,294 / 20,317, cut 14,186 / 19,183, arp 15,282 / 22,829, pattern 20,756 / 27,090, warp 26,747 / 33,190, all **18,126 / 33,190** (0.3 on the same build of the test: 20,611 / 35,675): pattern is back under the 30 k SHOULD, warp's max still over it. The digests are 0.3's (`0178aade26c9622a` host, `474736ab08745fff` sim). And the packer drops what nothing reaches (`tools/plugin/pack.py` section GC, audit finding 14). File 37,932 bytes (0.3: 37,792: the kernel and its tap pairs are larger than the copy they replace), `.text` 23,696 (23,652), `.rodata` 4,260 (4,164), `.bss` 501 (504).
+
+  **0.3 (2026-11-20, `docs/efficiency-audit.md` finding 8):** the four turns' values are kept per slot (`.bss`, 28
+  bytes a slot, cleared by `init`) and divided only for a word that moved (four `___divsi3` calls a block before):
+  every row about 620 lower, all 20,488 / 35,523, the clearing blocks 22,082 at most. The output and the display
+  words are 0.2's bit for bit (the test's digest, "Tests"). The engine's own per-block divides (pattern's and warp's
+  loop gain, warp's tap times, a grain's envelope step at its start) are as they were. With this change alone: file
+  36,348 bytes, `.text` 22,584, `.bss` 464. 0.3 also has the idle path ("Idle" below, with the file as it ships).
+  The table is 0.2's (0.1: all 20,936 / 33,416). The averages moved with the material (the ring's mapping is about 40
+  cycles a voice); the maxima are up to 2.8 k higher where the space's copy now falls in an effect's busiest block
+  (it comes four times as often). **Over the 30 k SHOULD** (guidelines section 2.4): warp, as in 0.1 (three filtered
+  buses beside six voices), and pattern by 144 cycles in the copy's block; every effect is far under the 60 k line.
+  The clearing blocks after a start: 21,895 at most. Fixed per block: the half-rate path ~8 k (decimate 2.1 k, the
   interpolate-mix-soft-limit 5.9 k), the filter ~3 k, the space ~2.2 k; each voice ~0.6 k. The device figure (stats
   `cost` line) is pending: expect 10-35 % more, more where the voices read far apart in SDRAM (each voice touches about
   4 cache lines a block). **Device: not run.**
+
+## Idle (0.3)
+
+petri left on a position used to compute its whole block on silence. 0.3 stops computing samples when the record
+holds nothing (`docs/efficiency-audit.md` finding 6; the code is in `petri.cc`, "The idle path", and
+`src/petri_engine.cc` `ProcessIdle`).
+
+- **When.** The input block is exact silence (every sample's top 16 bits 0), hold is off, and for 947 blocks in a row
+  (1.37 s: the record once round and a margin) the engine wrote only zeros to the record (the input, and for the
+  effects that feed back, the wet) and gave a wet output of exact zeros. Every frame of the record is then zero, so
+  no voice, whatever it is told to play, plays anything. For warp its three buses must be at rest as well.
+- **Idle.** A block is the detector, the effect's scheduler and the voices' positions and envelopes as ever: the same
+  grains start and end in the same blocks, the same random numbers are drawn, the write head moves on. The two tone
+  controls and the mix are smoothed and the display is published. The voices' kernel, the record's write, the
+  filter, the space and the half-rate path are not run.
+- **Waking.** The check is at the top of the render, before any DSP: the first block with a non-zero sample, or
+  hold, is rendered in full. No sample is skipped, and the note meets the grains the never-idle effect would have
+  had running.
+- **Never idle:** hold; any input; a tail that still sounds; warp with a bus not at rest.
+- **While idle the output is petri's own: zeros.** In the lockstep test the two give the same samples up to the
+  wake's first block.
+- **After waking it is not the same sample for sample**: the filter and the space keep their last states under a
+  silent output (the space gates its last +-2 LSB itself), stopped in the idle effect, worked on in the other. The
+  same grains then pass a filter and a space an LSB or so apart. The same difference shows between two that never
+  idle when what they played before the silence differed by 1 % (the last column).
+
+| A note, silence, a soft note (40 LSB), a loud one | idle after the input | difference while idle | after the wake: soft / loud / the tail | two that never idle, the earlier notes 1 % apart |
+|---|---|---|---|---|
+| the eleven effects at the defaults | 1.4 s (cut) .. 4.7 s (seq) | 0 LSB | 0-3 / 0-3 / 0-3 LSB | the same figures |
+| tunnel, repeats and space at the top, full wet | 16.8 s (output zero from 15.4 s) | 0 | 8 / 8 / 9 | 8 / 8 / 11 |
+| pattern, repeats at the top, reverse, full wet | 6.6 s | 0 | 6 / 6 / 6 | 6 / 4 / 6 |
+| warp, repeats at the top, full wet | 6.6 s | 0 | 6 / 4 / 6 | 6 / 4 / 6 |
+
+(16-bit output LSB, the largest sample difference; the wake's first block is 0 in every row. `make -C
+tests/host/idle FX=petri`.) The same run: 20,000 blocks that never go silent and 20,000 of notes with 150 ms gaps:
+identical, 0 idle blocks. Hold in mosaic, tunnel, pattern and warp: a minute of silence, 0 idle blocks, 0 LSB; engaged
+while idle: awake on that block. Every turn walking and jumping through 1,500 idle blocks: 0 LSB.
+
+| Simulator, cycles a block (`make -C tests/host/idle sim FX=petri`) | 0.3 without the idle path | 0.3 playing | silent, not yet idle | idle avg / max |
+|---|---|---|---|---|
+| mosaic | 18,725 | 18,860 | 19,467 | **2,474** / 3,410 |
+| seq | 17,527 | 17,672 | 18,251 | **2,190** / 4,041 |
+| glide | 19,875 | 20,000 | 20,527 | **2,606** / 3,813 |
+| haze | 21,897 | 22,037 | 22,561 | **2,453** / 3,485 |
+| tunnel | 23,091 | 23,182 | 23,680 | **2,838** / 3,893 |
+| strum | 18,001 | 18,140 | 17,451 | **2,151** / 2,156 |
+| blocks | 17,185 | 17,324 | 17,251 | **2,126** / 2,126 |
+| cut | 16,429 | 16,565 | 17,321 | **2,043** / 2,043 |
+| arp | 17,727 | 17,871 | 18,426 | **2,179** / 3,306 |
+| pattern | 22,261 | 22,313 | 22,850 | **2,947** / 2,948 |
+| warp | 29,194 | 29,359 | 29,760 | **3,316** / 5,684 |
+
+The idle figure is the scheduler and the voices' bookkeeping (the maxima are blocks in which grains start).
+`tests/host/petri` builds the plugin with `-DCOOP_FX_NO_IDLE`, so its digest stays comparable: 0.2's, host and
+simulator (the engine's playing path is the code it was). File 37,792 bytes, `.text` 23,652, `.bss` 504; imports
+unchanged.
 
 ## Tests
 
@@ -213,6 +290,11 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
   effect (slot 0 beside slot 3 on dirty buffers, a restart): 0 blocks differ. **Listening**: 8 s of a plucked-saw
   riff through each effect into `build/petri_wav/` (mix 60 %; `wet/` the same at 100 %), plus mosaic and haze held,
   glide and pattern reversed, and `00_dry.wav`.
+- **The digest (0.3):** every rendered block's output and display words are folded into one number, printed last
+  (`output digest ...`). Two builds of the plugin that print the same digest gave the same samples in every check:
+  `make -C tests/host/petri COOP=<the older sources' folder> BUILD=<another>` builds an older version under the same
+  test. 0.2 and 0.3: `0178aade26c9622a` (host, 60,000 blocks) and `474736ab08745fff` (`sim`). The stress run has
+  stretches where every turn moves every block.
 - `make -C tests/host/petri sim` (Blackfin simulator): the two kernels against their C references (3,000 random calls
   each: 0 differ) and the cycle table above.
 - `make -C tests/host/petri screens`: the screen previews (above).
@@ -220,13 +302,27 @@ faces. `petri.svg` (from `gen_petri_svg.py`, 5,067 bytes, 46 ids) and `petri_scr
   with `gen_petri_tables.py`; `python3 gen_petri_svg.py petri.svg` the screen.
 - `tools/asm_lint.py plugins/petri/src/*.S`: 0 packets flagged.
 
-**Not done yet** (guidelines §7.4 steps 8-9): the op1emu gate (the plugin at every position, a chord through it, the
-stats line clean) and the device run with the `cost` figures and `docs/device-tests.md`.
+**op1emu gate** (0.2 on e10 and e11, 2026-11-20): `docs/device-tests.md` "fickle 0.2 / petri 0.2". **Not done yet**
+(guidelines §7.4 step 9): the device run with the `cost` figures.
 
 ## Open points for the owner
 
+- **The heap budget (0.2, 2026-11-20):** with all 13 catalogue plugins on core e10 the plugin memory budget ran out
+  (fickle was refused at boot); petri 0.1's 150,624-byte declaration grew the five position buffers by 79,200 bytes
+  over tape_echo's. 0.2 declares 134,752, under tape_echo's 134,784, so petri costs the budget only its image and
+  screen object (~27 KB).
+  - **What you hear:** the record is 1.36 s (30,048 frames), was 1.49 s. Pattern's longest bar is 1.27 s (was
+    1.39 s). At long times an effect takes fresh material a little sooner: a mosaic or glide layer whose slice would
+    be overwritten, haze's oldest grains (its spread reaches 0.9 s back plus the grain), the oldest onsets of strum,
+    arp and blocks (kept while they are less than 1.36 s old). Everything else, every other range in the table above
+    included, is as 0.1.
+  - How the 15,872 bytes were found: 6,144 from the space's buffer (its slide 1,024 entries instead of 4,096: no
+    change in sound, a copy every 93 ms instead of every 372 ms) and 9,728 from the record (2,720 frames less, after
+    288 for the mirror). Putting the slide back to 4,096 would lower the worst block by ~2.4 k cycles and cost another
+    70 ms of record (1.29 s): `kSpaceSlide` and `COOP_PETRI_REC_LEN` in `src/petri_engine.h`.
+  - The kennel build (`petri.knl`) keeps the 1.49 s record: kennel's arena is 6 MiB.
 - The time ranges are per effect (table above) rather than one 30 ms .. 1.5 s for all: a seq step of 1.5 s or a
-  tunnel period of 1 s would not do what the names say, and a loop that must repeat inside a 1.49 s buffer has to be
+  tunnel period of 1 s would not do what the names say, and a loop that must repeat inside a 1.36 s buffer has to be
   shorter than it.
 - Repeats means a different thing per effect (decay, passes, strums, stutters, how often, note length, feedback). It
   is always "how long things come back", but a player will hear the difference.

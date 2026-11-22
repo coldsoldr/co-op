@@ -1,0 +1,87 @@
+coop_run 1 build e14 script dev_hold_chord
+run events 37 blocks 61671 state 3 lost_sections 0
+switches dsynth 1 stage 1 cwo 1 punch 1 phone 1 nitro 1 grid 1 spring 1 delay 1 voltage 1 phase 1
+section lead-in blocks 2412 cb_avg 63822 cb_max 150830
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 392173 mix_skips 826610 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 611398 voice_checked 0 voice_bad 0 env_skips 0 env_peak 0 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 s2_master=1816/1816/1/1845/178 master=6509/6509/1/4274/786
+engines avg/max/n eng_rings=19679/150814/1526732 eng_rings_block=116586/310390/257703
+section rest blocks 2067 cb_avg 63744 cb_max 134169
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 611400 voice_checked 0 voice_bad 0 env_skips 0 env_peak 0 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0
+engines avg/max/n eng_rings=19679/150814/1526732 eng_rings_block=116586/310390/257703
+section - blocks 344 cb_avg 368539 cb_max 443843
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 612092 voice_checked 0 voice_bad 0 env_skips 0 env_peak 0 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12679/17428/343/5222/915
+engines avg/max/n synth=184546/215553/343/71182/16799 synth_first=13586/25194/343/8495/2678 synth_rest=34211/70450/1714/12544/2825 plugin_own=29546/66394/2057/10752/2712 plugin_own_block=177190/204745/343/64484/16269 plugin_engine=30772/70450/2057/11869/2801 eng_rings=19692/150814/1528807 eng_rings_block=116667/310390/258049
+section h00_05 blocks 3446 cb_avg 367010 cb_max 490675
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 618984 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12294/17028/3446/4744/883
+engines avg/max/n synth=182064/212612/3446/70584/16735 synth_first=13056/18894/3446/8146/2521 synth_rest=33801/80305/17230/12487/2842 plugin_own=29064/77944/20676/10571/2703 plugin_own_block=174388/204140/3446/63426/16219 plugin_engine=30344/80305/20676/11764/2789 eng_rings=19817/150814/1549483 eng_rings_block=117428/310390/261495
+section h05_10 blocks 3445 cb_avg 366780 cb_max 490230
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 625870 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12254/16813/3445/4715/887
+engines avg/max/n synth=182124/208450/3445/70570/16916 synth_first=13020/18159/3445/8120/2507 synth_rest=33820/81170/17225/12489/2881 plugin_own=29078/77524/20670/10572/2734 plugin_own_block=174471/198897/3445/63435/16408 plugin_engine=30354/81170/20670/11761/2819 eng_rings=19939/150814/1570141 eng_rings_block=118169/310390/264938
+section h10_15 blocks 3445 cb_avg 366650 cb_max 515504
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 632768 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12307/16693/3445/4758/880
+engines avg/max/n synth=181938/205844/3445/70532/16704 synth_first=13030/18789/3445/8119/2505 synth_rest=33781/80005/17225/12482/2839 plugin_own=29047/76579/20670/10564/2700 plugin_own_block=174284/196968/3445/63384/16201 plugin_engine=30323/80005/20670/11755/2784 eng_rings=20057/150814/1590835 eng_rings_block=118890/310390/268387
+section h15_20 blocks 3446 cb_avg 368017 cb_max 459528
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 639656 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12326/27403/3446/4772/883
+engines avg/max/n synth=182201/207425/3446/70712/16778 synth_first=13125/22940/3446/8188/2528 synth_rest=33815/78215/17230/12504/2850 plugin_own=29088/75923/20676/10591/2709 plugin_own_block=174530/197864/3446/63550/16255 plugin_engine=30366/78215/20676/11785/2796 eng_rings=20173/150814/1611499 eng_rings_block=119595/310390/271831
+section h20_25 blocks 3445 cb_avg 366912 cb_max 486964
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 646546 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12304/23468/3445/4750/885
+engines avg/max/n synth=182126/209931/3445/70540/17009 synth_first=13037/17859/3445/8125/2520 synth_rest=33817/80735/17225/12483/2897 plugin_own=29086/77209/20670/10572/2747 plugin_own_block=174517/199717/3445/63437/16486 plugin_engine=30354/80735/20670/11756/2834 eng_rings=20286/150814/1632169 eng_rings_block=120283/310390/275276
+section h25_30 blocks 3445 cb_avg 366690 cb_max 517449
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 653430 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12291/16623/3445/4741/882
+engines avg/max/n synth=181940/212512/3445/70538/16720 synth_first=13023/18904/3445/8120/2494 synth_rest=33783/77955/17225/12483/2845 plugin_own=29046/75704/20670/10563/2702 plugin_own_block=174276/200819/3445/63379/16216 plugin_engine=30323/77955/20670/11756/2786 eng_rings=20395/150814/1652821 eng_rings_block=120949/310390/278718
+section h30_35 blocks 3446 cb_avg 366708 cb_max 450537
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 660322 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12286/16903/3446/4734/888
+engines avg/max/n synth=181959/207190/3446/70534/16722 synth_first=13055/18264/3446/8134/2525 synth_rest=33780/79900/17230/12479/2839 plugin_own=29049/76894/20676/10564/2702 plugin_own_block=174294/197087/3446/63386/16214 plugin_engine=30326/79900/20676/11755/2787 eng_rings=20502/150814/1673503 eng_rings_block=121601/310390/282165
+section h35_40 blocks 3445 cb_avg 367081 cb_max 491934
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 667212 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12303/17008/3445/4752/887
+engines avg/max/n synth=182163/207321/3445/70571/16918 synth_first=13045/18264/3445/8120/2522 synth_rest=33823/79465/17225/12490/2879 plugin_own=29079/77419/20670/10569/2735 plugin_own_block=174479/197051/3445/63419/16413 plugin_engine=30360/79465/20670/11761/2819 eng_rings=20607/150814/1694173 eng_rings_block=122239/310390/285610
+section h40_45 blocks 3445 cb_avg 366741 cb_max 482689
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 674110 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12291/18983/3445/4745/885
+engines avg/max/n synth=182027/212991/3445/70561/16793 synth_first=13051/24415/3445/8127/2524 synth_rest=33795/80525/17225/12486/2853 plugin_own=29063/76894/20670/10570/2714 plugin_own_block=174380/203493/3445/63425/16286 plugin_engine=30337/80525/20670/11760/2798 eng_rings=20709/150814/1714861 eng_rings_block=122861/310390/289058
+section h45_50 blocks 3446 cb_avg 367132 cb_max 447563
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 681004 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12306/17834/3446/4754/883
+engines avg/max/n synth=182111/212369/3446/70552/16917 synth_first=13051/19328/3446/8128/2528 synth_rest=33812/80945/17230/12484/2877 plugin_own=29080/77419/20676/10574/2736 plugin_own_block=174485/201594/3446/63444/16416 plugin_engine=30351/80945/20676/11758/2819 eng_rings=20809/150814/1735543 eng_rings_block=123469/310390/292505
+section h50_55 blocks 3445 cb_avg 366966 cb_max 533603
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 687888 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12323/20893/3445/4770/889
+engines avg/max/n synth=182023/215257/3445/70577/16723 synth_first=13059/21850/3445/8143/2517 synth_rest=33792/78640/17225/12486/2841 plugin_own=29050/76474/20670/10562/2702 plugin_own_block=174303/202193/3445/63374/16217 plugin_engine=30337/78640/20670/11762/2787 eng_rings=20906/150814/1756195 eng_rings_block=124060/310390/295947
+section h55_60 blocks 3445 cb_avg 367880 cb_max 501254
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 694778 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12303/19108/3445/4755/880
+engines avg/max/n synth=182144/209342/3445/70684/16829 synth_first=13148/18264/3445/8197/2552 synth_rest=33799/76770/17225/12497/2855 plugin_own=29085/75194/20670/10590/2717 plugin_own_block=174512/198943/3445/63544/16305 plugin_engine=30357/76770/20670/11780/2804 eng_rings=21001/150814/1776865 eng_rings_block=124641/310390/299392
+section - blocks 345 cb_avg 372199 cb_max 495209
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 695474 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12158/16798/345/4601/853
+engines avg/max/n synth=181226/208364/345/69507/17521 synth_first=12783/17968/345/7874/2420 synth_rest=33688/76435/1725/12326/3020 plugin_own=29014/74584/2070/10491/2852 plugin_own_block=174088/199073/345/62950/17115 plugin_engine=30204/76435/2070/11584/2920 eng_rings=21010/150814/1778953 eng_rings_block=124698/310390/299740
+section r00_05 blocks 3445 cb_avg 370090 cb_max 467579
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 702358 voice_checked 0 voice_bad 0 env_skips 0 env_peak 12447 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12049/16903/3445/4513/846
+engines avg/max/n synth=179729/209736/3445/69100/15962 synth_first=12757/19739/3445/7875/2405 synth_rest=33394/80110/17225/12245/2711 plugin_own=28778/76684/20670/10425/2600 plugin_own_block=172673/199982/3445/62552/15600 plugin_engine=29954/80110/20670/11516/2660 eng_rings=21099/150814/1799605 eng_rings_block=125243/310390/303182
+section r05_10 blocks 3445 cb_avg 369743 cb_max 503180
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 709244 voice_checked 0 voice_bad 0 env_skips 0 env_peak 8899 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12029/18688/3445/4504/846
+engines avg/max/n synth=179726/207850/3445/69091/15992 synth_first=12750/18264/3445/7868/2411 synth_rest=33395/74960/17225/12244/2716 plugin_own=28781/74028/20670/10425/2605 plugin_own_block=172688/196930/3445/62555/15631 plugin_engine=29954/74960/20670/11515/2665 eng_rings=21187/150814/1820263 eng_rings_block=125776/310390/306625
+section r10_15 blocks 3446 cb_avg 370355 cb_max 463062
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 716138 voice_checked 0 voice_bad 0 env_skips 0 env_peak 2207 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12057/18688/3446/4521/851
+engines avg/max/n synth=179978/210016/3446/69193/16198 synth_first=12767/19445/3446/7879/2409 synth_rest=33442/80245/17230/12262/2757 plugin_own=28819/78154/20676/10441/2638 plugin_own_block=172918/201358/3446/62646/15829 plugin_engine=29996/80245/20676/11532/2699 eng_rings=21272/150814/1840945 eng_rings_block=126300/310390/310072
+section r15_20 blocks 3445 cb_avg 369457 cb_max 455502
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 723036 voice_checked 0 voice_bad 0 env_skips 0 env_peak 546 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12013/16784/3445/4487/842
+engines avg/max/n synth=179758/209119/3445/69123/16002 synth_first=12752/18900/3445/7873/2412 synth_rest=33401/81355/17225/12249/2717 plugin_own=28783/78364/20670/10427/2606 plugin_own_block=172701/199295/3445/62566/15638 plugin_engine=29959/81355/20670/11520/2667 eng_rings=21356/150814/1861639 eng_rings_block=126810/310390/313521
+section - blocks 1378 cb_avg 369552 cb_max 515283
+mode prof 1 statsfile 0 ram_reads 638 idle_skip 1 stage_skips 394239 mix_skips 830742 skip_checked 0 skip_bad 0 voice_skip 1 voice_skips 725792 voice_checked 0 voice_bad 0 env_skips 0 env_peak 135 vgain 24576 ramp 32767
+cost avg/max/n/p0/p1 pf_mode 0 pf_live 1 pf_layout 0 stage=12074/16693/1378/4533/851
+engines avg/max/n synth=179675/200986/1378/69109/15926 synth_first=12761/18109/1378/7875/2419 synth_rest=33382/72435/6890/12246/2701 plugin_own=28770/71159/8268/10423/2592 plugin_own_block=172622/193987/1378/62539/15557 plugin_engine=29945/72435/8268/11518/2654 eng_rings=21389/150814/1869907 eng_rings_block=127011/310390/314899

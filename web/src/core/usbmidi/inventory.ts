@@ -45,6 +45,14 @@ export interface InventoryRecord {
   reason: string;
   /** coop only: whether the next boot loads the file (the settings file's list). */
   enabled?: boolean;
+  /**
+   * coop e12 on: the bytes the file takes of the plugin memory by itself, and its position buffer (0: none), as the
+   * OP-1 counts them; both 0 for a file the boot did not read. Absent before e12.
+   */
+  need?: number;
+  scratch?: number;
+  /** coop e13 on: the part of `need` that is in heap 0 (the rest is in coop's arena). Absent before e13. */
+  heap?: number;
 }
 
 export interface Inventory {
@@ -53,6 +61,26 @@ export interface Inventory {
   /** The user synth preset count and the cap of the save gate; null on older cores. */
   presets: { count: number; cap: number } | null;
   records: InventoryRecord[];
+  /** coop only: the core's build tag, such as "e10" (coop.ts). */
+  build?: string | null;
+  /**
+   * coop e12 on: the plugin memory by the OP-1's own count: its budget, the bytes the loaded plugins hold, the size
+   * and number of the effect position buffers, and the stereo clipboard's pool (null when the header has none).
+   */
+  memory?: {
+    /** From e13 these two are the figures of the budget that binds: the one with the least room left. */
+    budget: number;
+    used: number;
+    fxbuf: number;
+    fxbufs: number;
+    clip: number | null;
+    /** coop e13 on: the budget of heap 0 and of coop's arena, and what the loaded plugins hold of each. */
+    pools?: { heap: { budget: number; used: number }; arena: { budget: number; used: number } };
+    /** coop e13 on: where the boot put engine images, effect images, voice state and position buffers. */
+    place?: { eng: 'heap' | 'arena'; fx: 'heap' | 'arena'; voice: 'heap' | 'arena'; buf: 'heap' | 'arena' };
+    /** coop e13 on: `default`, `file` (a policy file is in force), `malformed` or `marker` (the file was ignored). */
+    placeSrc?: string;
+  };
 }
 
 const MAGIC = 'kennel-inventory 1';

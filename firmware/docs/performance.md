@@ -1178,3 +1178,381 @@ block differs. Whichever probe's collateral matches rings' says which resource t
 boundary (`coop_pf_set_mode`, on the layout the boot probe kept). The three scripts run modes 0 (code / data stall
 cycles), 2 (code stalls / 0x98 data stalls) and 4 (code stalls / 0x95 fill-buffer stalls); the p6h sweep proved
 0x83, 0x99, 0x98, 0x95 on this unit.
+
+## e14 (2026-11-21): the core's own stages at rest, the measuring code behind a switch, the stats text in RAM
+
+The owner's go-ahead after e13 ("go ahead with the audit fixes"): on the device rings alone takes 63-69 % of the
+580 k cycles of a block on e11, the OP-1 with nothing sounding 91-92 k, and lag is felt once an effect or two is
+added. e14 = e13 (its placement policy and budgets unchanged) + the efficiency audit's core fixes 2, 3, 4 and 5 and
+a core path for silent voices, each its own commit with its own switch. Finding 9 (assembly kernels for the effect
+wrap) is not in e14: see the end. Built and gated in op1emu; the device test is pending (`docs/device-tests.md`
+"e14"). op1emu counts instructions, not stalls: every device figure below is the audit's estimate [I].
+
+### 1. The tape record tap while nothing records (audit finding 2; `tape_stereo.cc`, switch `g_coop_tape_idle`)
+
+**What the stock function does when it is not recording** [C: read in the decrypted L1, `0xffa06334..0xffa067a8`]:
+- entry: `R4 = [0xff802960]` (the tape state word), `R5 = B[0x018c17d8]` (the recording byte); on the way
+  `W[0xff8029e2] = W[0xff8029e0]` (the store at `0xffa06388`);
+- `R4 == 1` -> `0xffa0677a`, the record path (starts a take when `R5` is 0, else goes on with it);
+- else `R5 != 0` -> `0xffa063a0`, the block that ends a take (clears the byte, flushes the ring's tail);
+- **else `0xffa0675e`: `[0xff80298c] = [0xff802974] - [0x018c17e0]` (0 when that is negative), and return.**
+So with the state word not 1 and the recording byte 0 the call is two stores into the tape state and nothing else:
+no input sample is read, the input ring (`0xff8029f4`), the record state (`0x018c17d8`, 8 words) and the cache
+nodes are not touched. (The audit expected it to advance the ring: it does not.) The stereo tap ran it twice per
+block from the same starting state, with six state copies, four ring copies, two walks of the 24 cache nodes with
+interrupts masked, a 45-word compare and the two channels' input built from mid and side: in an idle block all of
+that reproduces the same two stores. e14 tests the stock's own two words first (the audio interrupt cannot be
+preempted by the thread that sets them, so the stock's test sees the same) and makes **one stock call** when they
+say idle. The ring copies are left exactly as two idle passes leave them (unchanged), so the first recording block
+starts from the same rings.
+
+**Proof** [C op1emu]: the check mode (`g_coop_tape_idle=2`: the two passes still run, and every idle block is
+checked: the ring, the 8 record-state words and every tape-state word but the two must be unchanged by the stock
+call): `idle_checked` 31,624-146,170 a scenario with `idle_bad 0` on the pristine NAND (`det_chord`, `det_drum`, `det_tape_rec`, `det_tape_relift`, `det_tape_loop`, `det_tape_play`), and 66,091-114,330 with plugins loaded, `idle_bad 0`. Audio against e13: aligned, max diff 2 over 3,707,181 frames (a scenario with several key events: another run of the same pair differed by 4,108, as e13 does against itself).
+
+**Saving**: the tap 2,710 -> 178 cycles a block in op1emu while not recording (`rec_sum / blocks`),
+unchanged while recording (the heaviest window 9,442 on e13, 8,894 on e14). Device [I, the audit]: the tap costs 7.2-7.5 k a block idle there, of which
+4-6 k was expected back; with the input build and every copy gone it should be nearly all of it.
+
+### 2. The measuring code behind a switch (audit finding 3; `coop_cost.h`, `g_coop_prof`, token `prof=0|1`)
+
+`g_coop_prof` = 1: everything as e13. = 0: **nothing is recorded, not merely not reported**:
+- the two per-voice calls in the render thunks (`coop_eng_pf_start`, `coop_eng_cost`: the counters, two marks and a
+  record per voice) are branched over in `stereo_thunks.S`; the plugin-engine dispatcher (`engine_host.cc`) calls the
+  render and returns;
+- every mark (`coop_mark*`), every cost entry (`coop_cost_add*`), every performance-counter read returns at once;
+  the block-start fold (`coop_eng_block_end`) and the slow-block copy are not run;
+- independent of the switch, the plugin engines' per-block walk over 63 table slots (2.5 KB of table: on the device
+  most of the block start's 4.5 k cycles, against 0.2 k in op1emu) now runs only in a block that rendered a plugin
+  engine (a flag set by the fold: the figures are the same).
+What stays on, and what it costs: the callback's own totals (`cb_sum`, `cb_max`, `cb_over`, `blocks`: two CYCLES
+reads and five word updates a block, ~25 instructions) and the three window timers (record tap, mix, voice hook:
+two CYCLES reads and three word updates a call, ~15 instructions, at most ~9 calls a block). So the `win` / `top`
+lines keep `cb_*`, `rec_*`, `mix_*`, `hook_*`; their `eng` / `peng` / `fx` / `s2` sums (e13) read 0, and the `cost`
+and `engines` lines are empty. The stats say which: a `mode` line, `mode prof N statsfile N ...`.
+
+**Dev and release packages** (the owner's decision: dev default on, release default off). One ELF; the image's
+word is 1 and a package sets it at build time like every other image word:
+- **release** `op1_246_coop_e14.op1`: `tools/build_device_package.sh OUT --tape-stereo --set-word g_coop_spread=32767
+  --set-word g_coop_prof=0 --set-word g_coop_statsfile=0`;
+- **dev** `op1_246_coop_e14_dev.op1`: the same without `--set-word g_coop_prof=0`.
+On either, the policy file (`/yaffs2/user/coop_place.txt`, e13) overrides at the next boot: `prof=1` turns the
+measuring on on a release image without a flash, `prof=0` off on a dev image (the e13 boot marker covers it like
+any token).
+
+**Proof** [C op1emu]: the switch changes no DSP: with the profile on `det_drum` and `det_tape_play` are identical to e13 and `det_chord` differs by at most 2 LSB; with it off `det_drum` is identical (2,119,870 frames) and `det_chord` at most 2 LSB (2,686,445 frames). The 2 LSB is the emulator's run-to-run spread on that scenario (a main-loop-timed modulation: an image whose interrupt costs differ shifts it), not a DSP change [I].
+**Saving** (op1emu, the whole callback a block, prof on -> off): at rest 34,871 -> 34,678; a stock synth chord's heaviest window 57,451 -> 56,775; a sampler sound through fickle 179,342 -> 177,672; six rings voices held and asleep 53,978 -> 50,712 (544 a voice). op1emu has no cache, so the 63-slot table walk and the per-voice records cost little there. Device [I, the audit, from m1c and
+p5g]: 5-6 k a block while voices play, plus the per-voice share (the thunk was 10.5 k a block for six voices in the
+measuring image), and 2-4 k at rest, most of that the 63-slot walk, which e14 removes with the switch on too.
+
+### 3. The S3 stage and the mix on a silent instrument (audit finding 5; `stereo_bus.cc`, `g_coop_idle_skip`)
+
+Both ran in full every block. They are skipped when their result is known exactly:
+- **The stage.** Its input is the voice pair. `g_pair_dirty` 0 = nothing was added to the cleared pair this block:
+  the decimator is fed 128 zero pairs. When the call before was fed zeros too, both 32-entry rings hold only zeros
+  (a block pushes 64 into each), every output is 0 x ramp = 0, the rings stay zero and their index, moved by 64, is
+  where it was. The DC blocker with x = 0, xprev = 0, yq = 0 and 0 <= y < 65536 gives y' = y and out = y >> 16 = 0:
+  the state does not move. (The audit's conditions, read against `coop_stage.S`: its `yq` is y with the low half
+  cleared, the same.) Then the skip writes what the stage would have: 64 zeros to mid and to both sides, and the
+  ramp word after its 64 saturating steps, `sat16(ramp + 64 x step)`.
+- **The mix loops** add `((m + d) x gain) x ramp` to the master pair: with mid and side all zero that adds 0
+  (`fr16_add(0, L[i]) = L[i]`), so the pair is not written; the ramp takes its 64 steps; loop A's meter is
+  `max(meter, 0)`. The three buffers are tested for zero at the mix (the instrument's effects run between the stage
+  and the mix and may have put a tail there: then the loop runs), so this holds with effects on.
+- **The first block of new sound** is not lost or delayed: the test is made on the block's own input (the dirty
+  flag is set by the voice hooks before the stage in the same block; the buffers are tested after the effects).
+
+**Proof** [C op1emu]: the check mode (`g_coop_idle_skip=2`: never skip, but every time the skip would have been
+taken the real stage / loop is compared with what the skip would have written: the three buffers, the ramp, both DC
+states, the rings, the meter, the master pair): `skip_checked` 81,569-441,453 a scenario with `skip_bad 0` on the pristine NAND, 335,673 with the 13 catalogue plugins loaded, 164,624 with cs_hall and tape_echo switched in and out (`det_fx_switch`), 158,845 with fickle on a sampler sound, 139,695 with rings: `skip_bad 0` in every run. Audio against e13: `det_drum` and `det_tape_play` identical (1,996,913 and 2,992,902 frames), `det_chord` at most 2 LSB.
+**Saving** (op1emu, at rest): the whole callback 45,678 -> 34,871 cycles a block with all of 1-3 (the tap 2,710 -> 178, the mix 2,507 -> 854, the stage 6,800 -> its test); `stage_skips` and `mix_skips` count every block at rest. Device [I, the audit, from the u5 idle windows]: the stage 10.9 k and the
+mix ~8.4 k a block at rest, ~19 k together, less the tests and the 192 zero stores.
+
+### 4. A voice that rendered silence (asked for by rings 0.11; `stereo_bus.cc`, `g_coop_voice_skip`)
+
+rings 0.11's held voices render zeros once they idle, and the core then placed and summed those zeros (the stock's
+own per-voice work, the envelope and the LFO, is stock code in L1 and stays). Chosen: **the core tests the render's
+128 samples itself** rather than an ABI flag from the engine: it needs no change in any plugin, holds for stock
+engines too, existing `.coop` files behave identically, and costs 64 word loads in L1 for a silent voice and a load
+and a branch for a sounding one (it leaves at the first nonzero word) against the ~2.3 k (op1emu) / ~3.1 k (device)
+of the accumulation it replaces. A flag would save those 64 loads and nothing else. The hook adds `v + v x pan`
+with `v = (out x env) x gain`: for out = 0 every product is 0, so the accumulation is left out and the pair is not
+marked dirty; when every voice of a block was silent the stage and the mix take their rest path (3).
+
+**Proof** [C op1emu]: the check mode (`g_coop_voice_skip=2`: accumulate anyway, the pair must not change):
+`voice_checked 41610 voice_bad 0` on `det_eng_rings` (rings 0.11, every model); no silent voice occurs in the stock-engine scenarios. Audio against e13: as above (the stock scenarios have no silent voice; a rings scenario has several key events and is not sample-identical run to run even on one image, so it rests on the check).
+**Saving**: six rings 0.12 voices held and asleep (`rings_held6`, keys down 68 s, cycles a block, steady windows): e13 76,405; e14 with the voice test off 72,826; e14 53,978; e14 with the profile off 50,712. The hook 13,686 -> 1,662 (2,281 -> 277 a voice), and the stage and the mix on their rest path (the mix 2,507 -> 854) once every voice of the block is silent: 273,999 voice blocks left out in the run.
+
+**What a held, silent voice still costs, and why.** In op1emu a held, sleeping six-voice rings 0.12 chord
+costs **19.1 k a block over rest** on e14 (53,978 against 34,885; e13: 30.7 k over its rest, 76,405 against 45,685),
+16.0 k with the profile off. What that is: rings' own sleeping renders 4,360 (727 a voice: it still writes its 64
+zeros and the core doubles them to 128); the hook's zero test 1,662 (277 a voice); and ~13 k (~2.2 k a voice) that is
+not coop's: the stock voice loop still runs the voice object (its envelope and LFO blocks, the pitch block, and its
+own 128-sample sum of `out x env` into the mono bus at `0xffa00d2c..0xffa00d70`), plus the render thunk and, with the
+profile on, the per-voice record (544 a voice). **On the device** [I]: of the ~88 k over rest measured on e13 with
+six sleeping voices (rings ~13 k of it), e14 should return the hook (17.6 k there, less the test: ~15 k), the stage
+and the mix (~19 k at rest in the audit's figures) and, on a release image, the per-voice measuring: ~35-40 k, leaving
+roughly 50 k: rings' 13 k and the stock's per-voice work, which coop does not own. A **fully skipped** held silent
+voice would cost the stock's bookkeeping only (a few hundred cycles a voice): that needs the stock voice loop itself
+to leave the voice out (its envelope, LFO and sum for that voice), i.e. a patch in the L1 voice loop with a proof
+that the mono bus and the voice's stock state are the same without it. Not attempted in e14; it is the next step if
+the device figure shows the remainder is worth it.
+
+#### 4b. The stock envelope and a voice the engine still renders loud (the device's "it died down, `peng` stayed")
+
+The question from the device: a six-key rings chord at the longest damping "sounded like it had died down" within
+a minute while `peng` stayed ~160 k. What was established:
+- **Where the envelope is applied** [C, the L1 voice loop and coop's hook]: the stock fills the voice's envelope
+  block (`0xff801d50`, 128 x int16) before it calls the render (the `CALL (P2)` at `0xffa00d28`; its own sum loop
+  from `0xffa00d2c` reads the block through `P5`, loaded at `0xffa00d18`), and the render's samples are multiplied by
+  it afterwards: by the stock's loop for the mono bus and by coop's hook for the stereo pair
+  (`v = (out x env) x gain`, `gain` = the word at `0x01b4ef6e`). After that come the decimator's ramp word
+  (`0xff80107c`) and the mix loops' gain and ramp. So an engine can be loud while its voice is silent only through
+  the envelope, that gain word or the ramps.
+- **The stock stops running a voice whose envelope has ended, key held or not** [C op1emu]: a plain test engine (a square wave per voice, never silent by itself) on the
+  last engine row. One note of 2 s at the default envelope: rendered for 2,346 blocks = 3.4 s, i.e. the 2 s and a
+  1.4 s release, then no render and no hook at all. Six keys held 40 s with the envelope page's white knob turned
+  all the way down (the sustain): 31.2 s of renders (the decay), then **none while the keys were still down**
+  (136,468 hooks = 6 voices x 31.2 s + the 2 re-pressed keys x 5.3 s). The same with the green knob (the decay) down
+  too: 4 blocks of renders in all. In every run `env_skips 0`: the envelope block is never all zero in a block the
+  stock still runs. The re-pressed keys sounded again from their `note_on`. So a closed
+  envelope does not leave a voice being rendered: there is no render to save there, and no flag was added to the
+  engine ABI (one was built and taken out again when these runs showed the render is not called).
+- **The release**: an engine's `note_off` is called at the key's release and the stock goes on calling `render`
+  until its envelope's release has ended, then stops (above: 1.4 s after the release at the default envelope). rings'
+  `note_off` only tells its screen (`plugins/rings/rings.cc` `NoteOff`): the strings ring on at the damping setting
+  and are cut by the stock envelope's release. The engine host does not tell an engine that the envelope has ended;
+  it does not need to, the renders simply stop. A released voice therefore costs its full render for the envelope's
+  release time (the orange knob on the envelope page), not for the string's length, and not forever [C op1emu; I on
+  the device].
+- **What is in e14 for it**: the hook leaves out a synth voice whose envelope block is all zero (exact: out x 0),
+  counted in `mode ... env_skips`; in op1emu it never fires, for the reason above. And a diagnostic on the same
+  line, while the profile is on: `env_peak` (the largest |envelope| at a block's first or last sample over the last
+  finished 5 s window, any synth voice), `vgain` (the gain word) and `ramp` (the decimator's ramp). **On the
+  device** these say which gain is closed when a chord sounds dead while `peng` is high: `env_peak` near 0 = the
+  envelope (then `env_skips` says whether the stock still renders under it); `env_peak` high with `vgain` and
+  `ramp` at their usual 24576 / 32767 = the gain stages are open and the silence is in the engine's own output or
+  after the mix (an effect, the master).
+- **Not found**: with the sustain at its maximum (the owner's setting) nothing in the core's path closes a held
+  voice; the LFO / G-force destinations on amplitude were not traced in the stock code [I: they would act through
+  the envelope block or the gain word, both now reported].
+
+### 5. The stats text in RAM (audit finding 4; `coop_stats.cc`, `coop_sysex.cc`, `g_coop_statsfile`, token `statsfile=0|1`)
+
+Until e13 every 5 s window ended with ~15 KB written to `/yaffs2/user/coop_stats.txt` and 8 KiB into the tape
+image's tail: 13.7 MB of NAND an hour and a main-loop stall each time. e14:
+- **the windows tick as before** (the ring of 24, the eight heaviest, the fill probe, the CPLB watch) without a write;
+- **a host's FILE_GET of `/yaffs2/user/coop_stats.txt` is answered from RAM**: the text is made afresh when a read
+  starts (offset 0, or the first request after ~2 s without one, so a host that starts in the middle gets a fresh
+  text too) and the following pieces come from that same text. `tools/coop_usb.py stats` and the site
+  (`web/src/core/usbmidi/coop.ts`) read that path: **nothing changes for them**;
+- the file and the tape tail (`tools/tape_tail_stats.py`) are written only with `g_coop_statsfile`: 1 in the ELF, so
+  an op1emu gate image still leaves the file on the NAND for `tools/emu_gate.py` (no change there); 0 in both
+  device packages; the policy token `statsfile=1` brings the periodic writes back, e.g. for a session without a
+  host. A runner script (`coop_stats_write_now`) writes once at its end, as before.
+The `mode` line gains `statsfile N ram_reads N`; the `stats` line's `writes` stays 0 on a device package.
+
+**Proof** [C op1emu, over USB/IP]: `mode prof 0 statsfile 0`; two reads 8 s apart over SysEx, 10,361 and 12,171 bytes, 13 and 19 windows (the second made afresh: `ram_reads 162`), `sysex drop 0 errors 0`, `stats writes 0 tail_writes 0`, no `coop_stats.txt` on the NAND afterwards; with `prof=1 statsfile=1` in the policy file the same image reports `mode prof 1 statsfile 1`, `writes 7 tail_writes 7` and the file is on the NAND; the dev image `prof 1 statsfile 0`, `writes 0`. `tools/emu_gate.py` read its stats from the NAND in every other run here (gate images keep `statsfile=1`).
+**Saving** [I, the audit]: ~19 KiB of NAND every 5 s and a 10-50 ms main-loop stall each time (one to three UI
+frames); op1emu has no NAND timing.
+
+### Totals (op1emu, cycles a block of the whole callback, median window; e13 -> e14 dev -> e14 release)
+
+| | e13 | e14 dev (profile on) | e14 release (profile off) |
+|---|---|---|---|
+| at rest (`idle_60s`) | 45,678 | 34,871 | 34,678 |
+| the tape playing (`det_tape_play`), median / heaviest window | 45,736 / 55,253 | 34,932 / 44,446 | 34,739 / 44,253 |
+| a stock synth chord (`det_chord`), heaviest window | 64,190 | 57,451 | 56,775 |
+| a drum pattern (`det_drum`), heaviest window | 65,735 | 61,697 | 61,424 |
+| recording a take under a chord (`det_tape_rec`), heaviest window | 79,511 | 74,725 | 74,050 |
+| a sampler sound through fickle (`det_fx_fickle`), heaviest window | 181,583 | 179,342 | 177,672 |
+| the rings models played (`det_eng_rings`), heaviest window | 131,497 | 125,239 | 122,405 |
+| six rings 0.12 voices held and asleep | 76,405 | 53,978 | 50,712 |
+
+At rest e14 saves 10.8 k cycles a block in op1emu (24 %), 11.0 k as a release image; while a stock sound plays 5-7 k
+(the tap's idle pass and, between the notes, the rest paths); under a loud plugin engine or effect 2-9 k. The
+audit's device estimates for the same changes: at rest the tap 4-7 k, the stage and the mix ~19 k, the block-start
+walk 2-4 k: 25-30 k of the 91-92 k; playing, the tap's idle pass and the measuring 10-12 k on a release image; an
+idle effect still keeps the mix loop and its own render (item 9 and the effects' idle paths).
+
+op1emu executes instructions and has no cache: the device's saving is larger wherever the removed code or data was
+being refetched (the audit's estimates beside each change), and is what the device test measures.
+
+### Not in e14: finding 9, the effect wrap in assembly
+
+Left for a later core, by the brief's own rule (last, and only once 1-5 are done and gated): it is the largest
+piece (two hardware-loop kernels, four call sites with three different block layouts, an L1 work block shared by
+positions that must be shown never to nest, a simulator check and a host test), and its estimate (~1.5 k cycles per
+plugin position) is small beside what 1-5 return at rest. The rings / idle agent's idea of a marker bit in `l[0]`
+to detect an untouched block changes what a plugin is handed and needs its own proof; not attempted.
+
+## e15 (2026-11-22): the effect wrap in assembly, the diagnostic code out of the release image
+
+The owner's go-ahead for the efficiency audit's findings 9 and 14 (core side) on top of e14. e14 on the device: 27-28 k
+cycles a block saved at rest, neutral while sounding; an idle plugin effect still costs ~13 k in `fx` there (e13),
+much of it the wrap; the device's cost is cache-bound, so code size and the hot path's footprint count more than
+op1emu's instruction counts. e13's placement policy, default and budgets, the plugin ABI and e14's flavour scheme
+(`prof`, `statsfile`) are unchanged. Built and gated in op1emu; the device test is pending (`docs/device-tests.md`
+"e15").
+
+### 1. The effect wrap in assembly, its work block in L1 (audit finding 9; `wrap_fast.S`, switch `g_coop_fast_wrap`)
+
+**What it replaces.** A coop effect takes its 64 samples as Q31 L / R; the core holds them as int16. e14 converted
+with compiled loops at four sites: instrument FX 1 (`coop_fx_render_mono`: mid + two sides -> `sat16(m + s) << 16`,
+back `>> 16`, mid = `(l + r) >> 1`, sides `(int16_t)(l - m)`), master FX 1 (`coop_fx_render_st`: l / r `<< 16` and
+back), and slot 2 (`slot2_render`, both positions: l / r `<< 16` and back; at the instrument `coop_slot2_instr` first
+built int16 l / r from the carrier and afterwards split them again with saturating sides). The Q31 block was on the
+interrupt stack at FX 1 and in two SDRAM statics at slot 2.
+
+**What e15 does.**
+- Five hardware-loop kernels (`core/sdram/wrap_fast.S`, 64 samples, no overreads): `coop_wrap_ms_in` (the carrier ->
+  Q31, 4 packets a sample: two saturating 16-bit adds into the high halves of two registers whose low halves stay 0),
+  `coop_wrap_ms_out` / `coop_wrap_ms_out_sat` (Q31 -> the carrier, 8 packets), `coop_wrap_lr_in` (half-register
+  loads into the high halves, 3), `coop_wrap_lr_out` (stores of the high halves, 3). The C loops were ~14 / ~22
+  instructions a sample (the audit's count). Packets only of forms the stock or coop's kernels already run on the
+  device; `tools/asm_lint.py` clean.
+- **Two ways back, on purpose.** `l - m` leaves int16 at one corner of the input only (l = 32767, r = -32768 gives
+  m = -1 and sl = 32768; and its mirror): e14's FX 1 wraps it to -32768 (a plain `(int16_t)` cast), e14's slot 2
+  saturates it to 32767. The first host check found the difference (4,795 of 20,000 blocks with edge values); each
+  site keeps its own (`(NS)` / `(S)` on the two subtracts).
+- **Slot 2 at the instrument goes straight from the carrier to Q31 and back** when slot2_render will run a plugin
+  (`coop_slot2_instr` makes the same tests in the same order, in the same interrupt): the int16 l / r detour is gone.
+  That it is the same numbers: e14's detour (`sat16(m + s)`, `<< 16`, then `>> 16`, the saturating split) equals
+  `ms_in` + `ms_out_sat` (host check case 5). A stock type there, or a change still being built, keeps e14's detour,
+  whose round trip also normalises the carrier as before.
+- **One 512-byte work block** (L at words 0..63, R at 64..127) for every position, taken from the L1 pool at the first
+  plugin block (the audio thread, like the stereo stages' blocks; `l1 ... used` 3,200 -> 3,712 of 8,416: the engine
+  leases' 4,096 still fit, `COOP_L1_CORE_RESERVE` is unchanged), else a static SDRAM block (`wrap 2`). The positions
+  run one after another in the audio interrupt and a render calls no other; a guard word makes a nested call (none
+  seen) take a stack block of its own, counted (`wrap_nested`).
+- The parameters (`fx_params`) are now built before the conversion in, not between it and the render: it reads the
+  stock's words and writes its own block only, no sample.
+- `g_coop_fast_wrap` (an image word): 1 the kernels (default), 0 e14's C loops (an A/B), 2 (dev builds) the kernels
+  checked against e14's C on every block, both ways, the render run once on the kernels' block.
+- The stats' `l1` line gains `wrap` (0 no plugin block yet, 1 L1, 2 SDRAM), `wrap_nested`, `wrap_checked`, `wrap_bad`.
+
+**Proof.**
+- [C bfin simulator] `tests/sim/run_wrap_check.sh` (`tests/sim/wrap_check.cc`): the five kernels against e14's C,
+  20,000 blocks of random int16 / random Q31 words (a plugin may leave any low half) with every fifth block all edge
+  values, guard words around every array: `ms_in bad 0, ms_out bad 0, lr_in bad 0, lr_out bad 0, slot2_instr bad 0,
+  guard hits 0`.
+- [C op1emu] the check image (`g_coop_fast_wrap=2`) in situ, every plugin block of every position compared with the C,
+  and the audio against e14: "Gates" below.
+
+**The idle marker** (the rings / idle agent's note: a marker bit in `l[0]` before the render; still there = the effect
+left the block untouched, skip the way back). Not built: it is neither ABI-compatible nor provably exact for today's
+files.
+- It changes what an effect is handed. cs_hall and tape_echo test their input for silence (`Silent()`: the top 16
+  bits of six samples, then a scan); the others process the whole Q31 word. A set low bit changes the input of every
+  effect that does arithmetic on it.
+- It does not prove "untouched": tape_drive writes the high halves and keeps the low halves as they came
+  (`tape_drive.cc` render: `<< 16 | (l[i] & 0xffff)`), so a block it changed keeps the marker; any effect that writes
+  only high halves does the same.
+- At an instrument position an untouched block does not make the way back an identity: it normalises the carrier
+  (mid = `(l + r) >> 1` of the saturated l / r), so e14's output differs from its input whenever the sides were not
+  split that way already; only the master positions (l / r) would be exact.
+- The effects that idle today (cs_hall, tape_echo, petri, fickle on silence) return with the block as it came, which
+  is silence, and the mix's rest path (e14, 3) already tests the buffers after the effects.
+A flag from the effect (the render's return value) would be the clean form; that is an ABI change, not in e15.
+
+### 2. The diagnostic code out of the release image (audit finding 14, core side; `COOP_DIAG`)
+
+- `core/include/coop_build.h`: `COOP_DIAG` (default 1). `make -C core/sdram combined` builds `coop_combined.elf`
+  with it (the dev package and every op1emu gate image); `make -C core/sdram combined-release` builds
+  `coop_combined_release.elf` with `-DCOOP_DIAG=0` (the release package: `ELF=<abs path>/coop_combined_release.elf
+  tools/build_device_package.sh ...`; the path must be absolute). The flavour words are e14's: release `prof=0
+  statsfile=0`, dev `statsfile=0`; the policy tokens still switch either at boot.
+- Left out of the release build: the p6f instruction-cache probe and its two NOP functions (`probe_4k`, `probe_24k`:
+  28,676 bytes of text, run at every boot), the p6h event sweep, the e13 fill probe (`probe=1` then only reads the
+  MMRs; no `fill` line), their 40 KB of probe arrays, the e3 SysEx self-test (and its 16 KB buffer), the stage's and
+  the voice hook's debug compare against the stock path (`g_coop_dbg_cmp`: the word stays, the thunk still reads it,
+  the code that used it is gone, from the per-voice hot path too), e15's wrap check mode. Setting those words on a
+  release image changes nothing (`g_coop_sysex_selftest` is not in the release ELF at all). The counters keep
+  `coop_pf_boot`'s layout 0 (the one p6g proved on the device) without the boot probe; the `icache_l0` / `icache_l1`
+  lines read 0 on a release image.
+- Kept in both: the test runner (`tools/devloop.py` measures release images too), the measuring code (behind `prof`,
+  e14), the tape's two bounce buffers (bss only, no cycles, not in the LDR).
+- Flags: `-fno-builtin -fno-tree-loop-distribute-patterns` in the core's Makefile, as the plugins and the top
+  Makefile have them. Proof [C]: e14's sources built with and without them give byte-identical loaded sections
+  (`.text .rodata .data .near`, sha1 `4c84713c...` both): `-ffreestanding` already implied `-fno-builtin`, and the
+  link has no memset, so no loop was being turned into one.
+- Section GC: already on for the core (`-ffunction-sections -fdata-sections`, `--gc-sections`, a keep list for what
+  the L1 patches call); nothing more to take there.
+
+**Sizes** (bytes, `bfin-elf-size -A`; the LDR is the plaintext gate image):
+
+| | .text | .rodata | .data | .bss | LDR |
+|---|---|---|---|---|---|
+| e14 (one ELF) | 181,708 | 12,948 | 440 | 613,296 | 2,377,112 |
+| e15 dev (`COOP_DIAG=1`) | 183,508 | 12,996 | 444 | 614,744 | 2,378,964 |
+| e15 release (`COOP_DIAG=0`) | 150,492 | 12,732 | 440 | 554,872 | 2,345,680 |
+
+`.near` 914 in all. The dev image grows by the kernels (304 bytes), the wrap's C and its check mode (~1.5 KB); the
+release image is 31.2 KB of text and 57.4 KB of bss smaller than e14 (the LDR 31.4 KB).
+
+### Gates (op1emu, 2026-11-22; one run at a time under the shared lock, fresh NANDs deleted after every run)
+
+Images `--tape-stereo --set-word g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`, in `~/op1emu-work/e15/`:
+e14 (HEAD before e15, rebuilt), e14 with `g_coop_prof=0`, e15 dev, e15 dev with `g_coop_fast_wrap=2` (check) and
+`=0` (e14's C wrap), e15 release with `g_coop_prof=0`. The 13 catalogue plugins of the day (`plugins/*/*.coop`;
+rings 0.13, tape_echo, fickle, petri among them) and `build/plugins/test_fx.coop` (the do-nothing effect); scripts
+and outputs in `I:\op1emu-tmp\e15gate\`. The host was loaded by other agents' simulator runs for the first hour
+(load 35): four runs ended before their last event (`ran_to_end`) and were run again once it was quiet.
+
+| Run | Result [C op1emu] |
+|---|---|
+| Check image, the 13 plugins, `det_fx_select` | pass; `wrap 1` (L1), `used 3712`, `wrap_checked 8220 wrap_bad 0`, `wrap_nested 0` |
+| Check image, tape_echo, `det_fx_two_pos` (p0, p3) | pass; `wrap_checked 46430 wrap_bad 0` |
+| Check image, cs_hall + tape_echo, `det_fx_switch` (switching at p0, p3) | pass; `wrap_checked 84090 wrap_bad 0` |
+| Check image, fickle, `det_fx_fickle` (p0..p4 all with blocks) | `wrap_checked 115467 wrap_bad 0` (ended 1.7 s before its last event: the loaded host) |
+| Check image, petri, `det_fx_petri` (p0..p4) | pass; `wrap_checked 129643 wrap_bad 0` |
+| Check image, test_fx, `det_fx_controls` (p0..p4, the controls, randomise) | pass; `wrap_checked 180797 wrap_bad 0` |
+| Check image, rings, `det_eng_rings` | pass (no effect: `wrap 0`) |
+| e15 dev against e14, pristine: `det_chord`, `det_drum`, `det_tape_play` | identical (3,142,573 frames on `det_tape_play`) |
+| e15 release against e14 `prof=0`, pristine, the same three | identical (3,008,620 / 2,100,206 / 3,012,715 frames) |
+| e15 dev against e14, the 13 plugins loaded, `det_chord` | identical (1,757,293 frames) |
+| e15 release against e14 `prof=0`, the 13 plugins, `det_chord` | aligned, max diff 2 (`det_chord`'s known spread, e14 notes) |
+| e15 against e14, tape_echo, `det_fx_two_pos` | identical (4,049,468 frames) |
+| e15 against e14, cs_hall + tape_echo, `det_fx_switch` | aligned, max diff 5 (third try; 51 key events) |
+| e15 against e14, petri, `det_fx_petri` | aligned, max diff 0 |
+| e15 against e14, rings, `det_eng_rings` | identical (5,193,837 frames) |
+| e15 against e14, fickle, `det_fx_fickle` | first run (loaded host, ended at 68 s): identical over 5,191,564 frames; the full run: differs, max 8,487 / aligned 7,740, and **e14 against e14 on the same scenario differs by exactly the same** (8,487 / 7,740): the scenario's run-to-run spread (83 key events), not e15; covered by the check image |
+
+**Cycles** (op1emu, cycles a block; cost entries = the profile's per-call average over the run, the whole callback =
+the median of the 5 s windows; e14 and e15 dev with the profile on, `w0` = e15 with `g_coop_fast_wrap=0`):
+
+| Scenario | | e14 | e15 | e15 `w0` |
+|---|---|---|---|---|
+| at rest (`idle_60s`) | whole callback | 34,872 | 34,872 | 34,872 |
+| at rest, release flavours (`prof=0`) | whole callback | 34,679 | 34,671 | |
+| test_fx, `det_fx_controls` (do-nothing effect, p0..p4) | `fx1_plugin` | 3,080 | **1,641** | 3,147 |
+| | `s2_master` | 1,866 | **1,493** | 2,121 |
+| | `s2_instr` (*) | 1,825 | 1,856 | 2,083 |
+| | whole callback | 72,264 | 66,783 | 72,324 |
+| fickle, `det_fx_fickle` | `fx1_plugin` | 8,944 | **7,521** | 9,347 |
+| | `s2_master` | 6,363 | 6,136 | 7,076 |
+| | whole callback | 74,758 | 69,278 | 70,821 |
+| fickle, release flavours | whole callback | 69,875 | 68,767 | |
+| petri, `det_fx_petri` | `fx1_plugin` | 16,838 | **15,341** | 16,858 |
+| | `s2_master` | 11,820 | 11,447 | 12,075 |
+| | whole callback | 65,673 | 63,650 | 65,727 |
+| tape_echo, `det_fx_two_pos` | `fx1_plugin` | 7,988 | **6,548** | 8,055 |
+
+(*) e14's `s2_instr` timer did not include the int16 detour (it ran in `coop_slot2_instr` around the timed call); e15
+times the carrier's conversions inside it. Its saving is the detour's two C loops, outside every timer: it shows in
+the whole callback only. Whole-callback medians move with how the windows fall in a many-event scenario (e14 against
+itself: up to ~2 k); the cost entries are per call.
+
+What it says:
+- **Per plugin position at instrument FX 1: 1.4-1.5 k cycles a block less** (`fx1_plugin`, every effect: test_fx -1,439,
+  fickle -1,423, petri -1,497, tape_echo -1,440); a do-nothing effect costs 1,641 there instead of 3,080: the wrap was
+  ~2.3 k of it (the audit), now ~0.9 k. At the master's slot 2 0.2-0.4 k (it was already l / r and SDRAM-static);
+  the master's FX 1 and the instrument's slot 2 are not separately timed (the whole callback: test_fx with all five
+  positions -5.5 k median).
+- At rest nothing changes (no plugin block, no wrap); the release image's at-rest figure is 8 cycles lower (the
+  stage's debug test gone from the audio path).
+- `w0` (the C wrap in the e15 image) is e14's figure to within the switch's own test: the saving is the kernels'.
+- **On the device** [I]: the audit expected more than op1emu shows, since e14's Q31 block on the interrupt stack and
+  in SDRAM statics (24 data lines a position) was refetched whenever the block evicted it, and an idle plugin effect
+  cost ~13 k in `fx` (e13). The L1 block removes those fetches; the kernels are 304 bytes of code against the two
+  C loops per site. The device test measures it (`docs/device-tests.md` "e15").

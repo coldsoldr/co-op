@@ -79,6 +79,13 @@ class ModalResonator {
       else modes_[i] = m;
     }
   }
+  // coop (rings 0.13): the modes at rest (RingsVoice::Rest): their states only; the coefficients, the weights and the
+  // parameters' history stay, so the next strike sounds as a strike into a voice that had died away by itself.
+  void Rest() {
+    for (int32_t i = 0; i < kMaxModalModes; ++i) modes_[i].lp = modes_[i].bp = 0;
+    for (int32_t i = 0; i < slab_modes_; ++i) slab_[i].lp = slab_[i].bp = 0;
+    previous_input_ = 0;
+  }
   Mode* l1_bank() const { return slab_; }
   int32_t l1_bank_modes() const { return slab_modes_; }
 

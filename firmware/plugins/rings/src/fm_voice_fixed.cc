@@ -70,6 +70,36 @@ inline int32_t Sine(uint32_t phase) {
 
 }  // namespace
 
+#if defined(__bfin__) && !defined(OP1RINGS_NO_ASM)
+// coop rings 0.14: the sample loop below in Blackfin assembly (src/fm_voice_bfin.S, bit-exact with it), the state,
+// the call's values and the constants in one block the kernel reaches from two pointers.
+struct FmKernel {
+  int32_t amplitude_envelope;   // 0: the state, read and written back
+  int32_t brightness_envelope;  // 4
+  int32_t brightness;           // 8
+  int32_t fm_amount;            // 12
+  uint32_t carrier_inc;         // 16
+  uint32_t modulator_inc;       // 20
+  uint32_t modulator_phase;     // 24
+  uint32_t carrier_phase;       // 28
+  int32_t feedback_value;       // 32
+  int32_t previous_sample;      // 36
+  int32_t gain;                 // 40
+  int32_t amplitude_decay;      // 44: the call's
+  int32_t brightness_decay;     // 48
+  int32_t brightness_step;      // 52
+  int32_t envelope_amount;      // 56
+  int32_t carrier_step;         // 60
+  int32_t modulator_step;       // 64
+  int32_t feedback_step;        // 68
+  int32_t phase_feedback;       // 72
+  int32_t k0_1, k0_005, k0_045, k0_015, k0_005q28, half, one;   // 76..100: the constants
+  const int32_t* sine;          // 104: kSineQ31
+};
+static_assert(sizeof(FmKernel) == 108, "src/fm_voice_bfin.S's layout");
+extern "C" void FmLoopAsm(FmKernel* k, int32_t* out, int32_t size);
+#endif
+
 void FmVoiceFixed::Init() {
   carrier_frequency_ = FFloat::Raw(1371273005, -37) /* FFloat(220.0 / OP1RINGS_SAMPLE_RATE) */.ToQ31();
   ratio_ = kHalfQ31;
@@ -84,6 +114,7 @@ void FmVoiceFixed::Init() {
   previous_feedback_ = 0;   // upstream starts it at feedback_amount_ (0)
 
   decays_valid_ = false;
+  modulator_valid_ = false;
   amplitude_envelope_ = 0;
   brightness_envelope_ = 0;
   gain_ = 0;
@@ -102,12 +133,7 @@ void FmVoiceFixed::UpdateDecays() {
   decays_valid_ = true;
 }
 
-void FmVoiceFixed::Process(int32_t* out, size_t size) {
-  if (!decays_valid_ || damping_ != decays_damping_) UpdateDecays();
-
-  // Between "oscillator" (no envelope, damping 1) and the struck FM sound.
-  const int32_t envelope_amount = damping_ < k0_9Q31 ? kOne : (kOne - damping_) * 10;
-
+__attribute__((noinline)) uint32_t FmVoiceFixed::ModulatorIncrement() const {
   // Modulator frequency: carrier * 2^(ratio semitones / 12), at most 0.5.
   const int32_t index = ratio_ >> 24;                          // ratio * 128
   const int32_t frac = (ratio_ & 0xffffff) << 7;               // Q31
@@ -118,8 +144,25 @@ void FmVoiceFixed::Process(int32_t* out, size_t size) {
   const FFloat modulator_frequency =
       FFloat::FromQ(carrier_frequency_, 31) * Exp2(MulQ31(semitones, k1_12Q31));
   static constexpr FFloat kHalf = FFloat::Raw(1073741824, -31) /* FFloat(0.5) */;
-  const uint32_t modulator_increment = modulator_frequency >= kHalf
+  return modulator_frequency >= kHalf
       ? 0x7fffffffu : static_cast<uint32_t>(modulator_frequency.ToQ31()) << 1;
+}
+
+void FmVoiceFixed::Process(int32_t* out, size_t size) {
+  if (!decays_valid_ || damping_ != decays_damping_) UpdateDecays();
+
+  // Between "oscillator" (no envelope, damping 1) and the struck FM sound.
+  const int32_t envelope_amount = damping_ < k0_9Q31 ? kOne : (kOne - damping_) * 10;
+
+  // coop 0.14: the modulator's increment only changes with the pitch or the ratio: kept from the last render
+  // (ModulatorIncrement, out of line: the code a still render runs, smaller). The same value either way.
+  if (!modulator_valid_ || modulator_carrier_ != carrier_frequency_ || modulator_ratio_ != ratio_) {
+    modulator_increment_ = ModulatorIncrement();
+    modulator_carrier_ = carrier_frequency_;
+    modulator_ratio_ = ratio_;
+    modulator_valid_ = true;
+  }
+  const uint32_t modulator_increment = modulator_increment_;
   const uint32_t carrier_increment = static_cast<uint32_t>(carrier_frequency_) << 1;
 
   // feedback = (amount - 0.5) * 2, Q30 in [-1, 1].
@@ -129,13 +172,17 @@ void FmVoiceFixed::Process(int32_t* out, size_t size) {
 
   // Upstream's ParameterInterpolators: linear over the block, reaching the
   // target on the last sample.
+  // coop 0.10: the five quotients by n, folded for the usual size as modal_resonator.cc does (a division is a
+  // libgcc call, ~190 cycles on this CPU: five a render; size is kSubblockSize = 32 in every build of this port,
+  // where the constant's division is an add and a shift). The same truncating quotient, so the same samples.
   const int32_t n = static_cast<int32_t>(size);
+  const auto by_n = [n](int32_t x) -> int32_t { return n == 32 ? x / 32 : x / n; };
   const int32_t carrier_step =
-      static_cast<int32_t>(carrier_increment - previous_carrier_increment_) / n;
+      by_n(static_cast<int32_t>(carrier_increment - previous_carrier_increment_));
   const int32_t modulator_step =
-      static_cast<int32_t>(modulator_increment - previous_modulator_increment_) / n;
-  const int32_t brightness_step = (brightness_ - previous_brightness_) / n;
-  const int32_t feedback_step = feedback / n - previous_feedback_ / n;
+      by_n(static_cast<int32_t>(modulator_increment - previous_modulator_increment_));
+  const int32_t brightness_step = by_n(brightness_ - previous_brightness_);
+  const int32_t feedback_step = by_n(feedback) - by_n(previous_feedback_);
 
   uint32_t carrier_inc = previous_carrier_increment_;
   uint32_t modulator_inc = previous_modulator_increment_;
@@ -150,6 +197,25 @@ void FmVoiceFixed::Process(int32_t* out, size_t size) {
   uint32_t modulator_phase = modulator_phase_;
   int32_t previous_sample = previous_sample_;
 
+#if defined(__bfin__) && !defined(OP1RINGS_NO_ASM)
+  {
+    FmKernel k = {
+      amplitude_envelope, brightness_envelope, brightness, fm_amount, carrier_inc, modulator_inc, modulator_phase,
+      carrier_phase, feedback_value, previous_sample, gain,
+      amplitude_decay_, brightness_decay_, brightness_step, envelope_amount, carrier_step, modulator_step,
+      feedback_step, phase_feedback,
+      k0_1Q31, k0_005Q31, k0_045Q31, k0_015Q31, k0_005Q28, kHalfQ31, kOne, kSineQ31,
+    };
+    FmLoopAsm(&k, out, static_cast<int32_t>(size));
+    amplitude_envelope = k.amplitude_envelope;
+    brightness_envelope = k.brightness_envelope;
+    fm_amount = k.fm_amount;
+    gain = k.gain;
+    carrier_phase = k.carrier_phase;
+    modulator_phase = k.modulator_phase;
+    previous_sample = k.previous_sample;
+  }
+#else
   for (size_t i = 0; i < size; ++i) {
     // Envelopes: the follower's outputs are 0, so SLOPE only decays them.
     amplitude_envelope -= MulQ31Fast(amplitude_envelope, amplitude_decay_);
@@ -201,6 +267,7 @@ void FmVoiceFixed::Process(int32_t* out, size_t size) {
 
     out[i] = MulQ31Fast((carrier >> 1) + (modulator >> 1), gain) >> 3;   // Q30 -> Q27
   }
+#endif
 
   previous_carrier_increment_ = carrier_increment;
   previous_modulator_increment_ = modulator_increment;

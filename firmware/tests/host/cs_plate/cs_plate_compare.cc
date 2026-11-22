@@ -309,6 +309,14 @@ int main(int argc, char** argv) {
         if (((Rand() >> 8) % 97) == 0) src.Pick();
         const int16_t size_before = k.p[5], freeze_before = k.p[COOP_FX_LATCH];
         if (((Rand() >> 8) % 23) == 0) RandomKnobs(&k, false);
+        if (seg % 3 == 2 && b % 700 < 350) {   // stretches with every turn moving every block (0.3: the plugin keeps
+          for (int i = 0; i < 4; ++i) {        // each turn's value until its word moves)
+            int32_t v = k.p[i] + RandRange(3, 120) * (((Rand() >> 16) & 1) ? 1 : -1);
+            if (v < kLo[i] - 100) v = kLo[i] + 150;
+            if (v > kHi[i] + 100 || v > 32767) v = kHi[i] - 150;
+            k.p[i] = static_cast<int16_t>(v);
+          }
+        }
         if (Clamp(k.p[5], 0, 7) != Clamp(size_before, 0, 7)) ++size_changes;
         if (k.p[COOP_FX_LATCH] != freeze_before) ++freezes;
         src.Fill(in_l, in_r);

@@ -7,7 +7,7 @@ A granular micro-loop effect: eleven ways to replay what you just played.
 ## What it is
 
 petri records your sound all the time into a short stereo buffer, about 1.5
-seconds long. One of eleven effects plays that buffer back through up to
+seconds long (1.36 seconds on coop from 0.2, to fit coop's plugin memory). One of eleven effects plays that buffer back through up to
 eight voices: loops, grains, slices, arpeggio notes or delay taps, each with
 its own start, speed, direction and length. The result goes through a shared
 tone section on the wet sound only: a gentle pitch drift, a resonant
@@ -74,7 +74,7 @@ is Help held.
 | blocks | your playing sets off glitches: stutters at double or half speed, reversed or accelerating | block, 10 to 243 ms | how wild the glitches are | stutters per burst |
 | cut | bursts that cut in, pitched an octave up or down, a fifth or two octaves | burst, 20 to 393 ms | which intervals and how many stutters | how often: from every 4 s to every 0.2 s |
 | arp | the last few notes you played, sequenced as an arpeggio of octaves and fifths | step, 60 to 591 ms | steps, 1 to 8 | note length |
-| pattern | a multi-tap delay whose taps fall on sixteenths of a bar | bar, 0.1 to 1.39 s | taps, 1 to 6 | feedback |
+| pattern | a multi-tap delay whose taps fall on sixteenths of a bar | bar, 0.1 to 1.39 s (1.27 s on coop) | taps, 1 to 6 | feedback |
 | warp | three taps at a third, two thirds and all of the time, each pitched and filtered, feeding back into cascades | the longest tap, 60 ms to 1.1 s | how far the taps are pitched | feedback |
 
 strum, blocks and arp listen for the start of each note you play (an

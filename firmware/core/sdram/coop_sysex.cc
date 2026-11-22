@@ -9,7 +9,11 @@
  * <7-bit packed payload> F7) out of the USB-MIDI receive ring into a small queue and then runs the stock parser,
  * which ignores them. Service: coop_sysex_service runs from the main loop (the tape I/O step) and answers through the
  * stock usbmidi_tx_enqueue as USB-MIDI packets. Every message both ways stays at or below 96 bytes (the OP-1's USB-MIDI
- * input stops on longer SysEx: co-op's sysex.js), the host keeps one message in flight.
+ * input stops on longer SysEx: co-op's sysex.js). The queue holds QN messages and the service answers them in the
+ * order they came; one that arrives with the queue full is dropped without a reply (g_sysex_drop). A host may so keep
+ * up to QN - 1 = 3 PUT_DATA in flight (one for any other command): a chunk is taken only at the offset the file has
+ * reached and every reply carries that offset, so the acks are cumulative and a chunk behind a lost one is refused
+ * (ST_OFFSET), never written out of order (docs/sysex.md).
  *
  * Commands (cmd 0x20..; replies are cmd | 0x40, same seq, payload status + data):
  *   0x21 HELLO               -> status 0, "coop", u16 protocol (1), build tag text
@@ -53,6 +57,8 @@ extern "C" void coop_slot2_get(int pos, uint8_t *out10);
 extern "C" int coop_slot2_save(void);
 extern "C" int coop_plugin_list(char *out, int cap);
 extern "C" int coop_inventory_text(char *out, int cap, const char *build);   /* plugin_host.cc (e3) */
+extern "C" int coop_stats_is_path(const char *path);                   /* coop_stats.cc (e14): the stats file's path */
+extern "C" int coop_stats_ram(uint32_t off, const char **text);
 extern "C" int coop_settings_set_plugin(const char *fname, int enable);  /* coop_settings.cc (e3) */
 extern "C" int coop_runner_start(const char *path);                 /* coop_runner.cc, p5b */
 extern "C" void coop_runner_abort(void);
@@ -151,6 +157,7 @@ static int pack7(const uint8_t *in, int n, uint8_t *out)
  * instead of USB, and coop_sysex_service feeds handle() a fixed request sequence once the plugins are loaded, then
  * writes /yaffs2/user/coop_sysex_test.txt. op1emu has no USB-MIDI: this proves the commands on the code a host drives. */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_sysex_selftest = 0; }
+#if COOP_DIAG                                                      /* e15: dev / gate builds only (coop_build.h) */
 static char *st_buf; static int st_len, st_cap;
 static void st_hex(const uint8_t *m, int n)
 {
@@ -158,9 +165,12 @@ static void st_hex(const uint8_t *m, int n)
     for (int i = 0; i < n && st_len + 3 < st_cap; i++) { st_buf[st_len++] = hx[m[i] >> 4]; st_buf[st_len++] = hx[m[i] & 15]; }
     if (st_len < st_cap) st_buf[st_len++] = '\n';
 }
+#endif
 static void send_sysex(const uint8_t *m, int n)
 {
+#if COOP_DIAG
     if (st_buf) { st_hex(m, n); return; }
+#endif
     static uint32_t pk[MAX_MSG / 3 + 2];
     int np = 0;
     for (int i = 0; i < n; i += 3) {
@@ -209,6 +219,15 @@ static void handle(const uint8_t *m, int n)
         int pl = pn - 4;
         for (int i = 0; i < pl; i++) path[i] = (char)in[4 + i];
         path[pl] = 0;
+        if (coop_stats_is_path(path)) {                             /* e14: the stats text, from RAM (coop_stats.cc) */
+            const char *text = 0;
+            int total = coop_stats_ram(off, &text), got = 0;
+            if (off < (uint32_t)total) { got = total - (int)off; if (got > CHUNK) got = CHUNK; for (int i = 0; i < got; i++) out[5 + i] = (uint8_t)text[off + i]; }
+            out[0] = ST_OK;
+            out[1] = (uint8_t)total; out[2] = (uint8_t)(total >> 8); out[3] = (uint8_t)(total >> 16); out[4] = 0;
+            reply(cmd, seq, out, 5 + got);
+            return;
+        }
         int fd = Y_OPEN(path, 0, 0);
         if (fd < 0) { out[0] = ST_PATH; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
         int32_t total = Y_LSEEK(fd, 0, 2);
@@ -330,6 +349,7 @@ static void handle(const uint8_t *m, int n)
     out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++;
 }
 
+#if COOP_DIAG
 extern volatile uint32_t g_plugins_booted;                         /* plugin_host.cc */
 static void selftest_ask(int cmd, const uint8_t *payload, int n)
 {
@@ -368,11 +388,14 @@ static void selftest_run(void)
     int fd = Y_OPEN("/yaffs2/user/coop_sysex_test.txt", 0x242, 0x180);
     if (fd >= 0) { Y_WRITE(fd, buf, st_len); Y_CLOSE(fd); }
 }
+#endif
 
 /* From the main loop (coop_tape_io_step, mode 0) on every pass. */
 extern "C" void coop_sysex_service(void)
 {
+#if COOP_DIAG
     if (g_coop_sysex_selftest == 1 && g_plugins_booted) { g_coop_sysex_selftest = 2; selftest_run(); }
+#endif
     while (qr != qw) {
         handle(q[qr % QN], qlen[qr % QN]);
         qr++;

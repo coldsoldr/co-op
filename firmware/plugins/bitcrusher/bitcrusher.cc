@@ -35,13 +35,41 @@ Instance* g_inst[COOP_FX_SLOTS];   /* .bss: each slot's state, in its position b
 const int32_t kLo[4] = { 64, 0, 0, 8192 };
 const int32_t kHi[4] = { 14528, 24576, 22528, 32767 };
 
-inline int32_t Q15(const int16_t* p, int i) {
-  int32_t v = (p[i] - kLo[i]) * 32767 / (kHi[i] - kLo[i]);   /* per block, four divisions */
+/* One software divide (libgcc's ___divsi3, ~190 cycles on this CPU), only for a word that moved (ReadParams). */
+inline int32_t Q15(int32_t word, int i) {
+  int32_t v = (word - kLo[i]) * 32767 / (kHi[i] - kLo[i]);
   return v < 0 ? 0 : (v > 32767 ? 32767 : v);
+}
+
+/* 0.3: what the block's control words give the DSP, kept per slot and redone only for a word that moved: the four
+ * turns, the gain (two divides) and the steps rate and bits give the loop (a divide and three 64-bit operations): seven
+ * divides a block before (docs/efficiency-audit.md finding 8). The same values, so the same output bit for bit. Tiny
+ * per-slot values in .bss (guidelines 2.3); init clears `valid`, so the first render after a selection computes all. */
+struct Kept {
+  int16_t raw[5];        /* params[0..3], params[5] as last seen */
+  int16_t valid;
+  crush::Params q;
+  crush::Crush::Steps steps;
+};
+Kept g_kept[COOP_FX_SLOTS];
+
+inline const Kept& ReadParams(int slot, const int16_t* p) {
+  Kept& c = g_kept[slot];
+  const bool all = !c.valid;
+  bool steps = all;
+  if (all || p[0] != c.raw[0]) { c.raw[0] = p[0]; c.q.rate = 32767 - Q15(p[0], 0); steps = true; }   /* clockwise = a higher rate */
+  if (all || p[1] != c.raw[1]) { c.raw[1] = p[1]; c.q.bits = 32767 - Q15(p[1], 1); steps = true; }   /* clockwise = more bits */
+  if (all || p[2] != c.raw[2]) { c.raw[2] = p[2]; c.q.jitter = Q15(p[2], 2); }
+  if (all || p[3] != c.raw[3]) { c.raw[3] = p[3]; c.q.mix = Q15(p[3], 3); }
+  if (all || p[5] != c.raw[4]) { c.raw[4] = p[5]; c.q.gain_q14 = crush::GainQ14(p[5]); }             /* clamped inside */
+  if (steps) c.steps = crush::Crush::StepsOf(c.q.rate, c.q.bits);
+  c.valid = 1;
+  return c;
 }
 
 int init(int slot) {
   if (slot < 0 || slot >= COOP_FX_SLOTS) return -1;
+  g_kept[slot].valid = 0;   /* nothing kept across a selection */
   uint32_t bytes = 0;
   Instance* g = static_cast<Instance*>(coop_fx_scratch(slot, &bytes));
   g_inst[slot] = (g && bytes >= sizeof(Instance)) ? g : nullptr;
@@ -53,12 +81,7 @@ int init(int slot) {
 
 void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
   if (slot < 0 || slot >= COOP_FX_SLOTS || !g_inst[slot]) return;   /* not bound: dry */
-  crush::Params q;
-  q.rate = 32767 - Q15(params, 0);   /* clockwise = a higher rate */
-  q.bits = 32767 - Q15(params, 1);   /* clockwise = more bits */
-  q.jitter = Q15(params, 2);
-  q.mix = Q15(params, 3);
-  q.gain_q14 = crush::GainQ14(params[5]);   /* clamped inside */
+  const Kept& kept = ReadParams(slot, params);
   Instance* g = g_inst[slot];
   /* e9: the input level for the screen (kennel's meter: the block's peak of the top 16 bits, decaying by an eighth a
    * block), published as one word after the block; the DSP never reads it */
@@ -69,7 +92,7 @@ void render(int slot, int32_t* l, int32_t* r, const int16_t* params, int n) {
     if (a > peak) peak = a;
     if (b > peak) peak = b;
   }
-  g->crush.Process(l, r, n, q);
+  g->crush.Process(l, r, n, kept.q, kept.steps);
   const int32_t held = g->disp.level - (g->disp.level >> 3);
   g->disp.level = peak > held ? (peak > 32767 ? 32767 : peak) : held;
 }

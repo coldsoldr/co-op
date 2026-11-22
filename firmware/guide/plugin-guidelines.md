@@ -117,7 +117,7 @@ What the words mean:
   - The host's own effects follow `docs/fx-data-placement-plan.md`; a port does the same: prefetch its delay-line
     streams a few lines ahead (`PREFETCH [P]`), process a delay line in block passes rather than per sample across
     several lines, keep per-sample state in registers, keep the render inside the I-cache's reach. [proposed]
-  - All plugins together may take 1,536 KiB of heap 0 (`docs/plugins.md` "e7"): a scratch effect counts its image once
+  - All plugins together may take 1,536 KiB of heap 0, 1,728 KiB from core e11 (`docs/plugins.md` "e7", "e11"): a scratch effect counts its image once
     and its growth of the position buffers; an old-model effect five times its load size (a 129 KiB `.bss` takes
     645 KiB); an engine its image and voice state. Keep the state to what the sound needs. A file over the budget is
     refused at boot with the reason in the stats and the inventory.

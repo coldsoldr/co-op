@@ -4,14 +4,14 @@
   "name": "Snapshot naming",
   "firmware": "op1/hundekraft",
   "kind": "feature",
-  "author": "hundekraft",
+  "author": "Maiko Pruett",
   "description": "Hold a sound key (1 to 8) to save as usual. When the OP-1 would save, a NAME screen opens instead.",
   "link": "https://hundekraft.github.io/op1-workshop/",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/Hundekraft/op1-workshop",
   "requires": "hundekraft 3.3.1",
-  "credits": "Rebuilt by hundekraft from how Maiko Pruett's #249 and #250 work; none of Maiko's code is used",
+  "credits": "Maiko Pruett's #249 and #250 feature, rebuilt in kennel by Hundekraft from how it works; none of Maiko's code is used",
   "tags": [
     "tool",
     "hundekraft"

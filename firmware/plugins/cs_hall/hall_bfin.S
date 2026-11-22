@@ -1,6 +1,7 @@
 /*
  * coop port (plugins/cs_hall): te-op1-cfw ports/fx/src/hall/hall_bfin.S, unchanged but
- * for the include path and the mono kernels left out (HALL_MONO_KERNELS).
+ * for the include path and a section per kernel (0.4): the mono kernels, which
+ * nothing calls, are assembled but the packer's section GC leaves them out.
  *
  * Blackfin kernels for the hall's runs: the same arithmetic as HallRunC,
  * HallXfadeRunC and HallPreRunC (hall.cc; bit-exact, checked by
@@ -401,11 +402,15 @@ END:                                                                       \
 	.text
 
 #define MIRROR MIRROR_ON
+	.section .text._HallRunAsm, "ax", @progbits
 STEREO_KERNEL(_HallRunAsm, .Ls_start, .Ls_end)
+	.section .text._HallRunMonoAsm, "ax", @progbits
 MONO_KERNEL(_HallRunMonoAsm, .Lm_start, .Lm_end)
 #undef MIRROR
 #define MIRROR MIRROR_OFF
+	.section .text._HallRunNmAsm, "ax", @progbits
 STEREO_KERNEL(_HallRunNmAsm, .Lsn_start, .Lsn_end)
+	.section .text._HallRunMonoNmAsm, "ax", @progbits
 MONO_KERNEL(_HallRunMonoNmAsm, .Lmn_start, .Lmn_end)
 #undef MIRROR
 #define MIRROR MIRROR_ON
@@ -419,6 +424,7 @@ MONO_KERNEL(_HallRunMonoNmAsm, .Lmn_start, .Lmn_end)
  * R5 = b | 32767 - b this sample, the halved sums go to block[HK_E],
  * block[HK_O].
  */
+	.section .text._HallXfadeRunAsm, "ax", @progbits
 	.align 4
 	.global _HallXfadeRunAsm
 	.type _HallXfadeRunAsm, STT_FUNC
@@ -506,6 +512,7 @@ _HallXfadeRunAsm:
  * HallPreRunC (the plate's pre-delay kernel). P4 -> l, P3 -> r,
  * P5 = ring, I0 -> x; R4 = HL_PRE_WORDS, R5 = step, R6 = d, R7 = w.
  */
+	.section .text._HallPreRunAsm, "ax", @progbits
 	.align 4
 	.global _HallPreRunAsm
 	.type _HallPreRunAsm, STT_FUNC

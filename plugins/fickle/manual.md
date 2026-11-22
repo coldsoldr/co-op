@@ -86,7 +86,8 @@ the loop is off (listening), the wet channel always hears your playing.
 - **loop** (white click): on captures the last loop's worth and plays it;
   off fades it out and goes back to listening. The next click on captures a
   new loop. The loop is about 1 second long at 24 kHz and up to 12 seconds
-  at 2 kHz.
+  at 2 kHz (on coop, from 0.2: 0.6 seconds at 24 kHz and up to 7 seconds at
+  2 kHz, to fit coop's plugin memory).
 - **dub** (green click) only works while the loop plays. It adds your
   playing to the loop, never the wet channel, so it can't run away. Older
   layers fade a little on each pass.

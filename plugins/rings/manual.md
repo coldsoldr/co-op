@@ -79,6 +79,9 @@ polyphony are on fn instead of a second page:
   from the first comes the last.
 - **all** plays six voices and costs the most CPU. With effects on, or
   while recording to tape, **4** is the safe choice.
+- Changing the model or the polyphony cuts the notes still ringing, and a
+  note that takes over a voice in a chord cuts the old one off at once
+  (from 0.6 and 0.7; before, the old notes rang on beside the new setting).
 - Needs coop e5. On an older coop core the two controls stop at the ends
   instead of wrapping; a core older than m1c does not load the plugin.
 

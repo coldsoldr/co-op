@@ -1,0 +1,559 @@
+# e11 (docs/plugins.md "e11"): what heap 0 gives up AFTER the boot. Every type of the FX 2 list is put at instrument
+# FX 2 and at master FX 2 in turn (Shift + blue one detent, blue push, twenty times each: the list goes round at least
+# once with up to 12 plugin effects installed), so both slots' delay / cwo lines, both spring tanks and the master's
+# grid tank are taken: coop's largest late allocations (stats `tanks 118`, `tank_short 0`). Then the stock's own
+# work: the eight synth sounds and the eight drum kits with notes, a tape recording played back, a tape lift dropped
+# into the synth, the drum and back onto the tape, a last chord. Read `heap_free` / `heap_largest` on the stats'
+# `plugins` line against a det_chord.txt run of the same image and NAND state (first boot, no plugin files:
+# 2,729,484 free): the difference is the late use (742,024 bytes, all of it coop's).
+# Guest-timed; op1emu: `turn enc1 cw 2` is one detent.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27000
+tap t3 200
+at 28000
+tap t3 200
+at 29000
+tap drop 200
+at 30000
+press shift
+at 30150
+turn enc1 cw 2
+at 30450
+release shift
+at 30600
+tap enc1 200
+at 31000
+press shift
+at 31150
+turn enc1 cw 2
+at 31450
+release shift
+at 31600
+tap enc1 200
+at 32000
+press shift
+at 32150
+turn enc1 cw 2
+at 32450
+release shift
+at 32600
+tap enc1 200
+at 33000
+press shift
+at 33150
+turn enc1 cw 2
+at 33450
+release shift
+at 33600
+tap enc1 200
+at 34000
+press shift
+at 34150
+turn enc1 cw 2
+at 34450
+release shift
+at 34600
+tap enc1 200
+at 35000
+press shift
+at 35150
+turn enc1 cw 2
+at 35450
+release shift
+at 35600
+tap enc1 200
+at 36000
+press shift
+at 36150
+turn enc1 cw 2
+at 36450
+release shift
+at 36600
+tap enc1 200
+at 37000
+press shift
+at 37150
+turn enc1 cw 2
+at 37450
+release shift
+at 37600
+tap enc1 200
+at 38000
+press shift
+at 38150
+turn enc1 cw 2
+at 38450
+release shift
+at 38600
+tap enc1 200
+at 39000
+press shift
+at 39150
+turn enc1 cw 2
+at 39450
+release shift
+at 39600
+tap enc1 200
+at 40000
+press shift
+at 40150
+turn enc1 cw 2
+at 40450
+release shift
+at 40600
+tap enc1 200
+at 41000
+press shift
+at 41150
+turn enc1 cw 2
+at 41450
+release shift
+at 41600
+tap enc1 200
+at 42000
+press shift
+at 42150
+turn enc1 cw 2
+at 42450
+release shift
+at 42600
+tap enc1 200
+at 43000
+press shift
+at 43150
+turn enc1 cw 2
+at 43450
+release shift
+at 43600
+tap enc1 200
+at 44000
+press shift
+at 44150
+turn enc1 cw 2
+at 44450
+release shift
+at 44600
+tap enc1 200
+at 45000
+press shift
+at 45150
+turn enc1 cw 2
+at 45450
+release shift
+at 45600
+tap enc1 200
+at 46000
+press shift
+at 46150
+turn enc1 cw 2
+at 46450
+release shift
+at 46600
+tap enc1 200
+at 47000
+press shift
+at 47150
+turn enc1 cw 2
+at 47450
+release shift
+at 47600
+tap enc1 200
+at 48000
+press shift
+at 48150
+turn enc1 cw 2
+at 48450
+release shift
+at 48600
+tap enc1 200
+at 49000
+press shift
+at 49150
+turn enc1 cw 2
+at 49450
+release shift
+at 49600
+tap enc1 200
+at 50200
+tap t3 200
+at 51200
+tap lift 200
+at 52200
+tap mixer 200
+at 53200
+tap t3 200
+at 54200
+tap drop 200
+at 55200
+press shift
+at 55350
+turn enc1 cw 2
+at 55650
+release shift
+at 55800
+tap enc1 200
+at 56200
+press shift
+at 56350
+turn enc1 cw 2
+at 56650
+release shift
+at 56800
+tap enc1 200
+at 57200
+press shift
+at 57350
+turn enc1 cw 2
+at 57650
+release shift
+at 57800
+tap enc1 200
+at 58200
+press shift
+at 58350
+turn enc1 cw 2
+at 58650
+release shift
+at 58800
+tap enc1 200
+at 59200
+press shift
+at 59350
+turn enc1 cw 2
+at 59650
+release shift
+at 59800
+tap enc1 200
+at 60200
+press shift
+at 60350
+turn enc1 cw 2
+at 60650
+release shift
+at 60800
+tap enc1 200
+at 61200
+press shift
+at 61350
+turn enc1 cw 2
+at 61650
+release shift
+at 61800
+tap enc1 200
+at 62200
+press shift
+at 62350
+turn enc1 cw 2
+at 62650
+release shift
+at 62800
+tap enc1 200
+at 63200
+press shift
+at 63350
+turn enc1 cw 2
+at 63650
+release shift
+at 63800
+tap enc1 200
+at 64200
+press shift
+at 64350
+turn enc1 cw 2
+at 64650
+release shift
+at 64800
+tap enc1 200
+at 65200
+press shift
+at 65350
+turn enc1 cw 2
+at 65650
+release shift
+at 65800
+tap enc1 200
+at 66200
+press shift
+at 66350
+turn enc1 cw 2
+at 66650
+release shift
+at 66800
+tap enc1 200
+at 67200
+press shift
+at 67350
+turn enc1 cw 2
+at 67650
+release shift
+at 67800
+tap enc1 200
+at 68200
+press shift
+at 68350
+turn enc1 cw 2
+at 68650
+release shift
+at 68800
+tap enc1 200
+at 69200
+press shift
+at 69350
+turn enc1 cw 2
+at 69650
+release shift
+at 69800
+tap enc1 200
+at 70200
+press shift
+at 70350
+turn enc1 cw 2
+at 70650
+release shift
+at 70800
+tap enc1 200
+at 71200
+press shift
+at 71350
+turn enc1 cw 2
+at 71650
+release shift
+at 71800
+tap enc1 200
+at 72200
+press shift
+at 72350
+turn enc1 cw 2
+at 72650
+release shift
+at 72800
+tap enc1 200
+at 73200
+press shift
+at 73350
+turn enc1 cw 2
+at 73650
+release shift
+at 73800
+tap enc1 200
+at 74200
+press shift
+at 74350
+turn enc1 cw 2
+at 74650
+release shift
+at 74800
+tap enc1 200
+at 75400
+tap t3 200
+at 76400
+tap lift 200
+at 77400
+tap synth 200
+at 77900
+tap s1 200
+at 78500
+press c4
+press e4
+at 79200
+release c4
+release e4
+at 79700
+tap s2 200
+at 80300
+press c4
+press e4
+at 81000
+release c4
+release e4
+at 81500
+tap s3 200
+at 82100
+press c4
+press e4
+at 82800
+release c4
+release e4
+at 83300
+tap s4 200
+at 83900
+press c4
+press e4
+at 84600
+release c4
+release e4
+at 85100
+tap s5 200
+at 85700
+press c4
+press e4
+at 86400
+release c4
+release e4
+at 86900
+tap s6 200
+at 87500
+press c4
+press e4
+at 88200
+release c4
+release e4
+at 88700
+tap s7 200
+at 89300
+press c4
+press e4
+at 90000
+release c4
+release e4
+at 90500
+tap s8 200
+at 91100
+press c4
+press e4
+at 91800
+release c4
+release e4
+at 92300
+tap drum 200
+at 92900
+tap s1 200
+at 93500
+press c4
+at 93800
+release c4
+press d4
+at 94200
+release d4
+at 94700
+tap s2 200
+at 95300
+press c4
+at 95600
+release c4
+press d4
+at 96000
+release d4
+at 96500
+tap s3 200
+at 97100
+press c4
+at 97400
+release c4
+press d4
+at 97800
+release d4
+at 98300
+tap s4 200
+at 98900
+press c4
+at 99200
+release c4
+press d4
+at 99600
+release d4
+at 100100
+tap s5 200
+at 100700
+press c4
+at 101000
+release c4
+press d4
+at 101400
+release d4
+at 101900
+tap s6 200
+at 102500
+press c4
+at 102800
+release c4
+press d4
+at 103200
+release d4
+at 103700
+tap s7 200
+at 104300
+press c4
+at 104600
+release c4
+press d4
+at 105000
+release d4
+at 105500
+tap s8 200
+at 106100
+press c4
+at 106400
+release c4
+press d4
+at 106800
+release d4
+at 107300
+tap synth 200
+at 107900
+tap s1 200
+at 108800
+press rec
+at 109000
+tap play 300
+at 109400
+release rec
+at 109800
+press c4
+press e4
+press g4
+at 110800
+release c4
+release e4
+release g4
+at 112300
+tap stop 300
+at 113300
+tap stop 300
+at 114300
+tap play 300
+at 117300
+tap stop 300
+at 118300
+tap tape 200
+at 119100
+tap lift 300
+at 120600
+tap synth 200
+at 121300
+tap t1 200
+at 122100
+tap drop 300
+at 123600
+press c4
+at 124300
+release c4
+at 124800
+tap drum 200
+at 125500
+tap t1 200
+at 126300
+tap drop 300
+at 127800
+press c4
+at 128500
+release c4
+at 129300
+tap tape 200
+at 130100
+tap drop 300
+at 131600
+tap synth 200
+at 132600
+press c4
+press e4
+press g4
+at 133600
+release c4
+release e4
+release g4
+wait 165600
+quit

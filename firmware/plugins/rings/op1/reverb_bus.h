@@ -27,7 +27,18 @@
 //   ring does;
 // - a reverb that hasn't run for kGapCycles (no carriers: nothing sounding
 //   in this model) restarts empty, so an old tail doesn't come back with the
-//   next note.
+//   next note;
+// - coop 0.11, the idle state. The OP-1 renders a voice for as long as its
+//   key is down, so the reverb ran for as long as a key of this model was
+//   held, tail or no tail. Since 0.11 the reverb's tail dies to exact zeros
+//   (src/reverb_fixed.cc Compress). kIdleHold runs in a row with a silent
+//   send (no carrier awake) and an all-zero wet block, and the bus is
+//   idle(): the reverb is not run, its blocks are counted, the wet signal
+//   stays zeros. The block that an awake carrier renders in ends the idle
+//   state; the reverb then takes up with its pointer and its LFOs where the
+//   skipped blocks of silence would have left them (SharedReverb::Resume)
+//   and with nothing in it, which is what it held. rings.cc renders a
+//   carrier that is at rest as silence while the bus is idle.
 //
 // Header-only and free of OP-1 addresses: tests/test_reverb_bus.cc runs it
 // on the host.
@@ -47,6 +58,7 @@ class ReverbBus {
   static const int32_t kBlock = static_cast<int32_t>(op1rings::kControlBlockSize);
   static const int32_t kNumVoices = 6;
   static const uint32_t kGapCycles = 20000000;   // 50 ms at 400 MHz
+  static const int32_t kIdleHold = 207;          // runs (blocks of 1.45 ms): 0.3 s, twice the reverb's longest delay
 
   void Init() {
     reverb_.Init();
@@ -55,6 +67,9 @@ class ReverbBus {
     ran_ = false;
     last_run_ = 0;
     runs_ = clears_ = 0;
+    quiet_ = 0;
+    idle_blocks_ = 0;
+    idle_ = false;
     for (int32_t v = 0; v < kNumVoices; ++v) voice_share_[v] = 0;
     for (int32_t i = 0; i < kBlock; ++i) send_[i] = wet_[i] = 0;
   }
@@ -63,12 +78,17 @@ class ReverbBus {
   // parameters (the reverb follows those of the voice that ends a block).
   // A carrier then sends to send() and gets its share of the wet signal in
   // share_out (kBlock Q27 samples), to mix in before its limiter; returns
-  // false (share_out untouched) if its share is 0.
+  // false (share_out untouched) if its share is 0. awake: the carrier's
+  // string is not asleep (it may send): that ends the idle state.
   bool Render(int32_t v, uint32_t now, const op1rings::VoicePatch& patch, bool carrier,
-              int32_t* share_out) {
+              int32_t* share_out, bool awake = true) {
     if (rendered_ & (1u << v)) EndBlock(now, patch);
     rendered_ |= 1u << v;
     if (!carrier) return false;
+    if (awake) {
+      idle_ = false;
+      quiet_ = 0;
+    }
     carriers_ |= 1u << v;
     // A carrier the last block didn't count waits for the next one.
     const int32_t target = (last_carriers_ & (1u << v)) ? share_ : 0;
@@ -86,6 +106,15 @@ class ReverbBus {
   // A carrier's send, for RenderMono (kBlock samples).
   int32_t* send() { return send_; }
 
+  // The idle state (above).
+  bool idle() const {
+#if defined(OP1RINGS_NO_REVERB_IDLE)
+    return false;                      // the host test's twin: the reverb runs on, as before 0.11
+#else
+    return idle_;
+#endif
+  }
+
   // A steal (op1/voice_allocator.h): voice `to` takes over `from`'s ring,
   // and with it its place among the carriers and its share; `from` fades
   // out without one.
@@ -102,7 +131,8 @@ class ReverbBus {
   int32_t clears() const { return clears_; }
 
  private:
-  void EndBlock(uint32_t now, const op1rings::VoicePatch& patch) {
+  // (0.14: out of line, once a block; the per-render part of Render stays small.)
+  __attribute__((noinline)) void EndBlock(uint32_t now, const op1rings::VoicePatch& patch) {
     int32_t n = 0;
     for (int32_t v = 0; v < kNumVoices; ++v) {
       if (carriers_ & (1u << v)) {
@@ -111,16 +141,28 @@ class ReverbBus {
         voice_share_[v] = 0;
       }
     }
-    if (n) {
+    if (n && idle()) {
+      // Idle: a block of the reverb not run (its wet signal stays zeros).
+      ++idle_blocks_;
+      last_run_ = now;
+    } else if (n) {
       if (!ran_ || now - last_run_ > kGapCycles) {
         reverb_.Clear();
         ++clears_;
+      } else if (idle_blocks_) {
+        reverb_.Resume(idle_blocks_ * static_cast<uint32_t>(kBlock));
       }
+      idle_blocks_ = 0;
       ran_ = true;
       last_run_ = now;
-      for (int32_t i = 0; i < kBlock; ++i) wet_[i] = send_[i];
+      int32_t any = 0;
+      for (int32_t i = 0; i < kBlock; ++i) any |= (wet_[i] = send_[i]);
       reverb_.Process(patch, wet_);
       ++runs_;
+      // The idle state's count: nothing sent and nothing given.
+      for (int32_t i = 0; i < kBlock; ++i) any |= wet_[i];
+      quiet_ = any == 0 ? quiet_ + 1 : 0;
+      if (quiet_ >= kIdleHold) idle_ = true;
     }
     // 1 / n in Q31 (1 as INT32_MAX); 0: no wet signal for the next block.
     static const int32_t kShares[kNumVoices + 1] = {
@@ -147,6 +189,9 @@ class ReverbBus {
   uint32_t last_run_;
   int32_t runs_;
   int32_t clears_;
+  int32_t quiet_;                  // runs in a row with a silent send and an all-zero wet block
+  uint32_t idle_blocks_;           // blocks the reverb was not run for since its last run
+  bool idle_;
 };
 
 }  // namespace op1
