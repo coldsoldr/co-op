@@ -889,42 +889,6 @@
       "changed": "2026-11-19"
     },
     {
-      "id": "bitcrush",
-      "added": "2026-11-19",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
-      "id": "chorus",
-      "added": "2026-11-19",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
-      "id": "dimension_o",
-      "added": "2026-11-19",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
-      "id": "dx_o",
-      "added": "2026-11-19",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
-      "id": "matrix_o",
-      "added": "2026-11-19",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
-      "id": "plate_o",
-      "added": "2026-11-19",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
       "id": "ploc",
       "added": "2026-11-19",
       "draft": false,
@@ -932,12 +896,6 @@
     },
     {
       "id": "quant",
-      "added": "2026-11-19",
-      "draft": false,
-      "source": "https://github.com/Hundekraft/op1-workshop"
-    },
-    {
-      "id": "sim",
       "added": "2026-11-19",
       "draft": false,
       "source": "https://github.com/Hundekraft/op1-workshop"

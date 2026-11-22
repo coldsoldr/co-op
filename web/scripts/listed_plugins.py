@@ -322,12 +322,14 @@ AUTHORS = {
     'Nola Drift': ['bloodmoon'],
     'fungiboletus': ['moai'],
     'SquareWave Studio': ['gin'],
+    'Nicolas Franck Pauly': ['ploc'],
 }
 AUTHOR_OF = {i: a for a, ids in AUTHORS.items() for i in ids}
 SOURCE = {
     'moai': 'https://github.com/fungiboletus/op-moai',
     'hollowsaint': 'https://github.com/SammiBabe666/Project_Hollow_Saint',
     'bloodmoon': 'https://github.com/SammiBabe666/Project_Bloodmoon',
+    'ploc': 'https://github.com/nicolasfpauly/ploc',
     'mixtur': 'https://github.com/ultralazr/op1-musica-obscura',
     'arc': 'https://github.com/ultralazr/op1-musica-obscura',
     'palme': 'https://github.com/ultralazr/op1-musica-obscura',
@@ -380,9 +382,10 @@ ANCHOR = {'countin': 'count-in', 'fasterase': 'erase', 'sysmon': 'monitor', 'usb
           'hollowsaint': 'hollow-saint', 'juni_chorus': 'juni-chorus', 'in_a_room': 'in-a-room'}
 FOLDER = {'grids': 'grids_op1r'}  # co-op already has coldsoldr's grids
 # Left off co-op's hundekraft listings at their authors' request (2026-11-18): LizardMan's work and
-# plugins made from it (outatime, dx, dimension, him, khorus, matrix), and displayname808's (kastle).
-# Their Opus listings stay.
-WITHDRAWN = {'outatime', 'dx', 'dimension', 'him', 'khorus', 'matrix', 'kastle'}
+# plugins made from it (outatime, dx, dimension, him, khorus, matrix), and displayname808's (kastle, renamed castle in hundekraft 3.3.1; Castle stays listed from their own page).
+# Their Opus listings stay. A workshop entry that carries an Opus module (opmod) is LizardMan's work under a
+# new id (dx_o, sim, bitcrush...), so any entry with one is left off too.
+WITHDRAWN = {'outatime', 'dx', 'dimension', 'him', 'khorus', 'matrix', 'kastle', 'castle'}
 
 
 def kind_of(section, entry):
@@ -421,7 +424,7 @@ for fid, anchor in re.findall(r'data-feature="[a-z0-9]+:([^"]+)"[^>]*>\s*<h3[^>]
 made = []
 for section in ('synths', 'effects', 'utilities', 'op1r_plugins'):
     for e in catalog[section]:
-        if not e.get('file') or e.get('reserved') or e['id'] in WITHDRAWN:
+        if not e.get('file') or e.get('reserved') or e['id'] in WITHDRAWN or e.get('opmod'):
             continue
         pid = e['id']
         anchor = feature_anchor.get(pid) or ANCHOR.get(pid) or pid

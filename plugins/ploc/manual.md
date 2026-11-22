@@ -11,5 +11,4 @@ PLOC is part of hundekraft 3.3.1, a custom firmware for the original OP-1. Tick 
 ## Links
 
 - [PLOC in the hundekraft manual](https://hundekraft.github.io/op1-workshop/manual.html#ploc): every control and page
-- [Source](https://github.com/Hundekraft/op1-workshop)
-- [github.com/nicolasfpauly/ploc](https://github.com/nicolasfpauly/ploc)
+- [Source](https://github.com/nicolasfpauly/ploc)
