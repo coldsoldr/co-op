@@ -3687,3 +3687,24 @@ and the policy file are untouched.
 
 Result: (pending)
 
+
+## e15 dev + rings 0.14 on the device, by the device loop (2026-11-22)
+
+The owner flashed `op1_246_coop_e15_dev.op1`; rings 0.14 was put over SysEx and loaded at the next boot (`rings.coop
+0.14 loaded`, 13 loaded, `plugmem ... used 511208`, `heap_free_boot 15521956`). The owner's default synth sound set to
+rings (sustain at maximum, damping at the longest end). `tests/sim/dev_hold_chord.txt`, run file
+`docs/device-stats/2026-11-22-e15hold_r014-run.txt`. Cycles a block, against e14 + rings 0.13 the same day:
+
+| | e14 + rings 0.13 | e15 + rings 0.14 |
+|---|---|---|
+| rest | 63,744 | 62,339 |
+| held, whole block | 366,650-368,017 | 352,253-353,740 |
+| held, rings (`plugin_own_block` / per render) | 174,276-174,530 / 29.1 k | 168,661-169,024 / 28.1 k |
+| released, envelope running | 369,457-370,355 | 358,877-359,213 |
+
+[C] e15 + 0.14 is 14 k a block (4 %) lighter than e14 + 0.13 while sounding; rings 0.14 costs what 0.11 cost on e14
+(168.9 k), so 0.14 wins back 0.13's additions but its kernels and smaller footprint did not lower the device cost
+further (the device stays cache-bound). The line out was about 6 dB louder than the e14 run (a new default sound), so
+the patch was close but not identical. e15's effect wrap was not exercised (no effect on); `l1 ... wrap 0` at boot.
+One earlier attempt on e15 (rings 0.13 still loaded, a different sound) lost the OP-1's USB about 2 s into the run;
+the owner power-cycled; not reproduced, cause unknown.
