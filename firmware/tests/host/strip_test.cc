@@ -49,7 +49,7 @@ struct BfModel {
     void set(const coop_strip_params &p) { coop_strip_bf_set(&s, &p); }
     void update() { coop_strip_bf_update(&s); }
     int nbands() const { return s.nbands; }
-    int32_t gr() const { return s.gr; }
+    int32_t gr() const { return s.comp.gr; }
     static int32_t quant(int32_t x) { return (int32_t)((uint32_t)(x >> 16) << 16); }
     void process(int32_t *L, int32_t *R, int32_t gL, int32_t gR, Bus &bus)
     {
