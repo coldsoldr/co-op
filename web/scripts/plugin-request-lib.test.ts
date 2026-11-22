@@ -270,6 +270,17 @@ describe('new plugins in a listed author’s repo', () => {
     expect(r.drafts.find((d) => d.id === 'grip')?.notes.join(' ')).toMatch(/needs Hits/);
   });
 
+  it('knows a listing from the repo by its builds, and takes no author from a header that names the plugin', async () => {
+    const inBuilds = new Map<string, Record<string, unknown>>([
+      ['fluke', { name: 'Fluke', author: 'ESC_CODE', builds: [{ firmware: 'op1/opus', link: 'https://x.example/', source: 'https://github.com/esc/OP-1/tree/main/Fluke' }] }],
+    ]);
+    const r = await draftListings('esc/OP-1', null, esc, inBuilds, { onlyFiles: true });
+    expect(r.skipped).toEqual(['fluke']);
+    expect(r.drafts.find((d) => d.id === 'hits')?.manifest.author).toBe('ESC_CODE');
+    const named = repo('sam/saint', { 'README.md': '# Saint\n\nA drone synth for opus.\n', 'saint.opmod': opmod('id sam.saint\nname Saint\nauthor saint\nadds synth saint\n') });
+    expect((await draftListings('sam/saint', null, named, new Map(), { onlyFiles: true })).drafts[0]?.manifest.author).toBe('sam');
+  });
+
   it('skips ignored files, and a repo with no plugin file at all', async () => {
     const r = await draftListings('esc/OP-1', null, esc, listed, { onlyFiles: true, ignore: (p) => p === 'docs/downloads/grip.opmod' });
     expect(r.drafts.map((d) => d.id)).toEqual(['hits']);

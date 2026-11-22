@@ -537,8 +537,14 @@ export async function draftListings(
   for (const f of found) sharing.set(homeOf(f), new Set([...(sharing.get(homeOf(f)) ?? []), norm(f.base)]));
 
   // The plugins already listed from this repo, by every name they go by, and who they are listed under.
+  // A listing with several builds keeps each build's source and link in its builds.
+  const urlsOf = (m: Record<string, unknown>): unknown[] => [
+    m.source,
+    m.link,
+    ...(Array.isArray(m.builds) ? m.builds.flatMap((b: Record<string, unknown>) => [b?.source, b?.link]) : []),
+  ];
   const fromRepo = [...existing.entries()].filter(([, m]) =>
-    [m.source, m.link].some((u) => typeof u === 'string' && u.toLowerCase().startsWith(`https://github.com/${fullName.toLowerCase()}`)),
+    urlsOf(m).some((u) => typeof u === 'string' && u.toLowerCase().startsWith(`https://github.com/${fullName.toLowerCase()}`)),
   );
   const listedNames = new Set(
     fromRepo.flatMap(([id, m]) => [id, id.replace(/^opus\./, ''), m.name, m.savedName].filter((v): v is string => typeof v === 'string').map(norm)),
@@ -566,7 +572,8 @@ export async function draftListings(
       file = await remote.download(raw(fullName, branch, f.path));
       if (file && f.firmware === 'op1/hundekraft' && file.length <= MAX_KNL_BYTES) info = checkKnl(file).info;
       if (file && f.firmware === 'op1/op1r' && file.length <= MAX_OP1P_BYTES) info = checkOp1p(file).info;
-      if (info?.author) authors.push(info.author);
+      const said = info?.author;
+      if (said && ![f.base, info?.savedName ?? ''].some((n) => n !== '' && norm(n) === norm(said))) authors.push(said);
     }
     if (manifest?.author && !/\s\/\s|\bby\b/i.test(manifest.author)) authors.push(manifest.author);
     pending.push({ f, manifest, file, info });
@@ -597,9 +604,12 @@ export async function draftListings(
       continue;
     }
 
-    const credited = manifest?.author ?? knlInfo?.author;
+    // A header whose author is the plugin's own name credits nobody.
+    const credit = manifest?.author ?? knlInfo?.author;
+    const credited = credit !== undefined && [name, f.base, knlInfo?.savedName ?? ''].some((n) => n !== '' && norm(n) === norm(credit)) ? undefined : credit;
     let author = repoAuthor ?? credited ?? usual ?? owner;
     if (/\s\/\s|\bby\b/i.test(author)) author = usual ?? owner;
+    if (norm(author) === norm(name)) author = owner;
     author = author.slice(0, 60);
     if (repoAuthor !== undefined && credited !== undefined && norm(credited) !== norm(repoAuthor)) {
       notes.push(`listed under \`${repoAuthor}\` like the repo's other plugins; its own manifest says \`${credited}\``);
