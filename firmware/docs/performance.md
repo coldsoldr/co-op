@@ -1385,3 +1385,174 @@ piece (two hardware-loop kernels, four call sites with three different block lay
 positions that must be shown never to nest, a simulator check and a host test), and its estimate (~1.5 k cycles per
 plugin position) is small beside what 1-5 return at rest. The rings / idle agent's idea of a marker bit in `l[0]`
 to detect an untouched block changes what a plugin is handed and needs its own proof; not attempted.
+
+## e15 (2026-11-22): the effect wrap in assembly, the diagnostic code out of the release image
+
+The owner's go-ahead for the efficiency audit's findings 9 and 14 (core side) on top of e14. e14 on the device: 27-28 k
+cycles a block saved at rest, neutral while sounding; an idle plugin effect still costs ~13 k in `fx` there (e13),
+much of it the wrap; the device's cost is cache-bound, so code size and the hot path's footprint count more than
+op1emu's instruction counts. e13's placement policy, default and budgets, the plugin ABI and e14's flavour scheme
+(`prof`, `statsfile`) are unchanged. Built and gated in op1emu; the device test is pending (`docs/device-tests.md`
+"e15").
+
+### 1. The effect wrap in assembly, its work block in L1 (audit finding 9; `wrap_fast.S`, switch `g_coop_fast_wrap`)
+
+**What it replaces.** A coop effect takes its 64 samples as Q31 L / R; the core holds them as int16. e14 converted
+with compiled loops at four sites: instrument FX 1 (`coop_fx_render_mono`: mid + two sides -> `sat16(m + s) << 16`,
+back `>> 16`, mid = `(l + r) >> 1`, sides `(int16_t)(l - m)`), master FX 1 (`coop_fx_render_st`: l / r `<< 16` and
+back), and slot 2 (`slot2_render`, both positions: l / r `<< 16` and back; at the instrument `coop_slot2_instr` first
+built int16 l / r from the carrier and afterwards split them again with saturating sides). The Q31 block was on the
+interrupt stack at FX 1 and in two SDRAM statics at slot 2.
+
+**What e15 does.**
+- Five hardware-loop kernels (`core/sdram/wrap_fast.S`, 64 samples, no overreads): `coop_wrap_ms_in` (the carrier ->
+  Q31, 4 packets a sample: two saturating 16-bit adds into the high halves of two registers whose low halves stay 0),
+  `coop_wrap_ms_out` / `coop_wrap_ms_out_sat` (Q31 -> the carrier, 8 packets), `coop_wrap_lr_in` (half-register
+  loads into the high halves, 3), `coop_wrap_lr_out` (stores of the high halves, 3). The C loops were ~14 / ~22
+  instructions a sample (the audit's count). Packets only of forms the stock or coop's kernels already run on the
+  device; `tools/asm_lint.py` clean.
+- **Two ways back, on purpose.** `l - m` leaves int16 at one corner of the input only (l = 32767, r = -32768 gives
+  m = -1 and sl = 32768; and its mirror): e14's FX 1 wraps it to -32768 (a plain `(int16_t)` cast), e14's slot 2
+  saturates it to 32767. The first host check found the difference (4,795 of 20,000 blocks with edge values); each
+  site keeps its own (`(NS)` / `(S)` on the two subtracts).
+- **Slot 2 at the instrument goes straight from the carrier to Q31 and back** when slot2_render will run a plugin
+  (`coop_slot2_instr` makes the same tests in the same order, in the same interrupt): the int16 l / r detour is gone.
+  That it is the same numbers: e14's detour (`sat16(m + s)`, `<< 16`, then `>> 16`, the saturating split) equals
+  `ms_in` + `ms_out_sat` (host check case 5). A stock type there, or a change still being built, keeps e14's detour,
+  whose round trip also normalises the carrier as before.
+- **One 512-byte work block** (L at words 0..63, R at 64..127) for every position, taken from the L1 pool at the first
+  plugin block (the audio thread, like the stereo stages' blocks; `l1 ... used` 3,200 -> 3,712 of 8,416: the engine
+  leases' 4,096 still fit, `COOP_L1_CORE_RESERVE` is unchanged), else a static SDRAM block (`wrap 2`). The positions
+  run one after another in the audio interrupt and a render calls no other; a guard word makes a nested call (none
+  seen) take a stack block of its own, counted (`wrap_nested`).
+- The parameters (`fx_params`) are now built before the conversion in, not between it and the render: it reads the
+  stock's words and writes its own block only, no sample.
+- `g_coop_fast_wrap` (an image word): 1 the kernels (default), 0 e14's C loops (an A/B), 2 (dev builds) the kernels
+  checked against e14's C on every block, both ways, the render run once on the kernels' block.
+- The stats' `l1` line gains `wrap` (0 no plugin block yet, 1 L1, 2 SDRAM), `wrap_nested`, `wrap_checked`, `wrap_bad`.
+
+**Proof.**
+- [C bfin simulator] `tests/sim/run_wrap_check.sh` (`tests/sim/wrap_check.cc`): the five kernels against e14's C,
+  20,000 blocks of random int16 / random Q31 words (a plugin may leave any low half) with every fifth block all edge
+  values, guard words around every array: `ms_in bad 0, ms_out bad 0, lr_in bad 0, lr_out bad 0, slot2_instr bad 0,
+  guard hits 0`.
+- [C op1emu] the check image (`g_coop_fast_wrap=2`) in situ, every plugin block of every position compared with the C,
+  and the audio against e14: "Gates" below.
+
+**The idle marker** (the rings / idle agent's note: a marker bit in `l[0]` before the render; still there = the effect
+left the block untouched, skip the way back). Not built: it is neither ABI-compatible nor provably exact for today's
+files.
+- It changes what an effect is handed. cs_hall and tape_echo test their input for silence (`Silent()`: the top 16
+  bits of six samples, then a scan); the others process the whole Q31 word. A set low bit changes the input of every
+  effect that does arithmetic on it.
+- It does not prove "untouched": tape_drive writes the high halves and keeps the low halves as they came
+  (`tape_drive.cc` render: `<< 16 | (l[i] & 0xffff)`), so a block it changed keeps the marker; any effect that writes
+  only high halves does the same.
+- At an instrument position an untouched block does not make the way back an identity: it normalises the carrier
+  (mid = `(l + r) >> 1` of the saturated l / r), so e14's output differs from its input whenever the sides were not
+  split that way already; only the master positions (l / r) would be exact.
+- The effects that idle today (cs_hall, tape_echo, petri, fickle on silence) return with the block as it came, which
+  is silence, and the mix's rest path (e14, 3) already tests the buffers after the effects.
+A flag from the effect (the render's return value) would be the clean form; that is an ABI change, not in e15.
+
+### 2. The diagnostic code out of the release image (audit finding 14, core side; `COOP_DIAG`)
+
+- `core/include/coop_build.h`: `COOP_DIAG` (default 1). `make -C core/sdram combined` builds `coop_combined.elf`
+  with it (the dev package and every op1emu gate image); `make -C core/sdram combined-release` builds
+  `coop_combined_release.elf` with `-DCOOP_DIAG=0` (the release package: `ELF=<abs path>/coop_combined_release.elf
+  tools/build_device_package.sh ...`; the path must be absolute). The flavour words are e14's: release `prof=0
+  statsfile=0`, dev `statsfile=0`; the policy tokens still switch either at boot.
+- Left out of the release build: the p6f instruction-cache probe and its two NOP functions (`probe_4k`, `probe_24k`:
+  28,676 bytes of text, run at every boot), the p6h event sweep, the e13 fill probe (`probe=1` then only reads the
+  MMRs; no `fill` line), their 40 KB of probe arrays, the e3 SysEx self-test (and its 16 KB buffer), the stage's and
+  the voice hook's debug compare against the stock path (`g_coop_dbg_cmp`: the word stays, the thunk still reads it,
+  the code that used it is gone, from the per-voice hot path too), e15's wrap check mode. Setting those words on a
+  release image changes nothing (`g_coop_sysex_selftest` is not in the release ELF at all). The counters keep
+  `coop_pf_boot`'s layout 0 (the one p6g proved on the device) without the boot probe; the `icache_l0` / `icache_l1`
+  lines read 0 on a release image.
+- Kept in both: the test runner (`tools/devloop.py` measures release images too), the measuring code (behind `prof`,
+  e14), the tape's two bounce buffers (bss only, no cycles, not in the LDR).
+- Flags: `-fno-builtin -fno-tree-loop-distribute-patterns` in the core's Makefile, as the plugins and the top
+  Makefile have them. Proof [C]: e14's sources built with and without them give byte-identical loaded sections
+  (`.text .rodata .data .near`, sha1 `4c84713c...` both): `-ffreestanding` already implied `-fno-builtin`, and the
+  link has no memset, so no loop was being turned into one.
+- Section GC: already on for the core (`-ffunction-sections -fdata-sections`, `--gc-sections`, a keep list for what
+  the L1 patches call); nothing more to take there.
+
+**Sizes** (bytes, `bfin-elf-size -A`; the LDR is the plaintext gate image):
+
+| | .text | .rodata | .data | .bss | LDR |
+|---|---|---|---|---|---|
+| e14 (one ELF) | 181,708 | 12,948 | 440 | 613,296 | 2,377,112 |
+| e15 dev (`COOP_DIAG=1`) | 183,508 | 12,996 | 444 | 614,744 | 2,378,964 |
+| e15 release (`COOP_DIAG=0`) | 150,492 | 12,732 | 440 | 554,872 | 2,345,680 |
+
+`.near` 914 in all. The dev image grows by the kernels (304 bytes), the wrap's C and its check mode (~1.5 KB); the
+release image is 31.2 KB of text and 57.4 KB of bss smaller than e14 (the LDR 31.4 KB).
+
+### Gates (op1emu, 2026-11-22; one run at a time under the shared lock, fresh NANDs deleted after every run)
+
+Images `--tape-stereo --set-word g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`, in `~/op1emu-work/e15/`:
+e14 (HEAD before e15, rebuilt), e14 with `g_coop_prof=0`, e15 dev, e15 dev with `g_coop_fast_wrap=2` (check) and
+`=0` (e14's C wrap), e15 release with `g_coop_prof=0`. The 13 catalogue plugins of the day (`plugins/*/*.coop`;
+rings 0.13, tape_echo, fickle, petri among them) and `build/plugins/test_fx.coop` (the do-nothing effect); scripts
+and outputs in `I:\op1emu-tmp\e15gate\`. The host was loaded by other agents' simulator runs for the first hour
+(load 35): four runs ended before their last event (`ran_to_end`) and were run again once it was quiet.
+
+| Run | Result [C op1emu] |
+|---|---|
+| Check image, the 13 plugins, `det_fx_select` | pass; `wrap 1` (L1), `used 3712`, `wrap_checked 8220 wrap_bad 0`, `wrap_nested 0` |
+| Check image, tape_echo, `det_fx_two_pos` (p0, p3) | pass; `wrap_checked 46430 wrap_bad 0` |
+| Check image, cs_hall + tape_echo, `det_fx_switch` (switching at p0, p3) | pass; `wrap_checked 84090 wrap_bad 0` |
+| Check image, fickle, `det_fx_fickle` (p0..p4 all with blocks) | `wrap_checked 115467 wrap_bad 0` (ended 1.7 s before its last event: the loaded host) |
+| Check image, petri, `det_fx_petri` (p0..p4) | pass; `wrap_checked 129643 wrap_bad 0` |
+| Check image, test_fx, `det_fx_controls` (p0..p4, the controls, randomise) | pass; `wrap_checked 180797 wrap_bad 0` |
+| Check image, rings, `det_eng_rings` | pass (no effect: `wrap 0`) |
+| e15 dev against e14, pristine: `det_chord`, `det_drum`, `det_tape_play` | identical (3,142,573 frames on `det_tape_play`) |
+| e15 release against e14 `prof=0`, pristine, the same three | identical (3,008,620 / 2,100,206 / 3,012,715 frames) |
+| e15 dev against e14, the 13 plugins loaded, `det_chord` | identical (1,757,293 frames) |
+| e15 release against e14 `prof=0`, the 13 plugins, `det_chord` | aligned, max diff 2 (`det_chord`'s known spread, e14 notes) |
+| e15 against e14, tape_echo, `det_fx_two_pos` | identical (4,049,468 frames) |
+| e15 against e14, cs_hall + tape_echo, `det_fx_switch` | aligned, max diff 5 (third try; 51 key events) |
+| e15 against e14, petri, `det_fx_petri` | aligned, max diff 0 |
+| e15 against e14, rings, `det_eng_rings` | identical (5,193,837 frames) |
+| e15 against e14, fickle, `det_fx_fickle` | first run (loaded host, ended at 68 s): identical over 5,191,564 frames; the full run: differs, max 8,487 / aligned 7,740, and **e14 against e14 on the same scenario differs by exactly the same** (8,487 / 7,740): the scenario's run-to-run spread (83 key events), not e15; covered by the check image |
+
+**Cycles** (op1emu, cycles a block; cost entries = the profile's per-call average over the run, the whole callback =
+the median of the 5 s windows; e14 and e15 dev with the profile on, `w0` = e15 with `g_coop_fast_wrap=0`):
+
+| Scenario | | e14 | e15 | e15 `w0` |
+|---|---|---|---|---|
+| at rest (`idle_60s`) | whole callback | 34,872 | 34,872 | 34,872 |
+| at rest, release flavours (`prof=0`) | whole callback | 34,679 | 34,671 | |
+| test_fx, `det_fx_controls` (do-nothing effect, p0..p4) | `fx1_plugin` | 3,080 | **1,641** | 3,147 |
+| | `s2_master` | 1,866 | **1,493** | 2,121 |
+| | `s2_instr` (*) | 1,825 | 1,856 | 2,083 |
+| | whole callback | 72,264 | 66,783 | 72,324 |
+| fickle, `det_fx_fickle` | `fx1_plugin` | 8,944 | **7,521** | 9,347 |
+| | `s2_master` | 6,363 | 6,136 | 7,076 |
+| | whole callback | 74,758 | 69,278 | 70,821 |
+| fickle, release flavours | whole callback | 69,875 | 68,767 | |
+| petri, `det_fx_petri` | `fx1_plugin` | 16,838 | **15,341** | 16,858 |
+| | `s2_master` | 11,820 | 11,447 | 12,075 |
+| | whole callback | 65,673 | 63,650 | 65,727 |
+| tape_echo, `det_fx_two_pos` | `fx1_plugin` | 7,988 | **6,548** | 8,055 |
+
+(*) e14's `s2_instr` timer did not include the int16 detour (it ran in `coop_slot2_instr` around the timed call); e15
+times the carrier's conversions inside it. Its saving is the detour's two C loops, outside every timer: it shows in
+the whole callback only. Whole-callback medians move with how the windows fall in a many-event scenario (e14 against
+itself: up to ~2 k); the cost entries are per call.
+
+What it says:
+- **Per plugin position at instrument FX 1: 1.4-1.5 k cycles a block less** (`fx1_plugin`, every effect: test_fx -1,439,
+  fickle -1,423, petri -1,497, tape_echo -1,440); a do-nothing effect costs 1,641 there instead of 3,080: the wrap was
+  ~2.3 k of it (the audit), now ~0.9 k. At the master's slot 2 0.2-0.4 k (it was already l / r and SDRAM-static);
+  the master's FX 1 and the instrument's slot 2 are not separately timed (the whole callback: test_fx with all five
+  positions -5.5 k median).
+- At rest nothing changes (no plugin block, no wrap); the release image's at-rest figure is 8 cycles lower (the
+  stage's debug test gone from the audio path).
+- `w0` (the C wrap in the e15 image) is e14's figure to within the switch's own test: the saving is the kernels'.
+- **On the device** [I]: the audit expected more than op1emu shows, since e14's Q31 block on the interrupt stack and
+  in SDRAM statics (24 data lines a position) was refetched whenever the block evicted it, and an idle plugin effect
+  cost ~13 k in `fx` (e13). The L1 block removes those fetches; the kernels are 304 bytes of code against the two
+  C loops per site. The device test measures it (`docs/device-tests.md` "e15").

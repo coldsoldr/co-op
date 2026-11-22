@@ -3631,3 +3631,59 @@ The owner flashed `op1_246_coop_e14_dev.op1` (prof on). Runs by `tools/devloop.p
   the line-out levels differ by up to 6 dB between the three runs, so the patch was not identical (the owner changed
   the damping between runs and set it back); the drop may be the sound's, not the core's.
 - Released voices render for about 30 s (this patch's envelope release) on every core.
+
+## e15: the effect wrap in assembly, the diagnostic code out of the release image — device test (pending, 2026-11-22)
+
+What changed (`docs/performance.md` "e15"): e14 with (1) the plugin effect wrap (int16 carrier / l / r <-> Q31) in
+assembly (`core/sdram/wrap_fast.S`) at every plugin position (instrument FX 1, master FX 1, both slots 2), its Q31
+block one 512-byte work block in the L1 pool, bit-exact against e14's C; (2) the release package built from its own
+ELF without the diagnostic code (the cache probes and their 28.7 KB of NOP functions, the pf sweep, the fill probe,
+the SysEx self-test, the debug compare in the stage and the voice hook): 31.2 KB less text. e13's placement policy,
+default and budgets, the plugin ABI, e14's flavour words are unchanged. Build tag `e15`, the boot picture's line
+`coop e15 - 246` (commit 7d2c631). Existing `.coop` files load and behave unchanged.
+
+Two packages, both in Downloads:
+- **`op1_246_coop_e15.op1`, the release flavour** (`coop_combined_release.elf`, `COOP_DIAG=0`; `prof=0
+  statsfile=0`). sha256 `3318d582d40ebbcd5726903c18e9756abb8949b473d48cc36fa6092d7031f95c`.
+- **`op1_246_coop_e15_dev.op1`, the dev flavour** (`coop_combined.elf`, `COOP_DIAG=1`; `prof=1 statsfile=0`).
+  sha256 `31e62db3d4e813099986104167d919d5c4453f6c87f5196450908a28d4f9b678`.
+Both: `ELF=<abs> tools/build_device_package.sh OUT --tape-stereo --set-word g_coop_spread=32767 --set-word
+g_coop_statsfile=0` (release adds `--set-word g_coop_prof=0`); `verify_bootloader.py` PASS (no te-boot.ldr),
+`pkg_check` = only `OP1_vdk.ldr` differs; both ELFs hold the tag `e15` (and no `e14`). The release flavour becomes
+the measuring one with `prof=1` in the policy file as before, but it has no boot cache probe (the `icache` lines read
+0) and no fill probe; for those, flash the dev package.
+
+**Gate notes (op1emu): `docs/performance.md` "e15", "Gates".**
+
+**What to do** (the owner plays; the coordinator reads the stats **over USB MIDI**: `python firmware/tools/coop_usb.py
+stats -o FILE`, or `tools/devloop.py` with its run files; nothing is copied in disk mode):
+1. Flash **`op1_246_coop_e15_dev.op1`** (keep the plugins and any policy file). Boot line `coop e15 - 246`.
+   `coop_usb.py hello` -> `build e15`. `stats` -> the `l1` line ends `wrap 0 wrap_nested 0 wrap_checked 0 wrap_bad 0`
+   until a plugin effect has run, then `wrap 1` (the work block in L1; `wrap 2` = it fell back to SDRAM: report it)
+   and `used` 512 higher than on e14 (3,712 in op1emu).
+2. **At rest** (nothing sounding, the tape stopped, a minute; devloop's rest section): `cb_sum / blocks` against e14's
+   62.9-63.7 k on the device. Expected about the same on the dev image (nothing of e15 runs at rest).
+3. **One plugin effect, idle and playing**: cs_hall (or tape_echo) at synth FX 1, a minute of silence, then a minute
+   of chords. Read `fx / blocks` and `cost fx1_plugin` for both sections, and `cb_sum / blocks`. e13 on the device:
+   ~13 k in `fx` for an idle effect. Expected lower by the wrap's share (op1emu: the table in "Gates"; on the device
+   more, the Q31 block no longer refetched [I]).
+4. **Two positions and slot 2**: the same effect at synth FX 1 and instrument FX 2 (and a plugin at master FX 2 if
+   the page lands on it), a chord: `cost fx1_plugin`, `s2_instr`, `s2_master`. Listen: every effect as on e14.
+5. **Switching**: change the effect at synth FX 1 between two plugins and a stock type a few times while a chord
+   rings: no click beyond e14's, no fault, `wrap_nested 0`.
+6. **rings** (the owner's patch, devloop's `dev_hold_chord.txt`): whole block and `plugin_own_block` against e14's
+   354-367 k / 28.1-29.1 k a render; e15 does not touch the engine path, so a difference there is the release
+   image's code layout (step 7) or the cache.
+7. Then **`op1_246_coop_e15.op1`** (release), the same devloop scenarios with `prof=1` in the policy file so that the
+   run files carry the cost lines (`docs/device-tests.md` e14 step 7: power-cycle after the PUT), then with the file
+   removed: `cb_sum / blocks` at rest and while sounding against e14 release. This is the release image's own figure:
+   31 KB less code in region A (the probes were never on the audio path; the difference, if any, is layout [I]).
+8. Listen through all of it for anything e14 did not do.
+
+**If something is wrong:** `g_coop_fast_wrap` is an image word: a test package with `--set-word g_coop_fast_wrap=0`
+runs e14's C wrap in the same image; the release ELF can be rebuilt with `COOP_DIAG=1` (that is the dev ELF). On the
+device, power off; recovery: hold COM at power-on and flash `op1_246_coop_e14.op1`, `e13` or stock. The plugin files
+and the policy file are untouched.
+
+Result: (pending)
+

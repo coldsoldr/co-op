@@ -28,12 +28,12 @@ Effort S = hours, M = a day or two, L = a week. "Decision" = changes behaviour o
 | 6 | Idle paths missing in the heavy effects (tape_echo, cs_hall, cs_plate, fickle, petri, rings verb) | each `render` | 13-18 k a block per idle position [I: plugin cost minus the wrap] | M each | not bit-exact (thresholds); a tail cut below ~-96 dB | each plugin's `prof`, `s2_*` / `fx1_plugin` idle |
 | 7 | **Done in e12.** Positions 0 (synth) and 1 (drum) never run at once but each has a buffer | `plugin_host.cc:83,385,770-772,1129-1134` | one buffer of five: 134,784 bytes (171,936 at HEAD) [I] | S-M | the stock must re-init the effect on every synth / drum change | `det_fx_two_pos.txt`, `p0=`/`p1=` init counts |
 | 8 | Software divides every block in nine plugins (the knob scaling); five per voice render in rings FM | `tape_echo.cc:109-114` and its copies, `rings/src/fm_voice_fixed.cc:132-138` | 0.75-1.5 k a block per effect; rings FM ~1.1 k a render, 4-7 k a block [I: ~190 cycles a `__divsi3`] | S | none, bit-exact | host tests bit-identical; `fx1_plugin=` |
-| 9 | (not in e14) The effect wrap is compiled C: int16 mid / side -> Q31 L / R and back, 2.3 k for a do-nothing effect | `plugin_host.cc:1198-1221,1248-1251,1465-1468,1506-1512` | ~1.5 k a block per plugin position, ~5 k with all four in use [I from test_fx's 3,068 C op1emu] | S | bit-exact kernel, sim-checkable | `fx1_plugin=` of test_fx |
+| 9 | **Done in e15.** The effect wrap is compiled C: int16 mid / side -> Q31 L / R and back, 2.3 k for a do-nothing effect | `plugin_host.cc:1198-1221,1248-1251,1465-1468,1506-1512` | ~1.5 k a block per plugin position, ~5 k with all four in use [I from test_fx's 3,068 C op1emu] | S | bit-exact kernel, sim-checkable | `fx1_plugin=` of test_fx |
 | 10 | SysEx installs keep one 64-byte message in flight | `coop_sysex.cc:38-39,242-253`, `web/src/core/usbmidi/coop.ts:50,156-163` | 1.5 -> ~4.5 KB/s with three in flight: rings 76 s -> ~25 s, the 13-file set 4 min -> 1.3 min [I] | S-M | drops when the queue overflows; needs the device | time a rings install |
 | 11 | rings: reverb buffer twice the size it reads; 48 string lines for at most ~16 live | `rings/src/reverb_fixed.h:32-33`, `src/string_voice.h:109`, `src/string_fixed.h:199` | 54 KB (S, bit-exact) and ~260 KB (M) of its 572 KB `.bss` [I] | S / M | the string pool touches voice stealing | host bit-exact, `plugmem used` |
 | 12 | The largest effect state sets all five buffers: tape_echo's 1.5 s | `tape_echo/src/tape_echo_layout.h:13`, `plugin_host.cc:473` | 220-240 KB with a ~1.0 s cap; or size classes (two large, five small) ~390 KB [I] | S / M | Decision: a shorter echo, or at most N large effects at once | `plugmem fxbuf` |
 | 13 | The master suite divides per sample (64-bit in the compressor, `/ 3` in the drive) | `core/include/coop_master.h:30,51` | none today (flag off); without a rewrite the suite cannot be switched on inside the budget [I] | S | changes rounding of an unshipped stage | `tests/sim` cycle count of `coop_master_process` |
-| 14 | Plugins link `ld -r` with no section GC; the core ships its probes and test code | `tools/plugin/pack.py:39,187-195`, `coop_stats.cc:364-365`, `coop_runner.cc:64` | ~3 KB of dead kernels in cs_hall / cs_plate / rings; 28.7 KB of 165 KB core text is two NOP probes [C sizes] | S | none | `bfin-elf-size`, packed sizes |
+| 14 | **Core side done in e15** (the plugin side is pack.py's). Plugins link `ld -r` with no section GC; the core ships its probes and test code | `tools/plugin/pack.py:39,187-195`, `coop_stats.cc:364-365`, `coop_runner.cc:64` | ~3 KB of dead kernels in cs_hall / cs_plate / rings; 28.7 KB of 165 KB core text is two NOP probes [C sizes] | S | none | `bfin-elf-size`, packed sizes |
 | 15 | Kernels still to write: the shared half-band (four plugins), rings FM loop, rings modal tables, fickle diffusers | see "Plugins" | ~2 k a block per half-band plugin, ~4 k a rings FM render, 3-19 k on a rings strike (device) [I] | M-L | bit-exact if transcribed | each plugin's sim check |
 | 16 | Boot: every effect screen's SVG is parsed at the first frame; two SELECTs per absent plugin name every boot | `engine_screen.cc:260-273`, `plugin_host.cc:249-271` | boot time, size unknown: needs a timestamp around `build_fx_all` | S-M | a first-show delay instead | CYCLES around both, in the stats |
 | 17 | Tape cache: 24 nodes of 512 KiB whatever the tracks hold | `plugin_host.cc:323-324`, `docs/tape-stereo.md` §1 | 512 KiB of heap 0 per node dropped | M | Decision: less tape in RAM, more loads when shuttling | tape scrub / loop tests on the device |
@@ -165,6 +165,12 @@ lines that are refetched whenever the block evicted them). Gain ~1.5 k a block p
 on the device [I]. The L1 pool has the room: 8,416 bytes, 3,200 used by the core, 4,096 for engine leases
 (`l1_pool.cc:92-93`, the `l1` stats line).
 
+**Done in e15 (`docs/performance.md` "e15" 1).** Five kernels in `core/sdram/wrap_fast.S` (the way back has two:
+FX 1 wraps `l - m`, slot 2 saturates it, and they differ at one corner of the input), every plugin call site, one
+512-byte work block from the L1 pool shared by all positions with a nesting guard, `g_coop_fast_wrap` 0 / 1 / 2
+(e14's C / the kernels / the kernels checked against the C every block). The idle marker in `l[0]` was not built:
+not exact for today's files (the reasons there).
+
 ### 14. Build: dead code ships, flags differ
 
 Evidence [C]:
@@ -190,6 +196,14 @@ Evidence [C]:
 - LTO is not used anywhere. Not proposed for the core: the hot paths are assembly or already inlined through
   headers, and LTO would undo the `.text.coop_voice` placement unless the section attributes survive [I]. `-Os`
   was tried and rejected for rings (its README).
+
+**Core side done in e15 (`docs/performance.md` "e15" 2).** `COOP_DIAG` (`core/include/coop_build.h`): the release
+package's ELF (`make -C core/sdram combined-release`) is built without the probes, the pf sweep, the fill probe, the
+SysEx self-test and the stage / voice-hook debug compare; the dev ELF and every gate image keep them. The two flags
+are in the core's Makefile (the loaded bytes of e14's sources are identical with them). Section GC was already on
+for the core (`-ffunction-sections -fdata-sections`, `--gc-sections`). Kept in both: the runner (`tools/devloop.py`
+drives the release image too), the two tape bounce buffers (bss, no cycles; merging them is not a size question for
+the LDR). The plugin side (pack.py) is not part of e15.
 
 ### Small per-block items (each under ~0.3 k; do them when the file is open)
 
