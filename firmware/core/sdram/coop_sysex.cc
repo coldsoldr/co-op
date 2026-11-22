@@ -157,6 +157,7 @@ static int pack7(const uint8_t *in, int n, uint8_t *out)
  * instead of USB, and coop_sysex_service feeds handle() a fixed request sequence once the plugins are loaded, then
  * writes /yaffs2/user/coop_sysex_test.txt. op1emu has no USB-MIDI: this proves the commands on the code a host drives. */
 extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_sysex_selftest = 0; }
+#if COOP_DIAG                                                      /* e15: dev / gate builds only (coop_build.h) */
 static char *st_buf; static int st_len, st_cap;
 static void st_hex(const uint8_t *m, int n)
 {
@@ -164,9 +165,12 @@ static void st_hex(const uint8_t *m, int n)
     for (int i = 0; i < n && st_len + 3 < st_cap; i++) { st_buf[st_len++] = hx[m[i] >> 4]; st_buf[st_len++] = hx[m[i] & 15]; }
     if (st_len < st_cap) st_buf[st_len++] = '\n';
 }
+#endif
 static void send_sysex(const uint8_t *m, int n)
 {
+#if COOP_DIAG
     if (st_buf) { st_hex(m, n); return; }
+#endif
     static uint32_t pk[MAX_MSG / 3 + 2];
     int np = 0;
     for (int i = 0; i < n; i += 3) {
@@ -345,6 +349,7 @@ static void handle(const uint8_t *m, int n)
     out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++;
 }
 
+#if COOP_DIAG
 extern volatile uint32_t g_plugins_booted;                         /* plugin_host.cc */
 static void selftest_ask(int cmd, const uint8_t *payload, int n)
 {
@@ -383,11 +388,14 @@ static void selftest_run(void)
     int fd = Y_OPEN("/yaffs2/user/coop_sysex_test.txt", 0x242, 0x180);
     if (fd >= 0) { Y_WRITE(fd, buf, st_len); Y_CLOSE(fd); }
 }
+#endif
 
 /* From the main loop (coop_tape_io_step, mode 0) on every pass. */
 extern "C" void coop_sysex_service(void)
 {
+#if COOP_DIAG
     if (g_coop_sysex_selftest == 1 && g_plugins_booted) { g_coop_sysex_selftest = 2; selftest_run(); }
+#endif
     while (qr != qw) {
         handle(q[qr % QN], qlen[qr % QN]);
         qr++;

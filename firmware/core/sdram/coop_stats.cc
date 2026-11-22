@@ -32,6 +32,7 @@ extern "C" uint32_t coop_tempo_bpm_q16(void);                         /* plugin_
 
 extern volatile uint32_t g_last, g_max, g_blocks, g_max_win, g_blocks_win, g_cb_sum_win, g_cb_over_win;   /* coop_cb.cc */
 extern volatile uint32_t g_stereo_hooks, g_stereo_hook_cycles_max, g_stereo_mix_cycles_max, g_stereo_mix_cycles_win, g_stereo_side_blocks;
+extern volatile uint32_t g_wrap_where, g_wrap_nested, g_wrap_checked, g_wrap_bad;   /* plugin_host.cc (e15) */
 extern volatile uint32_t g_stereo_hook_cycles_win, g_stereo_hook_cycles_sum_win, g_stereo_mix_cycles_sum_win, g_stereo_l1;
 extern volatile uint32_t g_stereo_stage_cycles_max, g_stereo_stage_calls;   /* stereo_bus.cc, S3 */
 extern volatile uint32_t g_lfo2_cycles_max;
@@ -384,6 +385,7 @@ extern "C" void coop_pf_set_mode(uint32_t m)
  * traffic in a 16 KB 4-way cache (it should: LRU keeps the most recent 16 KB, so no). The stats print the three
  * (cycles, p0) pairs on the `icache` line; the voice question is answered by comparing pass 1's per-line cost with
  * the 12 k per DSynth render. */
+#if COOP_DIAG                                                    /* e15: dev / gate builds only (coop_build.h) */
 __attribute__((noinline, aligned(32))) static void probe_4k(void)  { __asm__ __volatile__(".rept 2048\n nop;\n .endr" ::: "memory"); }
 __attribute__((noinline, aligned(32))) static void probe_24k(void) { __asm__ __volatile__(".rept 12288\n nop;\n .endr" ::: "memory"); }
 static uint32_t g_icp[2][3][2];                                  /* per layout, per pass: (cycles, p0) */
@@ -418,6 +420,11 @@ extern "C" void coop_icache_probe(void)                          /* main thread,
     pf_program((int)(want & 1));
     g_coop_pf_layout_used = want;
 }
+#else
+static uint32_t g_icp[2][3][2];                                  /* release: no probe; the icache lines read 0 and the counters
+                                                                    keep coop_pf_boot's layout (0, the one p6g proved) */
+extern "C" void coop_icache_probe(void) { }
+#endif
 
 /* p6h: the event sweep. p6g on the device: kennel's field positions are the working ones (Linux's count nothing),
  * but event 0x82 counts instruction fetches (~1 per 8 bytes), not fill stalls. So, once at boot, every code event
@@ -428,11 +435,12 @@ extern "C" void coop_icache_probe(void)                          /* main thread,
  * ~25 k stall cycles and whose warm count is ~0 is the stall event, the one with ~128 cold / 0 warm the miss count.
  * ~40 ms of boot, main thread, before the live programming. */
 static uint32_t g_sweep[2][16][2][2];                            /* [side][event][cnt][cold, warm] */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_pf_sweep = 0; }   /* p6i: the sweep only on request (--set-word): ~40 ms of boot */
+#if COOP_DIAG
 static volatile uint32_t g_probe_data[2048] __attribute__((aligned(32)));   /* 8 KB: 256 data lines */
 static volatile uint32_t g_evict_data[8192] __attribute__((aligned(32)));   /* 32 KB: walks the 16 KB data cache out */
 #define COOP_PROBE_ARRAYS 1
 static uint32_t data_walk(volatile uint32_t *a, uint32_t n) { uint32_t s = 0; for (uint32_t i = 0; i < n; i += 8) s += a[i]; return s; }
-extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_pf_sweep = 0; }   /* p6i: the sweep only on request (--set-word): ~40 ms of boot */
 extern "C" void coop_pf_sweep(void)
 {
     if (!g_coop_pf_live || !g_coop_pf_sweep) return;
@@ -456,6 +464,9 @@ extern "C" void coop_pf_sweep(void)
         }
     pf_program((int)(g_coop_pf_layout_used & 1));                /* back to the live programming */
 }
+#else
+extern "C" void coop_pf_sweep(void) { }                          /* release: no sweep (the word stays, the lines stay 0) */
+#endif
 
 static const struct coop_cost *g_cost_src = g_coop_cost;          /* the live table, or a run section's copy */
 static void put_cost(const char *name, int i)               /* name avg/max/n[/p0/p1]: cycles per call, the counters' averages */
@@ -585,9 +596,11 @@ static void cplb_watch(void)
  *   fill n N state S code_a_min C code_a_avg C code_heap_min C code_heap_avg C data_a_min C data_a_avg C data_heap_min C
  *        data_heap_avg C code_warm W data_warm W
  * (cycles a pass; a cold line = (cold - warm) / 128 or / 256). Off by default: 12.3 KB of heap 0, ~3 M cycles a window. */
+#include "coop_place.h"
+#if COOP_DIAG                                                    /* e15: release builds have no fill probe (`probe=1` reads
+                                                                    the MMRs only, plugin_host.cc; no `fill` line) */
 #define MALLOC ((void *(*)(uint32_t))0x01A9F348u)                 /* heap 0 (plugin_host.cc) */
 extern "C" void coop_code_sync(uint32_t lo, uint32_t hi);         /* plugin_host.cc */
-#include "coop_place.h"
 static void (*g_heap_code)(void);
 static volatile uint32_t *g_heap_data;
 static uint32_t g_fill_n, g_fill_min[4], g_fill_warm[2], g_fill_state;   /* state: 0 not set up, 1 ready, 2 no memory */
@@ -633,6 +646,10 @@ static void put_fill(void)
     for (int k = 0; k < 4 && g_fill_n; k++) { kv(kmin[k], g_fill_min[k]); kv(kavg[k], (uint32_t)(g_fill_sum[k] / g_fill_n)); }
     kv("code_warm", g_fill_warm[0]); kv("data_warm", g_fill_warm[1]); put("\n");
 }
+#else
+static void fill_probe(void) { }
+static void put_fill(void) { }
+#endif
 
 static void put_cplb(void)
 {
@@ -751,7 +768,8 @@ static void format_text(void)
             }
         put("\n");
     }
-    put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); kv("leased", g_l1_leased); kv("leases", g_l1_leases); kv("lease_refused", g_l1_lease_refused); kv("free", coop_l1_free()); put("\n");
+    put("l1"); kv("state", g_l1_state); kv("used", g_l1_used); kv("refused", g_l1_refused); kv("stereo", g_stereo_l1); kv("tape", g_tape_l1); kv("sine", g_l1_sine_copied); kv("lander_swallowed", g_lander_swallowed); kv("leased", g_l1_leased); kv("leases", g_l1_leases); kv("lease_refused", g_l1_lease_refused); kv("free", coop_l1_free());
+    kv("wrap", g_wrap_where); kv("wrap_nested", g_wrap_nested); kv("wrap_checked", g_wrap_checked); kv("wrap_bad", g_wrap_bad); put("\n");   /* e15: the effect wrap's work block (0 not yet, 1 L1, 2 SDRAM) */
     put_switches();
     put_cplb();
     put("slow"); kv("count", g_slow_count); kv("threshold", g_coop_slow_th); kv("gap_prof", g_coop_gap_prof); kv("gap_full", g_gap_full); put("\n");

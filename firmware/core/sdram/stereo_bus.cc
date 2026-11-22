@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include "coop_stereo.h"
 #include "coop_l1.h"
+#include "coop_build.h"
 
 /* --- stock buffers and words (all [C], write-traced 2026-11-02/03) --- */
 #define VOICE_OUT   ((const int16_t *)0xff80113cu)   /* render out (R1 of render; 0xffa009de, 0xffa0068c) */
@@ -220,6 +221,9 @@ extern "C" void coop_synth_note_on_hook(uint32_t voice, uint32_t dispatched)
  * the previous drum hook = the previous voice's stock contribution; compare it with that voice's coop value
  * 2 * (out * gain) and with out * gain. Sums of |x| >> 4 over the run. */
 extern __attribute__((section(".data"))) volatile uint32_t g_coop_dbg_cmp;
+/* e15 (audit finding 14): the debug compare exists in dev / gate builds only (COOP_DIAG, coop_build.h); a release build
+ * keeps the word (the thunk reads it) but none of the compare's code, here or in the voice hook */
+#define DBG_CMP (COOP_DIAG && g_coop_dbg_cmp)
 volatile uint32_t g_dbg_d_stock, g_dbg_d_v1, g_dbg_d_v2, g_dbg_d_n;
 static int16_t s_dbg_prev_bus[COOP_VBLK], s_dbg_prev_v1[COOP_VBLK];
 static int s_dbg_have;
@@ -403,7 +407,7 @@ static inline __attribute__((always_inline)) void voice_hook(coop_spread *pans, 
         if (voice >= 0 && voice < COOP_MAX_VOICES) pans->pan[voice] = coop_drumpan_q15();   /* u6: the key's own pan; spread is the synth's */
         coop_lfo2_trigger_drum(voice);
     }
-    const uint32_t vskip = g_coop_dbg_cmp ? 0 : g_coop_voice_skip;       /* e14: a silent voice adds nothing */
+    const uint32_t vskip = DBG_CMP ? 0 : g_coop_voice_skip;       /* e14: a silent voice adds nothing */
     if (g_coop_prof && !is_drum) {
         int32_t e0 = VOICE_ENV[0], e1 = VOICE_ENV[COOP_VBLK - 1];
         uint32_t a0 = (uint32_t)(e0 < 0 ? -e0 : e0), a1 = (uint32_t)(e1 < 0 ? -e1 : e1);
@@ -424,8 +428,8 @@ static inline __attribute__((always_inline)) void voice_hook(coop_spread *pans, 
     const uint32_t sum0 = vzero ? pair_sum() : 0;
     coop_pan_delta d = coop_pan_deltas_tab(pans->pan[voice], g_sin);
     int16_t gain = *VOICE_GAIN;
-    if (g_coop_dbg_cmp && is_drum) dbg_drum_probe(gain);
-    if (g_coop_dbg_cmp) voice_sum_stock(is_drum, gain);                  /* the stock bus the compare reads */
+    if (DBG_CMP && is_drum) dbg_drum_probe(gain);
+    if (DBG_CMP) voice_sum_stock(is_drum, gain);                  /* the stock bus the compare reads */
     if (is_drum) coop_pair_accum_drum(g_vL, g_vR, VOICE_OUT, gain, d);
     else         coop_pair_accum_synth(g_vL, g_vR, VOICE_OUT, VOICE_ENV, gain, d);
     if (vzero) { g_voice_skip_checked++; if (pair_sum() != sum0) g_voice_skip_bad++; }
@@ -496,7 +500,7 @@ extern "C" void coop_instr_stage(void)
     coop_mark_at(0x30, t0);
     if (!g_inited) stereo_init();
     g_stereo_stage_calls++;
-    int dbg = g_coop_dbg_cmp != 0;
+    int dbg = DBG_CMP != 0;
     if (dbg) {
         g_dbg_blocks++;
         for (int i = 0; i < COOP_VBLK; i++) {
@@ -608,7 +612,7 @@ extern "C" void coop_drum_bus(volatile uint32_t *state, int16_t *buf, const int1
         s_dbR[0] = s_dbD[0] = state[0]; s_dbR[1] = s_dbD[1] = state[1]; s_dbR[2] = s_dbD[2] = *DRUMBUS_GLOB;
         seeded = 1;
     }
-    if (g_coop_dbg_cmp) {                              /* the stock bus too, on its own state copy (compared later) */
+    if (DBG_CMP) {                                     /* the stock bus too, on its own state copy (compared later) */
         uint32_t keep0 = state[0], keep1 = state[1], keepg = *DRUMBUS_GLOB;
         state[0] = s_dbD[0]; state[1] = s_dbD[1]; *DRUMBUS_GLOB = s_dbD[2];
         ((drumbus_fn)DRUMBUS_FN)(state, buf, params);

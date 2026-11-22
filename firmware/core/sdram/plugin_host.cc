@@ -26,6 +26,7 @@
 #include "plugin_load.h"
 #include "coop_plugin_host.h"
 #include "coop_fixed.h"
+#include "coop_l1.h"
 #include "coop_cost.h"
 #include "coop_tempo.h"
 #include "coop_arena.h"
@@ -1261,6 +1262,88 @@ static const volatile int16_t *fx_words57(int pos, const int16_t *params)
     return params + 5;
 }
 
+/* ---- e15 (efficiency audit finding 9): the effect wrap in assembly, its work block in L1 ----
+ * A plugin effect takes Q31 L / R; the core holds the block as int16 (mid + sides at an instrument position, l / r at
+ * the master's). wrap_fast.S does the conversions the C loops below did, bit for bit (tests/sim/wrap_check.cc): in at
+ * FX 1 and slot 2 of an instrument (the carrier -> Q31 straight: e14's slot 2 went through int16 l / r first, the
+ * same numbers), in at the master's FX 1 and slot 2 (l / r -> Q31), and back (slot 2 of an instrument keeps its
+ * saturating subtract, FX 1 its wrapping one: they differ at one corner of the input). The Q31 block is one 512-byte
+ * work block for every position, taken from the L1 pool at the first plugin block (the audio thread, like the
+ * stereo stages' blocks), else a static block in SDRAM: e14 had it on the interrupt stack (FX 1 of an instrument and
+ * of the master) and in two SDRAM statics (slot 2). The positions run one after another in the audio interrupt and a
+ * render never calls another; if one ever began while the block was in use it would get a stack block of its own
+ * (counted: `l1 ... wrap_nested`). g_coop_fast_wrap = 0 (a --set-word): e14's C loops, for an A/B. */
+extern "C" void coop_wrap_ms_in(const int16_t *const src[3], int32_t *lr);   /* wrap_fast.S */
+extern "C" void coop_wrap_ms_out(const int32_t *lr, int16_t *const dst[3]);
+extern "C" void coop_wrap_ms_out_sat(const int32_t *lr, int16_t *const dst[3]);
+extern "C" void coop_wrap_lr_in(const int16_t *l, const int16_t *r, int32_t *lr);
+extern "C" void coop_wrap_lr_out(const int32_t *lr, int16_t *l, int16_t *r);
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_fast_wrap = 1; }
+volatile uint32_t g_wrap_where, g_wrap_nested;                              /* stats: 0 not yet, 1 L1, 2 SDRAM */
+static int32_t s_wrap_sdram[2 * BLOCK] __attribute__((aligned(32)));
+static int32_t *g_wrap;
+static uint32_t g_wrap_busy;
+enum { WRAP_FX1 = 0, WRAP_S2I = 1, WRAP_LR = 2 };                           /* the block's form and its way back */
+volatile uint32_t g_wrap_checked, g_wrap_bad;                              /* the check mode's blocks (dev builds) */
+#if COOP_DIAG
+/* g_coop_fast_wrap = 2 (dev / gate images): the kernels run as in mode 1, and every block their result is compared
+ * with e14's C loops on the same input, both ways (the render runs once, on the kernels' block) */
+static int32_t s_chk_lr[2 * BLOCK];
+static int16_t s_chk16[3][BLOCK];
+__attribute__((noinline)) static void wrap_check(int32_t *w, const coop_fx_t *fx, int pos, const int16_t *p, int kind, int16_t *a, int16_t *b, int16_t *c)
+{
+    int bad = 0;
+    for (int i = 0; i < BLOCK; i++) {
+        s_chk_lr[i] = kind == WRAP_LR ? (int32_t)a[i] << 16 : (int32_t)coop_sat16((int32_t)a[i] + b[i]) << 16;
+        s_chk_lr[BLOCK + i] = kind == WRAP_LR ? (int32_t)b[i] << 16 : (int32_t)coop_sat16((int32_t)a[i] + c[i]) << 16;
+    }
+    if (kind == WRAP_LR) coop_wrap_lr_in(a, b, w);
+    else { const int16_t *const src[3] = { a, b, c }; coop_wrap_ms_in(src, w); }
+    for (int i = 0; i < 2 * BLOCK; i++) bad |= s_chk_lr[i] != w[i];
+    fx->render(pos, w, w + BLOCK, p, BLOCK);
+    for (int i = 0; i < BLOCK; i++) {
+        int16_t l = coop_sat16(w[i] >> 16), r = coop_sat16(w[BLOCK + i] >> 16);
+        if (kind == WRAP_LR) { s_chk16[0][i] = l; s_chk16[1][i] = r; continue; }
+        int16_t m = (int16_t)(((int32_t)l + r) >> 1);
+        s_chk16[0][i] = m;
+        s_chk16[1][i] = kind == WRAP_FX1 ? (int16_t)(l - m) : coop_sat16(l - m);
+        s_chk16[2][i] = kind == WRAP_FX1 ? (int16_t)(r - m) : coop_sat16(r - m);
+    }
+    if (kind == WRAP_LR) coop_wrap_lr_out(w, a, b);
+    else { int16_t *const dst[3] = { a, b, c }; if (kind == WRAP_FX1) coop_wrap_ms_out(w, dst); else coop_wrap_ms_out_sat(w, dst); }
+    for (int i = 0; i < BLOCK; i++) bad |= a[i] != s_chk16[0][i] || b[i] != s_chk16[1][i] || (kind != WRAP_LR && c[i] != s_chk16[2][i]);
+    g_wrap_checked++;
+    if (bad) g_wrap_bad++;
+}
+#endif
+static void wrap_run(int32_t *w, const coop_fx_t *fx, int pos, const int16_t *p, int kind, int16_t *a, int16_t *b, int16_t *c)
+{
+#if COOP_DIAG
+    if (g_coop_fast_wrap == 2) { wrap_check(w, fx, pos, p, kind, a, b, c); return; }
+#endif
+    if (kind == WRAP_LR) coop_wrap_lr_in(a, b, w);
+    else { const int16_t *const src[3] = { a, b, c }; coop_wrap_ms_in(src, w); }
+    fx->render(pos, w, w + BLOCK, p, BLOCK);
+    if (kind == WRAP_LR) { coop_wrap_lr_out(w, a, b); return; }
+    int16_t *const dst[3] = { a, b, c };
+    if (kind == WRAP_FX1) coop_wrap_ms_out(w, dst); else coop_wrap_ms_out_sat(w, dst);
+}
+__attribute__((noinline)) static void wrap_nested(const coop_fx_t *fx, int pos, const int16_t *p, int kind, int16_t *a, int16_t *b, int16_t *c)
+{
+    int32_t w[2 * BLOCK];
+    g_wrap_nested++;
+    wrap_run(w, fx, pos, p, kind, a, b, c);
+}
+static void wrap_render(const coop_fx_t *fx, int pos, const int16_t *p, int kind, int16_t *a, int16_t *b, int16_t *c)
+{
+    if (g_wrap_busy) { wrap_nested(fx, pos, p, kind, a, b, c); return; }
+    int32_t *w = g_wrap;
+    if (!w) { w = g_wrap = (int32_t *)coop_l1_or(sizeof s_wrap_sdram, s_wrap_sdram); g_wrap_where = w == s_wrap_sdram ? 2 : 1; }
+    g_wrap_busy = 1;
+    wrap_run(w, fx, pos, p, kind, a, b, c);
+    g_wrap_busy = 0;
+}
+
 /* kennel's guard: keep the raw knob words of every slot running a plugin inside the filter type's ranges; the stock
  * read_fx_param asserts on anything outside and the OP-1 locks up (at every boot while such a value is stored). */
 static void fx_sanitize(void)
@@ -1379,17 +1462,21 @@ extern "C" void coop_fx_render_mono(void *self, int16_t *buf, const int16_t *par
         g_fx_noroom[pos] = 0;
         g_cur[pos] = e; g_fx_latch[pos] = 0; g_fxc_inits[pos]++; if (fx->init(pos) != 0) { g_plug[e].fx = 0; return; }
     }
-    int32_t L[BLOCK], R[BLOCK];
-    for (int i = 0; i < BLOCK; i++) {                                     /* the instrument in stereo: mono + its difference */
-        L[i] = (int32_t)coop_sat16((int32_t)buf[i] + dL[i]) << 16;
-        R[i] = (int32_t)coop_sat16((int32_t)buf[i] + dR[i]) << 16;
-    }
-    fx->render(pos, L, R, g_plug[e].ctl ? fx_params(pos, e, params, fx_words57(pos, params)) : params, BLOCK);
-    for (int i = 0; i < BLOCK; i++) {
-        int16_t l = coop_sat16(L[i] >> 16), r = coop_sat16(R[i] >> 16);
-        int16_t m = (int16_t)(((int32_t)l + r) >> 1);
-        buf[i] = m;                                                       /* down the stock mono path */
-        dL[i] = (int16_t)(l - m); dR[i] = (int16_t)(r - m);               /* the new side of this instrument */
+    const int16_t *pw = g_plug[e].ctl ? fx_params(pos, e, params, fx_words57(pos, params)) : params;
+    if (g_coop_fast_wrap) wrap_render(fx, pos, pw, WRAP_FX1, buf, dL, dR);   /* e15: wrap_fast.S, the L1 work block */
+    else {
+        int32_t L[BLOCK], R[BLOCK];
+        for (int i = 0; i < BLOCK; i++) {                                 /* the instrument in stereo: mono + its difference */
+            L[i] = (int32_t)coop_sat16((int32_t)buf[i] + dL[i]) << 16;
+            R[i] = (int32_t)coop_sat16((int32_t)buf[i] + dR[i]) << 16;
+        }
+        fx->render(pos, L, R, pw, BLOCK);
+        for (int i = 0; i < BLOCK; i++) {
+            int16_t l = coop_sat16(L[i] >> 16), r = coop_sat16(R[i] >> 16);
+            int16_t m = (int16_t)(((int32_t)l + r) >> 1);
+            buf[i] = m;                                                   /* down the stock mono path */
+            dL[i] = (int16_t)(l - m); dR[i] = (int16_t)(r - m);           /* the new side of this instrument */
+        }
     }
     coop_cost_add_pf(COOP_COST_PLUG, coop_cost_now() - c0, pf0);
     g_fx_plugin_blocks++;
@@ -1421,10 +1508,14 @@ extern "C" void coop_fx_render_st(void *self, int16_t *l, int16_t *r, const int1
         g_fx_noroom[2] = 0;
         g_cur[2] = e; g_fx_latch[2] = 0; g_fxc_inits[2]++; if (fx->init(2) != 0) { g_plug[e].fx = 0; FILTER_ST_RENDER(self, l, r, params); return; }
     }
-    int32_t L[BLOCK], R[BLOCK];
-    for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)l[i] << 16; R[i] = (int32_t)r[i] << 16; }
-    fx->render(2, L, R, g_plug[e].ctl ? fx_params(2, e, params, fx_words57(2, params)) : params, BLOCK);
-    for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16(L[i] >> 16); r[i] = coop_sat16(R[i] >> 16); }
+    const int16_t *pw = g_plug[e].ctl ? fx_params(2, e, params, fx_words57(2, params)) : params;
+    if (g_coop_fast_wrap) wrap_render(fx, 2, pw, WRAP_LR, l, r, 0);      /* e15 */
+    else {
+        int32_t L[BLOCK], R[BLOCK];
+        for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)l[i] << 16; R[i] = (int32_t)r[i] << 16; }
+        fx->render(2, L, R, pw, BLOCK);
+        for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16(L[i] >> 16); r[i] = coop_sat16(R[i] >> 16); }
+    }
     g_fx_plugin_blocks++;
 }
 
@@ -1605,16 +1696,19 @@ static int16_t knob_map(int lo, int hi, uint16_t k)
 }
 
 /* audio thread: take a posted change (construct / init), then run the slot on l / r (int16, 64, in place) */
-static void slot2_render(int pos, int16_t *l, int16_t *r);
-extern "C" void coop_slot2_render(int pos, int16_t *l, int16_t *r)
+static void slot2_render(int pos, int16_t *l, int16_t *r, int16_t *sr);
+/* e15: sr != 0 = the carrier form (l = mid, r = side l, sr = side r) for a plugin in the instrument's slot 2, straight
+ * to Q31 and back (coop_slot2_instr decides; e14 went through int16 l / r) */
+static void slot2_timed(int pos, int16_t *l, int16_t *r, int16_t *sr)
 {
     uint32_t c0 = coop_cost_now(), pf0[2]; coop_pf_now(pf0);
     coop_mark_at(0x48 + 2 * (pos & 1), c0);
-    slot2_render(pos, l, r);
+    slot2_render(pos, l, r, sr);
     coop_mark(0x49 + 2 * (pos & 1));
     if (g_s2[pos & 1].kind_on) coop_cost_add_pf(pos ? COOP_COST_S2M : COOP_COST_S2I, coop_cost_now() - c0, pf0);
 }
-static void slot2_render(int pos, int16_t *l, int16_t *r)
+extern "C" void coop_slot2_render(int pos, int16_t *l, int16_t *r) { slot2_timed(pos, l, r, 0); }
+static void slot2_render(int pos, int16_t *l, int16_t *r, int16_t *sr)
 {
     struct slot2 *s = &g_s2[pos & 1];
     uint32_t req = s->req;
@@ -1633,15 +1727,19 @@ static void slot2_render(int pos, int16_t *l, int16_t *r)
     if (s->kind_on == 1) {
         const int16_t *rg = RANGE_ROW(s->id_on);
         for (int i = 0; i < 8; i++) p[i] = i < 4 ? knob_map(rg[3 * i], rg[3 * i + 1], s->knob[i]) : rg[3 * i + 2];
-        g_s2_trace = 5; st_render(1 + pos, l, r, p); g_s2_trace = 6;
+        g_s2_trace = 5; st_render(1 + pos, l, r, p); g_s2_trace = 6;       /* (sr is 0 here: coop_slot2_instr) */
     } else {
         const coop_fx_t *fx = g_plug[s->id_on].inst[3 + pos];
         for (int i = 0; i < 4; i++) p[i] = knob_map(fx_rng[i][0], fx_rng[i][1], s->knob[i]);
         p[4] = (int16_t)(MAGIC + s->id_on); p[5] = p[6] = p[7] = 0;
-        static int32_t L[BLOCK], R[BLOCK];                                /* audio thread only, never nested: off the interrupt stack */
-        for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)l[i] << 16; R[i] = (int32_t)r[i] << 16; }
-        fx->render(3 + pos, L, R, g_plug[s->id_on].ctl ? fx_params(3 + pos, s->id_on, p, s->ext) : p, BLOCK);
-        for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16(L[i] >> 16); r[i] = coop_sat16(R[i] >> 16); }
+        const int16_t *pw = g_plug[s->id_on].ctl ? fx_params(3 + pos, s->id_on, p, s->ext) : p;
+        if (g_coop_fast_wrap) wrap_render(fx, 3 + pos, pw, sr ? WRAP_S2I : WRAP_LR, l, r, sr);   /* e15 */
+        else {
+            static int32_t L[BLOCK], R[BLOCK];                            /* audio thread only, never nested: off the interrupt stack */
+            for (int i = 0; i < BLOCK; i++) { L[i] = (int32_t)l[i] << 16; R[i] = (int32_t)r[i] << 16; }
+            fx->render(3 + pos, L, R, pw, BLOCK);
+            for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16(L[i] >> 16); r[i] = coop_sat16(R[i] >> 16); }
+        }
     }
     s->rendering = 0;
     g_s2_blocks[pos & 1]++; g_s2_trace = 7;
@@ -1683,6 +1781,14 @@ static void slot2_build_service(void)
 extern "C" void coop_slot2_instr(int16_t *mid, int16_t *sl, int16_t *sr)
 {
     if (!g_coop_s2_live[0]) return;                                      /* p6j: the mix entry already tests this word */
+    const struct slot2 *s = &g_s2[0];
+    if (g_coop_fast_wrap && s->kind_on == 2 && !s->off && !(s->req != s->built && (s->kind != s->kind_on || s->id != s->id_on))) {
+        /* e15: a plugin that slot2_render will run (its own tests, in the same order, in the same interrupt): the
+         * carrier straight to Q31 and back. Anything else (a stock type, a change being built) keeps e14's detour,
+         * whose round trip also leaves the carrier normalised as before. */
+        g_s2_trace = 1; slot2_timed(0, mid, sl, sr); g_s2_trace = 9;
+        return;
+    }
     static int16_t l[BLOCK], r[BLOCK];                                    /* off the interrupt stack (the mix context is deep) */
     for (int i = 0; i < BLOCK; i++) { l[i] = coop_sat16((int32_t)mid[i] + sl[i]); r[i] = coop_sat16((int32_t)mid[i] + sr[i]); }
     g_s2_trace = 1; coop_slot2_render(0, l, r); g_s2_trace = 9;
