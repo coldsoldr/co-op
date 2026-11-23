@@ -11,13 +11,12 @@
  * plays through. No hints on screen (the owner, 2026-11-07).
  *
  * Submenus: VOICES (spread 0-100, the only live setting; drum ADSR, master EQ, master compression stay "stock" with
- * "not yet"; CS5: "channel strip" on / off, g_coop_strip_on bit 0, green right / left or a push, live; master EQ and
- * master comp then read "strip"), UI (tape position bottom; date and time: not yet), PLUGINS (every .coop file in
+ * "not yet"; CS5: "channel strip" on / off, green right / left or a push, live, through coop_strip_set_mode: the
+ * mode is saved per tape project in coop_strip.bin (CS6), not here; master EQ and master comp then read "strip"), UI (tape position bottom; date and time: not yet), PLUGINS (every .coop file in
  * /yaffs2/plugins).
  *
- * Persisted in /yaffs2/user/coop_settings.bin ("CST", version 3: spread %, four choice bytes, the channel strip byte
- * (v3, CS5), the count, the disabled file names; v1 / v2 files are read as before). At boot a saved "on" sets
- * g_coop_strip_on bit 0; a saved "off" leaves the image word, so a test image built with g_coop_strip_on=1 stays on. u7: the file is written by the main loop (coop_settings_service from coop_fx_service), never from the
+ * Persisted in /yaffs2/user/coop_settings.bin ("CST", version 1: spread %, four choice bytes, the disabled file
+ * names). u7: the file is written by the main loop (coop_settings_service from coop_fx_service), never from the
  * KeyHandler thread: a yaffs write from that thread crashed the device (u5, SEQSTAT 0x2a on leaving the menu after a
  * plugin toggle). Read at boot before the plugin scan (coop_plugins_boot), where a file present overrides the image's
  * g_coop_spread word. Threads: keys and encoders in the KeyHandler thread, drawing in the Gfx thread, files on the
@@ -42,7 +41,8 @@ typedef struct { int32_t x, y; } op1_pt;                               /* Q10, 3
 extern "C" int coop_plugin_file_count(void);                            /* plugin_host.cc: the files the boot scan saw */
 extern "C" const char *coop_plugin_file_name(int i);
 extern volatile uint32_t g_coop_spread;                                 /* stereo_bus.cc, Q15, read every block */
-extern "C" volatile uint32_t g_coop_strip_on;                           /* coop_strip.cc: bit 0 the strip mode (CS5: this row) */
+extern "C" int coop_strip_mode(void);                                   /* coop_strip.cc (CS6 owns the switch and saves it) */
+extern "C" void coop_strip_set_mode(int on);
 #define VOICES_STRIP 4                                                  /* the "channel strip" row of VOICES */
 
 #define SET_FILE   "/yaffs2/user/coop_settings.bin"
@@ -103,18 +103,17 @@ static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v
  * e3: the buffer is static. Since p6k (40-byte names) it is 650 bytes, and on the stack of the main-loop service pass
  * it was the likeliest cause of the device crash leaving the menu after a plugin toggle (e2, two plugin files; not
  * reproduced in op1emu). It also held 8 + names where the file has 10 + names (2 bytes short with 16 disabled). */
-#define FILE_MAX_BYTES (11 + DIS_MAX * NAME_LEN)
+#define FILE_MAX_BYTES (10 + DIS_MAX * NAME_LEN)
 static uint8_t s_filebuf[FILE_MAX_BYTES] __attribute__((aligned(4)));                            /* save (main loop) and boot (main thread): never at once */
 static int save_file(void)
 {
     uint8_t *b = s_filebuf;                                             /* zeroed by hand: no libc, so no memset */
     const uint32_t bsize = sizeof s_filebuf;
     for (uint32_t i = 0; i < bsize; i++) b[i] = 0;
-    b[0] = 'C'; b[1] = 'S'; b[2] = 'T'; b[3] = 3;                     /* v2: 40-byte names (p6k); v3: the strip byte (CS5) */
+    b[0] = 'C'; b[1] = 'S'; b[2] = 'T'; b[3] = 2;                     /* v2: 40-byte names (p6k) */
     b[4] = (uint8_t)s_pct;
-    for (int i = 0; i < 4; i++) b[5 + i] = s_choice[i];                /* b[5..8]: the four choices; b[9] the channel strip; b[10] the count */
-    b[9] = (uint8_t)(g_coop_strip_on & 1u);
-    int n = 10;
+    for (int i = 0; i < 4; i++) b[5 + i] = s_choice[i];                /* b[5..8]: the four choices; b[9] the count */
+    int n = 9;
     b[n++] = (uint8_t)s_ndis;
     for (int i = 0; i < s_ndis; i++) { for (int k = 0; k < NAME_LEN && s_dis[i][k]; k++) b[n + k] = (uint8_t)s_dis[i][k]; n += NAME_LEN; }   /* up to the NUL: the rest stays zero */
     int fd = Y_OPEN(SET_FILE, 0x242, 0x180);
@@ -137,14 +136,11 @@ extern "C" void coop_settings_boot(void)
     if (fd < 0) return;
     int got = Y_READ(fd, b, (int)sizeof s_filebuf);
     Y_CLOSE(fd);
-    if (got < 10 || b[0] != 'C' || b[1] != 'S' || b[2] != 'T' || b[3] < 1 || b[3] > 3) return;
-    int nl = b[3] == 1 ? NAME_LEN_V1 : NAME_LEN;                         /* v1 files: 16-byte names (read once, saved back as v3) */
-    int v3 = b[3] >= 3;                                                  /* CS5: b[9] the channel strip, the count one later */
-    if (v3 && (b[9] & 1)) g_coop_strip_on |= 1u;                         /* on: set; off leaves the image word (a test image's
-                                                                            g_coop_strip_on=1 stays on: the gates) */
+    if (got < 10 || b[0] != 'C' || b[1] != 'S' || b[2] != 'T' || (b[3] != 1 && b[3] != 2)) return;
+    int nl = b[3] == 1 ? NAME_LEN_V1 : NAME_LEN;                         /* v1 files: 16-byte names (read once, saved back as v2) */
     s_pct = clampi(b[4], 0, 100);
     for (int i = 0; i < 4; i++) s_choice[i] = 0;                        /* no alternative exists yet: stock whatever was saved */
-    int n = v3 ? b[10] : b[9], at = v3 ? 11 : 10;
+    int n = b[9], at = 10;
     s_ndis = 0;
     for (int i = 0; i < n && i < DIS_MAX && at + nl <= got; i++, at += nl) {
         scpy(s_dis[s_ndis], (const char *)b + at, nl);
@@ -246,7 +242,7 @@ extern "C" int coop_settings_key(int code, int pressed)
         else if (s_cur[0] == 0 && s_cur[1] == VOICES_STRIP) {          /* CS5: a push toggles the channel strip (debounced) */
             uint64_t t = cycles_now();
             if (s_last_push && t - s_last_push < 100000000ull) g_set_plugin_bounces++;
-            else { g_coop_strip_on ^= 1u; s_dirty = 1; }
+            else coop_strip_set_mode(!coop_strip_mode());
             s_last_push = t | 1u;
         }
         else if (s_cur[0] == 2) {                                       /* e4c: a push toggles once: a second press within
@@ -273,8 +269,7 @@ extern "C" int coop_settings_knob(int knob, int steps)
         g_coop_spread = (uint32_t)(s_pct * 32767 / 100);
         s_dirty = 1;
     } else if (knob == 1 && s_level == 1 && s_cur[0] == 0 && s_cur[1] == VOICES_STRIP && steps) {   /* CS5: right on, left off */
-        uint32_t on = steps > 0 ? 1u : 0u;
-        if ((g_coop_strip_on & 1u) != on) { g_coop_strip_on = (g_coop_strip_on & ~1u) | on; s_dirty = 1; }
+        coop_strip_set_mode(steps > 0);                                 /* a no-op when unchanged */
     } else if (knob == 1 && s_level == 1 && s_cur[0] == 2 && steps) {   /* e4c: green sets a plugin row, as every value row */
         const char *name = coop_plugin_file_name(s_cur[1]);
         if (name && (steps > 0) == (coop_plugin_disabled(name) != 0)) { toggle_plugin(s_cur[1]); g_set_plugin_turns++; }
@@ -346,8 +341,8 @@ extern "C" void coop_settings_draw(void *r)
         else if (s_cur[0] == 0) {
             name = voices_rows[i];
             if (i == 0) { num3(label, s_pct); val = label; }
-            else if (i == VOICES_STRIP) { if (g_coop_strip_on & 1u) val = "on"; else { val = "off"; vgrey = 1; } }
-            else if ((i == 2 || i == 3) && (g_coop_strip_on & 1u)) { val = "strip"; vgrey = 1; }   /* bypassed while the strip is on */
+            else if (i == VOICES_STRIP) { if (coop_strip_mode()) val = "on"; else { val = "off"; vgrey = 1; } }
+            else if ((i == 2 || i == 3) && coop_strip_mode()) { val = "strip"; vgrey = 1; }   /* bypassed while the strip is on */
             else val = "stock";
         } else if (s_cur[0] == 1) {
             name = ui_rows[i];

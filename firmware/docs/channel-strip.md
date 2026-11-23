@@ -372,12 +372,13 @@ T4 page writes is still to trace).
 
 ### What is left
 
-- **CS4**: the comp bypass (above); whether the EQ bypass should keep the EQ's 25-sample phase (it does not now);
-  the master FX's own wet / dry knob on a send bus (the return removes the dry part whatever the knob says; a delay
-  with mix 0 returns nothing).
-- **CS5**: the UI: built in op1emu (section "CS5" above); the device test is pending.
-- **CS6**: saving; the presets words go away.
-- `g_strip_stat` into `coop_stats.txt` (after e16, which owns that file).
+- **CS4**: done in op1emu (below). Still open: whether the EQ bypass should keep the EQ's 25-sample phase (it does
+  not now); the master FX's own wet / dry knob on a send bus (the return removes the dry part whatever the knob
+  says; a delay with mix 0 returns nothing).
+- **CS5**: the UI: built in op1emu (section "CS5" below); the Settings › Voices row shows `coop_strip_mode()` and
+  calls `coop_strip_set_mode` (the save file owns the mode, CS6).
+- **CS6**: done in op1emu (below). The preset words stay as test overrides.
+- `g_strip_stat` is in `coop_stats.txt` (the `strip` line, appended after `stats`; CS4 / CS6).
 - Device risks: the cost above is instruction counts; four resampler copies and four strips run from SDRAM with
   their state (~1.6 KB a strip, 2 x 1,232 bytes of pair a track) in SDRAM: the device's cache factor (3.8x in
   T3g) could put four strips everything on near a third of the block. The lane hooks run inside the tick's LC1
@@ -398,11 +399,10 @@ mixer entry, the settings row).
   `coop_strip_ui_knob` right after the settings menu, `coop_strip_ui_draw` / `coop_strip_ui_note` in `coop_ui_frame`
   for CUR_MODE 3 after the settings menu. Built with `#pragma GCC optimize("Os")` (UI code; -O2 inlined ~9 KB).
 - `core/sdram/coop_settings.cc`: Settings › Voices "channel strip" (fifth row): green right / left or a push
-  (250 ms debounce) sets `g_coop_strip_on` bit 0 live; master EQ / master comp read "strip" (grey) while it is on.
-  Saved in `coop_settings.bin` **version 3**: byte 9 the strip, the count at 10, the names from 11 (v1 / v2 files are
-  read as before). At boot a saved "on" sets bit 0; a saved "off" leaves the image word, so a test image built with
-  `g_coop_strip_on=1` (and the `g_coop_strip_t1..t4` presets, posted at the strip's first block as in CS3) still
-  runs the gates. An older firmware refuses a v3 file (it falls back to its defaults).
+  (250 ms debounce) switches the strip mode live through `coop_strip_set_mode` and shows `coop_strip_mode()`; master
+  EQ / master comp read "strip" (grey) while it is on. On merging CS5 with CS6 the mode moved out of
+  `coop_settings.bin` (it stays version 2): `coop_strip.bin` owns it, per tape project (CS6 below). A test image built
+  with `g_coop_strip_on=1` (and the `g_coop_strip_t1..t4` presets) still runs the gates.
 - `core/sdram/coop_strip.cc`: two reads added at the end (nothing else touched): `coop_strip_gr(t)` (the comp's gain
   reduction, log2 Q16, 0 while the comp is off) and `coop_strip_blocks()` (`g_strip_stat.tape_n`: the meters are
   fresh when it moved). The UI also reads `g_strip_split` (a split track is the only one whose meters run).
@@ -501,6 +501,148 @@ hundred raster lines a frame, not measured), the settings file across a power cy
    meters there?
 7. **The note** on the master EQ / comp pages says "off in strip mode"; the comp's bypass itself is CS4's.
 
+## CS4: the master comp bypassed while the strip is on (op1emu, 2026-11-23)
+
+Branch `cs4-strip-comp-save` (from dev f4f9706). Emulator only: **nothing of CS4 has run on the OP-1**.
+
+### What the mixer's T4 page writes [C op1emu write trace, stock image]
+
+`tests`-style scenario (mixer, T4, each encoder 100 detents down, 200 up, then 1.5 back), `--watch-writes
+0xff80189c+8`: every T4 turn is a store by the stock's generic clamp-add `0x01a1de68` (word = clamp(word + delta x
+scale, min, max), the store at `0x01a1de8a`), one per detent, into exactly the four words the stage reads. Nothing
+else on the page writes them. The boot values come from op1.db's master row (writer `0x019d7aac`, the master load
+around `0x019d7960`; `0x019d90e4` zeroes them first).
+
+| encoder | word | range the user reaches | step a detent | fresh OP-1 | what it is (from the stage's code) |
+|---|---|---|---|---|---|
+| blue | `0xff80189c` w0 | 0x0000 .. 0x7fff | 0x148 (100 steps) | 0x7fff | left level before the limiter, squared (0x7fff = unity) [C bytes; the name I] |
+| green | `0xff80189e` w1 | 0x0000 .. 0x7fff | 0x148 | 0x7fff | right level, the same [C bytes; I] |
+| white | `0xff8018a0` w2 | **0x2000** .. 0x7fff | 0x100 | 0x2000 | drive: the input gain 16 x w2^2, so 0x2000 = unity, 0x7fff = +24 dB; it cannot go below unity [C] |
+| orange | `0xff8018a2` w3 | 0x0200 .. 0x4e00 | 0x260 (33 values) | 0x2800 | release: w3 >>> 10 (0 .. 19) indexes the time-constant table `0x0106a8f4` (built at run time) [C] |
+
+`[0x01aad5f0]` is 3 while T4 is shown (T2 1, T1 0) [C].
+
+### The stage `0xffa04280` [C bytes, the disassembly]
+
+- It takes its words through an absolute pointer (`P2 = 0xff801880`; the R0 the getter returns is not used): w0 / w1
+  as one 32-bit load (`[P2 + 0x1c]`), w2 / w3 as another (`[P2 + 0x20]`), at its start only. State: the two envelope
+  words `[P2]` / `[P2 + 4]`, a smoothing pair `[P2 + 8]` / `[P2 + 0xc]` (each channel's envelope pulled 0.6 % towards
+  the other: the limiter is softly linked), a hold counter `[P2 + 0x10]`, the meters.
+- It fills 64 words of noise at `0xff801b50` (the LCG 1664525 / 1013904223, seed `0xff802bc8`; handover-c1.md's
+  "EQ coeffs 0xff801b50" was this): +-1 LSB of dither added to every input sample.
+- Per sample and channel: `out = sat(16 x (x + dither) x level^2 x drive^2 x (1 - (16 g)^2))` into e34 / f34 (Q31),
+  and the envelope g follows `max(0, 2 (|out| - 0.5))`: a **feedback limiter whose threshold is fixed at half scale
+  of the output** (-6 dBFS; the constant `-1 << 30` in the code), attack and release from the table at w3's index.
+- So there is no separate "user compressor" and "fixed output limiter": it is one limiter, and the user's T4 page
+  sets the drive into it, the release, and the two levels before it. The CS3 probe agrees: w2 is the squared drive
+  (0x1000 = -12 dB is linear at both levels, 0x2000 unity), w0 the squared level, w1 the other channel's level (the
+  probe measured one channel: below 0x7fff the right side stays under the threshold and the linked envelope gives the
+  left 0.4 dB less reduction), w3 the time constant.
+
+**No truly neutral setting exists.** Below -6 dBFS of output, the stock defaults are already as neutral as the stage
+gets (gain 0x7fff^2 = -0.0005 dB, plus the +-1 LSB dither); above it the limiter acts at every value of every word
+(the threshold is not a word). The only settings that keep a loud signal out of the limiter lower the drive or the
+levels, which is not neutral either (and the UI cannot set the drive below 0x2000).
+
+### The bypass: the stock defaults, inside the audio interrupt only
+
+- **Choice: while the strip is on, the stage runs on the words of a fresh OP-1** (0x7fff, 0x7fff, 0x2000, 0x2800):
+  unity below -6 dBFS, and the OP-1's own output protection above it, as on a fresh unit. Chosen over skipping the
+  stage (impossible: it writes e34 / f34 and uses its caller's stack) and over a lower drive (that would make the
+  strip mode 12 dB quieter than the stock). The strips' own comps are the compressors in strip mode.
+- `comp_enter` (`coop_strip.cc`, from `coop_strip_master`, which the getter stand-in at `0xffa017ac` calls right
+  before `CALL 0xffa04280`) keeps the user's two words and writes the defaults; `coop_strip_comp_leave` (from
+  `CoopAudioCb`, `coop_cb.cc`, after the stock callback returned) writes the user's back. Both are in the same audio
+  interrupt, so no thread ever sees the defaults: the T4 page (Gfx thread) shows the user's values, the encoders
+  (KeyHandler) add to the user's values, and **`master_db_save` (`0x019D9B94`, main loop), which builds op1.db's
+  `master_params` from these live words, saves the user's values** [C bytes: it reads `0xff80189c`; C op1emu below].
+  A second `comp_enter` without a leave in between is refused (it would keep the defaults as the user's words).
+- `g_coop_strip_on` bit 2 (test): keep the user's comp while the strip is on. `g_strip_stat.comp_swaps` counts the
+  blocks that ran on the defaults. Cost: four 32-bit loads and stores a block.
+
+### Gates (op1emu, the CS4 batch; NANDs and WAVs under /mnt/i, deleted after reading)
+
+Scenarios: mixer, T4, white (drive) 100 detents up to 0x7fff, orange (release) 20 down to 0x0200 ("heavy"), or the
+same taps without the turns ("untouched"); then a four-note chord at 38-40 s and another at 44-46 s. Images
+`--tape-stereo`, spread 0, stereo out; strip on = `g_coop_strip_on=1` (four neutral strips: nothing split, the master
+EQ bypassed).
+
+| run | image | T4 | result |
+|---|---|---|---|
+| R1 | strip on, `g_coop_strip_save_at=24145` (master_db_save ~37 s, strip on) | heavy | `master_saves 1`, `comp_swaps 131,503` (every block) [C op1emu] |
+| R1b | R1's NAND rebooted, the strip-off image (coop_strip.bin turns the strip on: CS6) | - | op1.db's master row loads **0x7fff, 0x7fff, 0x7fff, 0x0200**: the user's heavy values, saved while the strip was on (writer `0x019d7aac` at 1.69 s); then the swap's stores are seen in the audio interrupt (`0x7fff7fff` / `0x28002000` in, `0x7fff7fff` / `0x02007fff` back) [C op1emu] |
+| R2 | strip on, `g_coop_strip_off_at=27590` (~42 s) | untouched | - |
+| R3 | strip off | heavy | - |
+| R4 | as R2 | heavy | swaps stop at block 27,589; the mode change saved to coop_strip.bin (flag 0) |
+
+- **Strip on, heavy T4 = a fresh OP-1's comp:** chord 1 of R1 against R2: **sample-identical** (38-41 s, max diff 0);
+  R4 against R2 identical up to 40.04 s, then 5 LSB at most (the note-off landing one block apart, op1emu's key
+  timing; rms 1.3). Levels 671 / 439 rms both. With the strip off (R3) the same chord is **4,193 / 3,068 rms**: the
+  heavy setting is +16 dB and limited hard, so the bypass is doing something [C op1emu].
+- **Strip off, the heavy comp is back:** after R4's flip, chord 2 is 4,159 / 1,648 rms against R3's 4,162 / 1,651
+  (one block of key offset, rms diff 17 over 2.8 s, the onset block's 2,524); R2 (no turns) has 658 / 145 there
+  [C op1emu].
+- **Save + reload keeps the user's values:** R1 / R1b above.
+
+## CS6: saved per tape project (op1emu, 2026-11-23)
+
+Same branch. Emulator only: **nothing of CS6 has run on the OP-1**.
+
+### The file [C the code; C op1emu the gates]
+
+`/yaffs2/user/coop_strip.bin`, 172 bytes, little-endian:
+
+| offset | bytes | what |
+|---|---|---|
+| 0 | 4 | `C` `S` `P` 1: magic and version |
+| 4 | 1 | flags: bit 0 the strip mode; the rest 0 |
+| 5 | 3 | 0 |
+| 8 | 4 x 40 | tape tracks 1-4: `coop_strip_params` (the UI steps, `coop_strip.h`), then zeros. **The struct is 36 bytes**, not the 40 the CS1 comment says; the slot is 40 so the form can grow by four bytes in version 1 |
+| 168 | 4 | FNV-1a 32 of bytes 0-167 |
+
+- **Read** at every boot after the tape mounts (`coop_strip_boot`, from `coop_tape_mount_and_index`, after the
+  markers file): each strip is posted with the quiet form of `coop_strip_post` (no save asked), and
+  `g_coop_strip_on` bit 0 is set from the flags. **A file that is short, long, of another version, with a wrong
+  checksum or with any value out of its range is ignored as a whole**: every strip at its defaults, the strip off,
+  `file_bad` counted; nothing indexes a table with a saved byte before `params_valid` passed.
+- **Written** by the main loop (`coop_strip_service` from `coop_fx_service`, beside the other coop saves), never from
+  the audio interrupt or the KeyHandler thread: every `coop_strip_post` and `coop_strip_set_mode` bumps a change
+  counter (any thread); the service writes once the counter has stayed the same for **1,378 master blocks (2 s)**.
+  The clock is the audio block count, exact on the device and in op1emu (CYCLES in op1emu is not wall time). The
+  saved forms are read from the post mailboxes under their sequence, so a post in flight is never saved half-written
+  (the save waits 2 s more). Buffer: static, `aligned(4)`, through `coop_y_read` / `coop_y_write`.
+- **Cleared** (defaults, the strip off, written at once) when the tape image is rebuilt (`tape_io.cc`, after
+  `rebuild_image`) and when the whole tape is erased (`tape_edit.cc` `coop_erase`, the stand-in for the stock
+  `fast_tape_erase` 0x1a54b08 behind shift + erase, where the markers are cleared too): a new tape is a new project.
+  If the owner wants the strips to survive an erase, that is one line in `coop_erase`.
+- **The strip-mode switch is owned by this file.** The Settings row (CS5) shows `coop_strip_mode()` and calls
+  `coop_strip_set_mode(int on)` (any thread; it saves through the same 2-s path). `coop_settings.bin` does not keep
+  it, so `coop_settings.cc` needed no change. Reason: the strip mode decides how the project sounds (the master comp
+  and EQ, where the sends go), so it travels with the strips; a new tape starts with the strip off.
+- **Test overrides kept:** a nonzero `g_coop_strip_t1..t4` keeps that track's preset over the file (the words now
+  default to 0 = none; `0x64` is still "neutral"), and the preset is saved; `g_coop_strip_on` with bit 0 set in
+  the image keeps the strip on whatever the file says. New test words: `g_coop_tape_rebuild_test` (tape_io.cc: rebuild
+  at this boot), `g_coop_strip_file_test` (every save writes a damaged file: 1 short, 2 wrong checksum, 3 a value out
+  of range), `g_coop_strip_save_at` / `g_coop_strip_off_at` (CS4).
+- **Counters:** `g_strip_stat` gained `comp_swaps`, `file_loads`, `file_saves`, `file_clears`, `file_bad`,
+  `file_errors`; the whole struct is the `strip` line of `coop_stats.txt` (after `stats`, with `on` = the mode word).
+
+### Gate (op1emu, one kept NAND under /mnt/i, ten power cycles, deleted after)
+
+Each run boots, idles ~90 s and quits; `--dump-at-exit` of `g_strip_stat`, the four committed strips and
+`g_coop_strip_on`, and `coop_strip.bin` read out of the NAND (`tools/nand_file.py`). Preset P = track 1 EQ + comp +
+sat (`0x07000064`), track 2 dry 0 / FX 1 100 % (`0x6400`).
+
+| run | image | result [C op1emu] |
+|---|---|---|
+| C1 | P, strip on in the image, pristine NAND | first boot rebuilds the tape: `file_clears 1`, the defaults written, loaded (`file_loads 1`); the preset then saved (`file_saves 2`): 172 bytes, flags 1, checksum ok, track 1 `eq1 comp1 sat1` gains 48 / 28 / 46 / 42, thresh 40, makeup 8, drive 50, tone 10 |
+| C2 | no presets, strip word 0 | **the strips and the strip mode come back from the file**: track 1 as saved, `g_coop_strip_on = 1`, `file_loads 1`, `file_saves 0` (nothing changed, nothing written) |
+| C3 | `g_coop_tape_rebuild_test=1` | **cleared**: `file_clears 1`, every strip at its defaults, the mode 0, the file rewritten (flags 0, defaults, checksum ok) |
+| C4 | plain | the defaults load (`file_loads 1`), mode 0 |
+| C5 / C6 | `file_test=1` (a 100-byte file), then plain | C6: `file_bad 1`, `file_loads 0`, defaults, mode 0, no fault, ran to the end |
+| C7 / C8 | `file_test=2` (track 1's first gain byte flipped after the checksum: 48 -> 101) | C8: `file_bad 1`, defaults, no fault |
+| C9 / C10 | `file_test=3` (track 1's first EQ frequency 120, checksum right) | C10: the checksum passes, the range check refuses it: `file_bad 1`, defaults, mode 0, no fault. All ten runs exit 0 with no fault in the log |
+
 ## CS3 onwards (plan)
 
 1. **CS3, the audio path (op1emu):** a coop lane loop that leaves neutral tracks in the stock sum and mixes each
@@ -567,7 +709,7 @@ bus 2 and add it back (mind the `g_coop_s2_live[1]` early-out).
 + NOPs, skipping the stock EQ while the strip is on (words, UI and save untouched). **Comp:** four words
 `0xff80189c / 9e / a0 / a2` read by `0xffa04280` (defaults 0x7fff, 0x7fff, 0x2000, 0x2800; word 3 >>> 10 indexes
 `0x0106a8f4`) [C]; the stage cannot be skipped (it writes e34 / f34), so the bypass is by values: **neutral values
-not settled** (an op1emu sine sweep per word). Mixer subscreen word `[0x01aad5f0]` (T1 0, T2 1 EQ, T4 3 comp), knob
+not settled** (an op1emu sine sweep per word; settled in "CS4" above: there are none, the bypass uses the stock defaults). Mixer subscreen word `[0x01aad5f0]` (T1 0, T2 1 EQ, T4 3 comp), knob
 handler `0x19da2bc`, key-down `0x19db7c4` [C].
 
 **Mixer UI:** coop already owns keys (`coop_ui_key`), turns (`coop_ui_knob`) and drawing (`coop_ui_frame`). Mixer =

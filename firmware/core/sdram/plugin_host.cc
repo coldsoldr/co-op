@@ -1391,6 +1391,7 @@ extern "C" void coop_fx_init_mono(void *self, int pos)
 extern "C" int coop_slot2_save(void);                                      /* below (S2) */
 extern volatile int g_s2_save_req;
 extern "C" void coop_ui_service(void);                                    /* coop_ui.cc (u7): the UI's pending file writes */
+extern "C" void coop_strip_service(void);                                 /* coop_strip.cc (CS6) */
 static void slot2_build_service(void);                                    /* below: slot 2's object, built here (u8) */
 /* e6: the master FX words live at 0xFF8016C4 and the stock keeps them in op1.db's master table, written by
  * master_db_save (symbols/sdram.sym: 0x019D9B94, the only user of "UPDATE master SET ... fx_params"; it builds the row
@@ -1417,6 +1418,7 @@ extern "C" void coop_fx_service(void)
 {
     coop_place_service();                                                 /* e13: the policy's boot marker */
     coop_ui_service();
+    coop_strip_service();                                                 /* CS6: coop_strip.bin once the strip settled */
     if (g_s2_save_req) { g_s2_save_req = 0; coop_slot2_save(); }
     master_save_service();
     slot2_build_service();
