@@ -213,6 +213,177 @@ pack 252; unpack 255; peak 162; six bus jobs (mixed) 716.
 - Device: nothing here has run on the OP-1. The simulator counts no cache or SDRAM stalls (docs/performance.md); the
   kernels' working set is the strip state (1,512 bytes a track, its two work blocks included) and the tables (log2 / exp2 2 KB, one sat curve 1 KB).
 
+## CS3: the audio path (op1emu, 2026-11-23)
+
+Branch `cs3-strip-path`. Emulator only: **nothing of CS3 has run on the OP-1**, and no device package was built.
+
+### What is where
+
+- `core/sdram/coop_strip.cc`: four `coop_strip_bf` (one per tape track), the strip-mode word, the test presets, the
+  split decision, the per-track resample + strip driver, the send buses, the FX 1 / FX 2 returns, the staged update.
+- `core/sdram/strip_thunks.S`: the two lane hooks, the resampler thunk, a copy of the stock resampler with its
+  pointers passed in (`coop_rs_pair`), the master EQ stand-in.
+- `core/include/coop_strip_bf.h`: `coop_strip_bf_update` split into `coop_strip_bf_band` (one band's coefficients)
+  and `coop_strip_bf_commit` (the rest), same results (`run_strip_check.sh` PASS, `strip_test` all passed).
+- `tools/l1_stereo_insert.py` (`strip_patches`, only with `--tape-stereo` and the symbols in the ELF), every site
+  checked against its stock bytes [C, the image build]:
+
+  | site | stock | CS3 |
+  |---|---|---|
+  | `0xffa00fb4..0xffa00fd7` (loop B's dead body) | 36 dead bytes | three 12-byte trampolines: main (`P2 = fn; JUMP (P2)`), seam (`[--SP] = P2; P2 = fn; JUMP (P2)`), resampler (as main). 4 bytes left; the voice-sum skip range `0xffa00d2e..0xffa00d71` stays in reserve, unused |
+  | `0xffa0712c` main lane loop | `R0 = MAX (R0, R1) (V)` | `CALL tramp_main` -> `coop_strip_lane_main` |
+  | `0xffa0709c` seam lane loop | `R0 = MAX (R2, R0) (V)` | `CALL tramp_seam` -> `coop_strip_lane_seam` |
+  | `0xffa07250` the tick | `CALL 0xffa06194` | `CALL tramp_rs` -> `coop_strip_rs_thunk` |
+  | `0xffa017b8..0xffa017c3` master FX 1 | `R0 = [P1]; P1 = R0; P0 = 0xff800db4` (first 12 bytes of the render call) | `P2 = coop_master_fx1; CALL (P2); JUMP.S 0xffa01220` (the rest of the old block is dead) |
+  | `0xffa0110e..0xffa0111b` master EQ | `P1 = 0x010004cc; CALL (P1); CALL 0xffa030f0` | `P1 = coop_master_eq; CALL (P1); NOP; NOP` |
+- `core/sdram/tape_stereo.cc`: `coop_tape_gains` calls `coop_strip_tape_gains(g, stereo)`;
+  `core/sdram/master_suite.cc`: `coop_master_apply` calls `coop_strip_master()` first (and with the strip on its slot 2
+  no longer runs on the master pair). `core/sdram/Makefile`: the three sources and `STRIP_KEEP`.
+
+### How it runs, per block [C op1emu unless marked]
+
+1. **Split** (`coop_tape_gains`, after the stock pan law): with `g_coop_strip_on` bit 0 and the stereo tape layout,
+   a track whose strip is not neutral (`coop_strip_neutral`) is split; its lanes t and 4 + t get a destination in
+   `g_strip_lanes.dst` (its own 600-sample pair with 8 guard samples below, like the stock pair's resampler base);
+   the stock (gL, gR) of each track are kept for its strip. A track newly split gets a zeroed pair.
+2. **Lane hooks.** The stock MAX, then for a split lane its R6 samples (from P1 + 2 main / P4 seam) added
+   saturating into `dst + R7.H`, the extent written kept in `g_strip_lanes.end`, and **CC = 1 written into the
+   saved ASTAT** (bit 5) so the stock skips the lane's MAC; a neutral lane returns with ASTAT as it came. Registers:
+   main: R0 = the MAX, P2 free (reloaded at `0xffa07134` / `0xffa0716e`), everything else saved (P0, R1, R2, R3,
+   P1, LC0 / LT0 / LB0; I1 and M0, the live destinations, untouched). Seam: every P register is live, so the
+   trampoline pushes P2 and the thunk pops it after ASTAT. The copy uses P registers only (no I / L register
+   touched, so no circular-buffer risk inside the tick); LC0 is saved and restored (LT0, LB0 first, LC0 last on
+   the push side, the reverse on the pop side). The stack slots were read back from the disassembly of the build.
+3. **Resampler thunk.** Pushes RETS, ASTAT, R0-R2, reserves 12 bytes and calls the stock `0xffa06194` (it stores
+   its tap-table base in that area, `[FP + 8]`). Without a split track it returns at once (R0 = the stock's result,
+   R1 = the increment, ASTAT restored: **CC is live across this call**, set at `0xffa0724e` and tested at
+   `0xffa0725c`). With one: M0-M3, B0-B3, L0-L3 saved, L zeroed, `coop_strip_tape(pos, inc, step)`.
+4. **`coop_strip_tape`**: per split track, `coop_rs_pair` (the stock loop instruction for instruction: the same
+   position, increment, gain `W[0xff8029dc]` and ramp step, the same tap table) into a 64-sample int16 block, the
+   pair zeroed over what the hooks wrote, then `coop_strip_bf_process` with the track's gains (Q15 as the stock
+   lane MAC uses them): dry into d34 / db4 (the stock pass has already written them; the tape level stage
+   `0xffa072c4..314` then runs on the sum as before), sends into the two buses. A tick that wrote lanes but never
+   reached the resampler leaves an extent, which the next `coop_tape_gains` clears.
+5. **Master FX 1** (`coop_master_fx1`, reached only when FX 1 is on): strip off = the stock call, the same
+   `render(this + adjust, d34, db4, 0xff8016c4)`. Strip on: if due (below), send bus 1 is copied, rendered in place
+   through the same vtable entry, and d34 / db4 get `FX(send) - send`; the bus is zeroed. d34 / db4 (the live
+   instrument and the dry tracks) never reach it.
+6. **`coop_strip_master`** (first thing in `coop_master_apply`, every block): the staged updates; with the strip
+   on, FX 2 = `coop_slot2_render(1, send bus 2)` the same way when `g_coop_s2_live[1]` and due; both buses cleared
+   when nothing consumed them (FX 1 off). The early-out of `coop_master_apply` now treats "strip on" like "slot 2
+   idle", so with the strip on the stand-in returns at once unless the click or the suite needs it.
+7. **Master EQ** (`coop_master_eq`): the getter (R0 = `0xff8017e0`), then `0xffa030f0` unless
+   `g_coop_strip_on & 3 == 1`. The words, the UI and the save are untouched. The comp words are not touched (CS4).
+
+### Decisions
+
+- **Coefficient updates: spread in the audio thread, one band a block.** `coop_strip_post(t, params)` (any thread;
+  a seqlock mailbox: odd sequence while written, the reader retries next block) -> the audio thread stages the new
+  form; each block it computes at most **one** EQ band whose fields changed, over all four strips
+  (`coop_strip_bf_band`, the int64 divides); a band whose fields did not change keeps its coefficients for free.
+  In a later block (or the same one when no band changed) it commits: `coop_strip_bf_commit` (comp / sat / levels,
+  one int64 divide for the knee). The strip runs on the old form until the commit, so it never sees half an
+  update; a new post restarts the staging. A change of four bands lands in five blocks (7 ms). Chosen over the
+  main loop because the handover is then trivial (the commit and the process are in the same interrupt) and the
+  gates are deterministic.
+- **Tails: render while sent to, then until quiet.** An effect renders while any split track sends to it with a
+  nonzero gain in this block (the bus jobs' g0 / g1); after that it keeps rendering its silent bus until its
+  return has stayed within +-2 LSB for `g_coop_strip_tail_blocks` blocks in a row (default 1,380 = 2 s), then it
+  is skipped (no cost). So a delay or reverb rings out after the tape stops or the send goes to 0; an effect whose
+  return never settles (self-oscillating feedback) keeps rendering. A skipped effect keeps its internal state:
+  when it starts again an old tail it was holding can come back.
+- **Returns are wet only** (the owner's choice): `FX(send) - send`, with int32 differences, one saturation into
+  the master pair.
+- **The pairs are zeroed after use, over the written extent** (the hooks record it), not 600 samples every block.
+
+### Image words (inject_app `--set-word`)
+
+`g_coop_strip_on` (bit 0 strip mode, bit 1 test: keep the master EQ), `g_coop_strip_t1..t4` (test presets:
+byte 0 dry %, byte 1 FX 1 %, byte 2 FX 2 %, byte 3 sections: bit 0 EQ (+6 dB shelf 80 Hz, -4 dB 640 Hz, +5 dB
+2.5 kHz, +3 dB shelf 10 kHz), 1 comp (-20 dB, default ratio, +4 dB makeup), 2 sat (tape, drive 50, tone +10),
+3 pre tap, 4 fold, 5 tube; `0x64` = neutral), `g_coop_strip_wobble` (test: every N blocks track 1's band 2 flips
+between +6 and -6 dB, through the staged update), `g_coop_strip_tail_blocks`, `g_coop_strip_probe` (the CS4 comp
+probe). Counters: `g_strip_stat` (read with op1emu `--dump-at-exit`; not in `coop_stats.txt`, whose file belongs
+to the e16 work).
+
+### Gates (op1emu)
+
+All images `--tape-stereo`, `g_coop_spread=0`, `g_coop_force_stereo_out=1`, scratch NANDs under `/mnt/i`, one run
+at a time. Spread 0 matters: with the gate's usual spread 32767 the random per-voice pans follow the callback's
+timing, so two images that differ only in speed do not compare sample for sample (seen in the first try). Note that
+any change of the callback's cost can move a key event to the next block in op1emu (docs/emulator.md; the
+`wav_levels.py` criterion: equal levels, a whole-block offset, residual at the noise floor of ~0.3 a sample).
+
+| gate | what | result |
+|---|---|---|
+| 1 | strip off (CS3 image) vs the dev image (46f65fc), `det_tape_rec`, `det_chord` | **sample-identical**: 11,351,788 and 12,160,813 frames from 5 s [C op1emu] |
+| 2 | strip on, four neutral strips, no sends, vs strip off, `det_tape_rec` | with the master EQ kept (`g_coop_strip_on=3`): identical but for the take played **one block (64 samples) later**, residual 0.22-0.26 a sample (the noise floor), levels within 0.05 % [C op1emu]: a key-timing shift, not a DSP difference (nothing is split; the take itself starts a block later). With the EQ bypassed (`=1`, the CS4 behaviour): **not identical, by design**: the stock master EQ at its defaults is not transparent (best fit 25 samples late, residual 6-9 LSB a sample on a ~600-rms chord, levels within 0.14 %) [C op1emu] |
+| 3a | `det_strip_fx1` (stock delay on master FX 1, chord on track 1), `g_coop_strip_t1=0x6400` (dry 0, FX 1 100 %) vs strip off | strip off: the live chord and the playback each with the delay's echo tail. Strip on: **the live chord dry** (back to the floor within 0.5 s of its release, no echoes); **the playback's dry part is absent** (peak 64 = the idle floor where strip off has rms 384-810), the wet return starts ~0.7 s after the playback onset and its tail matches strip off's (e.g. 106.7 vs 105.3, 95.2 vs 93.8 rms a quarter second). 13,040 FX 1 renders, of them 2,067 in the tail (ringing out after the tape stopped), `coop_strip_tape` 4,281 cycles a block (one track: resample + bus jobs), the delay's render on the bus 12,534 max [C op1emu] |
+| 3b | FX 2: `stereo_delay.coop` in master slot 2 (`coop_slot2.bin`), `g_coop_strip_t1=0x640000` | pending (the first run was cut off when WSL restarted; see the rebased runs below) |
+| 4 | EQ + comp + sat on track 1 (`0x07000064`), `det_tape_rec` | audible and bounded: playback 1,022 / 908 rms in its two seconds against 545 / 438 with the strip off (+5.5 / +6.3 dB: the boosts, +4 dB makeup, the sat), peak 3,680, back to the floor after the take; live chord unchanged (567 / 650). `coop_strip_tape` 14,661 cycles a block average (one track), 14,749 max [C op1emu] |
+| 5 | cost, `det_tape_rec`, all four strips everything on with both sends at 50 % (`0x07323264`), tracks 2-4 empty (the work does not depend on the signal) | below |
+
+**Gate 5, callback cycles** (`coop_stats.txt` windows, 5 s each; the playback window 37-42 s guest, the recording
+window 32-37 s) [C op1emu: instruction counts, no cache or SDRAM model]:
+
+| image | idle avg | playback avg / max | recording avg / max |
+|---|---|---|---|
+| dev (46f65fc) | 34,867 | 42,988 / 46,213 | 74,725 / 106,647 |
+| CS3, strip off | 35,100 | 43,493 / 46,894 | 75,263 / 107,328 |
+| CS3, strip on, neutral, EQ bypassed | - | 29,352 / 32,806 | - |
+| CS3, strip on, neutral, EQ kept | 35,100 | 43,573 / 46,988 | - |
+| CS3, four strips all on | - | 79,145 / 91,983 | 117,850 / 152,417 |
+| same, track 1's band 2 changed every 40 blocks | - | 79,222 / 94,525 | 118,154 / 153,780 |
+
+- Strip off costs +233 a block idle and +505 in playback (the stand-in's call every block, the lane hooks' MAX and
+  test, the resampler thunk's test).
+- **The stock master EQ costs ~14 k cycles a block**; the strip mode skips it, which pays for a good part of the strips.
+- Four tracks, everything on: `coop_strip_tape` **59,904 cycles a block average, 60,430 max** (4 x (resampler copy
+  ~3.6 k + strip ~11.4 k + zeroing ~0.1 k)); the callback +36,157 a block over dev in playback (6.2 % of the
+  580,499-cycle block), +45,770 at the worst block (the EQ's 14 k saved is in this).
+- The spread update: the worst band block 4,533 cycles, the worst commit 2,408 (against ~25 k for a whole update in
+  one block, CS2); 5,945 bands and 5,933 commits in the wobble run, the worst callback +2.5 k over the same run
+  without changes.
+- Cost the strip mode adds per split track whether or not its sections run: the resampler copy (~3.6 k) and the
+  zeroing; per track all sections on ~11.4 k (CS2's 11.7 k a track, the sends included).
+
+### CS4 research: the master comp words (op1emu sine probe, `g_coop_strip_probe=1`, not patched)
+
+A 1,034 Hz sine written over d34 / db4 right before `0xffa04280`, at -2.6 dBFS (0x6000) and -30 dBFS (0x0400), one
+comp word forced at a time (the others as found: 0x7fff, 0x7fff, 0x2000, 0x2800), output rms of the audio dump
+(arbitrary but fixed output scale; the input ratio high / low is 24 = 27.6 dB) [C op1emu]:
+
+| setting | high | low | high / low |
+|---|---|---|---|
+| defaults | 3,090.5 | 185.2 | 24.4 dB (3.2 dB of gain reduction at -2.6 dBFS) |
+| word 0 (`0xff80189c`) 0 / 0x1000 / 0x2000 / 0x2800 / 0x4000 / 0x6000 / 0x7fff | silent / 69 / 277 / 433 / 1,108 / 2,492 / 3,091 | silent / - / - / - / 46.3 / 104 / 185 | a level: the low output goes as the word squared (0x4000 -> 1/4); 0x7fff (the default) is the top |
+| word 1 (`0xff80189e`) 0 .. 0x6000 / 0x7fff | 3,229 / 3,091 | 185.2 / 185.2 | every value below 0x7fff gives the same 0.4 dB less reduction at the high level; nothing at the low level |
+| word 2 (`0xff8018a0`) 0 / 0x1000 / 0x2000 / 0x2800 / 0x4000 / 0x6000 / 0x7fff | silent / 1,112 / 3,091 / 3,130 / 3,164 / 3,174 / 3,176 | silent / 46.3 / 185 / 289 / 741 / 1,667 / 2,964 | an input gain into a limiter near 3,175: the low output goes as the word squared; **0x1000 is the only setting linear at both levels** (24.0 = 27.6 dB) but 12 dB down |
+| word 3 (`0xff8018a2`) 0 / 0x1000 / 0x2000 / 0x2800 / 0x4000 / 0x6000 / 0x7fff | 3,408 / 3,127 / 3,097 / 3,091 / 3,313 / 3,022 / 3,542 | 185 at every value | the detector's time constant (the `>>> 10` table index): changes only the high level; 0x4000 / 0x6000 / 0x7fff give peaks of 5,445 / 6,134 / 5,013 (pumping or distortion) |
+
+So **no single comp word makes the stage neutral**: at the defaults it already takes 3.2 dB off a -2.6 dBFS sine;
+word 2 is a squared-law drive into a limiter (unity-in, unity-out not found among the values tried), word 0 a
+squared-law level at its maximum, word 1 a two-state switch, word 3 the time constant. Open for CS4: a 2-D sweep of
+word 2 against word 1 / 3 (finer around 0x1000-0x2000) and the stage's disassembly at `0xffa04280`, or accepting the
+stage as the OP-1's fixed output limiter and bypassing only the user's compressor setting (which words the mixer's
+T4 page writes is still to trace).
+
+### What is left
+
+- **CS4**: the comp bypass (above); whether the EQ bypass should keep the EQ's 25-sample phase (it does not now);
+  the master FX's own wet / dry knob on a send bus (the return removes the dry part whatever the knob says; a delay
+  with mix 0 returns nothing).
+- **CS5**: the UI (`coop_strip_post` is the entry for it, `coop_strip_params_of` / `coop_strip_meter` the reads);
+  the strip mode switch in Settings › Voices instead of the image word.
+- **CS6**: saving; the presets words go away.
+- `g_strip_stat` into `coop_stats.txt` (after e16, which owns that file).
+- Device risks: the cost above is instruction counts; four resampler copies and four strips run from SDRAM with
+  their state (~1.6 KB a strip, 2 x 1,232 bytes of pair a track) in SDRAM: the device's cache factor (3.8x in
+  T3g) could put four strips everything on near a third of the block. The lane hooks run inside the tick's LC1
+  loop from SDRAM (a cache miss per lane per pass when cold). The FX 1 render on a send bus has been tried with the
+  stock delay only; an effect that ignores its buffer arguments would process the master pair instead (none seen).
+  Nothing here has been flashed.
+
 ## CS3 onwards (plan)
 
 1. **CS3, the audio path (op1emu):** a coop lane loop that leaves neutral tracks in the stock sum and mixes each
