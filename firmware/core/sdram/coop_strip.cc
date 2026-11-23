@@ -29,17 +29,25 @@
  * keeps rendering the (silent) bus until its return has stayed within +-2 LSB for g_coop_strip_tail_blocks blocks
  * in a row (default 1380, 2 s), so delay and reverb tails ring out; then it is skipped.
  *
- * Image words (inject_app --set-word; the UI of CS5 replaces the presets):
- *  g_coop_strip_on      bit 0: strip mode; bit 1 (test): keep the master EQ while the strip is on
- *  g_coop_strip_t1..t4  test preset per track: byte 0 dry %, byte 1 FX 1 %, byte 2 FX 2 %, byte 3 sections
- *                       (bit 0 EQ, 1 comp, 2 sat, 3 pre tap, 4 fold, 5 tube). 0x64 = neutral (dry 100 %).
+ * CS4: the master comp words are swapped for the stock defaults around the stock level stage while the strip is on
+ * (comp_enter / coop_strip_comp_leave). CS6: the strips and the strip mode are saved per tape project in
+ * /yaffs2/user/coop_strip.bin (coop_strip_boot / _service / _clear; coop_strip_set_mode for the Settings row).
+ *
+ * Image words (inject_app --set-word; the UI of CS5 and the saved file replace the presets):
+ *  g_coop_strip_on      bit 0: strip mode (set in the image: on whatever the file says; else the file decides);
+ *                       bit 1 (test): keep the master EQ while the strip is on; bit 2 (test): keep the master comp
+ *  g_coop_strip_t1..t4  test preset per track, 0 = none (the file decides): byte 0 dry %, byte 1 FX 1 %, byte 2
+ *                       FX 2 %, byte 3 sections (bit 0 EQ, 1 comp, 2 sat, 3 pre tap, 4 fold, 5 tube). 0x64 = neutral.
  *  g_coop_strip_wobble  test: every N blocks track 1's band 2 gain flips (+-6 dB): exercises the spread update
  *  g_coop_strip_tail_blocks
+ *  g_coop_strip_save_at, g_coop_strip_off_at, g_coop_strip_file_test, g_coop_tape_rebuild_test (tape_io.cc): the
+ *                       CS4 / CS6 gates
  *
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
 #include <stdint.h>
 #include "coop_strip_bf.h"
+#include "../include/coop_yio.h"                  /* CS6: coop_y_read / coop_y_write */
 
 #define D34 ((int16_t *)0xff800d34u)                  /* the master pair (docs/stereo-bus.md) */
 #define DB4 ((int16_t *)0xff800db4u)
@@ -52,10 +60,11 @@
 
 extern "C" {
 __attribute__((section(".data"))) volatile uint32_t g_coop_strip_on = 0;
-__attribute__((section(".data"))) volatile uint32_t g_coop_strip_t1 = 0x64;
-__attribute__((section(".data"))) volatile uint32_t g_coop_strip_t2 = 0x64;
-__attribute__((section(".data"))) volatile uint32_t g_coop_strip_t3 = 0x64;
-__attribute__((section(".data"))) volatile uint32_t g_coop_strip_t4 = 0x64;
+/* CS6: 0 = no preset (the saved file decides); nonzero = the test preset, which overrides the file for that track */
+__attribute__((section(".data"))) volatile uint32_t g_coop_strip_t1 = 0;
+__attribute__((section(".data"))) volatile uint32_t g_coop_strip_t2 = 0;
+__attribute__((section(".data"))) volatile uint32_t g_coop_strip_t3 = 0;
+__attribute__((section(".data"))) volatile uint32_t g_coop_strip_t4 = 0;
 __attribute__((section(".data"))) volatile uint32_t g_coop_strip_wobble = 0;
 __attribute__((section(".data"))) volatile uint32_t g_coop_strip_tail_blocks = 1380;
 
@@ -72,8 +81,24 @@ struct strip_stat {
     uint32_t fx1_renders, fx2_renders, fx1_tail, fx2_tail;/* blocks rendered; of them in the tail */
     uint32_t fx_max, master_max, posts, zero_max;         /* coop_master_fx1 / coop_strip_master cycles; pair zeroing */
     uint32_t splits, gains_calls, split_samples, last_mask;
+    uint32_t comp_swaps;                                  /* CS4: blocks the stage ran on the stock comp words */
+    uint32_t file_loads, file_saves, file_clears, file_bad, file_errors;   /* CS6: coop_strip.bin */
 };
 volatile struct strip_stat g_strip_stat;
+/* the "strip" line of coop_stats.txt (coop_stats.cc): the counters above, in order, with these names */
+static const char *const g_strip_stat_names[] = {
+    "tape_calls", "tape_max", "tape_sum", "tape_n", "stage_max", "commit_max", "bands", "commits",
+    "fx1_renders", "fx2_renders", "fx1_tail", "fx2_tail", "fx_max", "master_max", "posts", "zero_max",
+    "splits", "gains_calls", "split_samples", "last_mask", "comp_swaps",
+    "file_loads", "file_saves", "file_clears", "file_bad", "file_errors",
+};
+int coop_strip_stat_words(const volatile uint32_t **words, const char *const **names)
+{
+    *words = (const volatile uint32_t *)&g_strip_stat;
+    *names = g_strip_stat_names;
+    return (int)(sizeof g_strip_stat_names / sizeof g_strip_stat_names[0]);
+}
+static_assert(sizeof(struct strip_stat) == sizeof g_strip_stat_names / sizeof g_strip_stat_names[0] * 4, "a name per counter");
 
 int32_t coop_rs_pair(int32_t pos, int32_t inc, const void *io);   /* strip_thunks.S */
 void coop_slot2_render(int pos, int16_t *l, int16_t *r);          /* plugin_host.cc */
@@ -116,8 +141,10 @@ static void copy_params(coop_strip_params *d, const volatile coop_strip_params *
     for (unsigned i = 0; i < sizeof *d; i++) b[i] = a[i];
 }
 
-/* any thread (the UI of CS5; the test presets): the strip takes it within a few blocks */
-extern "C" void coop_strip_post(int t, const coop_strip_params *p)
+static volatile uint32_t g_change_seq;                /* CS6: bumped by every change the file should keep */
+
+/* the mailbox write; no save asked (the file load, the clear, the wobble test) */
+static void post_quiet(int t, const coop_strip_params *p)
 {
     if (t < 0 || t >= TRACKS) return;
     struct strip_mail *m = &g_mail[t];
@@ -128,6 +155,15 @@ extern "C" void coop_strip_post(int t, const coop_strip_params *p)
     __asm__ __volatile__("ssync;" ::: "memory");
     m->seq = (s | 1u) + 1u;
     g_strip_stat.posts++;
+}
+
+/* any thread (the UI of CS5; the test presets): the strip takes it within a few blocks, and the main loop saves it
+ * to /yaffs2/user/coop_strip.bin once the changes have stopped for 2 s (CS6) */
+extern "C" void coop_strip_post(int t, const coop_strip_params *p)
+{
+    if (t < 0 || t >= TRACKS) return;
+    post_quiet(t, p);
+    g_change_seq = g_change_seq + 1u;
 }
 
 extern "C" const coop_strip_params *coop_strip_params_of(int t) { return &g_strip[t & 3].p; }
@@ -162,10 +198,11 @@ static void strip_init_once(void)
         g_pend[t].stage = -1;
     }
     const uint32_t w[TRACKS] = { g_coop_strip_t1, g_coop_strip_t2, g_coop_strip_t3, g_coop_strip_t4 };
-    for (int t = 0; t < TRACKS; t++) {
+    for (int t = 0; t < TRACKS; t++) {                 /* CS6: a nonzero preset word overrides the saved file */
+        if (!w[t]) continue;
         coop_strip_params p;
         preset_params(w[t], &p);
-        coop_strip_post(t, &p);
+        post_quiet(t, &p);                             /* coop_strip_boot asks for its save */
     }
 }
 
@@ -221,7 +258,7 @@ static void strip_stage_service(void)
         g_wobble_n = 0;
         coop_strip_params p = g_strip[0].p;
         p.eq_gain[1] = p.eq_gain[1] == STRIP_EQ_GAIN0 + 12 ? STRIP_EQ_GAIN0 - 12 : STRIP_EQ_GAIN0 + 12;
-        coop_strip_post(0, &p);
+        post_quiet(0, &p);
     }
 }
 
@@ -391,12 +428,63 @@ static void comp_probe(void)
     }
 }
 
+/* ---- CS4: the master comp bypassed while the strip mode is on (docs/channel-strip.md "CS4") ----
+ * The stock level stage 0xffa04280 reads its four words W[0xff80189c..a2] once, at its start, through an absolute
+ * pointer (P2 = 0xff801880): w0 / w1 the L / R level before the limiter (squared, 0x7fff = unity), w2 the drive (squared
+ * and x16: 0x2000 = unity), w3 the release (>>> 10 indexes the time-constant table 0x0106a8f4). The limiter's threshold
+ * (half scale of the output) and the dither are fixed in the code: there is no word that takes them out. So while
+ * the strip is on, the stage runs on the words of a fresh OP-1 (the op1.db master row of the stock package, op1emu
+ * write trace: 0x7fff, 0x7fff, 0x2000, 0x2800): unity below -6 dBFS, the OP-1's own output limiter above.
+ *
+ * The swap lives inside the audio interrupt only: comp_enter (from coop_strip_master, which the getter stand-in calls
+ * right before the stage, 0xffa017ac / 0xffa017ae) keeps the user's words and writes the defaults; coop_strip_comp_leave
+ * (from CoopAudioCb, after the stock callback returned) writes the user's words back. No thread runs in between, so
+ * the mixer page (Gfx thread), the encoders (KeyHandler) and master_db_save 0x019D9B94 (main loop; it builds op1.db's
+ * master_params from these live words) only ever see the user's values: the UI and the save are untouched.
+ * g_coop_strip_on bit 2 (test): keep the user's comp while the strip is on. */
+#define COMP_WORDS ((volatile uint32_t *)0xff80189cu)   /* two words: (w1 << 16) | w0, (w3 << 16) | w2 */
+static const uint32_t COMP_STOCK[2] = { 0x7fff7fffu, 0x28002000u };
+static uint32_t g_comp_user[2];
+static volatile uint32_t g_comp_swapped;
+static void comp_enter(void)
+{
+    if ((g_coop_strip_on & 5u) != 1u) return;
+    if (g_comp_swapped) return;                       /* never keep the defaults as the user's words (no leave since) */
+    g_comp_user[0] = COMP_WORDS[0]; g_comp_user[1] = COMP_WORDS[1];
+    COMP_WORDS[0] = COMP_STOCK[0]; COMP_WORDS[1] = COMP_STOCK[1];
+    g_comp_swapped = 1;
+    g_strip_stat.comp_swaps++;
+}
+/* CS4 / CS6 gate words (test images only; 0 = off): at master block N (counted from the first block this file sees)
+ * ask for master_db_save (g_coop_strip_save_at, the e6 path: the main loop writes op1.db's master row ~0.5 s later)
+ * or switch the strip mode off through coop_strip_set_mode (g_coop_strip_off_at, as the Settings row will) */
+__attribute__((section(".data"))) volatile uint32_t g_coop_strip_save_at = 0;
+__attribute__((section(".data"))) volatile uint32_t g_coop_strip_off_at = 0;
+extern "C" void coop_master_save_request(void);       /* plugin_host.cc (e6) */
+extern "C" void coop_strip_set_mode(int on);          /* below (CS6) */
+static volatile uint32_t g_strip_blk;                  /* master blocks (689 a second): the CS6 save's clock too */
+static void strip_test_words(void)
+{
+    uint32_t n = g_strip_blk;
+    if (n == g_coop_strip_save_at) coop_master_save_request();
+    if (n == g_coop_strip_off_at) coop_strip_set_mode(0);
+}
+extern "C" void coop_strip_comp_leave(void)            /* CoopAudioCb (coop_cb.cc), after the stock callback */
+{
+    if (!g_comp_swapped) return;
+    COMP_WORDS[0] = g_comp_user[0]; COMP_WORDS[1] = g_comp_user[1];
+    g_comp_swapped = 0;
+}
+
 /* From coop_master_apply (master_suite.cc), first thing, every block: the staged updates, FX 2 on send bus 2 and
  * the buses cleared. Returns 1 when the strip mode is on (the master's slot 2 then does not run on d34 / db4). */
 extern "C" int coop_strip_master(void)
 {
     if (!g_inited) strip_init_once();
     if (g_coop_strip_probe) comp_probe();
+    g_strip_blk = g_strip_blk + 1u;
+    if (g_coop_strip_save_at | g_coop_strip_off_at) strip_test_words();
+    comp_enter();                                    /* CS4: the stage sees the stock default comp words */
     strip_stage_service();
     if (!(g_coop_strip_on & 1u)) { send_drop(0); send_drop(1); return 0; }
     send_drop(0);                                      /* FX 1 off (or nothing due): its bus is still cleared */
@@ -412,4 +500,174 @@ extern "C" int coop_strip_master(void)
         send_drop(1);
     }
     return 1;
+}
+
+/* ---- CS6: saved per tape project (docs/channel-strip.md "CS6") ----
+ * /yaffs2/user/coop_strip.bin, 172 bytes, little-endian:
+ *   0    'C' 'S' 'P' 1          magic and version
+ *   4    flags                  bit 0 the strip mode; the rest 0
+ *   5    0 0 0                  reserved
+ *   8    4 x 40-byte slots     tape tracks 1 .. 4: coop_strip_params (36 bytes, the UI steps, coop_strip.h), 4 zeros
+ *   168  FNV-1a 32 of bytes 0 .. 167
+ * The file owns the strip-mode switch: the Settings row (CS5) shows coop_strip_mode() and calls
+ * coop_strip_set_mode(on); coop_settings.bin does not keep it. A file that is short, long, of another version, with a
+ * wrong checksum or with any value out of its range is ignored as a whole (every strip at its defaults, the strip
+ * off). Read at boot after the tape mounts (coop_strip_boot, from coop_tape_mount_and_index); written by the main loop
+ * (coop_strip_service, from coop_fx_service) once nothing changed for 2 s; cleared (defaults written at once) when
+ * the tape image is rebuilt and when the whole tape is erased (coop_strip_clear: a new tape is a new project). Files
+ * on the main thread only: never from the audio interrupt or the KeyHandler thread (coop_settings.cc u7).
+ * The image words stay overrides for the tests: a nonzero g_coop_strip_t<n> keeps that track's preset over the file;
+ * g_coop_strip_on with bit 0 set keeps the strip on whatever the file says. */
+#define SP_OPEN   ((int (*)(const char *, int, int))0x01A997F4u)       /* yaffs open / close, as tape_io.cc */
+#define SP_CLOSE  ((int (*)(int))0x01A99908u)
+#define SP_FILE   "/yaffs2/user/coop_strip.bin"
+#define SP_BYTES  172
+#define SP_SLOT   40                                                   /* a track's slot: the 36-byte form, 4 bytes of zeros */
+static_assert(sizeof(coop_strip_params) <= SP_SLOT, "the form fits its slot");
+#define SP_QUIET  1378u                                                /* 2 s of master blocks (64 samples at 44.1 kHz) */
+static uint8_t g_sp_buf[SP_BYTES + 4] __attribute__((aligned(4)));     /* a yaffs buffer: even (coop_yio.h); +4: a long file shows */
+static uint32_t g_sp_saved_seq, g_sp_seen_seq;
+static uint32_t g_sp_seen_at;                                          /* g_strip_blk when the last change was seen */
+static uint32_t g_sp_img_on;                                           /* g_coop_strip_on as the image set it */
+/* test (CS6 gate): every save writes a damaged file: 1 short (100 bytes), 2 a wrong checksum, 3 a value out of range */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_strip_file_test = 0; }
+static int g_sp_booted;
+
+static uint32_t fnv1a(const uint8_t *b, int n)
+{
+    uint32_t h = 2166136261u;
+    for (int i = 0; i < n; i++) { h ^= b[i]; h *= 16777619u; }
+    return h;
+}
+static uint32_t preset_word(int t)
+{
+    switch (t) { case 0: return g_coop_strip_t1; case 1: return g_coop_strip_t2; case 2: return g_coop_strip_t3; default: return g_coop_strip_t4; }
+}
+static int params_valid(const coop_strip_params *p)                    /* every field in its range: nothing indexes past a table */
+{
+    if (p->eq_on > 1 || p->comp_on > 1 || p->sat_on > 1 || p->tap_post > 1) return 0;
+    for (int b = 0; b < 4; b++)
+        if (p->eq_cut[b] > 1 || p->eq_freq[b] >= STRIP_EQ_NFREQ || p->eq_gain[b] >= STRIP_EQ_NGAIN || p->eq_q[b] >= STRIP_EQ_NQ) return 0;
+    if (p->c_thresh > 96 || p->c_ratio >= STRIP_COMP_NRATIO || p->c_attack >= STRIP_COMP_NTIME || p->c_release >= STRIP_COMP_NTIME) return 0;
+    if (p->c_makeup > 48 || p->c_knee > 24 || p->s_drive > 100 || p->s_type >= STRIP_SAT_NTYPE) return 0;
+    if (p->s_tone < -50 || p->s_tone > 50 || p->s_mix > 100 || p->dry > 100 || p->fx1 > 100 || p->fx2 > 100) return 0;
+    return 1;
+}
+/* the latest form posted for track t (the mailbox, read under its sequence); 0 = being written, try again */
+static int form_read(int t, coop_strip_params *p)
+{
+    struct strip_mail *m = &g_mail[t];
+    uint32_t s = m->seq;
+    if (s & 1u) return 0;
+    if (!s) { coop_strip_params_default(p); return 1; }               /* never posted */
+    copy_params(p, &m->p);
+    __asm__ __volatile__("ssync;" ::: "memory");
+    return m->seq == s;
+}
+static int sp_write(void)                                             /* main thread. 1 = written */
+{
+    uint8_t *b = g_sp_buf;
+    for (int i = 0; i < SP_BYTES; i++) b[i] = 0;
+    b[0] = 'C'; b[1] = 'S'; b[2] = 'P'; b[3] = 1;
+    b[4] = (uint8_t)(g_coop_strip_on & 1u);
+    for (int t = 0; t < TRACKS; t++) {
+        coop_strip_params p;
+        if (!form_read(t, &p)) return 0;                               /* a post in flight: the next pass */
+        const uint8_t *q = (const uint8_t *)&p;
+        for (unsigned i = 0; i < sizeof p; i++) b[8 + SP_SLOT * t + i] = q[i];
+    }
+    uint32_t ft = g_coop_strip_file_test;
+    if (ft == 3) b[8 + 8] = STRIP_EQ_NFREQ;                            /* test: a value out of range, checksum right */
+    uint32_t h = fnv1a(b, SP_BYTES - 4);
+    for (int k = 0; k < 4; k++) b[SP_BYTES - 4 + k] = (uint8_t)(h >> (8 * k));
+    if (ft == 2) b[20] ^= 0x55;                                        /* test: a wrong checksum */
+    int n = ft == 1 ? 100 : SP_BYTES;                                  /* test: a short file */
+    int fd = SP_OPEN(SP_FILE, 0x242, 0x180);                           /* O_RDWR | O_CREAT | O_TRUNC */
+    if (fd < 0) { g_strip_stat.file_errors++; return 0; }
+    int ok = coop_y_write(fd, b, n) == n;
+    ok = (SP_CLOSE(fd) == 0) && ok;
+    if (ok) g_strip_stat.file_saves++; else g_strip_stat.file_errors++;
+    return ok;
+}
+static void sp_capture_img(void)
+{
+    if (g_sp_booted) return;
+    g_sp_booted = 1;
+    g_sp_img_on = g_coop_strip_on;
+}
+/* every strip at its defaults (a preset word keeps its preset), the strip off (unless the image keeps it on) */
+static void sp_defaults(void)
+{
+    for (int t = 0; t < TRACKS; t++) {
+        if (preset_word(t)) continue;
+        coop_strip_params p;
+        coop_strip_params_default(&p);
+        post_quiet(t, &p);
+    }
+    g_coop_strip_on = g_sp_img_on;
+}
+
+/* main thread, after the tape mounts (tape_io.cc), every boot */
+extern "C" void coop_strip_boot(void)
+{
+    sp_capture_img();
+    uint8_t *b = g_sp_buf;
+    int fd = SP_OPEN(SP_FILE, 0, 0);
+    int got = -1;
+    if (fd >= 0) { got = coop_y_read(fd, b, SP_BYTES + 4); SP_CLOSE(fd); }
+    int ok = got == SP_BYTES && b[0] == 'C' && b[1] == 'S' && b[2] == 'P' && b[3] == 1 && b[4] <= 1;
+    if (ok) {
+        uint32_t h = 0;
+        for (int k = 0; k < 4; k++) h |= (uint32_t)b[SP_BYTES - 4 + k] << (8 * k);
+        ok = h == fnv1a(b, SP_BYTES - 4);
+    }
+    coop_strip_params p[TRACKS];
+    for (int t = 0; ok && t < TRACKS; t++) {
+        uint8_t *q = (uint8_t *)&p[t];
+        for (unsigned i = 0; i < sizeof p[t]; i++) q[i] = b[8 + SP_SLOT * t + i];
+        if (!params_valid(&p[t])) ok = 0;
+    }
+    if (!ok) {
+        if (fd >= 0) g_strip_stat.file_bad++;                           /* there but not ours: defaults; kept until a change */
+        sp_defaults();
+    } else {
+        for (int t = 0; t < TRACKS; t++) if (!preset_word(t)) post_quiet(t, &p[t]);
+        if (!(g_sp_img_on & 1u)) g_coop_strip_on = (g_sp_img_on & ~1u) | b[4];
+        g_strip_stat.file_loads++;
+    }
+    g_sp_saved_seq = g_sp_seen_seq = g_change_seq;                    /* what was loaded needs no save */
+    for (int t = 0; t < TRACKS; t++)                                   /* a test preset is saved (the gate's first run) */
+        if (preset_word(t)) { g_change_seq = g_change_seq + 1u; break; }
+}
+
+/* main thread: a new tape (tape_io.cc rebuild, tape_edit.cc erase of the whole tape): defaults, written now */
+extern "C" void coop_strip_clear(void)
+{
+    sp_capture_img();
+    sp_defaults();
+    g_strip_stat.file_clears++;
+    if (sp_write()) g_sp_saved_seq = g_sp_seen_seq = g_change_seq;
+}
+
+/* main loop (coop_fx_service): save once the changes have stopped for 2 s */
+extern "C" void coop_strip_service(void)
+{
+    uint32_t s = g_change_seq;
+    if (s == g_sp_saved_seq || !g_sp_booted) return;
+    uint32_t now = g_strip_blk;                                        /* the audio clock: exact on the device and in op1emu */
+    if (s != g_sp_seen_seq) { g_sp_seen_seq = s; g_sp_seen_at = now; return; }
+    if (now - g_sp_seen_at < SP_QUIET) return;
+    if (sp_write()) g_sp_saved_seq = s;
+    else g_sp_seen_at = now;                                           /* failed or a post in flight: 2 s more */
+}
+
+/* the strip-mode switch (any thread: the Settings row of CS5). The file keeps it. */
+extern "C" int coop_strip_mode(void) { return (int)(g_coop_strip_on & 1u); }
+extern "C" void coop_strip_set_mode(int on)
+{
+    uint32_t w = g_coop_strip_on;
+    uint32_t n = on ? (w | 1u) : (w & ~1u);
+    if (n == w) return;
+    g_coop_strip_on = n;
+    g_change_seq = g_change_seq + 1u;
 }

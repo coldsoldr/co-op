@@ -47,6 +47,7 @@ extern "C" void coop_stereo_block_start(void);   /* stereo bus: per-block reset 
 extern "C" void coop_slow_keep(uint32_t dt);       /* coop_stats.cc */
 extern "C" volatile uint32_t g_coop_slow_th, g_coop_gap_prof;
 extern "C" void coop_gap_block(void);              /* coop_stats.cc, the p5g gap profile */
+extern "C" void coop_strip_comp_leave(void);       /* coop_strip.cc (CS4): the user's master comp words back */
 #endif
 
 /* The replacement audio callback: time the stock callback and forward its result. */
@@ -62,6 +63,7 @@ extern "C" int CoopAudioCb(int r0, int r1)
     int ret = ((audio_cb_fn)(uintptr_t)FW_AUDIO_CB)(r0, r1);
     uint32_t dt = cycles() - t0;
 #ifdef COOP_COMBINED
+    coop_strip_comp_leave();                       /* CS4: before any thread can read the master comp words again */
     coop_mark(0x03);
     if (dt > g_coop_slow_th && g_coop_prof) coop_slow_keep(dt);
     if (g_coop_gap_prof) coop_gap_block();

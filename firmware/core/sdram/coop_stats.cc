@@ -94,6 +94,8 @@ extern "C" uint32_t coop_te_used(void);
 extern volatile uint32_t g_st0_builds, g_st0_dry_blocks;           /* plugin_host.cc: slot 1's twin built off the audio path */
 extern char g_plugins_last_name[];                                 /* l1_pool.cc */
 extern "C" int coop_tape_write_tail(const char *text, int len);   /* tape_io.cc: the last 8 KiB of track 4's audio */
+extern "C" int coop_strip_stat_words(const volatile uint32_t **words, const char *const **names);   /* coop_strip.cc (CS3-CS6) */
+extern "C" volatile uint32_t g_coop_strip_on;
 
 volatile uint32_t g_stats_writes, g_stats_errors, g_stats_windows, g_stats_ticks, g_stats_tail_writes, g_stats_tail_errors;
 
@@ -840,6 +842,8 @@ static void format_text(void)
     kv("errors", g_sysex_errors); put("\n");
     put("stats"); kv("writes", g_stats_writes); kv("errors", g_stats_errors); kv("tail_writes", g_stats_tail_writes);
     kv("tail_errors", g_stats_tail_errors); kv("windows", g_stats_windows); kv("ticks", g_stats_ticks); put("\n");
+    { const volatile uint32_t *w; const char *const *nm; int n = coop_strip_stat_words(&w, &nm);   /* CS3 / CS4 / CS6: g_strip_stat */
+      put("strip"); kv("on", g_coop_strip_on); for (int i = 0; i < n; i++) kv(nm[i], w[i]); put("\n"); }
     for (uint32_t i = 0; i < TOP; i++) {                               /* the heaviest windows, any order */
         if (!g_top[i].blocks) continue;
         put_window("top", &g_top[i]);

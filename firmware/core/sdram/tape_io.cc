@@ -76,6 +76,7 @@
 #define MARKER_TEXT   "coop_tape 1 stereo4\n"
 
 __attribute__((section(".data"))) volatile uint32_t g_coop_tape_image = 1;   /* 0 = never rebuild (stock mount replaced, tables from constants only) */
+__attribute__((section(".data"))) volatile uint32_t g_coop_tape_rebuild_test = 0;   /* test (CS6 gate): 1 = rebuild at this boot whatever the marker says */
 volatile int32_t g_coop_track_base[TRACKS];       /* file offset of each stereo track's frames */
 volatile uint32_t g_tape_io_loads, g_tape_io_flushes, g_tape_io_errors, g_tape_mounts, g_tape_rebuilds, g_tape_rebuild_err;
 
@@ -217,13 +218,16 @@ extern "C" void coop_tape_clamp_track(void);   /* tape_stereo.cc */
 extern "C" void coop_l1_sine_copy(void);          /* l1_pool.cc (T4c): as early as coop runs on the main thread */
 extern "C" void coop_plugins_boot(void);          /* plugin_host.cc (P1): after the mount, the filesystem is up */
 extern "C" void coop_tape_ui_boot(void);          /* coop_tape_ui.cc (u4): the markers file */
+extern "C" void coop_strip_clear(void);           /* coop_strip.cc (CS6): a new tape is a new project */
+extern "C" void coop_strip_boot(void);            /* coop_strip.cc (CS6): the strips' file */
 extern "C" int coop_tape_mount_and_index(void)
 {
     coop_l1_sine_copy();
     g_tape_mounts++;
     coop_tape_clamp_track();
-    if (g_coop_tape_image && !marker_ok()) {
+    if (g_coop_tape_image && (!marker_ok() || g_coop_tape_rebuild_test)) {
         if (rebuild_image() != 0) g_tape_rebuild_err++;
+        coop_strip_clear();                                            /* CS6: the strips of the old tape go with it */
     }
     for (int t = 0; t < TRACKS; t++) {
         g_coop_track_base[t] = track_data_off(t);
@@ -233,6 +237,7 @@ extern "C" int coop_tape_mount_and_index(void)
     ALBUM_B_BASE = track_data_off(1);
     coop_plugins_boot();
     coop_tape_ui_boot();
+    coop_strip_boot();
     return 0;
 }
 
