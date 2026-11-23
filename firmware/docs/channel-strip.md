@@ -375,8 +375,7 @@ T4 page writes is still to trace).
 - **CS4**: the comp bypass (above); whether the EQ bypass should keep the EQ's 25-sample phase (it does not now);
   the master FX's own wet / dry knob on a send bus (the return removes the dry part whatever the knob says; a delay
   with mix 0 returns nothing).
-- **CS5**: the UI (`coop_strip_post` is the entry for it, `coop_strip_params_of` / `coop_strip_meter` the reads);
-  the strip mode switch in Settings › Voices instead of the image word.
+- **CS5**: the UI: built in op1emu (section "CS5" above); the device test is pending.
 - **CS6**: saving; the presets words go away.
 - `g_strip_stat` into `coop_stats.txt` (after e16, which owns that file).
 - Device risks: the cost above is instruction counts; four resampler copies and four strips run from SDRAM with
@@ -385,6 +384,122 @@ T4 page writes is still to trace).
   loop from SDRAM (a cache miss per lane per pass when cold). The FX 1 render on a send bus has been tried with the
   stock delay only; an effect that ignores its buffer arguments would process the master pair instead (none seen).
   Nothing here has been flashed.
+
+## CS5: the UI (op1emu, 2026-11-23)
+
+Branch `cs5-strip-ui` from dev f4f9706. Emulator only: **nothing of CS5 has run on the OP-1**. Mocked first in the
+playground (`tools/playground/coop-playground.html`, scenario "Channel strip (CS5)": the four pages of board A, the
+mixer entry, the settings row).
+
+### What is where
+
+- `core/sdram/coop_strip_ui.cc` (new): the keys, the turns, the four pages, the popup, the master pages' note.
+  Hooked from `coop_ui.cc`: `coop_strip_ui_key` after `coop_tape_key` (so Shift + Help + T solo still wins),
+  `coop_strip_ui_knob` right after the settings menu, `coop_strip_ui_draw` / `coop_strip_ui_note` in `coop_ui_frame`
+  for CUR_MODE 3 after the settings menu. Built with `#pragma GCC optimize("Os")` (UI code; -O2 inlined ~9 KB).
+- `core/sdram/coop_settings.cc`: Settings › Voices "channel strip" (fifth row): green right / left or a push
+  (250 ms debounce) sets `g_coop_strip_on` bit 0 live; master EQ / master comp read "strip" (grey) while it is on.
+  Saved in `coop_settings.bin` **version 3**: byte 9 the strip, the count at 10, the names from 11 (v1 / v2 files are
+  read as before). At boot a saved "on" sets bit 0; a saved "off" leaves the image word, so a test image built with
+  `g_coop_strip_on=1` (and the `g_coop_strip_t1..t4` presets, posted at the strip's first block as in CS3) still
+  runs the gates. An older firmware refuses a v3 file (it falls back to its defaults).
+- `core/sdram/coop_strip.cc`: two reads added at the end (nothing else touched): `coop_strip_gr(t)` (the comp's gain
+  reduction, log2 Q16, 0 while the comp is off) and `coop_strip_blocks()` (`g_strip_stat.tape_n`: the meters are
+  fresh when it moved). The UI also reads `g_strip_split` (a split track is the only one whose meters run).
+- Cost: +15.2 KB of code (219,538 -> 234,730 text), +2 KB bss (the stock-font popup objects, the UI's copy of the
+  four forms); the image ends 46 KB below the plugin arena.
+
+### Keys and turns, and how they meet the stock
+
+| input | strip closed | strip open |
+|---|---|---|
+| encoder push 0x3B..0x3E | strip mode on and the mixer's T1 page up (CUR_MODE 3, screen 0x1F): opens tape 1..4, swallowed (press and release). Elsewhere untouched (the tape's markers, the FX pages' clicks) | another page's encoder: that page; the shown page's encoder: its section off / on (EQ, COMP, SAT; SEND: both sends), 250 ms debounce; shift + push: reset (below). Always swallowed |
+| T1-T4 0x06..0x09 | stock | no shift: tape 1..4 on the same page, swallowed (the stock's mixer stays on T1). Shift + T: passes (the stock mute). Shift + Help + T: solo (`coop_tape_key`, before the strip) |
+| mixer key 0x05 | stock | closes the strip, then the stock acts |
+| synth / drum / tape keys | stock | close the strip, then the stock acts |
+| turns | stock (mixer levels) | the page's four controls; the stock never sees them, so the levels do not move |
+| everything else (keyboard, transport, shift, Help) | stock | stock: the tape plays and records under the strip |
+
+- A turn is one table step a detent (the saved form's resolution: 0.5 dB, 1 %, 1/12 octave, the time and Q tables).
+  Shift + turn: COMP white = release, orange = knee; EQ blue = shelf (anticlockwise) / cut (clockwise) on bands 1
+  and 4 (on bands 2 / 3 nothing, the popup shows the band); otherwise the same control one step an event whatever
+  the encoder's acceleration (the fine move).
+- Shift + push resets the value under the encoder to `coop_strip_params_default`: EQ blue the whole selected band
+  (freq, gain, Q, shelf), EQ green / white / orange that band's freq / gain / Q, COMP white attack and release,
+  COMP orange makeup and knee, the rest one value each.
+- The UI keeps a copy of the four forms (`g_sui_p`, loaded from `coop_strip_params_of` at each open) and posts the
+  whole form after every change (`coop_strip_post`; CS3's staged update applies it within a few blocks). The SEND
+  bypass is the UI's: the copy keeps the levels, the posted form has FX 1 and FX 2 at 0, so it is **not saved**
+  (CS6 saves what was posted).
+- The selected EQ band is per tape and not saved.
+
+### The pages (board A of the canvas)
+
+Black ground over the mixer screen; tabs EQ / COMP / SAT / SEND in the encoder colours (coop's: blue 0x698EFF,
+green 0x00ED95, white, orange 0xFF3A5D, as every coop page; the canvas used its own oranges): the shown page's tab
+is filled when its section is on, hollow when off, with a bar under it; other tabs hollow in their colour (on) or
+grey (off). "TAPE n" top right, IN / OUT meters on the right (peaks of the strip's input and output, -48..0 dBFS,
+a falling hold; live only while the track is split, i.e. not neutral, and the tape runs), the four readouts along
+the bottom (label and value in the encoder's colour, grey while the section is off; on COMP the shift layer's
+names and values while shift is held). The stroke font (kennel, uppercase, no TE heap) for the page; the popup in
+the stock font: name and value top left over the tabs in the encoder's colour for ~1.2 s after each turn or reset.
+
+- **EQ**: 20 Hz..20 kHz across 240 px (two px a table step), grid at 100 / 1k / 10k, 0 dB dashed, +-18 dB; the curve
+  a display model of the four bands (peak `g / (1 + (2 d Q)^2)`, shelves a smoothstep over +-1 octave, cuts 12 dB an
+  octave, -3 dB at the corner), cached until a value changes; the band nodes, the selected one ringed in white.
+- **COMP**: the static curve over -48..0 dB (threshold, ratio, knee, makeup), the threshold dashed in blue, the input
+  level as a dot on the curve; a gain-reduction history (one column a frame) and the reduction now in large digits;
+  knee and release under it.
+- **SAT**: the shaping curve at the drive and mix (a display model of tape / tube / diode / fold), the type list with
+  the chosen one boxed in green, six harmonic bars from a 32-point DFT of a sine through that curve (square-root
+  scale), cached until a value changes.
+- **SEND**: the track box with the tap (PRE / POST), the three paths, bars for dry, FX 1 and FX 2 with the master FX 1
+  type (or "off" when master FX 1 is off) and FX 2's type or plugin name (or "off").
+- **Master EQ (T2) and master comp (T4)** with the strip on: "off in strip mode" in grey (EQ page top left, comp page
+  bottom left), the stock page otherwise untouched.
+
+### Gates (op1emu)
+
+Images from `tools/emu_gate.py --elf` with the gate flags (`--tape-stereo`, `g_coop_force_stereo_out=1`) and
+`g_coop_spread=0`; scratch NANDs under `/mnt/i/op1emu-tmp/cs5scratch` (deleted by the gate), one run at a time;
+`g_sui`, `g_sui_p`, `g_sui_send_byp`, `g_strip_stat`, `g_coop_strip_on` read with `--dump-at-exit`; every WAV deleted
+once read. The new scenarios take their screenshots on display frames (`wait-frames`, guest-paced) instead of wall
+time, so they land on the same guest moments whatever the host or disk speed (the NAND on /mnt/i slows the
+emulator; the stock scenarios' wall-timed `wait` then ends a run early, see gate 3). All [C op1emu]:
+
+| gate | what | result |
+|---|---|---|
+| 1 | `det_strip_ui` (row on, open tape 1, every encoder on every page, three section switches, shift + click reset, T2 / T1, SEND bypass on and off, the mixer key, T2 / T4 notes; 56 screenshots) | pass, no fault, three runs (three builds) with identical counters: `g_sui` opens 1, closes 1, turns 134, clicks 9, pages 3, bypasses 5, resets 1, tapes 2, posts 139, notes 240 frames, bounces 0; tape 1 exactly as scripted (EQ on, band 1 gain 42, band 2 gain 32 / freq 63 / Q 9; comp on, thresh 46, ratio 5, attack 17, release 18, knee 8, makeup 4; sat on, drive 40, tube, tone +5, mix 90; dry 80, FX 1 50, tap post after the reset); tapes 2-4 default; `g_strip_stat` posts 143 (the UI's 139 and the 4 presets), 123 commits, 15 band computations, worst band block 4,798 cycles, worst commit 2,065 |
+| 2 | `det_strip_ui_fx1` vs `det_strip_ui_fx1_ref`: the stock delay on master FX 1, a chord recorded on track 1, the row on, the strip of tape 1 opened, SEND; FX 1 raised to 100 % (green +100 detents) or not | the live chord identical in both (863 / 572 / 161 rms a half second at 41-42.5 s); the playback with the send carries the delay's return: 225 vs 184 rms at 69.5 s, 100.6 vs 63.2 at 70.0, 72.1 vs 63.1, 65.4 vs 63.2, the floor (63) by 71.5 s; track 1 split, 7,665 FX 1 renders (1,380 of them the tail), `coop_strip_tape` 4,506 cycles max. The reference: nothing split, no render (a neutral strip stays in the stock mix) |
+| 3 | row off (no settings file, image word 0) vs the dev image (f4f9706), `det_chord` and `det_tape_rec` with their final wall `wait` replaced by `wait-frames` (1,300 / 1,600 frames) | pass by the documented criterion: `det_chord` onsets equal, max diff 8 aligned, levels within 0.07 %; `det_tape_rec` the take one block (64 samples) later, aligned max diff 2, levels within 0.06 %. The unmodified scenarios ended at 9.5 / 12.6 s of guest time with the NAND on /mnt/i (identical, max diff 0, as far as they went: the boot and idle) |
+| 4 | `det_strip_ui_live`: a 6 s chord on track 1, EQ on (+6 dB shelf), comp on (-28 dB, 8:1), played with the COMP page up, then SAT on with drive 60 | the meters and the gain reduction move with the tape: -7.3 dB shown during the chord, the input dot on the curve, the history filled; `coop_strip_tape` 9,155 cycles max (one track, EQ + comp + sat) |
+
+Screenshots for the owner (op1emu, 400 x 200 as the emulator writes them), in `C:\Users\byron\Downloads\`:
+`cs5_settings_row.png`, `cs5_eq.png`, `cs5_popup.png`, `cs5_comp.png` (live gain reduction), `cs5_sat.png`,
+`cs5_sat_live.png`, `cs5_send.png`, `cs5_master_eq_note.png`, `cs5_master_comp_note.png`.
+
+Not gated: the device (encoder acceleration, the push debounce on real switches, the frame cost of a page: a few
+hundred raster lines a frame, not measured), the settings file across a power cycle (no chained run was done).
+
+### Open questions for the owner
+
+1. **Fine turns.** The saved steps are already fine (0.5 dB, 1 %, 1/12 octave), so a plain turn is one step a detent
+   and shift + turn the same step without the encoder's acceleration. Would you rather have a coarser plain turn
+   (e.g. 1 dB / 2 % a detent) and shift as one step?
+2. **A section switches on only by its push.** Every section starts off (a neutral strip costs nothing); turning EQ
+   gain on a bypassed EQ changes the value but you hear nothing until the blue push. Switch a section on at the
+   first turn instead?
+3. **SEND's bypass** mutes both sends and keeps the levels in the UI only (lost at a reboot; the saved form has the
+   sends at 0 while bypassed). Keep, save a real flag with CS6 (needs a byte of `coop_strip_params.reserved`), or
+   make the orange push on SEND something else (tap pre / post)?
+4. **Shift + blue on EQ bands 1 / 4** is direction-based (anticlockwise shelf, clockwise cut) so a fast turn cannot
+   flip it back and forth. A toggle on any detent instead?
+5. **Colours.** The pages use coop's encoder colours (orange = 0xFF3A5D, as every coop page and popup) rather than
+   the canvas' 0xFF8A2A.
+6. **Meters** run only for a split track (a non-neutral strip) while the tape plays; a neutral track shows empty
+   meters even when it plays (it stays in the stock mix and has no meter of its own in coop). Show the stock lane
+   meters there?
+7. **The note** on the master EQ / comp pages says "off in strip mode"; the comp's bypass itself is CS4's.
 
 ## CS3 onwards (plan)
 

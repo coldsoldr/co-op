@@ -173,3 +173,11 @@ tape_drive, tape_echo, wavefolder, cs_hall, cs_plate, cs_clouds, cs_clouds_delay
   master. The **live instrument goes dry** to the master (it keeps its sound FX); recording is unchanged.
 - **Pre / post tap kept** (pre = off the tape, post = after the strip). **A bypassed section costs nothing.**
 - Strip settings are **saved per tape project**.
+- **UI built in CS5 (2026-11-23), op1emu only, device test pending** (docs/channel-strip.md "CS5"; the playground's
+  "Channel strip (CS5)" scenario). Details settled while building, for the owner to confirm: a turn is one table
+  step a detent and shift + turn the same step without the encoder's acceleration (the steps are already the
+  saved resolution); shift + blue on EQ bands 1 / 4 is direction-based (anticlockwise shelf, clockwise cut); shift
+  + push on EQ blue resets the whole band, on COMP white / orange both attack and release / makeup and knee;
+  SEND's "bypass" mutes both sends (the levels are kept by the UI, not saved); a section stays off until its
+  encoder is pushed (turning a value does not switch it on); the mixer's master EQ and comp pages show "off in
+  strip mode".
