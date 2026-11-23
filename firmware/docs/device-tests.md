@@ -3956,4 +3956,35 @@ line: `on`, `splits`, `fx1_renders`, `fx2_renders`, `comp_swaps`, `file_loads`, 
 will not boot, hold COM at power-on and flash `op1_246_coop_e16.op1` (e16 combined) or stock. `coop_strip.bin` is
 ignored by e16, and a damaged one means defaults on e17.
 
-Result: (pending)
+**Result, run 1 (2026-11-23, `op1_246_coop_e17_dev.op1`, driven by `tools/dev_strip_e17.ps1` =
+`tools/devloop.py tests/sim/dev_strip_e17.txt --allow-tape`, line out recorded on the UR44C 5-6; the owner's tape with a
+loop on, master FX 1 a delay).** Partial: the audio path passes, the strip UI under the runner does not do what the
+script says.
+- [C] Boot and `hello`: `build e17`. Before: `strip on 0 ... file_loads 1 file_bad 0`. The 124 s scenario ran to the end
+  (877 events, runner state done, error 0), no fault, no hang.
+- [C] The audio path runs on the device: after the run `splits 5`, `split_samples 11,959,013`, `fx1_renders 42,376`
+  (4,753 in the tail), `comp_swaps 70,973`, `posts 382`, `commits 382`, `file_saves 10`, `file_bad 0`, `file_errors 0`.
+  The Settings row switched the mode on and off (it ends `on 0`, `coop_strip.bin` flags 0).
+- [C] Sends: the `fx_only` section (tape 1 dry 0, FX 1 return only) is -34.6 dBFS rms against -23.8 for `fx1`
+  (dry + send): the wet-only return is there and the dry is gone.
+- [C] **Cost (dev flavour, prof 1, the runner's per-section `cb`):** tape playing with the strip on and neutral
+  `cb_avg 188,042 / cb_max 260,564`; strip off `162,721 / 268,712`; `four_strips` (EQ + comp + sat on tapes 2-4,
+  tape 1 as left by the UI, sends on) `253,611 / 324,784` = about +65-90 k a block on average over neutral / off
+  (11-16 % of the 580,499 block), max 56 % of the block. `coop_strip_tape` itself: `tape_max 112,139`, average
+  `tape_sum / tape_n` = 34,627 a block over the whole run (op1emu: 36 k for four strips everything on, so the cache
+  factor is far below the feared 3.8x on average, about 3x at the worst block). The highest block of the run,
+  461,654, was in the gap after `four_strips` (stop, mixer close, the save, the Settings menu). `cb max` over the
+  whole uptime stayed at 681,874, set before the run (no new overrun). Crackles: not listened for yet.
+- [C] **The UI under the runner differs from op1emu.** `coop_strip.bin` read back after the run (`coop_usb.py get`):
+  tape 1 has EQ, comp and sat all **off**, band gains 58 / 26 / 41 / 50, freqs 32 / 44 / 79 / 96, drive 100, FX 1 50,
+  dry 100; tape 2 EQ off, comp + sat on, band 1 gain 48 at freq 17; tapes 3 / 4 EQ + comp + sat on, gain 48, drive 45,
+  FX 1 25. Turns land at half rate (100 events gave 50 %, 24 gave +12 half-dB steps: two runner events a step on the
+  device), which is benign. But tape 1's sections ended off and its EQ bands other than band 1 changed, and tape 2's
+  EQ push did not hold: some pushes or turns went to another page or tape than scripted. Likeliest reading: the
+  T2-T4 blocks also reached tape 1 (tape 1's drive 100 = 55 + 3 x 15, its three sections toggled four times), so a
+  T key in the strip may switch late or not at all on the device. Not yet known whether any turn reached the stock
+  mixer (the owner checks the mixer levels). The EQ / comp / sat sections' sound can't be judged from this run for
+  that reason (the spectrum per section moves with the loop's content too).
+- Next: a short UI-only run with the owner watching the screen; export the UI counters (`g_sui`) in the stats line
+  so the device can be checked like op1emu.
+
