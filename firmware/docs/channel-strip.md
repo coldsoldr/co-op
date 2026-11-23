@@ -656,7 +656,9 @@ sat (`0x07000064`), track 2 dry 0 / FX 1 100 % (`0x6400`).
 4. **CS6, saving:** `/yaffs2/user/coop_strip.bin` beside the tape (4 x 40 bytes + version + the switch), written
    when a value settles (as kennel's held saves), cleared when the tape image is rebuilt.
 5. **CS7, the device:** package, the owner's test, `docs/device-tests.md`. Core tag **e17** (e16 is the engine work
-   running in parallel, 2026-11-22).
+   running in parallel, 2026-11-22). Built 2026-11-23 from branch `cs-e17` (CS1-CS6 merged): the packages, the
+   merged image's op1emu gates (UI walk, FX 1 send, the Settings row across power cycles, CS4, CS6, strip off = dev)
+   and the owner's steps are in `docs/device-tests.md` "e17"; device test pending.
 
 ## Open points
 

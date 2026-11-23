@@ -3856,3 +3856,104 @@ Before the device (op1emu and host):
   - `heap_free` is 3,051,212.
 
 The device steps are the union of the two sections above: e16 steps first, then nophysics steps 1-6.
+
+## e17: the per-tape channel strip (CS1-CS6) — device test (pending, 2026-11-23)
+
+What changed (`docs/channel-strip.md`): e16 combined plus the channel strip, merged on branch `cs-e17` (dev f4f9706 with
+CS1-CS3, the CS5 UI, CS4 + CS6). Nothing of it has run on the OP-1 yet.
+- **CS1-CS3, the audio path:** each tape track 1-4 can have its own strip (4-band EQ, compressor, saturation, sends
+  to master FX 1 and FX 2). A track whose strip is neutral stays in the stock mix; any other track is split out, gets
+  its own resample pass and strip, and its sends feed master FX 1 (the stock effect) and FX 2 (coop's master slot 2)
+  on their own buses; the returns are wet only. With the strip mode on, the stock master EQ is bypassed.
+- **CS4:** while the strip mode is on, the master comp (the T4 page's limiter) runs on a fresh OP-1's words, inside
+  the audio interrupt only. The T4 page and op1.db keep your own values, and switching the strip off brings them back.
+- **CS5, the UI:** Settings › VOICES gains a fifth row, "channel strip" (green right = on, left = off, or a push).
+  With the strip on, the mixer's T1 page opens the strip of tape 1-4 with the blue / green / white / orange encoder
+  push. The strip has four pages (EQ, COMP, SAT, SEND) with tabs, IN / OUT meters, live gain reduction and a value
+  popup. Inside the strip, another encoder's push changes page, the shown page's push switches its section on or off,
+  shift + push resets the value, T1-T4 switch tape, and the mixer key closes the strip. With the strip on, the
+  master EQ (T2) and master comp (T4) pages read "off in strip mode".
+- **CS6:** the four strips and the strip-mode switch are saved per tape project in `/yaffs2/user/coop_strip.bin`
+  (172 bytes, checksummed), written by the main loop 2 s after the last change. The file is cleared when the tape
+  image is rebuilt or the whole tape is erased, and a damaged file means defaults with the strip off.
+  `coop_settings.bin` stays version 2 and does not keep the strip mode.
+- The merge changed one thing that neither branch had tested: the Settings row calls `coop_strip_set_mode` /
+  `coop_strip_mode()` (the save file owns the switch). This is gated below.
+- Build tag `e17` (e403418), boot line `coop e17 - 246`. The stats text gains the `strip` line (after `stats`).
+
+Two packages in the worktree's `firmware/build/pkg/` (branch `cs-e17`), with copies in Downloads:
+- **`op1_246_coop_e17.op1`, the release flavour** (`coop_combined_release.elf`, `COOP_DIAG=0`; `prof=0 statsfile=0`),
+  12,009,608 bytes, sha256 `596a0d7c3658d53599242ccb7c43947a17add282503de959a35d8a32c5f57247`.
+- **`op1_246_coop_e17_dev.op1`, the dev flavour** (`coop_combined.elf`, `COOP_DIAG=1`; `prof=1 statsfile=0`),
+  12,021,568 bytes, sha256 `8357a1004954d1df882c04335ca90f7611e2812758b9e4bbbb5be6cb867f17b1`.
+Both were built with `ELF=<abs> STOCK_DIR=<op1_246> tools/build_device_package.sh OUT --tape-stereo --set-word
+g_coop_spread=32767 --set-word g_coop_statsfile=0`; the release build adds `--set-word g_coop_prof=0`. Checks on both:
+- `verify_bootloader.py` PASS: no te-boot.ldr, no `.KEY`, no `FRC` in the name; 106 files (stock 107 minus te-boot).
+- `pkg_check` shows only the three intended files differing from stock: `OP1_vdk.ldr`, `lander.svg` and `tombola.svg`.
+- `nophysics.py --verify` on the unpacked LDR: 57/57 sites.
+- Both ELFs hold `build e17`, and `even_bufs` finds no odd buffers (896 / 850 objects).
+- `make host-test`: 94 tool tests OK, and every C++ test passes (`strip_test` included).
+
+**Gates (op1emu, the merged image, 2026-11-23).** Images from the dev-flavour ELF at e403418 with `--tape-stereo`,
+`g_coop_spread=0` and `g_coop_force_stereo_out=1`. Scratch NANDs under `/mnt/i/op1emu-tmp/e17`, one run at a time,
+NANDs and WAVs deleted after reading. The CS5 / CS4 / CS6 scenarios are as in `docs/channel-strip.md`, made
+frame-paced where they ended on a wall `wait`. All [C op1emu]:
+
+| gate | what | result |
+|---|---|---|
+| UI walk | `det_strip_ui` on a pristine NAND | **pass**, the same as CS5 gate 1: `g_sui` opens 1, closes 1, turns 134, clicks 9, pages 3, bypasses 5, resets 1, tapes 2, posts 139, bounces 0. Tape 1 is exactly as scripted (EQ on, band 1 gain 42, band 2 gain 32 / freq 63 / Q 9; comp on, thresh 46, ratio 5, attack 17, release 18, knee 8, makeup 4; sat on, drive 40, tube, tone +5, mix 90; dry 80, FX 1 50, tap post). Tapes 2-4 are at their defaults. The row turned the mode on (`g_coop_strip_on 1`) through `coop_strip_set_mode`, and `coop_strip.bin` was written: 172 bytes, flags 1, checksum ok, tape 1 as above. No fault |
+| FX 1 send | `det_strip_ui_fx1` vs `_fx1_ref` | **pass**, the same numbers as CS5 gate 2. The live chord is identical in both (863 / 572 / 161 rms). The playback with the send carries the delay's return (225 vs 184 rms, then 101 vs 63, 72 vs 63, 65 vs 63, then the floor). Track 1 is split, with 7,666 FX 1 renders (1,380 of them in the tail) and `coop_strip_tape` at 4,506 cycles max. The reference splits nothing and renders nothing |
+| Settings row, power cycles | the UI walk's NAND rebooted (idle); then Settings › VOICES spread +5 and a push on "channel strip"; rebooted again | **pass**. The first reboot brings back mode 1 and tape 1's strip from the file (`file_loads 1`, `file_saves 0`). The push turned the mode off (`g_coop_strip_on 0`), and the file was rewritten 2 s later with flags 0 and tape 1 kept. `coop_settings.bin` was written as **version 2**: 10 bytes, `CST` 2, spread 5, with no strip byte. The second reboot comes back with mode 0, tape 1's strip still saved, spread 5, and `comp_swaps 0` |
+| CS4 | strip on (four neutral strips) with the T4 page turned heavy (drive full, release minimum), vs the same image with T4 untouched, vs strip off heavy; the strip switched off at block 27,590 | **pass**. Chord 1 with the strip on: heavy and untouched are identical through the note (671 / 440 rms both). After that, one note's release lands one block later (op1emu key timing; up to 13 LSB, rms 0.99 a sample over 2 s). With the strip off, the same chord is 4,193 / 3,071 rms. After the switch, chord 2 is 4,244 / 3,034 against strip-off heavy's 4,246 / 3,034 (rms difference 18, the onset block): **the heavy comp is back**. The untouched run is sample-identical to the same run on the CS4 branch image (5f2ab21), and the CS4 branch's heavy run differs from its untouched run only after the switch, as documented. So the merge changed no audio here, only when the note-off key event is delivered |
+| CS6 | a save / reload pair and one damaged file, on one kept NAND | **pass**. Presets image (tape 1 EQ + comp + sat, tape 2 FX 1 100 %, strip on): first boot cleared, defaults written, then the presets saved (`file_saves 2`, checksum ok). Reboot with a plain image: both strips and mode 1 come back from the file (`file_loads 1`, `file_saves 0`). Then a save that writes a wrong checksum (`g_coop_strip_file_test=2`): the next boot reports `file_bad 1`, `file_loads 0`, every strip at its defaults, mode 0, and no fault |
+| strip off = dev | the plain image (no file, word 0) vs dev f4f9706, `det_chord` and `det_tape_rec` frame-paced (1,300 / 1,600 frames) | **pass by the block-offset criterion**. `det_chord` is **sample-identical** over 44 s. `det_tape_rec` is identical up to the live chord. There dev's first note lands one block before the other two, while e17 delivers all three in the next block (key timing), so the 3-note chord's levels are 0.7-2.3 % apart and no single whole-block offset aligns it. The same scenario with one note: the live note is one block later, with a residual of 0.51 a sample. The take's playback is at offset 0 with a residual of 0.22, the idle at 0.03, and levels are within 0.04 % |
+
+Not gated in op1emu: the device's cycle cost (CS3 measured instruction counts only: four strips everything on is
++36 k cycles a block over dev, 6.2 % of the block, and the device's cache factor could make that much more), the
+encoders' feel and the push debounce on real switches, the FX 2 send with a real slot-2 plugin from the UI (CS3 gated
+FX 2 with preset words only), and the release flavour (every gate ran on the dev ELF).
+
+**What to do** (the owner plays; stats over USB MIDI `python firmware/tools/coop_usb.py stats -o FILE`, its `strip`
+line: `on`, `splits`, `fx1_renders`, `fx2_renders`, `comp_swaps`, `file_loads`, `file_saves`, `file_bad`,
+`tape_max`). Flash **`op1_246_coop_e17_dev.op1`** through the te-boot menu first, and keep the plugins.
+1. **Boot:** the line reads `coop e17 - 246`, and `hello` returns `build e17`. With no `coop_strip.bin` yet, the strip
+   is off and everything sounds and works as on e16. `stats` `strip` line: `on 0`, `file_bad 0`.
+2. **Settings row:** open coop's settings (synth + drum + tape + mixer held), go right into VOICES and down with blue
+   to the fifth row, "channel strip": green right turns it **on**, green left turns it **off**, and a push toggles
+   it (a bounced push must not toggle twice). While it is on, the master EQ and master comp rows read "strip" in
+   grey. Leave it on.
+3. **Mixer T1 page, encoder pushes:** press mixer (T1). A push of blue / green / white / orange opens the strip of
+   **tape 1 / 2 / 3 / 4** ("TAPE n" top right). With the strip off, the same pushes do what they did on e16.
+4. **The four pages**, on a tape with something recorded and playing:
+   - EQ (blue push): the turns move the curve; a blue push on EQ switches the EQ on and changes the sound.
+   - COMP (green push): set the threshold low and the ratio high, then switch it on with a green push. The gain
+     reduction number and its history move with the tape, and the input dot rides the curve.
+   - SAT (white push): drive up, try the four types, switch it on with a white push. The harmonic bars change.
+   - SEND (orange push): dry, FX 1, FX 2 and the tap (pre / post).
+   - In every page, check the value popup after each turn, shift + push (the value resets), T1-T4 (another tape, the
+     same page), shift + T (the stock mute still works), and the mixer key (closes the strip; the mixer levels did
+     not move while it was open). The IN / OUT meters move only for a tape whose strip is not neutral.
+5. **Sends to FX 1 / FX 2:** put a delay on master FX 1, then raise FX 1 on a playing tape's SEND page: the echoes
+   come from that tape only, while the live synth and the other tapes stay dry. Bring dry to 0 to hear only the
+   return. Stop the tape: the echoes ring out. If you have a coop effect in master slot 2, do the same with FX 2.
+6. **Master EQ / comp off in strip mode:** with the strip on, mixer T2 (EQ) and T4 (comp) show "off in strip mode",
+   and turning them changes nothing you hear. Switch the strip off in Settings: they work again.
+7. **A heavy T4 comp comes back after strip off:** with the strip **off**, on mixer T4 turn white (drive) fully up
+   and orange (release) down, and play: the sound is loud and squashed. Switch the strip **on**: the same playing
+   sounds as on a fresh OP-1 (much quieter, no squash), while T4 still shows your heavy values. Switch it **off**
+   again: the heavy comp is back. Power-cycle with the strip off: T4 keeps the heavy values.
+8. **Survives a power cycle:** with the strip on and a few strips changed (tape 1 EQ + comp on, tape 2 FX 1 at 50 %),
+   **wait 3 s** (the save comes 2 s after the last change), then power off normally and on. The strip is still on,
+   tapes 1 and 2 are as you left them, and `stats` shows `file_loads 1 file_bad 0`. Switch the strip off, wait 3 s,
+   power-cycle: it boots off, and the strips are still saved. A new tape (erase the whole tape with shift + erase)
+   resets the strips to their defaults with the strip off.
+9. **Cost:** dev flavour, four tapes playing, every strip with EQ + comp + sat on and both sends at 50 %: read
+   `cb_sum / blocks` and the max from `stats` against the same tape with the strip off (op1emu +36 k a block, 6.2 %
+   of the block). Listen for crackles. Report the numbers; this is the main unknown.
+10. Then **`op1_246_coop_e17.op1`** (release): steps 1-3 and 8 once, as a smoke test.
+
+**If something is wrong:** switch the strip off in Settings, which takes effect at once and is saved. If the device
+will not boot, hold COM at power-on and flash `op1_246_coop_e16.op1` (e16 combined) or stock. `coop_strip.bin` is
+ignored by e16, and a damaged one means defaults on e17.
+
+Result: (pending)
