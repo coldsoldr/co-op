@@ -1,0 +1,117 @@
+# Device loop, e17b: the first half of dev_strip_e17 (tape 1: EQ, comp, sat, sends) with every turn outside
+# Settings cut to 2 events, to find with the suilog where run 1's turns went (a leak moves a mixer level 1-2 clicks).
+#@name dev_strip_turns
+#@lead 2000
+#@tail 3000
+# ---- Settings > VOICES > channel strip: on (the menu opens at VOICES, top level) ----
+at 1000
+press synth
+at 1200
+press drum
+at 1400
+press tape
+at 1600
+press mixer
+at 2600
+release mixer
+release tape
+release drum
+release synth
+at 3500
+tap right 200
+at 4500
+turn enc1 cw 8
+at 5500
+turn enc2 cw 2
+at 7000
+tap left 200
+at 7500
+tap left 200
+# ---- the mixer's T1 page, tape 1's strip (EQ page) ----
+at 9000
+tap mixer 200
+at 10000
+tap t1 200
+at 11000
+tap enc1 200
+at 12000
+tap play 200
+at 13000
+#@mark neutral
+at 19000
+#@mark -
+# EQ: band 1 gain +12 dB (white), then the blue push switches the EQ on
+turn enc3 cw 2
+at 20000
+tap enc1 200
+at 21000
+#@mark eq
+at 27000
+#@mark -
+# COMP: green push opens the page, again switches it on; threshold down (blue), ratio up (green), makeup (orange)
+tap enc2 200
+at 27800
+tap enc2 200
+at 28500
+turn enc1 cw 2
+at 29500
+turn enc2 cw 2
+at 30000
+turn enc4 cw 2
+at 31000
+#@mark comp
+at 37000
+#@mark -
+# SAT: white push opens, again switches it on; drive up (blue)
+tap enc3 200
+at 37800
+tap enc3 200
+at 38500
+turn enc1 cw 2
+at 40000
+#@mark sat
+at 46000
+#@mark -
+# SEND: orange push opens; FX 1 to 100 % (green)
+tap enc4 200
+at 47000
+turn enc2 cw 2
+at 49500
+#@mark fx1
+at 55500
+#@mark -
+# dry to 0 (blue): only the FX 1 return is left
+turn enc1 ccw 2
+at 58000
+#@mark fx_only
+at 64000
+#@mark -
+turn enc1 cw 2
+# ---- tapes 2-4: every section on (T2-T4 switch tape on the same page, here SEND) ----
+at 66500
+tap stop 200
+at 67500
+tap mixer 200
+at 71000
+press synth
+at 71200
+press drum
+at 71400
+press tape
+at 71600
+press mixer
+at 72600
+release mixer
+release tape
+release drum
+release synth
+at 73500
+tap right 200
+at 74500
+turn enc1 cw 8
+at 75500
+turn enc2 ccw 2
+at 77000
+tap left 200
+at 77500
+tap left 200

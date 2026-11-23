@@ -3982,9 +3982,27 @@ script says.
   device), which is benign. But tape 1's sections ended off and its EQ bands other than band 1 changed, and tape 2's
   EQ push did not hold: some pushes or turns went to another page or tape than scripted. Likeliest reading: the
   T2-T4 blocks also reached tape 1 (tape 1's drive 100 = 55 + 3 x 15, its three sections toggled four times), so a
-  T key in the strip may switch late or not at all on the device. Not yet known whether any turn reached the stock
-  mixer (the owner checks the mixer levels). The EQ / comp / sat sections' sound can't be judged from this run for
-  that reason (the spectrum per section moves with the loop's content too).
-- Next: a short UI-only run with the owner watching the screen; export the UI counters (`g_sui`) in the stats line
-  so the device can be checked like op1emu.
+  T key in the strip may switch late or not at all on the device (runs 2-3 below show the T keys work: this reading
+  is not confirmed). After the run the owner found all four mixer levels at 99; their levels before the run were not
+  noted, so whether any turn reached the stock mixer is unknown (the owner thinks not, and runs 2-3 saw no leak).
+  The EQ / comp / sat sections' sound can't be judged from this run (the spectrum per section moves with the loop's
+  content too).
+
+**Runs 2-3 and a hand test (2026-11-23, `op1_246_coop_e17b_dev.op1`, sha256
+`920e1073ade70d6c8bb3788a049fb4c88185f5ce2f4831c96186d6fd1d47ce3a`: e17 plus the `sui` / `suilog` stats lines, e2515a6).**
+- [C] Run 2, `tests/sim/dev_strip_keys.txt` (pushes, T keys, play / stop, no turns outside Settings): every key as
+  designed. The screen word stays 0x1F (the mixer's T1 page) the whole time, also while the tape plays; 2 opens,
+  2 closes, 10 page changes, 5 tape switches; play, stop and the mixer key pass through; the T keys are taken.
+- [C] Hand test by the owner, real encoders: with tape 1's strip open, white changes the band gain on screen and tape
+  3's mixer level does not move. The log shows those turns taken by the strip (open, taken) and the turns made after
+  closing passed to the stock mixer.
+- [C] Run 3, `tests/sim/dev_strip_turns.txt` (run 1's tape 1 half, every turn cut to 2 events), mixer levels all 80
+  before: all 80 after. Every logged turn is taken by the open strip (6), the EQ / comp / sat pushes switch their
+  sections (3 bypasses), the pages change as scripted. Levels per section: neutral -23.9, EQ -22.7, comp (makeup on)
+  -19.7, sat -20.6, FX 1 -20.9 dBFS rms. The two dry turns on SEND (blue, 2 events each) never reached coop's encoder
+  hook: the runner's injected turns are merged or dropped by the stock key thread (also the half rate in run 1), so
+  the runner's turns are not a faithful model of the encoders. Tape 1's run-1 state stays unexplained, but it was not
+  reproduced.
+- Still to do on the device: the power cycle (strip settings back after a restart), the four-tape cost with crackles
+  listened for, FX 2 sends with a slot-2 plugin, a heavy T4 coming back after strip off, the release flavour.
 
