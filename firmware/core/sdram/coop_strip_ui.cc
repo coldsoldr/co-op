@@ -201,7 +201,7 @@ static void popup(int c, int enc) { s_pop_ctl = c; s_pop_enc = enc; s_pop_at = n
 
 /* ---- keys (KeyHandler thread): 1 = consumed ---- */
 static void close_strip(void) { if (s_open) { s_open = 0; g_sui.closes++; s_pop_at = 0; } }
-extern "C" int coop_strip_ui_key(int code, int pressed)
+static int key_inner(int code, int pressed)
 {
     uint64_t bit = (uint64_t)1 << (code & 63);
     if (!pressed) { if (s_swallow & bit) { s_swallow &= ~bit; return 1; } return 0; }
@@ -251,7 +251,7 @@ extern "C" int coop_strip_ui_key(int code, int pressed)
 }
 
 /* ---- turns (KeyHandler thread): 1 = taken ---- */
-extern "C" int coop_strip_ui_knob(int knob, int steps)
+static int knob_inner(int knob, int steps)
 {
     if (!s_open) return 0;
     if (!coop_strip_ui_active()) { close_strip(); return 0; }
@@ -275,6 +275,46 @@ extern "C" int coop_strip_ui_knob(int knob, int steps)
     popup(c, e);
     g_sui.turns++;
     return 1;
+}
+
+/* ---- e17 device diagnosis (docs/device-tests.md "e17", run 1): what the strip saw ----
+ * The last SUILOG key presses and turn runs while the strip mode is on, for the stats file (coop_stats.cc "suilog"):
+ * w0 CYCLES >> 19 (~1.3 ms at 400 MHz), w1 kind << 28 (0 key, 1 turn) | open before << 27 | taken << 26 | code or
+ * knob << 16 | steps (16 bits), w2 CUR_MODE << 24 | MIX_SUB << 16 | tape << 12 | page << 8, w3 CUR_SCREEN.
+ * A turn is logged when its knob, open state or result differs from the last turn logged, or a key came between. */
+#define SUILOG 48
+extern "C" { volatile uint32_t g_sui_log[SUILOG][4]; volatile uint32_t g_sui_log_n; }
+static uint32_t s_log_turn = 0xffffffffu;
+static void sui_log(int kind, int code, int steps, int ob, int res)
+{
+    uint32_t i = g_sui_log_n % SUILOG;
+    g_sui_log[i][0] = (uint32_t)(now64() >> 19);
+    g_sui_log[i][1] = ((uint32_t)kind << 28) | ((uint32_t)(ob & 1) << 27) | ((uint32_t)(res & 1) << 26)
+                    | ((uint32_t)(code & 0xff) << 16) | ((uint32_t)steps & 0xffffu);
+    g_sui_log[i][2] = ((uint32_t)(CUR_MODE & 0xff) << 24) | ((uint32_t)(MIX_SUB & 0xff) << 16)
+                    | ((uint32_t)(s_tape & 3) << 12) | ((uint32_t)(s_page & 3) << 8);
+    g_sui_log[i][3] = (uint32_t)CUR_SCREEN;
+    g_sui_log_n = g_sui_log_n + 1u;
+}
+extern "C" int coop_strip_ui_key(int code, int pressed)
+{
+    int ob = s_open, r = key_inner(code, pressed);
+    if (pressed && strip_on()) { sui_log(0, code, 0, ob, r); s_log_turn = 0xffffffffu; }
+    return r;
+}
+extern "C" int coop_strip_ui_knob(int knob, int steps)
+{
+    int ob = s_open, r = knob_inner(knob, steps);
+    if (strip_on()) {
+        uint32_t k = ((uint32_t)knob << 2) | ((uint32_t)(ob & 1) << 1) | (uint32_t)(r & 1);
+        if (k != s_log_turn) { sui_log(1, knob, steps, ob, r); s_log_turn = k; }
+    }
+    return r;
+}
+extern "C" int coop_strip_ui_diag(const volatile uint32_t **sui, const volatile uint32_t **log, uint32_t *log_n)
+{
+    *sui = (const volatile uint32_t *)&g_sui; *log = &g_sui_log[0][0]; *log_n = g_sui_log_n;
+    return (int)(sizeof g_sui / 4);
 }
 
 /* ---- text of a control ---- */

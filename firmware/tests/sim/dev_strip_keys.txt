@@ -1,0 +1,113 @@
+# Device loop (tools/devloop.py --allow-tape), e17b: where the strip's keys go on the real OP-1 (docs/device-tests.md
+# "e17", run 1: turns reached the stock mixer). NO ENCODER TURNS outside the Settings menu, so nothing can move the
+# mixer; pushes only change the strip's page (never the shown page's encoder twice, so no section is switched).
+# Read the `sui` and `suilog` lines of the stats after it (coop_strip_ui.cc "e17 device diagnosis").
+# Before: a tape with content and the loop on, as dev_strip_e17. Leaves the strip mode off.
+#@name dev_strip_keys
+#@lead 2000
+#@tail 3000
+# ---- Settings > VOICES > channel strip: on ----
+at 1000
+press synth
+at 1200
+press drum
+at 1400
+press tape
+at 1600
+press mixer
+at 2600
+release mixer
+release tape
+release drum
+release synth
+at 3500
+tap right 200
+at 4500
+turn enc1 cw 8
+at 5500
+turn enc2 cw 2
+at 7000
+tap left 200
+at 7500
+tap left 200
+# ---- stopped: open tape 1, walk the pages ----
+at 9000
+tap mixer 200
+at 10000
+tap t1 200
+at 11000
+#@mark open
+tap enc1 200
+at 13000
+tap enc2 200
+at 15000
+tap enc3 200
+at 17000
+tap enc4 200
+at 19000
+tap enc1 200
+# ---- T keys while stopped ----
+at 21000
+#@mark tkeys
+tap t2 200
+at 23000
+tap enc2 200
+at 25000
+tap t3 200
+at 27000
+tap enc3 200
+at 29000
+tap t1 200
+at 31000
+tap enc1 200
+# ---- play, then the same while playing ----
+at 33000
+#@mark play
+tap play 200
+at 36000
+tap enc2 200
+at 38000
+tap enc3 200
+at 40000
+tap t2 200
+at 42000
+tap enc1 200
+at 44000
+tap t1 200
+at 46000
+tap stop 200
+# ---- close with the mixer key, reopen tape 4, close ----
+at 48000
+#@mark close
+tap mixer 200
+at 50000
+tap t1 200
+at 51000
+tap enc4 200
+at 53000
+tap mixer 200
+# ---- Settings: strip mode off ----
+at 56000
+#@mark -
+press synth
+at 56200
+press drum
+at 56400
+press tape
+at 56600
+press mixer
+at 57600
+release mixer
+release tape
+release drum
+release synth
+at 58500
+tap right 200
+at 59500
+turn enc1 cw 8
+at 60500
+turn enc2 ccw 2
+at 62000
+tap left 200
+at 62500
+tap left 200

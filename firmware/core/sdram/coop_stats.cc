@@ -96,6 +96,7 @@ extern char g_plugins_last_name[];                                 /* l1_pool.cc
 extern "C" int coop_tape_write_tail(const char *text, int len);   /* tape_io.cc: the last 8 KiB of track 4's audio */
 extern "C" int coop_strip_stat_words(const volatile uint32_t **words, const char *const **names);   /* coop_strip.cc (CS3-CS6) */
 extern "C" volatile uint32_t g_coop_strip_on;
+extern "C" int coop_strip_ui_diag(const volatile uint32_t **sui, const volatile uint32_t **log, uint32_t *log_n);   /* coop_strip_ui.cc (e17 diagnosis) */
 
 volatile uint32_t g_stats_writes, g_stats_errors, g_stats_windows, g_stats_ticks, g_stats_tail_writes, g_stats_tail_errors;
 
@@ -844,6 +845,15 @@ static void format_text(void)
     kv("tail_errors", g_stats_tail_errors); kv("windows", g_stats_windows); kv("ticks", g_stats_ticks); put("\n");
     { const volatile uint32_t *w; const char *const *nm; int n = coop_strip_stat_words(&w, &nm);   /* CS3 / CS4 / CS6: g_strip_stat */
       put("strip"); kv("on", g_coop_strip_on); for (int i = 0; i < n; i++) kv(nm[i], w[i]); put("\n"); }
+    { static const char *const sn[] = { "opens", "closes", "turns", "clicks", "pages", "bypasses", "resets", "tapes",
+                                        "posts", "frames", "notes", "bounces", "last_screen", "last_sub", "last_mode", "ignored" };
+      const volatile uint32_t *u, *lg; uint32_t ln; int n = coop_strip_ui_diag(&u, &lg, &ln);   /* e17: the strip UI */
+      put("sui"); for (int i = 0; i < n && i < 16; i++) kv(sn[i], u[i]); kv("log_n", ln); put("\n");
+      put("suilog");                                                   /* oldest first: t:w1:w2:screen in hex */
+      uint32_t k0 = ln > 48u ? ln - 48u : 0u;
+      for (uint32_t k = k0; k < ln; k++) { const volatile uint32_t *e = lg + (k % 48u) * 4u;
+          put(" "); puthex8(e[0]); put(":"); puthex8(e[1]); put(":"); puthex8(e[2]); put(":"); puthex8(e[3]); }
+      put("\n"); }
     for (uint32_t i = 0; i < TOP; i++) {                               /* the heaviest windows, any order */
         if (!g_top[i].blocks) continue;
         put_window("top", &g_top[i]);

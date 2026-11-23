@@ -3,7 +3,7 @@
  * stats file. Bump it with every package (docs/device-tests.md names the packages by it). */
 #ifndef COOP_BUILD_H
 #define COOP_BUILD_H
-#define COOP_BUILD_TAG "e17"
+#define COOP_BUILD_TAG "e17b"
 /* e15 (efficiency audit finding 14): the diagnostic code (the p6f / p6h / e13 cache probes and their 28.7 KB of NOP
  * functions and 40 KB of probe data, the SysEx self-test, the stage's debug compare against the stock path) is built
  * with COOP_DIAG = 1, the default: the dev package and every op1emu gate image. The release package's ELF is built
