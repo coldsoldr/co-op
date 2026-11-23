@@ -413,3 +413,9 @@ extern "C" int coop_strip_master(void)
     }
     return 1;
 }
+
+/* ---- CS5: reads for the strip pages (coop_strip_ui.cc, Gfx thread) ---- */
+/* the compressor's gain reduction now (log2 Q16, >= 0), 0 while the comp is off */
+extern "C" int32_t coop_strip_gr(int t) { const coop_strip_bf *s = &g_strip[t & 3]; return s->p.comp_on ? s->comp.gr : 0; }
+/* how many blocks coop_strip_tape has run: the meters are fresh when it moved */
+extern "C" uint32_t coop_strip_blocks(void) { return g_strip_stat.tape_n; }
