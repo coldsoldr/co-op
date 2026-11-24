@@ -63,9 +63,12 @@ static inline uint32_t coop_cycles(void)
 #include "coop_cost.h"
 extern volatile uint32_t g_coop_s2_live[2];                        /* plugin_host.cc (p6j) */
 extern volatile uint32_t g_run_click;                               /* coop_runner.cc: a click is due */
+extern "C" int coop_strip_master(void);                              /* coop_strip.cc (CS3) */
 extern "C" uint32_t coop_master_apply(void)
 {
-    if (!g_coop_s2_live[1] && !(g_coop_master_flags & 2u) && !g_run_click) return STOCK_GETTER_RESULT;   /* p6j: nothing to do: the transparent
+    const int strip = coop_strip_master();      /* CS3: the strip's staged updates; with the strip mode on, slot 2 renders
+                                                   send bus 2 there (wet return) and not the master pair */
+    if ((strip || !g_coop_s2_live[1]) && !(g_coop_master_flags & 2u) && !g_run_click) return STOCK_GETTER_RESULT;   /* p6j: nothing to do: the transparent
                                                                              stand-in used to cost 1.3 k a block, mostly fetching its own code */
     coop_mark(0x50);
     if (!g_inited) {
@@ -73,7 +76,7 @@ extern "C" uint32_t coop_master_apply(void)
         g_inited = 1;
     }
     uint32_t m0 = coop_cycles(), pf0[2]; coop_pf_now(pf0);
-    coop_slot2_render(1, (int16_t *)MBUS_L, (int16_t *)MBUS_R);   /* S2: the master's second slot, after the stock master
+    if (!strip) coop_slot2_render(1, (int16_t *)MBUS_L, (int16_t *)MBUS_R);   /* S2: the master's second slot, after the stock master
                                                                      effect (0xffa017e6), before the level stage */
     coop_runner_click((int16_t *)MBUS_L, (int16_t *)MBUS_R);      /* p5b: the test runner's alignment click, if due */
     uint32_t flags = g_coop_master_flags;

@@ -95,6 +95,11 @@ extern "C" int coop_drumpan_knob(int knob, int steps);                 /* coop_d
 extern "C" void coop_drumpan_draw(void *r);
 extern "C" void coop_fx2_post_screen(int pos, int fx2);                /* coop_fx2view.cc */
 extern "C" int coop_fx_screen_up(void);                                /* engine_screen.cc (e9): an effect plugin's screen is shown */
+extern "C" int coop_strip_ui_key(int code, int pressed);                /* coop_strip_ui.cc (CS5): the channel strip pages */
+extern "C" int coop_strip_ui_knob(int knob, int steps);
+extern "C" int coop_strip_ui_active(void);
+extern "C" void coop_strip_ui_draw(void *r);
+extern "C" void coop_strip_ui_note(void *r);
 
 /* u8: a slot-2 set that may allocate (a new type: the twin object, a delay line, a tank) runs on the MAIN LOOP; the
  * KeyHandler thread only posts the request (the u7 lesson again: heap work off the main loop hung op1emu at the
@@ -340,6 +345,7 @@ extern "C" int coop_ui_key(int code, int pressed)
     if (coop_engine_ui_key(code, pressed)) return 1;                    /* e4: a plugin engine's declared clicks (engine_ui.cc) */
     if (coop_fx_ui_key(code, pressed)) return 1;                        /* e6: an effect plugin's declared clicks (engine_ui.cc) */
     if (coop_tape_key(code, pressed)) return 1;                         /* tape / mixer: solo, markers */
+    if (coop_strip_ui_key(code, pressed)) return 1;                     /* CS5: the mixer's pushes open the strip; its keys */
     if (coop_bend_key(code, pressed)) return 1;                         /* shift + arrows on the synth: the bend */
     if (coop_rename_key(code, pressed)) return 1;                       /* the preset browser: naming */
     uint64_t bit = (uint64_t)1 << (code & 63);
@@ -397,6 +403,7 @@ extern "C" void coop_ui_knob(int knob, int16_t *delta)
     int steps = *delta / DETENT;
     if (!steps) steps = *delta > 0 ? 1 : (*delta < 0 ? -1 : 0);
     if (coop_settings_is_open()) { coop_settings_knob(knob, steps); return; }
+    if (coop_strip_ui_knob(knob, steps)) return;                       /* CS5: the strip's four controls */
     if (coop_bend_knob(knob, steps)) return;                         /* shifted white / orange on the synth's T2 */
     if (coop_drumpan_knob(knob, steps)) return;                        /* shifted blue on the drum's T2 */
     if (coop_rename_knob(knob, steps)) return;                         /* naming: every turn */
@@ -518,6 +525,11 @@ extern "C" void coop_ui_frame(void *table)
     { void *rv = op1_raster(); if (rv) coop_save_draw(rv); }            /* "overwriting" over the save clock, any page */
     if (CUR_MODE == 0 && CUR_SCREEN == 0x14) { void *re = op1_raster(); if (re) coop_engine_ui_draw(re); }   /* e4: a declared control's name and value */
     if (coop_settings_is_open()) { void *rs = op1_raster(); if (rs) coop_settings_draw(rs); return; }
+    if (CUR_MODE == 3) {                                                  /* CS5: the strip over the mixer; the master pages' note */
+        void *rm = op1_raster();
+        if (rm && coop_strip_ui_active()) { coop_strip_ui_draw(rm); return; }
+        if (rm) coop_strip_ui_note(rm);
+    }
     if (CUR_MODE == 2 && CUR_SCREEN == TAPE_SCREEN) { void *rt = op1_raster(); if (rt) coop_tape_draw(rt); return; }
     if (CUR_MODE == 0 && CUR_SCREEN == SCREEN_PLAYMODE) { void *rp = op1_raster(); if (rp) coop_bend_draw(rp); return; }
     if (CUR_MODE == 1) { void *rd = op1_raster(); if (rd) coop_drumpan_draw(rd); }   /* the PAN page on the drum's shifted T2 */

@@ -1556,3 +1556,145 @@ What it says:
   in SDRAM statics (24 data lines a position) was refetched whenever the block evicted it, and an idle plugin effect
   cost ~13 k in `fx` (e13). The L1 block removes those fetches; the kernels are 304 bytes of code against the two
   C loops per site. The device test measures it (`docs/device-tests.md` "e15").
+
+## e16 (2026-11-22): released voices below -60 dB not rendered; the worst block; the stock engines' tails (switch)
+
+Two changes in the engine path on top of e15, plus a stretch, each behind its own image word. Built and gated in
+op1emu; the device test is pending (`docs/device-tests.md` "e16"). op1emu counts instructions, not cache stalls: every
+device figure here is [I] until that test. Build tag `e16`.
+
+### 1. Released voices below -60 dB (`engine_host.cc`, `g_coop_tail_skip`, default 1; `g_coop_tail_q30`, default `1 << 20`)
+
+The owner's go-ahead. The rule, the envelope objects' verification and each engine's case are in `docs/engines.md`
+"Released voices below -60 dB". In short: a plugin voice whose stock envelope is releasing (or killing) and is under
+-60 dB, and that has rendered once since its `note_on`, gets 128 zeros instead of a render. Mode 2 renders anyway and
+measures the blocks a skip would remove (`tail_checked`, `tail_peak`).
+
+Gate [C op1emu] (images `--tape-stereo --set-word g_coop_spread=32767 --set-word g_coop_force_stereo_out=1`; the NAND
+run copy-on-write, `--nand-snapshot`, from bases holding only the plugin under test; outputs in `I:\op1emu-tmp\e16\runs\`):
+
+| Scenario | Result |
+|---|---|
+| `det_chord`, `det_drum`, `det_tape_play` (pristine: no plugin), e16 (before the last diagnostic counter) against e15, dev | identical: 3,426,178 / 2,479,176 / 3,806,081 frames |
+| `det_chord`, the final ELF against e15, spread 0 | identical (3,322,241 frames) |
+| `det_chord` with the spread at 32767, final ELF against e15, dev and release (`prof=0`) | dev: the onset one block apart; release: aligned, max diff 24 LSB: the scenario's run-to-run spread with random pans on a host loaded by other agents' runs (`docs/emulator.md` "Gate runs"); no engine code runs in it |
+| saw, `det_eng_tail.txt` (six keys, the release knob all the way down), e16 `tail_skip=2` (render, measure) against e15 | **identical** (4,551,361 frames): the new code changes nothing until it skips |
+| the same, e16 `tail_skip=1` against `tail_skip=2` | identical until 71.83 s (the release under -60 dB, 23.8 s after the keys went up), then **max 2 LSB (-84.3 dBFS), RMS -94 to -117 dBFS a second**; `tail_peak 6` (LSB of the voice before the gain word and pan) over `tail_checked 28362` blocks |
+| saw, the package ELF (default: skip on) against e15, spread 0 | **identical until 71.83 s, then max 2 LSB** (4.5 M frames). Of two runs of the e16 image one differed from e15 from the onset (max 3,246); it differed by the same from the other e16 run: run-to-run, not e16; two e15 runs were identical |
+| the policy file `tail=2 strike=2 stocktail=2` on a saw NAND | read at boot (`place_src 1`), the `mode` line `tail_skip 2 strike_spread 2 stock_tail 2`; `strike_held 5 strike_late_max 1` for the six-key chord |
+| saw, cost a block (5 s windows; `peng` = the plugin renders) | while releasing: 124.3 k whole / 44.1 k `peng` on both; once under -60 dB e15 stays at 124.3 k / 44.1 k until the release ends 29 s after the keys, e16 is at **49.6 k / 0**: the 14.7 k over rest (34.9 k) is the stock's own per-voice loop (envelope, LFO, pitch) and the hook's zero test, until the envelope ends |
+| rings 0.14 (the default sound), `det_eng_tail_rings.txt`, spread 0, `tail_skip=1` against `tail_skip=2` | identical (5,004,931 frames); `tail_peak 0`: rings had put the voices to sleep (its 0.11 / 0.13 paths) before the envelope reached -60 dB; the skip takes the sleeping renders' 0.7-2.7 k a block to 0 for the last ~7 s; `tail_skips 28362` |
+| `det_eng_rings` (rings, 30 key events), e16 against e16 `tail_skip=0` | identical to e15 until the first re-strike of a voice that had been skipped; from there the re-struck chords differ at the chords' own level (diff peak -15 dBFS): the voice rings on from its frozen state, not from where the skipped renders would have left it (`docs/engines.md`, rings point 3). `tail_skip=0` against e15: identical until 67.5 s (the scenario's own spread). saw re-strikes exactly (its `note_on` resets the voice) |
+| the voice index: `tail_on7`, `tail_on_other`, `tail_on_states` | every plugin `note_on` met its envelope object in state 7 (the voice loop's pending note, 33-47 a run) or 1 (6 a run: VoiceCtl's own note on writes 1 at `0x01912120` just before it calls the engine), never a releasing or idle state: the objects are indexed as coop's voices |
+
+Caveat: with `g_coop_spread=32767` every note draws a random pan, and on a loaded host the key events land in a
+different main-loop pass from run to run, so a scenario with an engine selection and a knob turn is not
+sample-identical run to run on one image (two rings runs of the final ELF: different pans from the onset). The
+audio compares were made again with the spread at 0. rings is not sample-identical between images even then
+(`docs/engines.md`, rings point 4: its global noise generator); same-image compares with only the word changed are.
+
+What it saves on the device [I]: e14 / e15 with the owner's rings patch (string + reverb, damping at the longest end)
+rendered the six released voices for ~30 s at ~169 k a block (`docs/device-tests.md` "e14 on the device", "e15 dev +
+rings 0.14"), the line out at the interface's floor for the last ~18 s. With e16 the renders stop once the envelope
+passes -60 dB. How far into the release that is depends on the release knob (saw in op1emu: 23.8 s of 29 s with the
+knob all the way down: the release ends at -156 dB, and its last stretch below -60 dB is the slow one).
+
+### 2. The worst block (`engine_host.cc`, `g_coop_strike_spread`, default 0: off)
+
+**What makes the peaks** [C device, `docs/device-stats/2026-11-22-e15hold_r014-run.txt`: e15 + rings 0.14, the owner's
+patch, six keys]:
+- The chord's onset section: **whole block max 789,408** (the block has 580,499), `plugin_own_block` max 579,412,
+  one rings render up to **160,451** (a strike's first render; a held render averages 28.1 k). The only section over
+  budget.
+- Held, 5 s sections: whole block avg 352-353 k, max 437-525 k; `plugin_own_block` max 194-207 k against an average
+  of 169 k; one render's max 85-89 k (rings' control batch, every other block).
+- **At rest** (nothing sounding): avg 62.3 k, max 168.6 k. So ~100 k of the held maxima is not the engines (their
+  block max is only ~30-40 k over their average): it is there with nothing sounding. Interrupts are masked in the
+  callback (`CLI` at entry, `docs/l1-map.md`), so it is not a nested interrupt; the likeliest cause is the callback's
+  code and data refetched after the main loop has evicted them (the screen, the 5 s stats text) [I]. Rescheduling
+  coop's work does not move that; a smaller hot footprint does (e15's direction).
+- e12's 600-856 k window maxima were the arena placement's misses on every block (e13 put the state back in heap 0);
+  not in e13 and later.
+- The brief's candidates: several note_ons in one block: **real, the onset**; every effect's control update in one
+  block: not seen (no periodic spike in the effect costs, e15 "Gates"); the 5 s stats window: it runs in the main loop
+  (`coop_stats_tick`), not in the callback, so it can only act through the cache (above); the block start: under 4.5 k
+  on the device, and since e14 its 63-slot walk runs only in blocks that rendered a plugin.
+- A mono engine rendering twice in a block (op1-sdk's lesson) cannot happen here: the stock voice loop renders each
+  voice once, in index order, and coop does not re-render.
+
+**What was built**: the strike spread. With `g_coop_strike_spread = N > 0` at most N plugin `note_on`s are made in one
+block; the rest are held (128 zeros, no engine call) and made at that voice's render in the next block with room. A
+held note starts one block (1.45 ms) later than its envelope: a sound change, so the switch is off. Counters:
+`strike_spread strike_held strike_late_max`. A `note_off` for a held note makes its `note_on` first.
+
+Gate [C op1emu], rings 0.14, `det_eng_tail_rings.txt` (one six-key chord), spread 2 against 0: `plugin_own_block` max
+**114,183 -> 94,603** (-17 %), whole callback max **200,685 -> 177,897** (-11 %); `strike_held 7`, `strike_late_max 1`
+(no note waited more than one block). op1emu's strike render is 33 k at most against the device's 160 k, so the device
+should gain more: six strikes of 100-160 k in one block become two a block [I]. The device test reads the onset
+section's whole-block max with the switch on and off.
+
+Not built: alternating an engine's heavy work across blocks is the engine's business (rings already batches its
+control every other block and budgets its coefficient updates); "budget on the peak" is a measuring rule, and the
+device test reads section maxima, not only averages.
+
+### 3. Stretch: the stock engines' release tails (`stereo_thunks.S` + `engine_host.cc`, `g_coop_stock_tail`, default 0)
+
+**Can the render be skipped from where coop sits?** Yes, at the call: every synth voice render goes through
+`coop_synth_render_thunk`, which has the voice loop's `R7` (the envelope object's index, above), the render (P2) and the
+out block (R1). The voice loop does not use the render's return value (`0xFFA00D28..D2C`), and in stereo mode the
+stock's per-voice sum is coop's hook, which a skipped voice does not need (128 zeros add nothing). So the thunk asks
+`coop_stock_tail(R7, out, render)`: with the switch at 1, a releasing voice under the threshold that has had a render
+out of release since its note (the guard comes from the note-on hook, `coop_synth_note_on_hook`) gets 128 zeros and
+the thunk returns at once (no render, no cost record, no hook). Plugin engines and the iter voice (render =
+`coop_eng_render`) are left to change 1. Mode 2 renders and measures in the hook (`stock_tail_checked`,
+`stock_tail_peak`). With the switch at 0 the thunk adds one load and one branch.
+
+**Why it is off by default**: a stock render can keep state outside the voice that a skip freezes, and a frozen voice
+is what its next note starts from. Known: Phase adds to a global accumulator (`0x01DE4B8C`), Voltage copies 32 samples
+for its scope (`0x01DF6154`); the other twelve renders were not audited for this. Whether an engine's `note_on` resets
+its voice (as saw's does) or plays into its old state (as rings does) decides whether a re-struck note is exact. The
+owner decides, after a listening test per engine (DSynth first: ~50 % of a block for six voices on the device).
+
+Gate [C op1emu], DSynth (slot 5), `det_dsynth_tail.txt` (six keys, the release knob all the way down), images with
+the spread at 0 (no random pans):
+
+| Run | Result |
+|---|---|
+| e16 `stocktail=0` against e15 | the onset one block apart, then aligned max diff 2 LSB (the scenario's own run-to-run spread, as `det_chord`'s in the e15 notes) |
+| e16 `stocktail=2` (render, measure) against `stocktail=0` | identical (4,194,671 frames); `stock_tail_checked 28362 stock_tail_peak 1` |
+| e16 `stocktail=1` against `stocktail=2` | max 2 LSB (-84.3 dBFS) from the onset on (the same run-to-run spread), the skipped tail inside it; a constant 1 LSB of DC after the release (the DC blocker's state) |
+| cost a block (5 s windows; `eng` = the synth renders) | while releasing: 187-189 k whole / 111.7 k `eng` on all; once under -60 dB: `stocktail=0` stays there until the envelope ends (~30 s after the keys); `stocktail=1` **111.4 k / 48.2 k in the window it starts, then 49.9 k / 0** (rest 34.8 k); DSynth renders 141,588 -> 113,230 |
+
+So the mechanism works for a stock engine and DSynth's removed tail is under 1 LSB of the voice; what is left open is
+the per-engine audit (state outside the voice, re-struck notes), which is why the switch stays off.
+
+### Files and words
+
+- `core/sdram/engine_host.cc`: the tail skip in `coop_eng_render` (`g_coop_tail_skip`, `g_coop_tail_q30`, counters
+  `g_tail_skips / checked / peak / on7 / on_other / on_states`), the strike spread (`g_coop_strike_spread`,
+  `g_strike_held`, `g_strike_late_max`, `coop_engine_block_start`), the stock tail (`coop_stock_tail`,
+  `coop_stock_tail_measure`, `coop_stock_tail_note_on`, `g_coop_stock_tail`, `g_stock_tail_skips / checked / peak`).
+- `core/sdram/stereo_thunks.S`: `coop_synth_render_thunk` asks `coop_stock_tail` before the render when the word is
+  not 0.
+- `core/sdram/stereo_bus.cc`: the block start calls `coop_engine_block_start`; the note-on hook sets the stock guard;
+  the voice hook calls the stock measure in mode 2.
+- `core/sdram/coop_place.cc`, `core/include/coop_place.h`: policy tokens `tail=0|1|2 strike=0..6 stocktail=0|1|2`
+  (host test `tests/host/place_test.cc`, run in the GNU simulator: pass).
+- `core/sdram/coop_stats.cc`: the `mode` line's new fields; `g_text` 4-aligned (it goes to the stock yaffs write,
+  which asserts on an odd buffer); `odd_io` printed once `coop_yio.h` (another branch) is in the tree.
+- `sdk/coop_plugin.h`: `COOP_ENGINE_F_KEEP_TAILS` (0x2), in `COOP_ENGINE_FLAGS`.
+- `tests/sim/det_eng_tail.txt`, `det_eng_tail_rings.txt`, `det_dsynth_tail.txt`: the long-release scenarios.
+
+## e16 (2026-11-22): nophysics, TE's Box2D out (Tombola and the Lander game with it)
+
+op1-sdk's `nophysics` (BertBrandstifter, MIT) applied in coop's image pipeline: 144,888 bytes of TE code (Box2D, dead
+Lander / Tombola code) become RTS, no physics world is built at boot, picking Tombola gives pattern. The whole account,
+the reachability proof against coop's image and the gates: `docs/nophysics.md`. Measured in op1emu [C op1emu]:
+- **heap 0 free after boot +324,336 bytes** (316.7 KiB; the largest free block +260-302 KB), the same on a fresh, a
+  second-boot and the pristine NAND, with the stereo tape cache placed;
+- **the GUI's first frame 13-38 ms sooner, 76-87 ms with the stub SVGs** (`lander.svg` / `tombola.svg` not parsed);
+  coop's boot hook and first audio block do not move;
+- audio identical against the image without it (`det_drum`, `det_tape_play`; `det_chord` within its known spread);
+- code: 144,888 bytes freed (115,042 contiguous from `0x0191fe8e`), not used yet; the package 89 KB smaller.
+
+The device test: `docs/device-tests.md` "e16-nophysics".

@@ -554,7 +554,7 @@ static const char *load_one(const char *fname, uint8_t *stage)
     int fd = Y_OPEN(path, 0, 0);
     if (fd < 0) return "cannot open";
     int got = Y_READ(fd, stage, (int)FILE_MAX), more = 0;
-    if (got == (int)FILE_MAX) { uint8_t b; more = Y_READ(fd, &b, 1) > 0; }
+    if (got == (int)FILE_MAX) { uint8_t b __attribute__((aligned(4))); more = Y_READ(fd, &b, 1) > 0; }
     Y_CLOSE(fd);
     if (got <= 0) return "cannot read";
     if (more) return "file larger than 1 MiB";
@@ -1391,6 +1391,7 @@ extern "C" void coop_fx_init_mono(void *self, int pos)
 extern "C" int coop_slot2_save(void);                                      /* below (S2) */
 extern volatile int g_s2_save_req;
 extern "C" void coop_ui_service(void);                                    /* coop_ui.cc (u7): the UI's pending file writes */
+extern "C" void coop_strip_service(void);                                 /* coop_strip.cc (CS6) */
 static void slot2_build_service(void);                                    /* below: slot 2's object, built here (u8) */
 /* e6: the master FX words live at 0xFF8016C4 and the stock keeps them in op1.db's master table, written by
  * master_db_save (symbols/sdram.sym: 0x019D9B94, the only user of "UPDATE master SET ... fx_params"; it builds the row
@@ -1417,6 +1418,7 @@ extern "C" void coop_fx_service(void)
 {
     coop_place_service();                                                 /* e13: the policy's boot marker */
     coop_ui_service();
+    coop_strip_service();                                                 /* CS6: coop_strip.bin once the strip settled */
     if (g_s2_save_req) { g_s2_save_req = 0; coop_slot2_save(); }
     master_save_service();
     slot2_build_service();
@@ -1653,7 +1655,7 @@ volatile int g_s2_save_req;                                               /* u7:
 extern "C" void coop_slot2_request_save(void) { g_s2_save_req = 1; }
 extern "C" int coop_slot2_save(void)
 {
-    uint8_t b[S2_LEN_X];
+    uint8_t b[S2_LEN_X] __attribute__((aligned(4)));
     for (int i = 0; i < S2_LEN_X; i++) b[i] = 0;
     b[0] = 'C'; b[1] = 'S'; b[2] = '2'; b[3] = 3;
     coop_slot2_get(0, b + 4); coop_slot2_get(1, b + 14);
@@ -1670,7 +1672,7 @@ extern "C" int coop_slot2_save(void)
 
 static void slot2_load(void)
 {
-    uint8_t b[S2_LEN_X];
+    uint8_t b[S2_LEN_X] __attribute__((aligned(4)));
     int fd = Y_OPEN(S2_FILE, 0, 0);
     if (fd < 0) return;
     int got = Y_READ(fd, b, S2_LEN_X);

@@ -179,9 +179,11 @@ extern "C" void coop_runner_block(void);           /* coop_runner.cc (p5b): this
 extern "C" void coop_bend_block(void);             /* coop_bend.cc (u5) */
 extern "C" int16_t coop_drumpan_q15(void);         /* coop_drumpan.cc (u6): the last played key's pan */
 extern "C" void coop_lfo2_block_start(void);       /* lfo2.cc (v2): sync once a block */
+extern "C" void coop_engine_block_start(void);     /* engine_host.cc (e16): the block's strike count */
 extern "C" void coop_stereo_block_start(void)
 {
     coop_eng_block_end();
+    coop_engine_block_start();
     coop_lfo2_block_start();
     coop_runner_block();                               /* after the render sums close: a mark's section includes them */
     coop_bend_block();                                 /* u5: the bend ramp (coop_bend.cc) */
@@ -207,12 +209,14 @@ extern "C" void coop_stereo_block_start(void)
 extern "C" void coop_lfo2_trigger_synth(uint32_t voice);   /* second LFO slot (lfo2.cc) */
 extern "C" void coop_lfo2_trigger_drum(uint32_t voice);
 
+extern "C" void coop_stock_tail_note_on(uint32_t v);      /* engine_host.cc (e16) */
 extern "C" void coop_synth_note_on_hook(uint32_t voice, uint32_t dispatched)
 {
     coop_mark(0x20);
     if (voice >= COOP_SYNTH_VOICES || !dispatched) return;
     if (!g_inited) stereo_init();
     g_stereo_note_ons++;
+    coop_stock_tail_note_on(voice);                    /* e16: the stock tail skip's fresh-note guard */
     coop_spread_note_on(g_pan_synth, (int)voice);
     coop_lfo2_trigger_synth(voice);
 }
@@ -440,11 +444,14 @@ static inline __attribute__((always_inline)) void voice_hook(coop_spread *pans, 
     g_stereo_hook_cycles_sum_win += dt;
 }
 
+extern "C" uint32_t g_stock_tail_measure;                 /* engine_host.cc (e16) */
+extern "C" void coop_stock_tail_measure(uint32_t v);
 /* R7 at the synth render call = voice index 0..5 (0xffa009c2 zeroes it, 0xffa00da0 increments). */
 extern "C" COOP_HOT_VOICE void coop_synth_voice_hook(uint32_t r7)
 {
     coop_mark_hot1(0x21);
     if (r7 >= COOP_SYNTH_VOICES) return;
+    if (g_stock_tail_measure) coop_stock_tail_measure(r7);              /* e16: g_coop_stock_tail = 2 */
     voice_hook(g_pan_synth, (int)r7, 1u << r7, 0);
     coop_mark_prof_hot(0x23);                                                 /* m1: the hook's end (the stock's per-voice work follows) */
 }

@@ -1,0 +1,38 @@
+# e16 nophysics (docs/nophysics.md): pick Tombola in the sequencer picker (shift + seq, the blue encoder to the last
+# row, TOMBOLA; a push of the blue encoder), close it, play a chord through the sequencer. Stock / NOPHYSICS=0: the
+# Tombola screen; nophysics: pattern. Run it --chain with det_np_seq.txt for the second boot (the setting kept).
+# Screenshots are wall-paced (`wait`); key events are in guest time.
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap synth 300
+at 32000
+press shift
+at 32200
+tap seq 300
+at 32800
+release shift
+at 34000
+turn enc1 cw 48
+at 36000
+tap enc1 200
+at 38000
+tap seq 300
+at 40000
+press c4
+press e4
+press g4
+at 42000
+release c4
+release e4
+release g4
+wait 33000
+screenshot /root/op1emu-work/np_pick_list.ppm
+wait 4000
+screenshot /root/op1emu-work/np_pick_a.ppm
+wait 4000
+screenshot /root/op1emu-work/np_pick_b.ppm
+wait 4000
+screenshot /root/op1emu-work/np_pick_c.ppm
+wait 4000
+quit

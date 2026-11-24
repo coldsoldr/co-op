@@ -24,6 +24,7 @@
  * Copyright (C) 2026 coldsoldr. GPL-3.0-or-later with the OP-1 firmware permission.
  */
 #include <stdint.h>
+#include "../include/coop_yio.h"            /* Y_READ / Y_WRITE: odd buffers never reach the stock */
 
 #define RX_RING   ((volatile uint8_t *)0x01AB0510u)                /* 1024 x 4-byte USB-MIDI packets (kennel du_fw.c) */
 #define RX_WR     (*(volatile uint32_t *)0x01AB1510u)              /* free-running counters (& 0x3FF) */
@@ -32,9 +33,9 @@
 #define TX_ENQ    ((void (*)(int, const void *, unsigned))0x019E0D18u)   /* usbmidi_tx_enqueue(_, packets, count) */
 #define Y_OPEN    ((int (*)(const char *, int, int))0x01A997F4u)
 #define Y_CLOSE   ((int (*)(int))0x01A99908u)
-#define Y_READ    ((int (*)(int, void *, int))0x01A99C90u)
+#define Y_READ    coop_y_read
 #define Y_LSEEK   ((int32_t (*)(int, int32_t, int))0x01A9A0E4u)
-#define Y_WRITE   ((int (*)(int, const void *, int))0x01A99F84u)
+#define Y_WRITE   coop_y_write
 #define Y_MKDIR   ((int (*)(const char *, int))0x01A9A886u)        /* 11 stock callers: P0 = R0; LINK (kennel kn_files.c) */
 #define Y_UNLINK  ((int (*)(const char *))0x01A9A3FCu)
 
@@ -198,7 +199,7 @@ static void reply(int cmd, int seq, const uint8_t *payload, int n)
 
 static void handle(const uint8_t *m, int n)
 {
-    static uint8_t in[MAX_MSG], out[8 + CHUNK];
+    static uint8_t in[MAX_MSG] __attribute__((aligned(4))), out[8 + CHUNK] __attribute__((aligned(4))), rd[CHUNK] __attribute__((aligned(4)));   /* yaffs buffers: even (coop_yio.h) */
     int cmd = m[5], seq = m[6] | (m[7] << 7);
     int pn = unpack7(m + 8, n - 9, in);
     if (pn < 0) { out[0] = ST_FORMAT; reply(cmd, seq, out, 1); g_sysex_errors++; return; }
@@ -234,7 +235,8 @@ static void handle(const uint8_t *m, int n)
         int got = 0, ok = total >= 0;
         if (ok && (int32_t)off < total) {
             ok = Y_LSEEK(fd, (int32_t)off, 0) == (int32_t)off;
-            if (ok) { got = Y_READ(fd, out + 5, CHUNK); if (got < 0) { got = 0; ok = 0; } }
+            if (ok) { got = Y_READ(fd, rd, CHUNK); if (got < 0) { got = 0; ok = 0; } }   /* not out + 5: odd */
+            for (int i = 0; i < got; i++) out[5 + i] = rd[i];
         }
         Y_CLOSE(fd);
         out[0] = ok ? ST_OK : ST_IO;
@@ -373,7 +375,7 @@ static void selftest_inventory(void)
 }
 static void selftest_run(void)
 {
-    static char buf[16384];
+    static char buf[16384] __attribute__((aligned(4)));
     st_buf = buf; st_cap = (int)sizeof buf; st_len = 0;
     selftest_ask(CX_HELLO, 0, 0);
     selftest_inventory();

@@ -1,0 +1,94 @@
+# CS5 audio gate (docs/channel-strip.md "CS5"): det_strip_fx1's set-up (the stock delay on master FX 1, a chord recorded
+# on track 1 at 42-43 s), then, with the UI: Settings > Voices "channel strip" on (48-55.5 s), mixer, T1, blue push
+# (tape 1's strip), orange push (SEND), green +100 detents: FX 1 100 % (dry stays 100 %):
+# the playback gets the delay echoes; the mixer key closes it; back to the start and play (69 s).
+# Paced by display frames (wait-frames, guest-paced) to the end, so the run reaches past the last event.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap mixer 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 ccw 56
+at 33000
+turn enc1 cw 8
+at 34500
+tap seq 200
+at 35500
+tap mixer 200
+at 36500
+tap t3 200
+at 37300
+tap t3 200
+at 39000
+tap synth 300
+at 41000
+press rec
+at 41200
+tap play 300
+at 41600
+release rec
+at 42000
+press c4
+press e4
+press g4
+at 43000
+release c4
+release e4
+release g4
+at 47000
+tap stop 300
+at 48000
+press synth
+at 48200
+press drum
+at 48400
+press tape
+at 48600
+press mixer
+at 49600
+release mixer
+release tape
+release drum
+release synth
+at 50500
+tap right 200
+at 51500
+turn enc1 cw 8
+at 53000
+turn enc2 cw 2
+at 55000
+tap left 200
+at 55500
+tap left 200
+at 57000
+tap mixer 200
+at 58000
+tap t1 200
+at 59500
+tap enc1 200
+at 60500
+tap enc4 200
+at 61500
+turn enc2 cw 200
+at 66000
+tap mixer 200
+at 67000
+tap stop 300
+at 68000
+tap stop 300
+at 69000
+tap play 300
+at 76000
+tap stop 300
+wait-frames 2900 900000
+screenshot /root/op1emu-work/suifx_end.ppm
+wait 1000
+quit

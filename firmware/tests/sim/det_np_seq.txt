@@ -1,0 +1,26 @@
+# e16 nophysics (docs/nophysics.md): the synth sequencer after boot, as the saved setting leaves it. Boot, synth,
+# the seq key, a chord through the sequencer, nothing else: the screenshots (wall-paced `wait`) show whichever
+# sequencer the setting resolved to (stock with a saved Tombola: Tombola; nophysics: pattern). Run after
+# det_np_pick.txt on the same NAND (`--chain`, or tools that keep the NAND) for the saved-state check.
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+tap synth 300
+at 32000
+tap seq 300
+at 34000
+press c4
+press e4
+press g4
+at 36000
+release c4
+release e4
+release g4
+wait 33000
+screenshot /root/op1emu-work/np_seq_a.ppm
+wait 4000
+screenshot /root/op1emu-work/np_seq_b.ppm
+wait 4000
+screenshot /root/op1emu-work/np_seq_c.ppm
+wait 4000
+quit

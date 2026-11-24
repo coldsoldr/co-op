@@ -1,0 +1,43 @@
+# e16 (rings): a released chord on a plugin engine with the envelope's release long (docs/engines.md "Released voices below
+# -60 dB"). Select the first plugin row as det_eng_note.txt does (saw alone on the NAND: turn 64; rings alone: 56, set
+# by the copy det_eng_tail_rings.txt), open the envelope page (T2) and turn the orange knob (release) all the way
+# down (the release longest: op1-sdk's "over 29 s"), back to the engine page once the turn (400 steps, 20 ms apart: 8 s) is over, then a six-key chord held 3 s and
+# 50 s of release. Read: `mode ... tail_skips`, the windows' `peng` (the plugin renders a window) and `eng_renders`.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+press shift
+at 27700
+tap t1 200
+at 28200
+release shift
+at 29500
+turn enc1 cw 56
+at 34000
+tap seq 200
+at 35000
+tap synth 200
+at 36000
+tap t2 200
+at 37000
+turn enc4 ccw 400
+at 47000
+tap t1 200
+at 48000
+press c4
+press e4
+press g4
+press b4
+press d5
+press f4
+at 51000
+release c4
+release e4
+release g4
+release b4
+release d5
+release f4
+wait 85000
+quit

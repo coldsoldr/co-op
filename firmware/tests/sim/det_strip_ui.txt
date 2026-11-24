@@ -1,0 +1,240 @@
+# CS5 (docs/channel-strip.md "CS5"): the channel strip's UI. Guest-timed events; the screenshots are paced by display
+# frames (`wait-frames`, guest-paced), every 40 frames after the first 600, so each step's screen is among them whatever the host speed.
+# Pacing: 600 frames, then a screenshot every 40 frames (~2-3 s of guest time in op1emu). Steps (guest ms):
+#  30000 settings (the four mode keys), right: VOICES, blue 4 detents: "channel strip", green right: ON, left left
+#  41000 mixer (T1)
+#  45000 blue push: the strip of tape 1, EQ. White +6 detents (band 1 +3 dB); blue: band 2; white -4 (-2 dB);
+#        green +3 (freq); orange +2 (Q); blue push on EQ: the EQ on
+#  54000 green push: COMP; green push: comp on; blue +10 (thresh -23 dB); green +1 (ratio); white +2 (attack);
+#        shift: white +2 (release), orange +2 (knee); orange +4 (makeup +2 dB)
+#  63000 white push: SAT; white push: sat on; blue +10 (drive 40); green +1 (tube); white +5 (tone); orange -10 (mix 90)
+#  70000 orange push: SEND; green +50 (FX 1 50 %); blue -20 (dry 80 %); orange -1 (tap pre)
+#  76000 shift + orange push: tap back to its default (post)
+#  77000 T2: tape 2's strip (SEND)
+#  81000 T1; orange push: the sends bypassed; 82500 orange push: back
+#  84000 the mixer key: closed (the mixer's T1 page)
+#  88000 T2: the master EQ page with the note; 92000 T4: master comp with the note; 96000 T1
+# Expected (g_sui, g_sui_p[0] dumped at exit): opens 1, closes 1, pages 3, bypasses 5, resets 1, tapes 2;
+# track 1: eq_on 1, band 1 gain 42, band 2 gain 32 freq 63 q 9; comp_on 1 thresh 46 ratio 5 attack 17 release 18
+# knee 8 makeup 4; sat_on 1 drive 40 type 1 tone 5 mix 90; dry 80 fx1 50 fx2 0 tap_post 1.
+accel 64 -64 512
+wait-frames 1 300000
+at 30000
+press synth
+at 30200
+press drum
+at 30400
+press tape
+at 30600
+press mixer
+at 31600
+release mixer
+release tape
+release drum
+release synth
+at 32500
+tap right 200
+at 33500
+turn enc1 cw 8
+at 35000
+turn enc2 cw 2
+at 39000
+tap left 200
+at 39500
+tap left 200
+at 41000
+tap mixer 200
+at 45000
+tap enc1 200
+at 46000
+turn enc3 cw 12
+at 47000
+turn enc1 cw 2
+at 47500
+turn enc3 ccw 8
+at 48000
+turn enc2 cw 6
+at 48500
+turn enc4 cw 4
+at 49000
+tap enc1 200
+at 54000
+tap enc2 200
+at 55000
+tap enc2 200
+at 56000
+turn enc1 cw 20
+at 56500
+turn enc2 cw 2
+at 57000
+turn enc3 cw 4
+at 57500
+press shift
+at 57700
+turn enc3 cw 4
+at 58000
+turn enc4 cw 4
+at 58300
+release shift
+at 58600
+turn enc4 cw 8
+at 63000
+tap enc3 200
+at 64000
+tap enc3 200
+at 64500
+turn enc1 cw 20
+at 65000
+turn enc2 cw 2
+at 65500
+turn enc3 cw 10
+at 66000
+turn enc4 ccw 20
+at 70000
+tap enc4 200
+at 71000
+turn enc2 cw 100
+at 72000
+turn enc1 ccw 40
+at 72500
+turn enc4 ccw 2
+at 76000
+press shift
+at 76200
+tap enc4 200
+at 76600
+release shift
+at 77000
+tap t2 200
+at 81000
+tap t1 200
+at 81500
+tap enc4 200
+at 82500
+tap enc4 200
+at 84000
+tap mixer 200
+at 88000
+tap t2 200
+at 92000
+tap t4 200
+at 96000
+tap t1 200
+wait-frames 150 600000
+wait-frames 150 600000
+wait-frames 150 600000
+wait-frames 150 600000
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_00.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_01.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_02.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_03.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_04.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_05.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_06.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_07.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_08.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_09.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_10.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_11.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_12.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_13.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_14.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_15.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_16.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_17.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_18.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_19.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_20.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_21.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_22.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_23.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_24.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_25.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_26.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_27.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_28.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_29.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_30.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_31.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_32.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_33.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_34.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_35.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_36.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_37.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_38.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_39.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_40.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_41.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_42.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_43.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_44.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_45.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_46.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_47.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_48.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_49.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_50.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_51.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_52.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_53.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_54.ppm
+wait-frames 40 600000
+screenshot /root/op1emu-work/sui_55.ppm
+wait 2000
+quit

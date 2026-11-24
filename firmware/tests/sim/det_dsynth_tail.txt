@@ -1,0 +1,32 @@
+# e16 stretch: a released DSynth chord with the envelope's release long (docs/performance.md "e16"): synth page,
+# sound slot 5 (DSynth in the factory NAND), the envelope page (T2) and the orange knob (release) all the way down,
+# back to T1, a six-key chord held 3 s, 50 s of release. Read: `mode ... stock_tail_skips / stock_tail_checked /
+# stock_tail_peak`, the windows' `eng` and the `dsynth` cost entry.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap synth 200
+at 27500
+tap s5 200
+at 30000
+tap t2 200
+at 31000
+turn enc4 ccw 400
+at 41000
+tap t1 200
+at 42000
+press c4
+press e4
+press g4
+press b4
+press d5
+press f4
+at 45000
+release c4
+release e4
+release g4
+release b4
+release d5
+release f4
+wait 85000
+quit

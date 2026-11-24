@@ -1,0 +1,203 @@
+# Device loop (tools/devloop.py --allow-tape): the e17 channel strip on the real OP-1 (docs/device-tests.md "e17").
+# Before: a tape with content on track 1 (and ideally 2-4), a tape loop on around it (about 90 s of play), the tape
+# at the loop start, master FX 1 set to an effect with an audible tail (the stock delay is enough); nothing recorded.
+# What it does: Settings > VOICES "channel strip" on; mixer T1; blue push opens tape 1's strip; play; then section by
+# section on tape 1: neutral, EQ (band 1 +12 dB), comp, sat, FX 1 send 100 %, FX only (dry 0); then strips on tapes
+# 2-4 with every section on (the four-strip cost); stop, wait for the save; strip mode off in Settings; play again
+# (should sound like "neutral"). Never presses rec / lift / drop / split / mic, never shift + T (mute).
+# Sections: the run file gives each section's engine costs, summary.json the recording's level per section.
+# Leaves: strip mode off; tape 1-4 strips keep these settings in coop_strip.bin (inactive while the mode is off).
+#@name dev_strip_e17
+#@lead 2000
+#@tail 4000
+# ---- Settings > VOICES > channel strip: on (the menu opens at VOICES, top level) ----
+at 1000
+press synth
+at 1200
+press drum
+at 1400
+press tape
+at 1600
+press mixer
+at 2600
+release mixer
+release tape
+release drum
+release synth
+at 3500
+tap right 200
+at 4500
+turn enc1 cw 8
+at 5500
+turn enc2 cw 2
+at 7000
+tap left 200
+at 7500
+tap left 200
+# ---- the mixer's T1 page, tape 1's strip (EQ page) ----
+at 9000
+tap mixer 200
+at 10000
+tap t1 200
+at 11000
+tap enc1 200
+at 12000
+tap play 200
+at 13000
+#@mark neutral
+at 19000
+#@mark -
+# EQ: band 1 gain +12 dB (white), then the blue push switches the EQ on
+turn enc3 cw 24
+at 20000
+tap enc1 200
+at 21000
+#@mark eq
+at 27000
+#@mark -
+# COMP: green push opens the page, again switches it on; threshold down (blue), ratio up (green), makeup (orange)
+tap enc2 200
+at 27800
+tap enc2 200
+at 28500
+turn enc1 cw 30
+at 29500
+turn enc2 cw 4
+at 30000
+turn enc4 cw 12
+at 31000
+#@mark comp
+at 37000
+#@mark -
+# SAT: white push opens, again switches it on; drive up (blue)
+tap enc3 200
+at 37800
+tap enc3 200
+at 38500
+turn enc1 cw 50
+at 40000
+#@mark sat
+at 46000
+#@mark -
+# SEND: orange push opens; FX 1 to 100 % (green)
+tap enc4 200
+at 47000
+turn enc2 cw 100
+at 49500
+#@mark fx1
+at 55500
+#@mark -
+# dry to 0 (blue): only the FX 1 return is left
+turn enc1 ccw 100
+at 58000
+#@mark fx_only
+at 64000
+#@mark -
+turn enc1 cw 100
+# ---- tapes 2-4: every section on (T2-T4 switch tape on the same page, here SEND) ----
+at 66500
+tap t2 200
+at 67000
+turn enc2 cw 50
+at 68200
+tap enc1 200
+at 68800
+turn enc3 cw 24
+at 69500
+tap enc1 200
+at 70000
+tap enc2 200
+at 70500
+tap enc2 200
+at 71000
+tap enc3 200
+at 71500
+tap enc3 200
+at 72000
+turn enc1 cw 30
+at 73000
+tap enc4 200
+at 74500
+tap t3 200
+at 75000
+turn enc2 cw 50
+at 76200
+tap enc1 200
+at 76800
+turn enc3 cw 24
+at 77500
+tap enc1 200
+at 78000
+tap enc2 200
+at 78500
+tap enc2 200
+at 79000
+tap enc3 200
+at 79500
+tap enc3 200
+at 80000
+turn enc1 cw 30
+at 81000
+tap enc4 200
+at 82500
+tap t4 200
+at 83000
+turn enc2 cw 50
+at 84200
+tap enc1 200
+at 84800
+turn enc3 cw 24
+at 85500
+tap enc1 200
+at 86000
+tap enc2 200
+at 86500
+tap enc2 200
+at 87000
+tap enc3 200
+at 87500
+tap enc3 200
+at 88000
+turn enc1 cw 30
+at 89000
+tap enc4 200
+at 90500
+tap t1 200
+at 91500
+#@mark four_strips
+at 99500
+#@mark -
+tap stop 200
+at 100500
+tap mixer 200
+# ---- the save (2 s after the last change), then Settings: strip mode off ----
+at 104000
+press synth
+at 104200
+press drum
+at 104400
+press tape
+at 104600
+press mixer
+at 105600
+release mixer
+release tape
+release drum
+release synth
+at 106500
+tap right 200
+at 107500
+turn enc1 cw 8
+at 108500
+turn enc2 ccw 2
+at 110000
+tap left 200
+at 110500
+tap left 200
+at 112000
+tap play 200
+at 113000
+#@mark strip_off
+at 119000
+#@mark -
+tap stop 200

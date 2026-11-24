@@ -34,7 +34,34 @@ extern "C" void *coop_voice_take(uint32_t bytes);                         /* plu
 #define MAGIC         0x5300
 #define SLOTS         64
 
-struct eng { const coop_engine_t *e; uint8_t *state; uint32_t stride; uint32_t f44k; };   /* v1: f44k, COOP_ENGINE_F_44K */
+struct eng { const coop_engine_t *e; uint8_t *state; uint32_t stride; uint16_t f44k, keep; };   /* v1: f44k, COOP_ENGINE_F_44K;
+                                                                             e16: keep, COOP_ENGINE_F_KEEP_TAILS */
+
+/* ---- e16: released voices below -60 dB (docs/engines.md "Released voices below -60 dB", the owner's go-ahead) ----
+ * The stock's per-voice envelope objects: six of 24 bytes at 0xFF8000D4 + 24 v, made and returned by 0x0191264C(v)
+ * (an array of six built on first use by 0x01AA3862 with the constructor 0x019120BA; v out of 0..5 asserts), which
+ * the voice loop calls with its voice index R7 (0xFFA00A76..0xFFA00A80) before the envelope render 0x01912128
+ * (0xFFA00B82) fills the envelope block 0xFF801D50; the engine render follows (0xFFA00D28) [C: OP1_vdk.dis, l1.dis].
+ * +0 the state: 7 a note pending (the voice loop calls note_on, the render makes it 1), 1 attack, 2 decay, 3 sustain,
+ * 4 / 5 release, 6 a jump, 8 kill (x 0.985 a sample), 0 done; +8 the level, Q30 (1 << 30 = full). Release and kill
+ * end at a level <= 16 (-156 dB), which with the release knob low takes 29 s and more [C: the render's code, and the
+ * op1emu write trace in docs/engines.md]. The voice's sound is render x envelope, the envelope's sample being the
+ * level x the voice's gain, plus a dither of a few LSB: under 1 << 20 (-60 dB) a render of up to full scale adds at
+ * most ~32 LSB. So a voice whose envelope is releasing and under the threshold gets 128 zeros and no render.
+ * g_coop_tail_skip: 1 (default) skip; 0 never (e15); 2 render anyway and measure what the skip would remove
+ * (g_tail_checked, g_tail_peak: the largest |out x env| >> 15 of those blocks). g_coop_tail_q30: the threshold.
+ * The fresh-note guard: a voice is never skipped from its note_on until a render has seen its envelope out of
+ * release / kill (the stock makes a pending note 1 before the first render, so that is the first render). */
+#define ADSR(v)       ((const volatile int32_t *)(0xFF8000D4u + 24u * (uint32_t)(v)))
+#define ADSR_ENV      ((const int16_t *)0xFF801D50u)                     /* the voice's envelope block (stereo_bus.cc VOICE_ENV) */
+extern "C" {
+__attribute__((section(".data"))) volatile uint32_t g_coop_tail_skip = 1;
+__attribute__((section(".data"))) volatile int32_t g_coop_tail_q30 = 1 << 20;
+volatile uint32_t g_tail_skips, g_tail_checked, g_tail_peak, g_tail_on7, g_tail_on_other;
+volatile uint32_t g_tail_on_states;                                       /* bit s: a note_on met envelope state s */
+}
+static uint32_t g_tail_fresh;                                             /* bit v: note_on seen, no render out of release yet */
+static inline int adsr_releasing(int32_t st) { return st == 4 || st == 5 || st == 8; }
 extern "C" void coop_voice_44k_to_88k(int16_t *out);                       /* voice_rate.cc (v1) */
 static struct eng g_eng[SLOTS];
 static uint8_t g_voice_eng[COOP_VOICES];                                  /* the engine each voice started with (0 = iter) */
@@ -68,7 +95,8 @@ extern "C" const char *coop_engine_add(int n, const coop_engine_t *e)
     if (bad) return "engine init failed";
     g_eng[n].state = state;
     g_eng[n].stride = stride;
-    g_eng[n].f44k = e->flags & COOP_ENGINE_F_44K;
+    g_eng[n].f44k = (uint16_t)(e->flags & COOP_ENGINE_F_44K);
+    g_eng[n].keep = (uint16_t)((e->flags & COOP_ENGINE_F_KEEP_TAILS) != 0);
     __asm__ __volatile__("ssync;" ::: "memory");
     g_eng[n].e = e;                                                       /* playable from here */
     g_eng_loaded++;
@@ -101,16 +129,84 @@ static __attribute__((noinline)) void voice_start(void *self, const int16_t *par
     if (g_voice_eng[v] != n) g_eng_switches++;
     g_voice_eng[v] = (uint8_t)n;
     if (!n) { ITER_NOTE_ON(self, params); return; }
+    g_tail_fresh |= 1u << v;                                              /* e16: the fresh-note guard */
     g_eng[n].e->note_on(v, state_of(n, v), velocity_q15(v), params);
     g_eng_noteons++;
 }
 
+/* e16, cold: 128 zeros for a skipped voice (mode 1), or the measure of what a skip would remove (mode 2, after the
+ * render; the envelope block is this voice's, filled before the render). */
+static __attribute__((noinline)) void tail_zero(int16_t *out)
+{
+    uint32_t *w = (uint32_t *)(void *)out;                                /* the stock's 0xFF80113C, 4-aligned */
+    for (int i = 0; i < 64; i++) w[i] = 0;
+    g_tail_skips++;
+}
+static __attribute__((noinline)) void tail_measure(const int16_t *out)
+{
+    uint32_t pk = g_tail_peak;
+    for (int i = 0; i < 128; i++) {
+        int32_t s = ((int32_t)out[i] * ADSR_ENV[i]) >> 15;
+        uint32_t a = (uint32_t)(s < 0 ? -s : s);
+        if (a > pk) pk = a;
+    }
+    g_tail_peak = pk;
+    g_tail_checked++;
+}
+
 /* iter vtable +0x1C (through the voice loop's note-on thunk, coop_synth_noteon_thunk). */
+/* ---- e16, change 2: strikes spread over blocks (docs/performance.md "e16", switch g_coop_strike_spread, default 0) ----
+ * The device's worst blocks are a chord's onset: six plugin note_ons in one block, each voice's first render the
+ * heaviest it makes (rings 0.14 on e15: 160 k one render, 579 k the block's renders, 789 k the whole block, over the
+ * 580 k a block has). With g_coop_strike_spread = N > 0 at most N plugin voices start in one block; a note_on past
+ * that is held (the voice renders 128 zeros, no engine call) and made at that voice's render in the next block with
+ * room, in voice order. A held note starts 1.45 ms a block later than its envelope (the stock's attack runs on), so
+ * this changes the sound and is off by default. A note_off for a held note makes the note_on first. Stock engines
+ * and the iter voice are never held. */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_strike_spread = 0; }
+volatile uint32_t g_strike_held, g_strike_late_max;                      /* stats: notes held; most blocks one waited */
+static uint32_t g_strikes_blk;                                            /* plugin note_ons made in this block */
+static uint32_t g_strike_pend;                                            /* bit v: a held note_on */
+static const int16_t *g_strike_params[COOP_VOICES];
+static uint8_t g_strike_wait[COOP_VOICES];
+extern "C" void coop_engine_block_start(void) { g_strikes_blk = 0; }   /* stereo_bus.cc coop_stereo_block_start */
+
+static __attribute__((noinline)) void strike_release(void *self, int v)  /* make the held note_on now */
+{
+    g_strike_pend &= ~(1u << v);
+    if (g_strike_wait[v] > g_strike_late_max) g_strike_late_max = g_strike_wait[v];
+    g_strikes_blk++;
+    voice_start(self, g_strike_params[v], v, engine_of(g_strike_params[v]));
+}
+/* in the render, before anything else for a voice with a held note_on: 1 = it stays held (out is zeros) */
+static __attribute__((noinline)) int strike_held(void *self, int16_t *out, int v)
+{
+    if (g_strikes_blk < g_coop_strike_spread || !g_coop_strike_spread) { strike_release(self, v); return 0; }
+    if (g_strike_wait[v] < 255) g_strike_wait[v]++;
+    uint32_t *w = (uint32_t *)(void *)out;
+    for (int i = 0; i < 64; i++) w[i] = 0;
+    return 1;
+}
+
 extern "C" void coop_eng_note_on(void *self, const int16_t *params)
 {
     int v = voice_of(self);
     if (v < 0) { g_eng_foreign++; ITER_NOTE_ON(self, params); return; }
-    voice_start(self, params, v, engine_of(params));
+    int n = engine_of(params);
+    if (n) { int32_t st = ADSR(v)[0]; if (st == 7) g_tail_on7++; else g_tail_on_other++; g_tail_on_states |= 1u << (st & 31); }   /* e16: the voice index is the envelope's
+                                                                             (the voice loop's note_on runs on state 7) */
+    if (n && g_coop_strike_spread) {
+        if (g_strikes_blk >= g_coop_strike_spread) {                     /* held to a later block */
+            g_strike_pend |= 1u << v;
+            g_strike_params[v] = params;
+            g_strike_wait[v] = 0;
+            g_strike_held++;
+            return;
+        }
+        g_strike_pend &= ~(1u << v);                                      /* a new note replaces a held one */
+        g_strikes_blk++;
+    }
+    voice_start(self, params, v, n);
 }
 
 /* v2 (the m1b result): one plugin render's bookkeeping, recorded in the hot path and entered once a block (or when
@@ -140,18 +236,70 @@ static __attribute__((noinline)) void prec_fold(void)
     g_prec_n = 0;
 }
 
+/* ---- e16 stretch: the same skip for the stock engines' voices (switch g_coop_stock_tail, default 0: off) ----
+ * coop_synth_render_thunk (stereo_thunks.S) asks before it calls a synth voice's render (R7 = the voice loop's index,
+ * which is the envelope object's index: 0x0191264C is called with it) and, on 1, returns to the voice loop with the
+ * voice's out block zeroed: no render, no cost record, no voice hook (the hook would only find 128 zeros). Plugin
+ * engines and the iter voice (render = coop_eng_render) are left to coop_eng_render. The fresh-note guard comes from
+ * the note-on hook (stereo_bus.cc coop_synth_note_on_hook -> coop_stock_tail_note_on). Off by default because a stock
+ * engine's render may keep state outside its voice that a skip freezes (Phase's accumulator 0x01DE4B8C, Voltage's
+ * scope copy 0x01DF6154; the other twelve renders not audited) and a frozen voice is what its next note_on starts
+ * from: docs/performance.md "e16", the owner's decision. 2 = never skip, count the renders that would have been
+ * skipped (the voice hook measures them: g_stock_tail_peak). */
+extern "C" { __attribute__((section(".data"))) volatile uint32_t g_coop_stock_tail = 0; }
+volatile uint32_t g_stock_tail_skips, g_stock_tail_checked, g_stock_tail_peak;
+uint32_t g_stock_tail_measure;                                            /* mode 2: bit v, the hook measures this render */
+static uint32_t g_stock_fresh;
+extern "C" void coop_stock_tail_note_on(uint32_t v) { if (v < COOP_VOICES) g_stock_fresh |= 1u << v; }
+extern "C" void coop_eng_render(void *self, int16_t *out, const int16_t *params);
+extern "C" COOP_HOT_VOICE int coop_stock_tail(uint32_t v, int16_t *out, uint32_t fn)
+{
+    if (v >= COOP_VOICES || fn == (uint32_t)(uintptr_t)&coop_eng_render) return 0;
+    const volatile int32_t *a = ADSR(v);
+    if (!adsr_releasing(a[0])) { g_stock_fresh &= ~(1u << v); return 0; }
+    if ((g_stock_fresh >> v) & 1u || a[2] >= g_coop_tail_q30) return 0;
+    if (g_coop_stock_tail != 1) { g_stock_tail_measure |= 1u << v; return 0; }
+    uint32_t *w = (uint32_t *)(void *)out;
+    for (int i = 0; i < 64; i++) w[i] = 0;
+    g_stock_tail_skips++;
+    return 1;
+}
+/* mode 2, from the voice hook after the render: the largest |out x env| >> 15 of the renders a skip would remove */
+extern "C" __attribute__((noinline)) void coop_stock_tail_measure(uint32_t v)
+{
+    g_stock_tail_measure &= ~(1u << v);
+    const int16_t *out = (const int16_t *)0xFF80113Cu;                    /* stereo_bus.cc VOICE_OUT */
+    uint32_t pk = g_stock_tail_peak;
+    for (int i = 0; i < 128; i++) {
+        int32_t s = ((int32_t)out[i] * ADSR_ENV[i]) >> 15;
+        uint32_t m = (uint32_t)(s < 0 ? -s : s);
+        if (m > pk) pk = m;
+    }
+    g_stock_tail_peak = pk;
+    g_stock_tail_checked++;
+}
+
 /* iter vtable +0x14 (through coop_synth_render_thunk: the cost line names this function). */
 extern "C" COOP_HOT_VOICE void coop_eng_render(void *self, int16_t *out, const int16_t *params)
 {
     int v = voice_of(self);
     if (v < 0) { g_eng_foreign++; ITER_RENDER(self, out, params); return; }
+    if (g_strike_pend && ((g_strike_pend >> v) & 1u) && strike_held(self, out, v)) return;   /* e16: a held strike */
     int n = engine_of(params);
     if (n != g_voice_eng[v]) voice_start(self, params, v, n);            /* the engine changed under a live voice */
     if (!n) { g_eng_iter_renders++; ITER_RENDER(self, out, params); return; }
+    uint32_t tail = g_coop_tail_skip;                                     /* e16: a released voice under the threshold */
+    if (tail) {
+        const volatile int32_t *a = ADSR(v);
+        if (!adsr_releasing(a[0])) { g_tail_fresh &= ~(1u << v); tail = 0; }
+        else if ((g_tail_fresh >> v) & 1u || a[2] >= g_coop_tail_q30 || g_eng[n].keep) tail = 0;
+        else if (tail == 1) { tail_zero(out); return; }                  /* (f44k too: the whole 128) */
+    }
     if (!g_coop_prof) {                                                   /* e14: the render alone, nothing recorded */
         g_eng[n].e->render(v, state_of(n, v), out, PITCH_INC, params);
         if (g_eng[n].f44k) coop_voice_44k_to_88k(out);
         g_eng_renders++;
+        if (tail) tail_measure(out);
         return;
     }
     uint32_t a0 = 0, a1 = 0, b0 = 0, b1 = 0;
@@ -168,6 +316,7 @@ extern "C" COOP_HOT_VOICE void coop_eng_render(void *self, int16_t *out, const i
     struct prec *r = &g_prec[k];
     r->n = (uint32_t)n; r->dt = dt; r->d0 = b0 - a0; r->d1 = b1 - a1;
     g_prec_n = k + 1;
+    if (tail) tail_measure(out);
 }
 
 /* e4: the block's total per engine (coop_stats.cc coop_eng_block_end, after the voice loop) */
@@ -206,6 +355,7 @@ extern "C" void coop_eng_note_off(void *self)
 {
     int v = voice_of(self);
     if (v < 0) { ITER_NOTE_OFF(self); return; }
+    if ((g_strike_pend >> v) & 1u) strike_release(self, v);              /* e16: a held strike starts before it ends */
     int n = g_voice_eng[v];
     if (!n || !g_eng[n].e) { ITER_NOTE_OFF(self); return; }
     if (g_eng[n].e->note_off) g_eng[n].e->note_off(v, state_of(n, v));

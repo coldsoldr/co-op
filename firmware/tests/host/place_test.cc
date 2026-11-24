@@ -12,7 +12,7 @@
 
 #pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
 volatile uint32_t g_coop_pf_mode, g_plugins_scan_done;
-extern "C" { volatile uint32_t g_coop_prof = 1, g_coop_statsfile = 1; }
+extern "C" { volatile uint32_t g_coop_prof = 1, g_coop_statsfile = 1; volatile uint32_t g_coop_tail_skip = 1, g_coop_strike_spread, g_coop_stock_tail; }
 #include "../../core/sdram/coop_place.cc"
 
 static int fails;
@@ -53,6 +53,13 @@ int main(void)
       if (!coop_place_parse("prof=1 prof=0 prof=1", 20, &p, &f, &pr) || p.prof != 1) { fails++; printf("FAIL prof: the later token\n"); } }
     expect("statsfile=1 prof=0", 1, def, -1, -1);
     expect("statsfile=2", 0, 0, 0, 0);
+    expect("tail=0 strike=2 stocktail=1", 1, def, -1, -1);               /* e16 */
+    { struct coop_place p = { 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 }; int f, pr;
+      if (!coop_place_parse("tail=2 strike=6 stocktail=0", 27, &p, &f, &pr) || !p.tail_set || p.tail != 2 || p.strike != 6
+          || !p.stock_set || p.stock != 0) { fails++; printf("FAIL e16 tokens not taken\n"); } }
+    expect("tail=3", 0, 0, 0, 0);
+    expect("strike=7", 0, 0, 0, 0);
+    expect("stocktail=", 0, 0, 0, 0);
     expect("prof=2", 0, 0, 0, 0);
     expect("prof=", 0, 0, 0, 0);
     /* refused whole */
