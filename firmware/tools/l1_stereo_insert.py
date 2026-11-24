@@ -310,6 +310,48 @@ PHASE_LOOP_SITE = 0x01a0bce0
 PHASE_LOOP_STOCK = bytes.fromhex('a2e03d40')
 
 
+# CS3, the channel strip's audio path (docs/channel-strip.md "CS3" and its hook map; core/sdram/coop_strip.cc,
+# strip_thunks.S; --tape-stereo only). Three 12-byte trampolines in loop B's dead body (MIX_SITE + 6 .. MIX_RESUME:
+# the mix patch above leaves 0xffa00fb4..0xffa00fdb unreached), checked against the stock bytes there:
+STRIP_TRAMP_AT = 0xffa00fb4
+STRIP_TRAMP_STOCK = bytes.fromhex('0018' '6f942b9c' '04ca18005394' '0000' '04c20180' '02c407a2' '22cc03a0319e' '0000'
+                                  '409e' '4995' '02c4')       # the first 36 of loop B's 40 dead bytes
+STRIP_MAIN_SITE = 0xffa0712c                                      # main lane loop: R0 = MAX (R0, R1) (V) -> CALL tramp
+STRIP_MAIN_STOCK = bytes.fromhex('06c40100')
+STRIP_SEAM_SITE = 0xffa0709c                                      # seam lane loop: R0 = MAX (R2, R0) (V) -> CALL tramp
+STRIP_SEAM_STOCK = bytes.fromhex('06c41000')
+STRIP_RS_SITE = 0xffa07250                                        # the tick: CALL 0xffa06194 (the tape resampler)
+STRIP_RS_FN = 0xffa06194
+# master FX 1 (reached from the gate 0xffa01202..121e): `R0 = [P1]; P1 = R0; P0.L = 0xdb4; P0.H = 0xff80` (the first 12
+# of the render-call block 0xffa017b8..0xffa017e9) -> `P2 = coop_master_fx1; CALL (P2); JUMP.S 0xffa01220`
+STRIP_FX1_SITE = 0xffa017b8
+STRIP_FX1_STOCK = bytes.fromhex('0891' '0832' '08e1b40d' '48e180ff')
+STRIP_FX1_BACK = 0xffa01220
+# master EQ: `P1 = 0x010004cc; CALL (P1); CALL 0xffa030f0` -> `P1 = coop_master_eq; CALL (P1); NOP; NOP`
+STRIP_EQ_SITE = 0xffa0110e
+STRIP_EQ_STOCK = bytes.fromhex('09e1cc04' '49e10001' '6100' '00e3ec0f')
+
+
+def strip_patches(thunks):
+    """[(address, stock, new)] for CS3: the trampolines (main, seam, resampler) and the five L1 sites."""
+    main_t = STRIP_TRAMP_AT
+    seam_t = STRIP_TRAMP_AT + 12
+    rs_t = STRIP_TRAMP_AT + 24
+    tramps = (tramp_plain(thunks['strip_main']) +
+              bytes.fromhex('4a01') + imm_pair_bytes(2, thunks['strip_seam']) + bytes.fromhex('5200') +   # [--SP] = P2; P2 = fn; JUMP (P2)
+              tramp_plain(thunks['strip_rs']))
+    assert len(tramps) == len(STRIP_TRAMP_STOCK) == 36
+    fx1_new = imm_pair_bytes(2, thunks['strip_fx1']) + bytes.fromhex('6200') + jump_s(STRIP_FX1_SITE + 10, STRIP_FX1_BACK)
+    eq_new = imm_pair_bytes(1, thunks['strip_eq']) + bytes.fromhex('6100' '0000' '0000')
+    assert len(fx1_new) == len(STRIP_FX1_STOCK) and len(eq_new) == len(STRIP_EQ_STOCK)
+    return [(STRIP_TRAMP_AT, STRIP_TRAMP_STOCK, tramps),
+            (STRIP_MAIN_SITE, STRIP_MAIN_STOCK, call24(STRIP_MAIN_SITE, main_t)),
+            (STRIP_SEAM_SITE, STRIP_SEAM_STOCK, call24(STRIP_SEAM_SITE, seam_t)),
+            (STRIP_RS_SITE, call24(STRIP_RS_SITE, STRIP_RS_FN), call24(STRIP_RS_SITE, rs_t)),
+            (STRIP_FX1_SITE, STRIP_FX1_STOCK, fx1_new),
+            (STRIP_EQ_SITE, STRIP_EQ_STOCK, eq_new)]
+
+
 def tank_patches(thunks):
     return [(site, stock, jump_l(site, thunks[name]) + bytes.fromhex('00000000')) for site, stock, name in TANK_SITES]
 
@@ -656,6 +698,13 @@ def thunk_addresses(elf):
         tanks['phase_loop'] = symbol_address(syms, 'coop_phase_loop_near')[0]
     except Exception:
         pass
+    try:                                               # CS3: the channel strip's audio path
+        for key, name in (('strip_main', 'coop_strip_lane_main'), ('strip_seam', 'coop_strip_lane_seam'),
+                          ('strip_rs', 'coop_strip_rs_thunk'), ('strip_fx1', 'coop_master_fx1'), ('strip_eq', 'coop_master_eq')):
+            tanks[key] = symbol_address(syms, name)[0]
+    except Exception:
+        for key in ('strip_main', 'strip_seam', 'strip_rs', 'strip_fx1', 'strip_eq'):
+            tanks.pop(key, None)
     try:                                               # the voice hook can stand in for the stock voice sum
         tanks['voice_sum'] = symbol_address(syms, 'g_coop_voice_sum_own')[0]
     except Exception:
@@ -724,6 +773,8 @@ def insert(ldr_bytes, thunks, tramp_at=TRAMP_BASE, tape=False):
         patches.append((PHASE_LOOP_SITE, PHASE_LOOP_STOCK, jump_l(PHASE_LOOP_SITE, thunks['phase_loop'])))
     if tape:
         patches += tape_patches(tramps)
+    if tape and thunks.get('strip_main'):              # CS3: the channel strip (lanes, resampler, master FX 1, master EQ)
+        patches += strip_patches(thunks)
     for address, stock, new in patches:
         patch_at(dxe, address, stock, new)
         lines.append('site {:#x}: {} -> {}'.format(address, stock.hex(), new.hex()))

@@ -10,6 +10,8 @@ Goal: no custom build can ever leave the OP-1 unable to reach te-boot (the bootl
 4. **Install only through the te-boot menu:** hold COM while switching on, then "1. Upload firmware". Don't use the app-side update path (see "Path B"), which forces a bootloader rewrite whenever the package contains te-boot.ldr.
 5. ✅ *Done 2026-10-14: stock flash showed "te_boot skipped", so the unit runs v2.30 and recovery works.* **Before any custom flash, check the unit's bootloader is v2.30** (shown on the te-boot screen), and **prove recovery once by flashing stock `op1_246.op1` through the te-boot menu**. With a v2.30 unit and the stock file name, te-boot skips the bootloader write (see "Decision logic").
 6. Don't use te-boot "7. Factory reset" or "8. Format drive" during development. They wipe YAFFS2, including `/yaffs2/cmel_gamma.dat` and `/yaffs2/samsung.dat`, the display gamma calibration files.
+7. **No odd buffer reaches a yaffs read or write** (the stock NAND driver asserts on it, at every boot if the read is a
+   boot read). See "Even buffers for the stock file layer".
 
 ## Update pipeline
 
@@ -55,6 +57,35 @@ unlink /yaffs2/te-boot.ldr
 - Both paths unlink `/yaffs2/te-boot.ldr` *before* untarring, and the writer unlinks it afterwards. So the stock steady state is "no te-boot.ldr on YAFFS2", and nothing reads it except the writer.
 - Both paths gate the writer on `access(...) == 0`. With no file, the writer is never called.
 - Verified: `tools/build_package.py` output decodes to the 117 stock entries minus `te-boot.ldr` (116), all byte-identical.
+
+## Even buffers for the stock file layer
+
+Not a brick (te-boot is untouched), but a boot loop: TE's NAND driver asserts `te_yflash2.c:600
+!((unsigned int)data & 1)`, so a yaffs read or write whose data buffer starts at an odd address halts the device, and
+if the read happens at boot it halts every boot until the file is removed (stock firmware through te-boot, or a
+coop with the fix). Found by **op1-sdk** (MIT; `docs/lessons.md`, 2026-11-15, "PLAY: a boot failure from an odd buffer
+address"): their `SONG.BIN` buffer was even in one build and odd in the next. [C]: the halt on their device; the assert
+string `!((unsigned int)data & 1)` with `te_yflash2` is in the stock R246 `OP1_vdk.ldr`.
+
+Why it is accidental in coop: a `uint8_t` / `char` array has alignment 1 on the Blackfin (no `DATA_ALIGNMENT` bump; a
+test compile puts a one-byte stack local at `SP + 0x17`), and `-fdata-sections` gives every static its own section, so
+an array lands wherever the objects before it end. Before this fix one 32-byte array of the image was odd
+(`g_saved_once`, not a file buffer), and SysEx FILE_GET read every chunk into `out + 5`: always odd.
+
+**The rule:** every buffer coop hands to the stock's yaffs read or write starts even. Static and stack byte buffers
+carry `__attribute__((aligned(4)))`; heap, arena and fixed-address buffers (plugin staging at `COOP_POOL_LO`, the
+tape `g_bounce`s) are aligned by construction; never pass a string literal or a pointer into the middle of a buffer
+(`out + 5`): copy through an aligned buffer.
+
+**The guards:**
+- `tools/even_bufs.py`, run by every `make combined` / `combined-release` link: every data object of two bytes or more
+  in the ELF starts even, or the build fails and the ELF is deleted (`tests/tools/test_even_bufs.py`).
+- `core/include/coop_yio.h`: `coop_y_read` / `coop_y_write` pass an even buffer straight to the stock (0x01A99C90 /
+  0x01A99F84) and move an odd one through a 64-byte aligned stack bounce, counted in `g_coop_odd_io` (0 in a good
+  image). `Y_READ` / `Y_WRITE` are these in coop_place, coop_runner, coop_sysex, coop_tape_ui, tape_edit and tape_io.
+  coop_settings, plugin_host and coop_stats still call the stock directly; their buffers are aligned and checked by
+  `even_bufs.py` (plugin_host's stack buffers by their attribute only). A new file that calls yaffs includes
+  `coop_yio.h`.
 
 ## Remaining risks / open questions
 - ~~Does te-boot verify the app image?~~ **Resolved: no.** See `docs/app-boot-chain.md`. The app's L1 code is XTEA-encrypted with a key held in OTP, but nothing is authenticated. Patch only plain SDRAM blocks and carry the encrypted CALLBACK blocks over unchanged.

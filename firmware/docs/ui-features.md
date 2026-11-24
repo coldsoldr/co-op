@@ -158,3 +158,26 @@ tape_drive, tape_echo, wavefolder, cs_hall, cs_plate, cs_clouds, cs_clouds_delay
 - **Latches and the synth / drum switch** (the owner, 2026-11-11: acceptable): the stock starts the instrument effect
   again when you switch between synth and drum, so a latch at the synth or drum position is off after a visit to the
   other instrument (the effect's own state starts again there too; this is not new) [C op1emu].
+
+## Channel strip (the owner, 2026-11-22; design in docs/channel-strip.md)
+
+- Settings › Voices gets a **channel strip** switch. On: the mixer key shows the mixer as today, the **master EQ and
+  master compressor are bypassed** (settings kept), and clicking blue / green / white / orange opens the strip of
+  tape 1 / 2 / 3 / 4.
+- **Layout A, four pages** (mockups: https://claude.ai/artifact/VrUfgR6XW9YpL8oT4xn5NU): EQ / COMP / SAT / SEND tabs in
+  the encoder colours. Click an encoder to open its page; click the current page's encoder to bypass that section;
+  shift + click resets a value. The mixer key goes back; T1-T4 switch tape on the same page.
+  EQ: band, freq, gain, Q (bands 1 / 4 shelf or cut on shift + blue). COMP: threshold, ratio, attack (shift release),
+  makeup (shift knee). SAT: drive, type (tape / tube / diode / fold), tone, mix. SEND: dry, FX 1, FX 2, tap pre / post.
+- Sends feed the **master FX 1 / FX 2**, which become send effects while the strip is on; their returns go to the
+  master. The **live instrument goes dry** to the master (it keeps its sound FX); recording is unchanged.
+- **Pre / post tap kept** (pre = off the tape, post = after the strip). **A bypassed section costs nothing.**
+- Strip settings are **saved per tape project**.
+- **UI built in CS5 (2026-11-23), op1emu only, device test pending** (docs/channel-strip.md "CS5"; the playground's
+  "Channel strip (CS5)" scenario). Details settled while building, for the owner to confirm: a turn is one table
+  step a detent and shift + turn the same step without the encoder's acceleration (the steps are already the
+  saved resolution); shift + blue on EQ bands 1 / 4 is direction-based (anticlockwise shelf, clockwise cut); shift
+  + push on EQ blue resets the whole band, on COMP white / orange both attack and release / makeup and knee;
+  SEND's "bypass" mutes both sends (the levels are kept by the UI, not saved); a section stays off until its
+  encoder is pushed (turning a value does not switch it on); the mixer's master EQ and comp pages show "off in
+  strip mode".

@@ -188,7 +188,14 @@ typedef struct coop_fx_screen_t {
 #define COOP_ENGINE_F_44K   0x1u                       /* render fills out[0..63] at 44.1 kHz; the core makes the 128
                                                         * the voice loop wants (each sample twice, after the render).
                                                         * plugin.json "voice_rate": 44100 (pack.py checks the two agree) */
-#define COOP_ENGINE_FLAGS   COOP_ENGINE_F_44K          /* every flag this core knows */
+/* e16 (docs/engines.md "Released voices below -60 dB"): the core stops calling render for a voice whose stock
+ * envelope is releasing (or killing) and is below -60 dB, and hands the voice loop 128 zeros instead; the voice's
+ * state is left as the last render left it, and the next note_on on that voice renders again. An engine whose render
+ * of one voice carries sound that other voices play (a shared reverb or delay fed by every voice's dry signal, one
+ * string set rendered by whichever voice calls first), or that must see every block of a released voice, sets this
+ * flag and every one of its renders is called, as before e16. A core before e16 refuses a file with it. */
+#define COOP_ENGINE_F_KEEP_TAILS 0x2u
+#define COOP_ENGINE_FLAGS   (COOP_ENGINE_F_44K | COOP_ENGINE_F_KEEP_TAILS)   /* every flag this core knows */
 #define COOP_VOICE_BLOCK_44K 64                        /* samples a render with COOP_ENGINE_F_44K, at 44,100 Hz */
 
 typedef struct coop_engine_t {

@@ -19,6 +19,11 @@ STOCK_LDR="$STOCK_DIR/OP1_vdk.ldr" bash "$here/tools/build_image.sh" "$work/plai
 mkdir -p "$work/fw"
 cp -r "$STOCK_DIR/content" "$work/fw/content"
 cp "$work/OP1_vdk.ldr" "$work/fw/OP1_vdk.ldr"          # no te-boot.ldr: the bootloader is never touched
+# e16 nophysics (docs/nophysics.md): nothing uses lander.svg / tombola.svg any more; an empty SVG saves their parse at
+# boot. Only with the nophysics image (NOPHYSICS=0 keeps both stock); NOPHYSICS_SVG=0 keeps the stock files anyway.
+if [ "${NOPHYSICS:-1}" != 0 ] && [ "${NOPHYSICS_SVG:-1}" != 0 ]; then
+  for f in lander.svg tombola.svg; do cp "$here/third_party/op1-sdk/nophysics/stub.svg" "$work/fw/content/display/$f"; done
+fi
 mkdir -p "$(dirname "$OUT")"
 python3 -I "$here/tools/build_package.py" "$work/fw" "$OUT"
 python3 -I "$here/tools/verify_bootloader.py" "$OUT"

@@ -129,7 +129,11 @@ def compile_plugin(plugin_dir, outdir, toolchain=None):
     flags = meta.get('cflags', [])
     scratch = scratch_bytes(meta)                       # e8: the sources see the declared bytes (a port static_asserts)
     defs = [f'-DCOOP_FX_SCRATCH_BYTES={scratch}'] if scratch else []
-    allowed = re.compile(r'-(?:D[A-Za-z_][A-Za-z0-9_]*(?:=[A-Za-z0-9_]+)?|O[0123sg]|fno-tree-loop-distribute-patterns)$')
+    # coop-fw (2026-11-22, docs/plugin-performance.md "Loop unswitching"): -funswitch-loops on the command line, per
+    # source. The pragma form (#pragma GCC optimize) is no substitute on bfin GCC 14: it changes more than the one
+    # pass (saw lost its hardware loop and spilled to the stack, +17 %; bitcrusher +34 %, fickle +11 %).
+    allowed = re.compile(r'-(?:D[A-Za-z_][A-Za-z0-9_]*(?:=[A-Za-z0-9_]+)?|O[0123sg]|fno-tree-loop-distribute-patterns'
+                         r'|funswitch-loops)$')
     source_flags = meta.get('source_cflags', {})
     if not isinstance(source_flags,dict) or any(k not in meta['sources'] for k in source_flags): raise PackError('Invalid source compiler flags')
     for group in [flags, *source_flags.values()]:

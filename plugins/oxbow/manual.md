@@ -6,7 +6,7 @@ Two oscillators with sync and cross-modulation into a state-variable filter, an 
 
 ## Who made it
 
-Port of OberVave by zvenson (GPL-3.0).
+OberVave by zvenson (GPL-3.0), ported to kennel by Hundekraft.
 
 ## Get it
 

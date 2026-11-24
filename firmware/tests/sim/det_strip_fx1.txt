@@ -1,0 +1,56 @@
+# CS3 gate 3 (docs/channel-strip.md "CS3"): the stock delay on master FX 1 (mixer, T3, shift + T3 the list, top
+# then one row: delay; seq closes it; mixer, T3, T3 switches it on), then a chord recorded on track 1 from the synth
+# page (hold REC, PLAY), stop, back to the start, play. With an image built `--set-word g_coop_strip_on=1
+# --set-word g_coop_strip_t1=0x6400` (track 1: dry 0, FX 1 100 %) the live chord stays dry (no echoes after its
+# release at 43 s) and the playback (chord at ~49.8 s) carries only the delay's wet return; with the strip off both
+# carry the chord and its echoes. Guest-timed.
+accel 64 -64 512
+wait-frames 1 300000
+at 26000
+tap mixer 200
+at 27500
+tap t3 200
+at 29000
+press shift
+at 29200
+tap t3 200
+at 29700
+release shift
+at 31000
+turn enc1 ccw 56
+at 33000
+turn enc1 cw 8
+at 34500
+tap seq 200
+at 35500
+tap mixer 200
+at 36500
+tap t3 200
+at 37300
+tap t3 200
+at 39000
+tap synth 300
+at 41000
+press rec
+at 41200
+tap play 300
+at 41600
+release rec
+at 42000
+press c4
+press e4
+press g4
+at 43000
+release c4
+release e4
+release g4
+at 47000
+tap stop 300
+at 48000
+tap stop 300
+at 49000
+tap play 300
+at 56000
+tap stop 300
+wait 75000
+quit

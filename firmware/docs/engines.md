@@ -349,6 +349,100 @@ run over 64 samples, so a fade that should last as long takes twice the step a s
 (the pitch words). The host test (`tests/host/rings`) compares the 44.1 kHz samples against the te-op1-cfw engine's
 even outputs, bit-identical by construction.
 
+## Released voices below -60 dB (e16, 2026-11-22)
+
+The owner's go-ahead: stop calling a released voice's render once its envelope is below -60 dB. Before e16 the stock
+called a voice's render until its envelope's release had ended, and the release ends at a level of 16 in Q30
+(-156 dB): with the release knob all the way down a six-key saw chord rendered for **29 s after the keys were up**
+in op1emu (`det_eng_tail.txt`, e15: the windows' `peng` 44 k a block until 29 s after the keys) [C op1emu]; rings on the
+device costs ~169 k a block for that whole time ("released, envelope running" 359 k a block on e15, `docs/device-tests.md`
+"e15 dev + rings 0.14"). op1-sdk (MIT, `features/enginehost/enginehost.c`, `docs/lessons.md` 2026-11-15) does the
+same on drwave; the address and the rule are theirs, checked again here for coop's build.
+
+### The envelope objects [C]
+
+- **In the bytes** (`OP1_vdk.dis`, the decrypted `l1.dis`): `0x0191264C(v)` returns `0xFF8000D4 + 24 v` for
+  `0 <= v < 6` (six 24-byte objects built on first use by the array constructor `0x01AA3862` with `0x019120BA`; any
+  other `v` asserts). The voice loop calls it at `0xFFA00A76..0xFFA00A80` with `R0 = R7`, its voice index, the same
+  `R7` the render thunk hands coop's voice hook; the object goes to the envelope render `0x01912128` (`CALL` at
+  `0xFFA00B82`), which fills the envelope block `0xFF801D50`; the engine's render follows at `0xFFA00D28`. So the
+  state a render sees is this block's, already advanced.
+- **The object**: +0 state, +4 a sample counter, +8 the level (Q30, `1 << 30` = full), +0x14 a 16-bit gain VoiceCtl
+  writes at the note (`0x01A846EE`). States from the render's code: 7 a note pending (the voice loop calls the
+  engine's `note_on` on 7, `0xFFA00A8A..0xFFA00A94` -> `0xFFA00E34`, and the render makes it 1 at once), 1 attack
+  (to `1 << 30`, then 2), 2 decay, 3 sustain, 4 and 5 release, 6 a jump, 8 kill (level x 0.985 a sample); release and
+  kill end at a level of 16 or less: state 0 and the voice's active byte cleared (the render returns 1, `0xFFA00B88`).
+  The envelope sample is the level x the voice's gain plus a dither from `0xFF800164` (an LCG table the render fills,
+  which is why the envelope block is never all zero and e14's `env_skips` never fired).
+- **In op1emu** (e15 image, `det_chord`, `--watch-writes 0xff8000d4+0x90`): the only writers are stock code
+  (`0x019120C2..CC` the constructor, `0x01912120` note on, `0x0191231C / 0x01912356` attack and decay,
+  `0x019120E8 / F8` key release: state 5, `0x019124B6 / D0` the release, `0x019124C6 / C8` its end); the three chord
+  voices are the objects at +0, +24 and +48; the release of the default sound ended 1.38 s after the keys were up.
+  No coop store lands in the range. coop's L1 pool is in data bank B (`0xFF900820..0xFF902900`) and the scratchpad
+  (`0xFFB000E0..`) (`l1_pool.cc`), not in bank A.
+- **The index is the plugin's voice index** [C op1emu]: the e16 image records, at every plugin `note_on`, the
+  state of `ADSR(v)` (`tail_on7`, `tail_on_other`, `tail_on_states` a bit mask). In every run: state 7 (the voice
+  loop's pending note) 33-47 times, state 1 six times (VoiceCtl's own note on writes 1 at `0x01912120` just before it
+  calls the engine), never a releasing or idle state.
+
+### The rule (`engine_host.cc` `coop_eng_render`)
+
+A plugin voice gets 128 zeros and no render call when all of these hold:
+- `g_coop_tail_skip` is 1 (the default; 0 = e15, 2 = render anyway and measure what a skip would remove:
+  `tail_checked`, `tail_peak` = the largest `|out x env| >> 15` of those blocks, in LSB of the voice before the gain
+  word and the pan);
+- the envelope's state is 4, 5 or 8 and its level is under `g_coop_tail_q30` (default `1 << 20`, -60 dB);
+- the voice has had a render out of release since its last `note_on` (the fresh-note guard; with the stock's 7 -> 1
+  that is its first render);
+- the engine does not set `COOP_ENGINE_F_KEEP_TAILS` (new in e16, `sdk/coop_plugin.h`; a core before e16 refuses a
+  file with the flag, as for any flag it does not know).
+
+The engine's per-voice state is left as the last render left it; the next `note_on` on that voice renders again from
+there. A 44.1 kHz engine gets the full 128 zeros. Counted in the stats' `mode` line: `tail_skip tail_q30 tail_skips
+tail_checked tail_peak tail_on7 tail_on_other`. A skipped voice reaches the voice hook as 128 zeros, so the hook takes
+its silent-voice path (e14) and, once all voices are silent, the stage and the mix their rest path.
+
+How much a skip can remove: the envelope sample under the threshold is at most ~32 LSB (the level `2^20 / 2^30`
+times a gain of at most 1, plus the dither of a few LSB), so a full-scale render contributes at most ~32 LSB of the
+voice, -60 dBFS, before the voice gain word (24576 = -2.5 dB), the pan and the master.
+
+### Engines, one by one
+
+- **saw** (`plugins/saw`): each voice its own oscillator in its own state; nothing shared. Safe; no flag.
+- **rings** (`plugins/rings`, 0.14): three things cross voices.
+  1. *String + reverb* (`op1/reverb_bus.h`): every carrier voice sends its **dry** string (before the stock
+     envelope, which is applied after the render) into one shared reverb, and every carrier plays `1/n` of the wet
+     signal. A released voice under -60 dB is still a full-level send: its reverb tail is heard through the other
+     carriers' envelopes. Skipping it removes its send (its reverb tail stops in the voices still sounding) and makes
+     `n` one smaller (the others' share of the wet signal grows, `n / (n - 1)`: +1.6 dB from six carriers to five,
+     +6 dB from two to one). That is not a sub -60 dB change. It only happens in this model, and only while another
+     rings voice of the model still sounds.
+  2. *Polyphony 1, 2, 4* (`op1/voice_allocator.h`): a new note can take over a ringing voice's state (`CopyFrom`) and
+     the old voice fades over two renders. A skipped voice's state is frozen at the level it had when the envelope
+     passed -60 dB (the string itself may still be loud: the envelope hid it), so a note that takes it over starts
+     from more ring than it would have after the skipped time. The allocator and the string pool already allow for
+     a core that stops rendering a fading voice (`ReclaimStrings`: "a fade is two renders").
+  3. *A re-struck voice*: Rings strikes a resonator that may still ring; after a skip it rings from where it was
+     frozen, not from where 29 s more of decay would have left it. Every model; the difference is the string's own
+     decay over the skipped time, at the level the envelope had hidden.
+  4. *The noise*: the string models draw their noise from one global generator (`src/string_fixed.cc`
+     `RandomFixed`, stmlib's LCG, shared by every voice as upstream's is), advanced by every render that draws. A
+     skipped render does not draw, so the voices still sounding get a different (statistically the same) noise
+     sequence from then on: sample-different, not louder. rings scenarios in op1emu are not sample-identical
+     between images even with `tail_skip=2` (nothing skipped) and the spread at 0; this shared state is the likely
+     reason (how many draws came before a note decides its noise) [I].
+  The shared control (the batch every other block, the coefficient budget) only sees fewer renders; a block ends
+  when a voice renders twice or the index goes down, which holds with any subset of voices.
+  **The 0.13 early cut** (a voice under -66 dBFS of its own output for 5 s fades over 1 s and sleeps): independent of
+  the tail skip, which acts on the envelope. With a long damping and a short release the skip comes first (the
+  string is loud, the envelope is not); with a short damping and a long release the early cut comes first and the
+  voice renders as rings' cheap silent path until the envelope passes -60 dB, then not at all. While a voice is
+  skipped its 5-s count does not move; at the next `note_on` an early-asleep voice is struck from rest as before.
+  rings does not set `COOP_ENGINE_F_KEEP_TAILS` (its file is unchanged); what to do about point 1 is the owner's
+  decision (`docs/device-tests.md` "e16", "For the owner").
+- **The iter voice** (a sound whose plugin is gone) and the stock engines: not in this path (see the stretch,
+  `docs/performance.md` "e16").
+
 ## Out of scope for now
 
 Engines on the drum side (the drum voices are not engine objects, `docs/tracker.md` "Drums beside the synth"),

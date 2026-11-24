@@ -70,6 +70,27 @@ class TapeStereo(unittest.TestCase):
         # P2.L = 0x1234; P2.H = 0x2c0; JUMP (P2); NOP  (bfin-elf-as)
         self.assertEqual(si.tramp_plain(0x02c01234).hex(), "0ae134124ae1c00252000000")
 
+    def test_strip_patches(self):
+        # CS3: three trampolines in loop B's dead body, five sites; every length kept, every target reached
+        th = {"strip_main": 0x02c2e540, "strip_seam": 0x02c2e5ae, "strip_rs": 0x02c2e61e, "strip_fx1": 0x02c2ddcc,
+              "strip_eq": 0x02c2e740}
+        p = si.strip_patches(th)
+        self.assertEqual([a for a, _, _ in p], [0xffa00fb4, 0xffa0712c, 0xffa0709c, 0xffa07250, 0xffa017b8, 0xffa0110e])
+        for a, stock, new in p:
+            self.assertEqual(len(stock), len(new), hex(a))
+        tr = p[0][2]
+        self.assertEqual(tr[:12], si.tramp_plain(th["strip_main"]))
+        self.assertEqual(tr[12:24].hex(), "4a01" + si.imm_pair_bytes(2, th["strip_seam"]).hex() + "5200")   # [--SP] = P2; P2 = fn; JUMP (P2)
+        self.assertEqual(tr[24:], si.tramp_plain(th["strip_rs"]))
+        self.assertLessEqual(si.STRIP_TRAMP_AT + len(tr), si.MIX_RESUME)
+        self.assertGreaterEqual(si.STRIP_TRAMP_AT, si.MIX_SITE + 6)
+        self.assertEqual(p[1][2], call24(0xffa0712c, 0xffa00fb4))
+        self.assertEqual(p[2][2], call24(0xffa0709c, 0xffa00fc0))
+        self.assertEqual(p[3][1], call24(0xffa07250, 0xffa06194))
+        self.assertEqual(p[3][2], call24(0xffa07250, 0xffa00fcc))
+        self.assertEqual(p[4][2][8:].hex(), "6200" + si.jump_s(0xffa017c2, 0xffa01220).hex())
+        self.assertEqual(p[5][2][8:].hex(), "610000000000")
+
     def test_layout_with_tape_fills_the_free_range_exactly(self):
         tr = si.layout(si.TRAMP_BASE, self.THUNKS, tape=True)
         self.assertEqual([n for n, _, _ in tr], ["synth", "drum", "mix", "tape_rec", "tape_gains", "seam"])   # the L1 note-on hook gives way

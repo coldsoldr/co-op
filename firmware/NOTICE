@@ -24,6 +24,10 @@ THIRD-PARTY CODE (their notices are kept in their directories)
   synth_sdk/harness/svg_check.py from release 3.1.4, used by tools/plugin/pack.py).
 - tools/ldr_dump.py, inject_app.py, patch_app.py, build_package.py, verify_bootloader.py, pkg_check.py:
   from coldsoldr/te-op1-cfw, same author.
+- third_party/op1-sdk/nophysics: the `nophysics` feature of op1-sdk (BertBrandstifter,
+  https://github.com/BertBrandstifter/op1-sdk, commit cc62d81), MIT License (its LICENSE is kept there): the
+  patch table, stub.svg and README, unchanged. tools/nophysics.py applies it; tools/nophysics_prove.py is a port of
+  its prove.py (MIT). docs/nophysics.md.
 - Address tables derived from the opus plugin kit's op1fw.h (LizardMan, GPL-3.0) are credited where used.
 - Mutable Instruments ports (Rings, Clouds, Marbles, Grids, Plaits, Braids, Streams): original code
   (c) Emilie Gillet, MIT License (eurorack repository); fixed-point ports in plugins/.

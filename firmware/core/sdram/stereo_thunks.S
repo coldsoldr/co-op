@@ -39,6 +39,20 @@ _coop_synth_render_thunk:
     IF CC JUMP .Lsyn_nopf;           /* e14: nothing is recorded while the profile is off */
     CALL _coop_eng_pf_start;         /* p6e: the performance counters at the render's start (coop_stats.cc) */
 .Lsyn_nopf:
+    P1.L = _g_coop_stock_tail; P1.H = _g_coop_stock_tail;
+    R0 = [P1];
+    CC = R0 == 0;
+    IF CC JUMP .Lsyn_notail;         /* e16: the stock tail skip, off by default (engine_host.cc coop_stock_tail) */
+    R0 = R7;
+    R1 = [SP + 16];                  /* out (R1 as pushed) */
+    R2 = [SP + 24];                  /* the render (P2 as pushed) */
+    CALL _coop_stock_tail;
+    CC = R0 == 0;
+    IF CC JUMP .Lsyn_notail;
+    SP += 28;                        /* the 12 of scratch, R2, R1, R0, P2: the voice is skipped, out is zeros */
+    RETS = [SP++];
+    RTS;
+.Lsyn_notail:
     SP += 12;
     R2 = [SP++];
     R1 = [SP++];

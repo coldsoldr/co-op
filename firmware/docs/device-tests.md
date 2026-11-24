@@ -3708,3 +3708,301 @@ further (the device stays cache-bound). The line out was about 6 dB louder than 
 the patch was close but not identical. e15's effect wrap was not exercised (no effect on); `l1 ... wrap 0` at boot.
 One earlier attempt on e15 (rings 0.13 still loaded, a different sound) lost the OP-1's USB about 2 s into the run;
 the owner power-cycled; not reproduced, cause unknown.
+
+## e16: released plugin voices under -60 dB not rendered; the strike spread and the stock tails behind switches — device test (pending, 2026-11-22)
+
+What changed (`docs/performance.md` "e16", `docs/engines.md` "Released voices below -60 dB"): e15 with (1) a plugin
+voice whose stock envelope is releasing and under -60 dB gets 128 zeros instead of a render (default **on**,
+`g_coop_tail_skip`, token `tail=0|1|2`; 2 renders and measures what the skip would remove); (2) at most N plugin
+note_ons a block, the rest one block later (default **off**, `g_coop_strike_spread`, token `strike=0..6`); (3) the
+same skip as (1) for the stock engines' voices (default **off**, `g_coop_stock_tail`, token `stocktail=0|1|2`). A new
+engine flag `COOP_ENGINE_F_KEEP_TAILS` (no plugin sets it yet). The tokens go in `/yaffs2/user/coop_place.txt`
+(e13's policy file, read at the next boot; later tokens win; a bad token makes the whole file ignored). Build tag `e16`,
+the boot picture's line `coop e16 - 246`. Existing `.coop` files load unchanged. The stats `mode` line gains
+`tail_skip tail_q30 tail_skips tail_checked tail_peak tail_on7 tail_on_other tail_on_states strike_spread strike_held
+strike_late_max stock_tail stock_tail_skips stock_tail_checked stock_tail_peak`.
+
+Two packages in the worktree's `firmware/build/pkg/` (branch `worktree-agent-aed152934cbc5b074`; not in Downloads):
+- **`op1_246_coop_e16.op1`, the release flavour** (`coop_combined_release.elf`, `COOP_DIAG=0`; `prof=0 statsfile=0`).
+  sha256 `360f28ccc91c5ea014ccd28842ed8fa7c7b24042900ba8ac2d2e254f4a914ddc`.
+- **`op1_246_coop_e16_dev.op1`, the dev flavour** (`coop_combined.elf`, `COOP_DIAG=1`; `prof=1 statsfile=0`).
+  sha256 `cc9c415790f12c4e3b7f0b5352393fe072bfc2e1a1b35763893679e39f093a83`.
+Both: `ELF=<abs> STOCK_DIR=<op1_246> tools/build_device_package.sh OUT --tape-stereo --set-word g_coop_spread=32767
+--set-word g_coop_statsfile=0` (release adds `--set-word g_coop_prof=0`); `verify_bootloader.py` PASS (no
+te-boot.ldr), `pkg_check` = only `OP1_vdk.ldr` differs; both ELFs hold the tag `e16` (and no `e15`).
+
+**Gate notes (op1emu): `docs/performance.md` "e16".**
+
+**What to do** (the owner plays; the coordinator reads the stats over USB MIDI, `coop_usb.py stats`, or runs
+`tools/devloop.py`; nothing in disk mode). The rings patch as in the e14 / e15 device-loop runs (string + reverb,
+damping at the longest end, sustain at maximum, no effect). **Turn the envelope's release (orange knob on the
+envelope page) to where a release runs ~30 s** (as the e14 run: the voices rendered ~30 s after the keys).
+1. Flash **`op1_246_coop_e16_dev.op1`** (keep the plugins and the policy file). Boot line `coop e16 - 246`; `hello` ->
+   `build e16`. `stats` `mode` line: `tail_skip 1 tail_q30 1048576 ... strike_spread 0 ... stock_tail 0`.
+2. **At rest** a minute: `cb_sum / blocks` against e15's 62.3 k (rest section): expected the same (nothing of e16 runs
+   at rest).
+3. **Held chord and release, rings** (`tests/sim/dev_release_long.txt`: six keys 10 s, then 100 s in 5 s sections):
+   - held sections: whole block and `plugin_own_block` against e15's 352-353 k / 169 k: expected the same (the skip
+     only acts in release);
+   - release sections: e15 rendered the six voices ~30 s at ~169 k (whole ~359 k). **Expected: the same until the
+     envelope passes -60 dB, then `plugin_own_block` 0 and the whole block near rest + the stock's per-voice loop**
+     (op1emu: 14.7 k over rest for six voices) until the envelope ends. Read the section where `tail_skips` starts to
+     grow (it counts voice blocks: six a block) and the sections' cost after it;
+   - the onset section: whole-block max against e15's 789 k (unchanged expected: (2) is off).
+   - **Listen** through the release with the line out recorded (devloop's capture): the last audible part of the
+     release must not change; the cut sits under -60 dB of the voice (op1emu: the removed part peaks at 2 LSB,
+     -84 dBFS on the output).
+4. **Measuring mode**: put `tail=2` in the policy file, power-cycle, run step 3 again: the voices render as on e15;
+   read `tail_checked` and `tail_peak` (the largest `|out x env| >> 15` of the blocks a skip would remove, LSB of the
+   voice; op1emu: 6 for saw, 0 for a sleeping rings). Then remove the token (or `tail=1`).
+5. **String + reverb with a held note** (the case `docs/engines.md` rings point 1 names): hold one low key, play and
+   release short chords over it on rings' string + reverb for a minute, once with `tail=1` and once with `tail=0`.
+   Listen for the reverb of the released chords ending sooner, or the held note's reverb getting louder, with
+   `tail=1`. Report what is heard: this decides whether rings sets `COOP_ENGINE_F_KEEP_TAILS` (see "For the owner").
+6. **Re-struck notes** (rings point 3): play a chord, release, wait until the release is under -60 dB (step 3 told
+   when), play the same chord again; `tail=1` against `tail=0`. The voice rings on from where its tail was frozen
+   instead of from where 20-odd more seconds of decay would have left it. Listen for a difference.
+7. **Strike spread**: `strike=2` in the policy file, power-cycle, step 3's onset only (a few six-key chords): the onset
+   section's whole-block max and `plugin_own_block` max against step 3's (e15: 789 k / 579 k; op1emu: -11 % / -17 %);
+   `strike_held` counts the held notes, `strike_late_max` must be 1 (one block). Listen to the chord's attack (each
+   held note starts 1.45 ms late). Then try `strike=3`. Report whether the onset drops under 580 k.
+8. **Stock tails**: `stocktail=1`, DSynth (the factory slot 5 sound), the release long, `dev_release_long.txt`: the
+   release sections' `synth` cost against `stocktail=0` (op1emu: 109 k a block for six voices, then 0 once under
+   -60 dB; the whole block 49.9 k against rest 34.8 k). Listen to the release and to re-struck notes as in step 6.
+   `stocktail=2` measures (`stock_tail_peak`; op1emu: 1 LSB). Only DSynth was gated; the other engines are untested.
+9. Then **`op1_246_coop_e16.op1`** (release): step 3 with `prof=1` in the policy file, then without, `cb_sum / blocks`
+   at rest and in the release sections against e15 release.
+
+**If something is wrong:** `tail=0` in the policy file turns (1) off at the next boot without a reflash (and
+`strike=0 stocktail=0`, their defaults). On the device, power off; recovery: hold COM at power-on and flash
+`op1_246_coop_e15.op1` or stock. The plugin files and the policy file are untouched (a bad token makes the file
+ignored as a whole, e13).
+
+**For the owner** (decisions, recommended option first):
+1. rings and the skip: (a) keep rings as it is (the skip on for every rings model) if steps 5 and 6 sound the same;
+   (b) a rings release that sets `COOP_ENGINE_F_KEEP_TAILS` (no skip for rings at all: no saving); (c) a rings change
+   that strikes a voice from rest when the core skipped its tail (rings can tell: no render for more than a block
+   since its note off), which makes step 6 deterministic but is a sound change of its own.
+2. The strike spread: on by default at N = 2 or 3 only if step 7 shows the onset under 580 k and the attack sounds
+   the same; otherwise leave it off.
+3. The stock tails: stay off until each stock engine is listened to (step 8 for DSynth first).
+
+## e16-nophysics: TE's Box2D out (Tombola and the Lander game) — device test (pending, 2026-11-22)
+
+What changed (`docs/nophysics.md`): e15 dev plus op1-sdk's `nophysics` (BertBrandstifter, MIT): 144,888 bytes of TE
+code (Box2D and the dead Lander / Tombola code) become RTS, Box2D's 30 boot initialisers and the Lander / Tombola
+screens' draw and SVG-loaded slots return at once, choosing Tombola (or a saved Tombola setting) gives the pattern
+sequencer, and `content/display/lander.svg` / `tombola.svg` are an empty 303-byte SVG. Nothing else of e15 changes;
+this test package is **not the tagged e16** (the main session merges it with the core e16 work): its boot line and
+HELLO still say **e15**. Branch `worktree-agent-a727bcc35558cf1fa` (on dev).
+
+Package: **`op1_246_coop_e16-nophysics.op1`** (copy in Downloads), sha256
+`2ba189f3d93fb1081ad77ffe512fe37794a1a3f5c6b9795ec2e72cf3b4add83e`, 11,992,912 bytes (e15 dev: 12,082,114). The dev
+flavour, as e15 dev: `tools/build_device_package.sh OUT --tape-stereo --set-word g_coop_spread=32767 --set-word
+g_coop_statsfile=0`. `verify_bootloader.py` PASS (no te-boot.ldr); `pkg_check` = `OP1_vdk.ldr`, `lander.svg`,
+`tombola.svg` differ from stock, nothing else; `tools/nophysics.py --verify` on the package's LDR: 57/57 sites.
+
+**Gate notes (op1emu): `docs/nophysics.md` "Measurements" and "Gates"** (heap 0 +324,336 bytes after boot; the GUI's
+first frame 13-87 ms sooner; audio identical; saved Tombola boots as pattern).
+
+**What to do** (stats over USB MIDI: `python firmware/tools/coop_usb.py stats -o FILE`):
+0. **Before flashing**, on e15 dev as it is now: read the stats once after a fresh power-on (nothing played) and note
+   the `plugins` line's `heap_largest heap_free heap_top`. Then pick **Tombola** for the synth (shift + seq, the blue
+   encoder to TOMBOLA, push), let it play a few seconds and **power off normally**, so the saved setting is Tombola.
+1. Flash `op1_246_coop_e16-nophysics.op1` through the te-boot menu (keep the plugins and any policy file). It must
+   boot as before; boot line `coop e15 - 246`. If you can, time power-on to the first screen against e15 (a phone
+   stopwatch, twice each): op1emu says about 0.08 s sooner, the device may differ.
+2. **The old Tombola setting:** on the synth page press seq: the **pattern** sequencer comes up (not Tombola), no
+   freeze, no error screen; play a few notes through it.
+3. **The picker:** shift + seq: the list still shows TOMBOLA. Pick it: pattern comes up and plays. Pick pattern,
+   finger, endless, arpeggio, sketch in turn: each as on e15. Do the same on the drum side once.
+4. **Power off and on:** the synth sequencer is still pattern; boots normally. The Lander combo (synth + drum + tape +
+   mixer held) still opens coop's settings menu.
+5. **Heap over SysEx**, after a fresh power-on (nothing played): `stats` -> `plugins ... heap_largest heap_free
+   heap_top`. Expected `heap_free` about **324 KB higher** than step 0 (op1emu: +324,336 to the byte on every NAND);
+   `l1 state 1` (coop's L1 pool still taken). Then load a tape project that fills the tape cache and play: no fault.
+6. Use it as usual for a while (plugins, tape, effects): nothing that e15 did differently, no fault. Power off
+   normally (the exit path).
+
+**If something is wrong:** power off; recovery: hold COM at power-on and flash `op1_246_coop_e15_dev.op1` (or stock).
+Flashing back to e15 or stock brings Tombola back with its knob settings (they stay in `op1.db`). An image without
+nophysics is one build away (`NOPHYSICS=0 tools/build_device_package.sh ...`).
+
+Result: (pending)
+
+## e16 combined: tail skip + yaffs alignment + nophysics in one image — device test (pending, 2026-11-22)
+
+The two e16 sections above were built and gated separately. They now ship as one core, with the odd-buffer bounce for
+the stock yaffs calls (`core/include/coop_yio.h`, the link-time `tools/even_bufs.py` check: 735 objects, none odd), and
+with saw 0.4 (`-funswitch-loops`, docs/plugin-performance.md) as its plugin. **These packages replace the earlier e16
+and e16-nophysics ones; flash these.**
+
+- `op1_246_coop_e16.op1` (release, `prof=0 statsfile=0`): sha256 `2fa1c773cc8bf4077795174371acb009f7b9b8c9555ecd4b4f58c39e1e6f7dc4`.
+- `op1_246_coop_e16_dev.op1` (dev, `prof=1 statsfile=0`): sha256 `e70e70dc6e215bab039961c96086fbc2aad64d83ba8cc87eb59931b3f7885cae`.
+
+Both: `ELF=<abs> STOCK_DIR=<op1_246> tools/build_device_package.sh OUT --tape-stereo --set-word g_coop_spread=32767
+--set-word g_coop_statsfile=0` (release adds `--set-word g_coop_prof=0`). `verify_bootloader.py` PASS, `pkg_check` shows
+three files differing (`OP1_vdk.ldr`, `lander.svg` and `tombola.svg`), all 57 nophysics edits are present, and the ELF
+holds `build e16`.
+
+Before the device (op1emu and host):
+- `make host-test`: 93 tool tests OK and all C++ tests pass.
+- `tools/nophysics_prove.py` on the combined image built with `NOPHYSICS=0`: PASS, with 144,998 dead bytes around the
+  144,888 removed. The e16 core code adds no reference into the removed ranges.
+- `emu_gate.py --elf coop_combined.elf --plugins saw.coop` (0.4):
+  - `det_chord` and `det_eng_tail` pass (`eng_noteons 39`, no fault).
+  - `det_lander_combo` passes with `lander_swallowed 2` and `set_opens 1`. Its first run ended at 34.7 s of guest time,
+    before its last event at 37 s; this is the known wall-timed quit on a loaded host.
+  - `heap_free` is 3,051,212.
+
+The device steps are the union of the two sections above: e16 steps first, then nophysics steps 1-6.
+
+## e17: the per-tape channel strip (CS1-CS6) — device test (pending, 2026-11-23)
+
+What changed (`docs/channel-strip.md`): e16 combined plus the channel strip, merged on branch `cs-e17` (dev f4f9706 with
+CS1-CS3, the CS5 UI, CS4 + CS6). Nothing of it has run on the OP-1 yet.
+- **CS1-CS3, the audio path:** each tape track 1-4 can have its own strip (4-band EQ, compressor, saturation, sends
+  to master FX 1 and FX 2). A track whose strip is neutral stays in the stock mix; any other track is split out, gets
+  its own resample pass and strip, and its sends feed master FX 1 (the stock effect) and FX 2 (coop's master slot 2)
+  on their own buses; the returns are wet only. With the strip mode on, the stock master EQ is bypassed.
+- **CS4:** while the strip mode is on, the master comp (the T4 page's limiter) runs on a fresh OP-1's words, inside
+  the audio interrupt only. The T4 page and op1.db keep your own values, and switching the strip off brings them back.
+- **CS5, the UI:** Settings › VOICES gains a fifth row, "channel strip" (green right = on, left = off, or a push).
+  With the strip on, the mixer's T1 page opens the strip of tape 1-4 with the blue / green / white / orange encoder
+  push. The strip has four pages (EQ, COMP, SAT, SEND) with tabs, IN / OUT meters, live gain reduction and a value
+  popup. Inside the strip, another encoder's push changes page, the shown page's push switches its section on or off,
+  shift + push resets the value, T1-T4 switch tape, and the mixer key closes the strip. With the strip on, the
+  master EQ (T2) and master comp (T4) pages read "off in strip mode".
+- **CS6:** the four strips and the strip-mode switch are saved per tape project in `/yaffs2/user/coop_strip.bin`
+  (172 bytes, checksummed), written by the main loop 2 s after the last change. The file is cleared when the tape
+  image is rebuilt or the whole tape is erased, and a damaged file means defaults with the strip off.
+  `coop_settings.bin` stays version 2 and does not keep the strip mode.
+- The merge changed one thing that neither branch had tested: the Settings row calls `coop_strip_set_mode` /
+  `coop_strip_mode()` (the save file owns the switch). This is gated below.
+- Build tag `e17` (e403418), boot line `coop e17 - 246`. The stats text gains the `strip` line (after `stats`).
+
+Two packages in the worktree's `firmware/build/pkg/` (branch `cs-e17`), with copies in Downloads:
+- **`op1_246_coop_e17.op1`, the release flavour** (`coop_combined_release.elf`, `COOP_DIAG=0`; `prof=0 statsfile=0`),
+  12,009,608 bytes, sha256 `596a0d7c3658d53599242ccb7c43947a17add282503de959a35d8a32c5f57247`.
+- **`op1_246_coop_e17_dev.op1`, the dev flavour** (`coop_combined.elf`, `COOP_DIAG=1`; `prof=1 statsfile=0`),
+  12,021,568 bytes, sha256 `8357a1004954d1df882c04335ca90f7611e2812758b9e4bbbb5be6cb867f17b1`.
+Both were built with `ELF=<abs> STOCK_DIR=<op1_246> tools/build_device_package.sh OUT --tape-stereo --set-word
+g_coop_spread=32767 --set-word g_coop_statsfile=0`; the release build adds `--set-word g_coop_prof=0`. Checks on both:
+- `verify_bootloader.py` PASS: no te-boot.ldr, no `.KEY`, no `FRC` in the name; 106 files (stock 107 minus te-boot).
+- `pkg_check` shows only the three intended files differing from stock: `OP1_vdk.ldr`, `lander.svg` and `tombola.svg`.
+- `nophysics.py --verify` on the unpacked LDR: 57/57 sites.
+- Both ELFs hold `build e17`, and `even_bufs` finds no odd buffers (896 / 850 objects).
+- `make host-test`: 94 tool tests OK, and every C++ test passes (`strip_test` included).
+
+**Gates (op1emu, the merged image, 2026-11-23).** Images from the dev-flavour ELF at e403418 with `--tape-stereo`,
+`g_coop_spread=0` and `g_coop_force_stereo_out=1`. Scratch NANDs under `/mnt/i/op1emu-tmp/e17`, one run at a time,
+NANDs and WAVs deleted after reading. The CS5 / CS4 / CS6 scenarios are as in `docs/channel-strip.md`, made
+frame-paced where they ended on a wall `wait`. All [C op1emu]:
+
+| gate | what | result |
+|---|---|---|
+| UI walk | `det_strip_ui` on a pristine NAND | **pass**, the same as CS5 gate 1: `g_sui` opens 1, closes 1, turns 134, clicks 9, pages 3, bypasses 5, resets 1, tapes 2, posts 139, bounces 0. Tape 1 is exactly as scripted (EQ on, band 1 gain 42, band 2 gain 32 / freq 63 / Q 9; comp on, thresh 46, ratio 5, attack 17, release 18, knee 8, makeup 4; sat on, drive 40, tube, tone +5, mix 90; dry 80, FX 1 50, tap post). Tapes 2-4 are at their defaults. The row turned the mode on (`g_coop_strip_on 1`) through `coop_strip_set_mode`, and `coop_strip.bin` was written: 172 bytes, flags 1, checksum ok, tape 1 as above. No fault |
+| FX 1 send | `det_strip_ui_fx1` vs `_fx1_ref` | **pass**, the same numbers as CS5 gate 2. The live chord is identical in both (863 / 572 / 161 rms). The playback with the send carries the delay's return (225 vs 184 rms, then 101 vs 63, 72 vs 63, 65 vs 63, then the floor). Track 1 is split, with 7,666 FX 1 renders (1,380 of them in the tail) and `coop_strip_tape` at 4,506 cycles max. The reference splits nothing and renders nothing |
+| Settings row, power cycles | the UI walk's NAND rebooted (idle); then Settings › VOICES spread +5 and a push on "channel strip"; rebooted again | **pass**. The first reboot brings back mode 1 and tape 1's strip from the file (`file_loads 1`, `file_saves 0`). The push turned the mode off (`g_coop_strip_on 0`), and the file was rewritten 2 s later with flags 0 and tape 1 kept. `coop_settings.bin` was written as **version 2**: 10 bytes, `CST` 2, spread 5, with no strip byte. The second reboot comes back with mode 0, tape 1's strip still saved, spread 5, and `comp_swaps 0` |
+| CS4 | strip on (four neutral strips) with the T4 page turned heavy (drive full, release minimum), vs the same image with T4 untouched, vs strip off heavy; the strip switched off at block 27,590 | **pass**. Chord 1 with the strip on: heavy and untouched are identical through the note (671 / 440 rms both). After that, one note's release lands one block later (op1emu key timing; up to 13 LSB, rms 0.99 a sample over 2 s). With the strip off, the same chord is 4,193 / 3,071 rms. After the switch, chord 2 is 4,244 / 3,034 against strip-off heavy's 4,246 / 3,034 (rms difference 18, the onset block): **the heavy comp is back**. The untouched run is sample-identical to the same run on the CS4 branch image (5f2ab21), and the CS4 branch's heavy run differs from its untouched run only after the switch, as documented. So the merge changed no audio here, only when the note-off key event is delivered |
+| CS6 | a save / reload pair and one damaged file, on one kept NAND | **pass**. Presets image (tape 1 EQ + comp + sat, tape 2 FX 1 100 %, strip on): first boot cleared, defaults written, then the presets saved (`file_saves 2`, checksum ok). Reboot with a plain image: both strips and mode 1 come back from the file (`file_loads 1`, `file_saves 0`). Then a save that writes a wrong checksum (`g_coop_strip_file_test=2`): the next boot reports `file_bad 1`, `file_loads 0`, every strip at its defaults, mode 0, and no fault |
+| strip off = dev | the plain image (no file, word 0) vs dev f4f9706, `det_chord` and `det_tape_rec` frame-paced (1,300 / 1,600 frames) | **pass by the block-offset criterion**. `det_chord` is **sample-identical** over 44 s. `det_tape_rec` is identical up to the live chord. There dev's first note lands one block before the other two, while e17 delivers all three in the next block (key timing), so the 3-note chord's levels are 0.7-2.3 % apart and no single whole-block offset aligns it. The same scenario with one note: the live note is one block later, with a residual of 0.51 a sample. The take's playback is at offset 0 with a residual of 0.22, the idle at 0.03, and levels are within 0.04 % |
+
+Not gated in op1emu: the device's cycle cost (CS3 measured instruction counts only: four strips everything on is
++36 k cycles a block over dev, 6.2 % of the block, and the device's cache factor could make that much more), the
+encoders' feel and the push debounce on real switches, the FX 2 send with a real slot-2 plugin from the UI (CS3 gated
+FX 2 with preset words only), and the release flavour (every gate ran on the dev ELF).
+
+**What to do** (the owner plays; stats over USB MIDI `python firmware/tools/coop_usb.py stats -o FILE`, its `strip`
+line: `on`, `splits`, `fx1_renders`, `fx2_renders`, `comp_swaps`, `file_loads`, `file_saves`, `file_bad`,
+`tape_max`). Flash **`op1_246_coop_e17_dev.op1`** through the te-boot menu first, and keep the plugins.
+1. **Boot:** the line reads `coop e17 - 246`, and `hello` returns `build e17`. With no `coop_strip.bin` yet, the strip
+   is off and everything sounds and works as on e16. `stats` `strip` line: `on 0`, `file_bad 0`.
+2. **Settings row:** open coop's settings (synth + drum + tape + mixer held), go right into VOICES and down with blue
+   to the fifth row, "channel strip": green right turns it **on**, green left turns it **off**, and a push toggles
+   it (a bounced push must not toggle twice). While it is on, the master EQ and master comp rows read "strip" in
+   grey. Leave it on.
+3. **Mixer T1 page, encoder pushes:** press mixer (T1). A push of blue / green / white / orange opens the strip of
+   **tape 1 / 2 / 3 / 4** ("TAPE n" top right). With the strip off, the same pushes do what they did on e16.
+4. **The four pages**, on a tape with something recorded and playing:
+   - EQ (blue push): the turns move the curve; a blue push on EQ switches the EQ on and changes the sound.
+   - COMP (green push): set the threshold low and the ratio high, then switch it on with a green push. The gain
+     reduction number and its history move with the tape, and the input dot rides the curve.
+   - SAT (white push): drive up, try the four types, switch it on with a white push. The harmonic bars change.
+   - SEND (orange push): dry, FX 1, FX 2 and the tap (pre / post).
+   - In every page, check the value popup after each turn, shift + push (the value resets), T1-T4 (another tape, the
+     same page), shift + T (the stock mute still works), and the mixer key (closes the strip; the mixer levels did
+     not move while it was open). The IN / OUT meters move only for a tape whose strip is not neutral.
+5. **Sends to FX 1 / FX 2:** put a delay on master FX 1, then raise FX 1 on a playing tape's SEND page: the echoes
+   come from that tape only, while the live synth and the other tapes stay dry. Bring dry to 0 to hear only the
+   return. Stop the tape: the echoes ring out. If you have a coop effect in master slot 2, do the same with FX 2.
+6. **Master EQ / comp off in strip mode:** with the strip on, mixer T2 (EQ) and T4 (comp) show "off in strip mode",
+   and turning them changes nothing you hear. Switch the strip off in Settings: they work again.
+7. **A heavy T4 comp comes back after strip off:** with the strip **off**, on mixer T4 turn white (drive) fully up
+   and orange (release) down, and play: the sound is loud and squashed. Switch the strip **on**: the same playing
+   sounds as on a fresh OP-1 (much quieter, no squash), while T4 still shows your heavy values. Switch it **off**
+   again: the heavy comp is back. Power-cycle with the strip off: T4 keeps the heavy values.
+8. **Survives a power cycle:** with the strip on and a few strips changed (tape 1 EQ + comp on, tape 2 FX 1 at 50 %),
+   **wait 3 s** (the save comes 2 s after the last change), then power off normally and on. The strip is still on,
+   tapes 1 and 2 are as you left them, and `stats` shows `file_loads 1 file_bad 0`. Switch the strip off, wait 3 s,
+   power-cycle: it boots off, and the strips are still saved. A new tape (erase the whole tape with shift + erase)
+   resets the strips to their defaults with the strip off.
+9. **Cost:** dev flavour, four tapes playing, every strip with EQ + comp + sat on and both sends at 50 %: read
+   `cb_sum / blocks` and the max from `stats` against the same tape with the strip off (op1emu +36 k a block, 6.2 %
+   of the block). Listen for crackles. Report the numbers; this is the main unknown.
+10. Then **`op1_246_coop_e17.op1`** (release): steps 1-3 and 8 once, as a smoke test.
+
+**If something is wrong:** switch the strip off in Settings, which takes effect at once and is saved. If the device
+will not boot, hold COM at power-on and flash `op1_246_coop_e16.op1` (e16 combined) or stock. `coop_strip.bin` is
+ignored by e16, and a damaged one means defaults on e17.
+
+**Result, run 1 (2026-11-23, `op1_246_coop_e17_dev.op1`, driven by `tools/dev_strip_e17.ps1` =
+`tools/devloop.py tests/sim/dev_strip_e17.txt --allow-tape`, line out recorded on the UR44C 5-6; the owner's tape with a
+loop on, master FX 1 a delay).** Partial: the audio path passes, the strip UI under the runner does not do what the
+script says.
+- [C] Boot and `hello`: `build e17`. Before: `strip on 0 ... file_loads 1 file_bad 0`. The 124 s scenario ran to the end
+  (877 events, runner state done, error 0), no fault, no hang.
+- [C] The audio path runs on the device: after the run `splits 5`, `split_samples 11,959,013`, `fx1_renders 42,376`
+  (4,753 in the tail), `comp_swaps 70,973`, `posts 382`, `commits 382`, `file_saves 10`, `file_bad 0`, `file_errors 0`.
+  The Settings row switched the mode on and off (it ends `on 0`, `coop_strip.bin` flags 0).
+- [C] Sends: the `fx_only` section (tape 1 dry 0, FX 1 return only) is -34.6 dBFS rms against -23.8 for `fx1`
+  (dry + send): the wet-only return is there and the dry is gone.
+- [C] **Cost (dev flavour, prof 1, the runner's per-section `cb`):** tape playing with the strip on and neutral
+  `cb_avg 188,042 / cb_max 260,564`; strip off `162,721 / 268,712`; `four_strips` (EQ + comp + sat on tapes 2-4,
+  tape 1 as left by the UI, sends on) `253,611 / 324,784` = about +65-90 k a block on average over neutral / off
+  (11-16 % of the 580,499 block), max 56 % of the block. `coop_strip_tape` itself: `tape_max 112,139`, average
+  `tape_sum / tape_n` = 34,627 a block over the whole run (op1emu: 36 k for four strips everything on, so the cache
+  factor is far below the feared 3.8x on average, about 3x at the worst block). The highest block of the run,
+  461,654, was in the gap after `four_strips` (stop, mixer close, the save, the Settings menu). `cb max` over the
+  whole uptime stayed at 681,874, set before the run (no new overrun). Crackles: not listened for yet.
+- [C] **The UI under the runner differs from op1emu.** `coop_strip.bin` read back after the run (`coop_usb.py get`):
+  tape 1 has EQ, comp and sat all **off**, band gains 58 / 26 / 41 / 50, freqs 32 / 44 / 79 / 96, drive 100, FX 1 50,
+  dry 100; tape 2 EQ off, comp + sat on, band 1 gain 48 at freq 17; tapes 3 / 4 EQ + comp + sat on, gain 48, drive 45,
+  FX 1 25. Turns land at half rate (100 events gave 50 %, 24 gave +12 half-dB steps: two runner events a step on the
+  device), which is benign. But tape 1's sections ended off and its EQ bands other than band 1 changed, and tape 2's
+  EQ push did not hold: some pushes or turns went to another page or tape than scripted. Likeliest reading: the
+  T2-T4 blocks also reached tape 1 (tape 1's drive 100 = 55 + 3 x 15, its three sections toggled four times), so a
+  T key in the strip may switch late or not at all on the device (runs 2-3 below show the T keys work: this reading
+  is not confirmed). After the run the owner found all four mixer levels at 99; their levels before the run were not
+  noted, so whether any turn reached the stock mixer is unknown (the owner thinks not, and runs 2-3 saw no leak).
+  The EQ / comp / sat sections' sound can't be judged from this run (the spectrum per section moves with the loop's
+  content too).
+
+**Runs 2-3 and a hand test (2026-11-23, `op1_246_coop_e17b_dev.op1`, sha256
+`920e1073ade70d6c8bb3788a049fb4c88185f5ce2f4831c96186d6fd1d47ce3a`: e17 plus the `sui` / `suilog` stats lines, e2515a6).**
+- [C] Run 2, `tests/sim/dev_strip_keys.txt` (pushes, T keys, play / stop, no turns outside Settings): every key as
+  designed. The screen word stays 0x1F (the mixer's T1 page) the whole time, also while the tape plays; 2 opens,
+  2 closes, 10 page changes, 5 tape switches; play, stop and the mixer key pass through; the T keys are taken.
+- [C] Hand test by the owner, real encoders: with tape 1's strip open, white changes the band gain on screen and tape
+  3's mixer level does not move. The log shows those turns taken by the strip (open, taken) and the turns made after
+  closing passed to the stock mixer.
+- [C] Run 3, `tests/sim/dev_strip_turns.txt` (run 1's tape 1 half, every turn cut to 2 events), mixer levels all 80
+  before: all 80 after. Every logged turn is taken by the open strip (6), the EQ / comp / sat pushes switch their
+  sections (3 bypasses), the pages change as scripted. Levels per section: neutral -23.9, EQ -22.7, comp (makeup on)
+  -19.7, sat -20.6, FX 1 -20.9 dBFS rms. The two dry turns on SEND (blue, 2 events each) never reached coop's encoder
+  hook: the runner's injected turns are merged or dropped by the stock key thread (also the half rate in run 1), so
+  the runner's turns are not a faithful model of the encoders. Tape 1's run-1 state stays unexplained, but it was not
+  reproduced.
+- Still to do on the device: the power cycle (strip settings back after a restart), the four-tape cost with crackles
+  listened for, FX 2 sends with a slot-2 plugin, a heavy T4 coming back after strip off, the release flavour.
+
