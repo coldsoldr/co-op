@@ -4,7 +4,7 @@ A 3D line-drawing library for plugin pages, drawn like an OP-1 plate. It does no
 
 ## Get it
 
-orbit3d 0.2.8 is a plugin for Opus 2.0 beta 4.2, LizardMan's mod for the original OP-1 (firmware 246): one file in the starter pack, or on its own, in [Opus's releases](https://github.com/LizardMan245/opus/releases). Copy the `.opmod` into the mods folder on the OP-1's disk. co-op lists it for reference and hosts no copy. Opus's plugins are © LizardMan, free to use and share.
+orbit3d 0.2.9 is a plugin for Opus 2.0 beta 5, LizardMan's mod for the original OP-1 (firmware 246): one file in the starter pack, or on its own, in [Opus's releases](https://github.com/LizardMan245/opus/releases). Copy the `.opmod` into the mods folder on the OP-1's disk. co-op lists it for reference and hosts no copy. Opus's plugins are © LizardMan, free to use and share.
 
 ## Links
 
