@@ -1,10 +1,10 @@
 # tape undo
 
-Undo and redo every tape edit. Shift + arrows move the loop as on stock, unless you turn on loop lock.
+Undo and redo the OP-1's own tape edits: a recording, lift, drop, split, join, a loop change. Part of Opus since beta 5, a row in the menu's system list with two settings, the steps kept on the OP-1 (up to 2) and with a flash drive in (up to 50); a push on its row opens the undo history (above). Delete an old tapeundo.opmod from the mods folder.
 
 ## Get it
 
-tape undo 1.1.0 is a plugin for Opus 2.0 beta 4.2, LizardMan's mod for the original OP-1 (firmware 246): one file in the starter pack, or on its own, in [Opus's releases](https://github.com/LizardMan245/opus/releases). Copy the `.opmod` into the mods folder on the OP-1's disk. co-op lists it for reference and hosts no copy. Opus's plugins are © LizardMan, free to use and share.
+tape undo 2.0.4 is a plugin for Opus 2.0 beta 5, LizardMan's mod for the original OP-1 (firmware 246): one file in the starter pack, or on its own, in [Opus's releases](https://github.com/LizardMan245/opus/releases). Copy the `.opmod` into the mods folder on the OP-1's disk. co-op lists it for reference and hosts no copy. Opus's plugins are © LizardMan, free to use and share.
 
 ## Links
 

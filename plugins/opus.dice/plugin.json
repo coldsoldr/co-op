@@ -11,7 +11,7 @@
   "link": "https://github.com/LizardMan245/opus/releases",
   "screenshot": "screenshot.png",
   "manual": "manual.md",
-  "requires": "opus 2.0 beta 4.2",
+  "requires": "opus 2.0 beta 5",
   "savedName": "opus.dice",
   "tags": [
     "playing",
