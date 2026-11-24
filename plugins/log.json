@@ -941,6 +941,12 @@
       "added": "2026-11-21",
       "source": "https://github.com/VolkerJunginger/OP-1",
       "draft": true
+    },
+    {
+      "id": "crossword",
+      "added": "2026-11-24",
+      "source": "https://displayname808hub.github.io/web/crossword/",
+      "draft": false
     }
   ]
 }

@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "id": "crossword",
+  "name": "Crossword",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "displayname808",
+  "description": "Crossword by displayname808 is a step sequencer laid out as a crossword: a grid of 256 squares where white squares play notes and black blocks rest. It plays sections of up to 32 steps along one of 13 paths, with step probability, trig conditions and 20 modifiers such as ratchets, octave jumps and neighbour notes. It has 100 patterns, 15 scales and random patterns with undo.",
+  "link": "https://displayname808hub.github.io/web/crossword/",
+  "version": "1.0.0",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "video": "https://raw.githubusercontent.com/displayname808hub/web/main/assets/crossword-trailer.mp4",
+  "requires": "opus core 2.31",
+  "tags": ["feature", "sequencer", "probability", "generative"]
+}
