@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "opus.mouse",
+  "name": "mouse",
+  "firmware": "op1/opus",
+  "kind": "feature",
+  "author": "LizardMan",
+  "version": "1.2.1",
+  "description": "The driver for a USB mouse plugged into the OP-1 with a mini USB OTG adapter. An arrow on the screen takes the colour of the encoder it stands on: the wheel or a drag up and down turns that encoder, a click is its push. In Opus's menu it picks the rows. On the tape a click moves the playhead and a drag scrubs, the loop's marks and the clips are dragged where they are drawn (above, a clip on its way to another place and track), and the wheel zooms.",
+  "license": "LicenseRef-Freeware",
+  "link": "https://github.com/LizardMan245/opus/releases",
+  "screenshot": "screenshot.png",
+  "manual": "manual.md",
+  "requires": "opus 2.0 beta 5",
+  "savedName": "opus.mouse",
+  "tags": [
+    "system",
+    "opus"
+  ]
+}

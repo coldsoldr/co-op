@@ -943,6 +943,12 @@
       "draft": true
     },
     {
+      "id": "opus.mouse",
+      "added": "2026-11-24",
+      "draft": false,
+      "source": "https://github.com/LizardMan245/opus"
+    },
+    {
       "id": "crossword",
       "added": "2026-11-24",
       "source": "https://displayname808hub.github.io/web/crossword/",

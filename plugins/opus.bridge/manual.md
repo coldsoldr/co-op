@@ -8,7 +8,7 @@ Loads op1r's .op1p files by popcorp and Hundekraft's .knl files; every bridged p
 
 ## Get it
 
-bridge 0.10.0 is a plugin for Opus 2.0 beta 4.2, LizardMan's mod for the original OP-1 (firmware 246): a download of its own beside the starter pack, in [Opus's releases](https://github.com/LizardMan245/opus/releases). Copy the `.opmod` into the mods folder on the OP-1's disk. co-op lists it for reference and hosts no copy. Opus's plugins are © LizardMan, free to use and share.
+bridge 0.10.0 is a plugin for Opus 2.0 beta 5, LizardMan's mod for the original OP-1 (firmware 246): a download of its own beside the starter pack, in [Opus's releases](https://github.com/LizardMan245/opus/releases). Copy the `.opmod` into the mods folder on the OP-1's disk. co-op lists it for reference and hosts no copy. Opus's plugins are © LizardMan, free to use and share.
 
 ## Links
 
