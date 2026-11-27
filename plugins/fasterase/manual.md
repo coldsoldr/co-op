@@ -4,7 +4,7 @@ The stock erase gesture (Shift + tape, then press T1 to T4 together) now only cl
 
 ## Get it
 
-Fast tape erase is part of hundekraft 3.3.1, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+Fast tape erase is part of hundekraft 3.3.2, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 

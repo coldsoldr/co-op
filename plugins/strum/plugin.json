@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3.1",
+  "requires": "hundekraft 3.3.2",
   "credits": "Guitar: Jeff Learman's Martin HD28 recordings from the Discord SFZ GM Bank (CC0)",
   "tags": [
     "synth",

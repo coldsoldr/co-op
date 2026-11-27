@@ -103,9 +103,9 @@ In op1r by pcppcp.
 
 ## Get it
 
-Reedie is a plugin of op1r 73, pcppcp's custom firmware for the original OP-1 (R246): the file `reedie.op1p`. Tick it in [op1r's web patcher](https://pcppcp.github.io/op1r/web/) (Connect OP-1 installs it over USB), or download it here and send it with the patcher. co-op hosts no copy: the download comes from op1r's repo, checked against its hash.
+Reedie is a plugin of op1r 77, pcppcp's custom firmware for the original OP-1 (R246): the file `reedie.op1p`. Tick it in [op1r's web patcher](https://pcppcp.github.io/op1r/web/) (Connect OP-1 installs it over USB), or download it here and send it with the patcher. co-op hosts no copy: the download comes from op1r's repo, checked against its hash.
 
 ## Links
 
 - [op1r](https://github.com/pcppcp/op1r): every plugin and feature
-- [Source](https://github.com/pcppcp/op1r-src/tree/f73bc17f98ebbcc559741accec9c068a2440be7e/synth_sdk/plugins/reedie)
+- [Source](https://github.com/pcppcp/op1r-src/tree/c11ba23bbbd273ee7d5137457a7c45add05afb06/synth_sdk/plugins/reedie)

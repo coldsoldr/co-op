@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/VolkerJunginger/OP-1/tree/main/Pulse-Sync/Source",
-  "requires": "hundekraft 3.3.1",
+  "requires": "hundekraft 3.3.2",
   "credits": "Pulse Sync by Volker Junginger (ESC_CODE), GPL-3.0, ported to kennel by Hundekraft with the author's permission",
   "tags": [
     "tool",

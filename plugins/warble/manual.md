@@ -10,7 +10,7 @@ Maiko Pruett's #250 algorithm and artwork, reconstructed in kennel by Hundekraft
 
 ## Get it
 
-Warble is part of hundekraft 3.3.1, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+Warble is part of hundekraft 3.3.2, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 
