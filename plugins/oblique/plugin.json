@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/pcppcp/op1r",
-  "requires": "hundekraft 3.3.1",
+  "requires": "hundekraft 3.3.2",
   "credits": "Cards by Brian Eno and Peter Schmidt; idea and card screen from ultralazr's op1-oblique-strategies",
   "tags": [
     "tool",

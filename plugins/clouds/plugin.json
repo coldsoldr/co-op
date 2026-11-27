@@ -17,18 +17,18 @@
     {
       "firmware": "op1/hundekraft",
       "link": "https://hundekraft.github.io/op1-workshop/",
-      "requires": "hundekraft 3.3.1",
+      "requires": "hundekraft 3.3.2",
       "source": "https://github.com/pcppcp/op1r"
     },
     {
       "firmware": "op1/op1r",
       "link": "https://pcppcp.github.io/op1r/web/",
-      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/bef688f7c5082a9514077422280657f0e08145aa/data/plugins/clouds.op1p",
+      "fileUrl": "https://raw.githubusercontent.com/pcppcp/op1r/a712139876caf9378e521af96e8e77554778a9d9/data/plugins/clouds.op1p",
       "sha256": "9ba07a0add1b7b5e21a4ed5174575b7012c1f804d4ad6ad8c30c6b59aee8c966",
       "sizeBytes": 47832,
-      "version": "73",
-      "requires": "op1r 73",
-      "source": "https://github.com/pcppcp/op1r-src/tree/f73bc17f98ebbcc559741accec9c068a2440be7e/synth_sdk/plugins/clouds",
+      "version": "77",
+      "requires": "op1r 77",
+      "source": "https://github.com/pcppcp/op1r-src/tree/c11ba23bbbd273ee7d5137457a7c45add05afb06/synth_sdk/plugins/clouds",
       "savedName": "clouds"
     }
   ]

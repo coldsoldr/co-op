@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://squarewave.studio",
-  "requires": "hundekraft 3.3.1",
+  "requires": "hundekraft 3.3.2",
   "credits": "Based on libpo32 by Eric Lewis; factory sounds adapt CNTR RNDM's kits. Ported to kennel by Hundekraft",
   "tags": [
     "drums",

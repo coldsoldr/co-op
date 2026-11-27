@@ -10,7 +10,7 @@
   "screenshot": "screenshot.png",
   "manual": "manual.md",
   "source": "https://github.com/Hundekraft/op1-workshop",
-  "requires": "hundekraft 3.3.1",
+  "requires": "hundekraft 3.3.2",
   "tags": [
     "synth",
     "hundekraft"

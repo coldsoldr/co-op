@@ -6,7 +6,7 @@ PLOC is a water synth by Nicolas Franck Pauly. Each key plays a drop, a burst of
 
 ## Get it
 
-PLOC is part of hundekraft 3.3.1, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
+PLOC is part of hundekraft 3.3.2, a custom firmware for the original OP-1. Tick it in the [hundekraft workshop](https://hundekraft.github.io/op1-workshop/) and install it from there. co-op lists it for reference and hosts no copy.
 
 ## Links
 
